@@ -1,5 +1,6 @@
 'use server';
 
+import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -9,7 +10,8 @@ import { createPost, deletePost, postExists, updatePost, type PostInput } from '
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const postSchema = z.object({
-  slug: z.string().regex(slugRegex),
+  // Empty is allowed on create — the slug is then auto-generated server-side.
+  slug: z.union([z.literal(''), z.string().regex(slugRegex)]),
   title: z.string().min(1),
   date: z.string().min(1),
   description: z.string(),
@@ -45,6 +47,17 @@ function parseForm(formData: FormData): PostInput | null {
   return parsed.success ? parsed.data : null;
 }
 
+// Qiita-style opaque id (20 hex chars), used as a fallback slug when the
+// author leaves the slug blank (e.g. a Japanese-only title). Retried on the
+// astronomically unlikely chance of a collision.
+function generateUniqueSlug(): string {
+  let slug = randomUUID().replace(/-/g, '').slice(0, 20);
+  while (postExists(slug)) {
+    slug = randomUUID().replace(/-/g, '').slice(0, 20);
+  }
+  return slug;
+}
+
 function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }
@@ -58,15 +71,16 @@ export async function createPostAction(
   formData: FormData,
 ): Promise<PostFormState> {
   await verifySession();
-  const input = parseForm(formData);
-  if (!input) {
+  const parsed = parseForm(formData);
+  if (!parsed) {
     return {
       error: '入力が不正です。slug は英小文字・数字・ハイフンのみ、タイトルと日付は必須です。',
     };
   }
-  if (postExists(input.slug)) {
-    return { error: `slug '${input.slug}' は既に存在します。` };
+  if (parsed.slug !== '' && postExists(parsed.slug)) {
+    return { error: `slug '${parsed.slug}' は既に存在します。` };
   }
+  const input = parsed.slug === '' ? { ...parsed, slug: generateUniqueSlug() } : parsed;
   createPost(input);
   revalidateBlog();
   redirect(destinationFor(input));
@@ -78,7 +92,7 @@ export async function updatePostAction(
 ): Promise<PostFormState> {
   await verifySession();
   const input = parseForm(formData);
-  if (!input) {
+  if (!input || input.slug === '') {
     return { error: '入力が不正です。' };
   }
   if (!postExists(input.slug)) {

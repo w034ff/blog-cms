@@ -202,8 +202,9 @@ export function PostEditor({ action, initial, mode }: Props) {
               setSlug(event.target.value);
               setSlugLocked(event.target.value.length > 0);
             }}
-            required
+            required={mode === 'edit'}
             readOnly={mode === 'edit'}
+            placeholder={mode === 'create' ? '空欄なら自動生成（日本語タイトル等）' : undefined}
             pattern='[a-z0-9]+(?:-[a-z0-9]+)*'
             className={`${inputClass} ${mode === 'edit' ? 'opacity-60' : ''}`}
           />
