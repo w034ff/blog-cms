@@ -21,7 +21,16 @@ const postSchema = z.object({
   body: z.string(),
 });
 
-export type PostFormState = { error?: string };
+export type PostFormState = {
+  error?: string;
+  // Set on a successful save so the client can stay in the editor instead of
+  // navigating away. `at` is a timestamp so each save (even a repeat of
+  // identical content) is a distinct state the client can react to. `slug` is
+  // the authoritative slug, which may be server-generated when left blank.
+  // `draft` reflects the just-saved visibility, so the editor knows whether a
+  // public "view" link would resolve (drafts 404 on the public page).
+  saved?: { slug: string; draft: boolean; at: number };
+};
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -58,12 +67,18 @@ function generateUniqueSlug(): string {
   return slug;
 }
 
-function revalidateBlog(): void {
-  revalidatePath('/', 'layout');
+// Disambiguate an auto-derived slug that's already taken by appending an
+// incrementing suffix (WordPress-style: foo, foo-2, foo-3 …). The result still
+// matches the slug regex. Manually typed slugs are NOT suffixed — a collision
+// there is reported instead, so the author can pick a different URL on purpose.
+function uniqueSuffixedSlug(base: string): string {
+  let n = 2;
+  while (postExists(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
 }
 
-function destinationFor(input: PostInput): string {
-  return input.draft ? '/admin' : `/posts/${input.slug}`;
+function revalidateBlog(): void {
+  revalidatePath('/', 'layout');
 }
 
 export async function createPostAction(
@@ -77,13 +92,22 @@ export async function createPostAction(
       error: '入力が不正です。slug は英小文字・数字・ハイフンのみ、タイトルと日付は必須です。',
     };
   }
-  if (parsed.slug !== '' && postExists(parsed.slug)) {
-    return { error: `slug '${parsed.slug}' は既に存在します。` };
+  // Empty slug (e.g. a Japanese-only title) → opaque generated id. A non-empty
+  // slug that's taken is auto-suffixed when derived from the title, but reported
+  // as an error when the author typed it explicitly (slugManual).
+  let slug = parsed.slug;
+  if (slug === '') {
+    slug = generateUniqueSlug();
+  } else if (postExists(slug)) {
+    if (field(formData, 'slugManual') === 'true') {
+      return { error: `slug '${slug}' は既に存在します。` };
+    }
+    slug = uniqueSuffixedSlug(slug);
   }
-  const input = parsed.slug === '' ? { ...parsed, slug: generateUniqueSlug() } : parsed;
+  const input = { ...parsed, slug };
   createPost(input);
   revalidateBlog();
-  redirect(destinationFor(input));
+  return { saved: { slug: input.slug, draft: input.draft, at: Date.now() } };
 }
 
 export async function updatePostAction(
@@ -100,7 +124,7 @@ export async function updatePostAction(
   }
   updatePost(input.slug, input);
   revalidateBlog();
-  redirect(destinationFor(input));
+  return { saved: { slug: input.slug, draft: input.draft, at: Date.now() } };
 }
 
 export async function deletePostAction(formData: FormData): Promise<void> {
