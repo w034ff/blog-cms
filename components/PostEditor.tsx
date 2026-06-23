@@ -5,6 +5,7 @@ import type { ChangeEvent, ReactNode } from 'react';
 import CodeMirror, { EditorView } from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import type { PostFormState } from '@/app/actions/posts';
+import { ALLOWED_IMAGE_ACCEPT, ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
 
 export type PostEditorInitial = {
   slug: string;
@@ -28,9 +29,11 @@ const emptyState: PostFormState = {};
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
 
+const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
+
 function imageFilesFromList(list: FileList | null | undefined): File[] {
   if (!list) return [];
-  return Array.from(list).filter((file) => file.type.startsWith('image/'));
+  return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -175,7 +178,7 @@ export function PostEditor({ action, initial, mode }: Props) {
           {uploading ? 'アップロード中…' : '画像を挿入'}
           <input
             type='file'
-            accept='image/png,image/jpeg,image/gif,image/webp'
+            accept={ALLOWED_IMAGE_ACCEPT}
             className='hidden'
             onChange={handleUpload}
           />
