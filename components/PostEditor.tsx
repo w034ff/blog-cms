@@ -53,6 +53,7 @@ export function PostEditor({ action, initial, mode }: Props) {
   const [uploading, setUploading] = useState(false);
   const [fieldsDirty, setFieldsDirty] = useState(false);
   const viewRef = useRef<EditorView | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const dirty = fieldsDirty || body !== initial.body;
 
@@ -98,6 +99,19 @@ export function PostEditor({ action, initial, mode }: Props) {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [dirty, pending]);
+
+  // Save with Ctrl/Cmd+S, intercepting the browser's "save page" dialog.
+  // requestSubmit() (not submit()) runs the form action and HTML validation,
+  // exactly like clicking the save button. No-op while a save is in flight.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
+      event.preventDefault();
+      if (!pending) formRef.current?.requestSubmit();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pending]);
 
   async function uploadFile(file: File): Promise<string | null> {
     const formData = new FormData();
@@ -149,7 +163,11 @@ export function PostEditor({ action, initial, mode }: Props) {
   }
 
   return (
-    <form action={formAction} onInput={() => setFieldsDirty(true)} className='space-y-5'>
+    <form
+      ref={formRef}
+      action={formAction}
+      onInput={() => setFieldsDirty(true)}
+      className='space-y-5'>
       <div className='grid gap-4 sm:grid-cols-2'>
         <Field label='タイトル'>
           <input name='title' defaultValue={initial.title} required className={inputClass} />
@@ -261,12 +279,15 @@ export function PostEditor({ action, initial, mode }: Props) {
 
       {state.error && <p className='text-sm text-red-600'>{state.error}</p>}
 
-      <button
-        type='submit'
-        disabled={pending}
-        className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-        {pending ? '保存中…' : '保存'}
-      </button>
+      <div className='flex items-center gap-3'>
+        <button
+          type='submit'
+          disabled={pending}
+          className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+          {pending ? '保存中…' : '保存'}
+        </button>
+        <span className='text-xs text-zinc-500'>Ctrl / ⌘ + S でも保存できます</span>
+      </div>
     </form>
   );
 }
