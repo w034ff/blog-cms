@@ -51,7 +51,10 @@ export function PostEditor({ action, initial, mode }: Props) {
   const [html, setHtml] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [fieldsDirty, setFieldsDirty] = useState(false);
   const viewRef = useRef<EditorView | null>(null);
+
+  const dirty = fieldsDirty || body !== initial.body;
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +85,19 @@ export function PostEditor({ action, initial, mode }: Props) {
       clearTimeout(timer);
     };
   }, [body]);
+
+  // Warn before leaving (reload / tab close / external nav) with unsaved
+  // changes. Suppressed while submitting, since a successful save redirects.
+  // In-app <Link> navigation is not covered (App Router has no stable block API).
+  useEffect(() => {
+    if (!dirty || pending) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [dirty, pending]);
 
   async function uploadFile(file: File): Promise<string | null> {
     const formData = new FormData();
@@ -133,7 +149,7 @@ export function PostEditor({ action, initial, mode }: Props) {
   }
 
   return (
-    <form action={formAction} className='space-y-5'>
+    <form action={formAction} onInput={() => setFieldsDirty(true)} className='space-y-5'>
       <div className='grid gap-4 sm:grid-cols-2'>
         <Field label='タイトル'>
           <input name='title' defaultValue={initial.title} required className={inputClass} />
