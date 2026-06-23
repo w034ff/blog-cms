@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { verifySession } from '@/lib/dal';
+import { getOptionalSession, verifySession } from '@/lib/dal';
 import { createPost, deletePost, postExists, updatePost, type PostInput } from '@/lib/posts-write';
 
 const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -23,6 +23,10 @@ const postSchema = z.object({
 
 export type PostFormState = {
   error?: string;
+  // Set when the session has lapsed mid-edit (the 14-day cookie expired). The
+  // action returns this instead of redirecting to /login so the editor stays
+  // mounted and the unsaved draft survives; the client prompts a re-login.
+  sessionExpired?: boolean;
   // Set on a successful save so the client can stay in the editor instead of
   // navigating away. `at` is a timestamp so each save (even a repeat of
   // identical content) is a distinct state the client can react to. `slug` is
@@ -85,7 +89,12 @@ export async function createPostAction(
   _prev: PostFormState,
   formData: FormData,
 ): Promise<PostFormState> {
-  await verifySession();
+  // Don't redirect on an expired session — that would discard the in-progress
+  // editor content. Signal the client instead so it keeps the draft and prompts
+  // a re-login. (Admin pages still use verifySession's redirect.)
+  if (!(await getOptionalSession())) {
+    return { sessionExpired: true };
+  }
   const parsed = parseForm(formData);
   if (!parsed) {
     return {
@@ -114,7 +123,10 @@ export async function updatePostAction(
   _prev: PostFormState,
   formData: FormData,
 ): Promise<PostFormState> {
-  await verifySession();
+  // See createPostAction: preserve the draft instead of redirecting to /login.
+  if (!(await getOptionalSession())) {
+    return { sessionExpired: true };
+  }
   const input = parseForm(formData);
   if (!input || input.slug === '') {
     return { error: '入力が不正です。' };

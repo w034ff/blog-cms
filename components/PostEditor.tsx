@@ -78,6 +78,11 @@ export function PostEditor({ action, initial, mode }: Props) {
   const [slugLocked, setSlugLocked] = useState(false);
   const [html, setHtml] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
+  // The session cookie lapsed mid-edit: preview/save return 401. We keep the
+  // editor mounted (content intact) and prompt a re-login. Set by the preview
+  // 401 path and by a save returning { sessionExpired }; cleared by any
+  // successful preview or save (proof the session is valid again).
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fieldsDirty, setFieldsDirty] = useState(false);
   // Baseline the dirty check resets to on each successful save, so the editor
@@ -101,6 +106,8 @@ export function PostEditor({ action, initial, mode }: Props) {
   if (state !== handledState) {
     setHandledState(state);
     setErrorVisible(Boolean(state.error));
+    if (state.sessionExpired) setSessionExpired(true);
+    else if (state.saved) setSessionExpired(false);
   }
   const viewRef = useRef<EditorView | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -121,13 +128,21 @@ export function PostEditor({ action, initial, mode }: Props) {
             body: JSON.stringify({ source: body }),
           });
           if (!res.ok) {
-            if (!cancelled) setPreviewFailed(true);
+            if (!cancelled) {
+              if (res.status === 401) {
+                setSessionExpired(true);
+                setPreviewFailed(false);
+              } else {
+                setPreviewFailed(true);
+              }
+            }
             return;
           }
           const data = (await res.json()) as { html?: string };
           if (!cancelled) {
             setHtml(typeof data.html === 'string' ? data.html : '');
             setPreviewFailed(false);
+            setSessionExpired(false);
           }
         } catch {
           if (!cancelled) setPreviewFailed(true);
@@ -253,6 +268,21 @@ export function PostEditor({ action, initial, mode }: Props) {
         setErrorVisible(false);
       }}
       className='space-y-5'>
+      {sessionExpired && (
+        <div
+          role='alert'
+          className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
+          セッションが切れました。
+          <a
+            href='/login'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='mx-1 font-medium underline underline-offset-2'>
+            別タブで再ログイン
+          </a>
+          してください。編集内容は保持されています。
+        </div>
+      )}
       <div className='grid gap-4 sm:grid-cols-2'>
         <Field label='タイトル'>
           <input
@@ -372,7 +402,11 @@ export function PostEditor({ action, initial, mode }: Props) {
           />
         </div>
         <div className='max-h-[520px] overflow-auto rounded border border-zinc-300 p-4 dark:border-zinc-700'>
-          {previewFailed ? (
+          {sessionExpired ? (
+            <p className='text-sm text-amber-600'>
+              セッションが切れたため、プレビューを更新できません。
+            </p>
+          ) : previewFailed ? (
             <p className='text-sm text-red-600'>プレビューを取得できませんでした。</p>
           ) : (
             <div
