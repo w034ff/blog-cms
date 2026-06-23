@@ -20,7 +20,6 @@ function createDb(): AppDatabase {
 
 // Reuse a single connection across hot reloads in development.
 declare global {
-  // eslint-disable-next-line no-var
   var __blogDb: AppDatabase | undefined;
 }
 
