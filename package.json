@@ -11,7 +11,8 @@
     "format:check": "prettier --check .",
     "db:push": "drizzle-kit push",
     "db:seed": "node scripts/seed.mts",
-    "db:migrate-content": "node scripts/migrate-content.mts"
+    "db:migrate-content": "node scripts/migrate-content.mts",
+    "gc:uploads": "node scripts/gc-uploads.mts"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "6.5.0",
