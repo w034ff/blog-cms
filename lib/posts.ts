@@ -1,86 +1,72 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import matter from "gray-matter";
-import type {
-  CategoryCount,
-  Post,
-  PostFrontmatter,
-  TagCount,
-} from "@/lib/types";
+import "server-only";
+import { z } from "zod";
+import { and, desc, eq } from "drizzle-orm";
+import { db } from "@/lib/db";
+import { posts } from "@/lib/db/schema";
+import type { CategoryCount, Post, TagCount } from "@/lib/types";
 
-const POSTS_DIR = path.join(process.cwd(), "content", "posts");
-const MDX_EXTENSION = ".mdx";
-const DEFAULT_CATEGORY = "uncategorized";
+const tagsSchema = z.array(z.string()).catch([]);
 
-type RawFrontmatter = {
-  title?: string;
-  date?: string;
-  description?: string;
-  tags?: string[];
-  category?: string;
-  draft?: boolean;
-};
+type PostRow = typeof posts.$inferSelect;
 
-function parseFrontmatter(raw: RawFrontmatter, slug: string): PostFrontmatter {
-  if (typeof raw.title !== "string" || raw.title.length === 0) {
-    throw new Error(`Missing 'title' in frontmatter of ${slug}`);
-  }
-  if (typeof raw.date !== "string" || raw.date.length === 0) {
-    throw new Error(`Missing 'date' in frontmatter of ${slug}`);
-  }
+function toPost(row: PostRow): Post {
   return {
-    title: raw.title,
-    date: raw.date,
-    description: raw.description ?? "",
-    tags: Array.isArray(raw.tags) ? raw.tags : [],
-    category: raw.category ?? DEFAULT_CATEGORY,
-    draft: raw.draft ?? false,
+    slug: row.slug,
+    title: row.title,
+    date: row.date,
+    description: row.description,
+    category: row.category,
+    tags: tagsSchema.parse(row.tags),
+    draft: row.draft,
+    body: row.body,
   };
 }
 
-async function readPostFile(slug: string): Promise<Post> {
-  const filePath = path.join(POSTS_DIR, `${slug}${MDX_EXTENSION}`);
-  const source = await fs.readFile(filePath, "utf8");
-  const parsed = matter(source);
-  const frontmatter = parseFrontmatter(parsed.data as RawFrontmatter, slug);
-  return { ...frontmatter, slug };
-}
-
 export async function getAllPosts(): Promise<Post[]> {
-  const entries = await fs.readdir(POSTS_DIR);
-  const slugs = entries
-    .filter((name) => name.endsWith(MDX_EXTENSION))
-    .map((name) => name.slice(0, -MDX_EXTENSION.length));
-  const posts = await Promise.all(slugs.map(readPostFile));
-  return posts
-    .filter((post) => !post.draft)
-    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const rows = db
+    .select()
+    .from(posts)
+    .where(eq(posts.draft, false))
+    .orderBy(desc(posts.date))
+    .all();
+  return rows.map(toPost);
 }
 
 export async function getPostBySlug(slug: string): Promise<Post | null> {
-  try {
-    const post = await readPostFile(slug);
-    if (post.draft) return null;
-    return post;
-  } catch {
-    return null;
-  }
+  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  if (!row || row.draft) return null;
+  return toPost(row);
+}
+
+export async function listAllPosts(): Promise<Post[]> {
+  const rows = db.select().from(posts).orderBy(desc(posts.date)).all();
+  return rows.map(toPost);
+}
+
+export async function getPostForEdit(slug: string): Promise<Post | null> {
+  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  return row ? toPost(row) : null;
 }
 
 export async function getPostsByTag(tag: string): Promise<Post[]> {
-  const posts = await getAllPosts();
-  return posts.filter((post) => post.tags.includes(tag));
+  const all = await getAllPosts();
+  return all.filter((post) => post.tags.includes(tag));
 }
 
 export async function getPostsByCategory(category: string): Promise<Post[]> {
-  const posts = await getAllPosts();
-  return posts.filter((post) => post.category === category);
+  const rows = db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.draft, false), eq(posts.category, category)))
+    .orderBy(desc(posts.date))
+    .all();
+  return rows.map(toPost);
 }
 
 export async function getAllTags(): Promise<TagCount[]> {
-  const posts = await getAllPosts();
+  const all = await getAllPosts();
   const counts = new Map<string, number>();
-  for (const post of posts) {
+  for (const post of all) {
     for (const tag of post.tags) {
       counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
@@ -91,9 +77,9 @@ export async function getAllTags(): Promise<TagCount[]> {
 }
 
 export async function getAllCategories(): Promise<CategoryCount[]> {
-  const posts = await getAllPosts();
+  const all = await getAllPosts();
   const counts = new Map<string, number>();
-  for (const post of posts) {
+  for (const post of all) {
     counts.set(post.category, (counts.get(post.category) ?? 0) + 1);
   }
   return Array.from(counts.entries())

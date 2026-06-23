@@ -1,26 +1,8 @@
 import type { NextConfig } from "next";
-import createMDX from "@next/mdx";
-
-const withMDX = createMDX({
-  options: {
-    remarkPlugins: [
-      "remark-gfm",
-      ["remark-frontmatter", ["yaml"]],
-    ],
-    rehypePlugins: [
-      [
-        "rehype-pretty-code",
-        {
-          theme: { dark: "github-dark", light: "github-light" },
-          keepBackground: false,
-        },
-      ],
-    ],
-  },
-});
 
 const nextConfig: NextConfig = {
-  pageExtensions: ["ts", "tsx", "mdx"],
+  // better-sqlite3 is a native module; keep it out of the bundle so it runs from node_modules.
+  serverExternalPackages: ["better-sqlite3"],
 };
 
-export default withMDX(nextConfig);
+export default nextConfig;

@@ -17,6 +17,9 @@ export function SiteHeader() {
           <Link href="/categories" className="hover:underline">
             Categories
           </Link>
+          <Link href="/admin" className="hover:underline">
+            管理
+          </Link>
         </nav>
       </div>
     </header>

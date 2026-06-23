@@ -1,16 +1,11 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getAllTags, getPostsByTag } from "@/lib/posts";
+import { getPostsByTag } from "@/lib/posts";
 import { PostCard } from "@/components/PostCard";
 
 type Params = { tag: string };
 
-export async function generateStaticParams(): Promise<Params[]> {
-  const tags = await getAllTags();
-  return tags.map(({ tag }) => ({ tag }));
-}
-
-export const dynamicParams = false;
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,

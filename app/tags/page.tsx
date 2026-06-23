@@ -6,6 +6,8 @@ export const metadata: Metadata = {
   title: "Tags",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function TagsIndexPage() {
   const tags = await getAllTags();
   return (

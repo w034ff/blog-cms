@@ -1,16 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getAllPosts, getPostBySlug } from "@/lib/posts";
+import { getPostBySlug } from "@/lib/posts";
+import { renderMdxToHtml } from "@/lib/render";
 
 type Params = { slug: string };
 
-export async function generateStaticParams(): Promise<Params[]> {
-  const posts = await getAllPosts();
-  return posts.map((p) => ({ slug: p.slug }));
-}
-
-export const dynamicParams = false;
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
@@ -35,7 +31,7 @@ export default async function PostPage({
   const post = await getPostBySlug(slug);
   if (!post) notFound();
 
-  const { default: PostContent } = await import(`@/content/posts/${slug}.mdx`);
+  const html = await renderMdxToHtml(post.body);
 
   return (
     <article>
@@ -71,9 +67,10 @@ export default async function PostPage({
           </ul>
         )}
       </header>
-      <div className="prose prose-zinc dark:prose-invert max-w-none">
-        <PostContent />
-      </div>
+      <div
+        className="prose prose-zinc dark:prose-invert max-w-none"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </article>
   );
 }

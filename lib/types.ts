@@ -4,11 +4,12 @@ export type PostFrontmatter = {
   description: string;
   tags: string[];
   category: string;
-  draft?: boolean;
+  draft: boolean;
 };
 
 export type Post = PostFrontmatter & {
   slug: string;
+  body: string;
 };
 
 export type TagCount = {
