@@ -20,6 +20,10 @@
 # production
 /build
 
+# app data (SQLite DB, uploaded images)
+/data/
+/public/uploads/
+
 # misc
 .DS_Store
 *.pem

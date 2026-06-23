@@ -1,0 +1,55 @@
+---
+title: ブログ開設のお知らせ
+date: "2026-05-17"
+description: Next.js と MDX を使った個人技術ブログを開設しました。
+tags:
+  - nextjs
+  - mdx
+  - blog
+category: announcements
+---
+
+## はじめまして
+
+このブログでは、日々の技術学習や開発の記録を書いていきます。
+Next.js App Router と MDX、Tailwind CSS で構築しています。
+
+## できること
+
+- Markdown で記事を書く
+- コードブロックは自動でハイライト
+- タグとカテゴリで分類
+
+## コード例
+
+TypeScript のサンプル:
+
+```ts
+type Greeting = {
+  name: string;
+  message: string;
+};
+
+function greet(g: Greeting): string {
+  return `${g.message}, ${g.name}!`;
+}
+
+console.log(greet({ name: "World", message: "Hello" }));
+```
+
+シェルコマンドも:
+
+```bash
+npm run dev
+```
+
+## テーブル (GFM)
+
+| 機能 | ステータス |
+| --- | --- |
+| 記事一覧 | 実装済 |
+| 記事詳細 | 実装済 |
+| タグ分類 | 実装済 |
+| カテゴリ分類 | 実装済 |
+
+これからよろしくお願いします。

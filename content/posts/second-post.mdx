@@ -1,0 +1,30 @@
+---
+title: React Server Components を学ぶ
+date: "2026-05-18"
+description: Next.js App Router の中核機能 RSC についてのメモ。
+tags:
+  - nextjs
+  - react
+  - rsc
+category: tech-notes
+---
+
+## RSC とは
+
+React Server Components は、サーバー側でレンダリングされる React コンポーネント。
+クライアントへ JS を送らないため軽量。
+
+```tsx
+// app/page.tsx は default で Server Component
+export default async function Page() {
+  const data = await fetch("https://example.com/api").then((r) => r.json());
+  return <pre>{JSON.stringify(data, null, 2)}</pre>;
+}
+```
+
+## クライアントコンポーネントとの違い
+
+- Server Component: `await` 直接OK、ブラウザに JS は出ない
+- Client Component: `"use client"` ディレクティブが必要、`useState` 等が使える
+
+使い分けの基本は「インタラクションが必要な部分だけ Client」。
