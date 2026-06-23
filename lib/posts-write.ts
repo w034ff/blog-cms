@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { posts } from "@/lib/db/schema";
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { posts } from '@/lib/db/schema';
 
 export type PostInput = {
   slug: string;
@@ -14,11 +14,7 @@ export type PostInput = {
 };
 
 export function postExists(slug: string): boolean {
-  const row = db
-    .select({ slug: posts.slug })
-    .from(posts)
-    .where(eq(posts.slug, slug))
-    .get();
+  const row = db.select({ slug: posts.slug }).from(posts).where(eq(posts.slug, slug)).get();
   return row !== undefined;
 }
 

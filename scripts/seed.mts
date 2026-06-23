@@ -1,9 +1,9 @@
-import path from "node:path";
-import Database from "better-sqlite3";
-import bcrypt from "bcryptjs";
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 
 const ROOT = process.cwd();
-const DB_PATH = path.join(ROOT, "data", "blog.db");
+const DB_PATH = path.join(ROOT, 'data', 'blog.db');
 
 function main(): void {
   try {
@@ -15,9 +15,7 @@ function main(): void {
   const username = process.env.ADMIN_USERNAME;
   const password = process.env.ADMIN_PASSWORD;
   if (!username || !password) {
-    console.error(
-      "ADMIN_USERNAME and ADMIN_PASSWORD must be set (in .env or the environment).",
-    );
+    console.error('ADMIN_USERNAME and ADMIN_PASSWORD must be set (in .env or the environment).');
     process.exit(1);
   }
 

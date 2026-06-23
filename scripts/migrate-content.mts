@@ -1,11 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
-import Database from "better-sqlite3";
-import matter from "gray-matter";
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import matter from 'gray-matter';
 
 const ROOT = process.cwd();
-const POSTS_DIR = path.join(ROOT, "content", "posts");
-const DB_PATH = path.join(ROOT, "data", "blog.db");
+const POSTS_DIR = path.join(ROOT, 'content', 'posts');
+const DB_PATH = path.join(ROOT, 'data', 'blog.db');
 
 type Frontmatter = {
   title?: string;
@@ -32,11 +32,11 @@ function main(): void {
        body=excluded.body, updated_at=excluded.updated_at`,
   );
 
-  const files = readdirSync(POSTS_DIR).filter((f) => f.endsWith(".mdx"));
+  const files = readdirSync(POSTS_DIR).filter((f) => f.endsWith('.mdx'));
   let count = 0;
   for (const file of files) {
-    const slug = file.slice(0, -".mdx".length);
-    const parsed = matter(readFileSync(path.join(POSTS_DIR, file), "utf8"));
+    const slug = file.slice(0, -'.mdx'.length);
+    const parsed = matter(readFileSync(path.join(POSTS_DIR, file), 'utf8'));
     const fm = parsed.data as Frontmatter;
     if (!fm.title || !fm.date) {
       console.warn(`Skipping ${file}: missing title/date`);
@@ -46,8 +46,8 @@ function main(): void {
       slug,
       title: fm.title,
       date: fm.date,
-      description: fm.description ?? "",
-      category: fm.category ?? "uncategorized",
+      description: fm.description ?? '',
+      category: fm.category ?? 'uncategorized',
       tags: JSON.stringify(Array.isArray(fm.tags) ? fm.tags : []),
       draft: fm.draft ? 1 : 0,
       body: parsed.content.trim(),

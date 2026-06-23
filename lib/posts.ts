@@ -1,9 +1,9 @@
-import "server-only";
-import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { posts } from "@/lib/db/schema";
-import type { CategoryCount, Post, TagCount } from "@/lib/types";
+import 'server-only';
+import { z } from 'zod';
+import { and, desc, eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { posts } from '@/lib/db/schema';
+import type { CategoryCount, Post, TagCount } from '@/lib/types';
 
 const tagsSchema = z.array(z.string()).catch([]);
 

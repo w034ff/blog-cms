@@ -1,17 +1,17 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { getOptionalSession } from "@/lib/dal";
+import { NextResponse, type NextRequest } from 'next/server';
+import { randomUUID } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { getOptionalSession } from '@/lib/dal';
 
 const ALLOWED_EXTENSIONS = new Map<string, string>([
-  ["image/png", "png"],
-  ["image/jpeg", "jpg"],
-  ["image/gif", "gif"],
-  ["image/webp", "webp"],
+  ['image/png', 'png'],
+  ['image/jpeg', 'jpg'],
+  ['image/gif', 'gif'],
+  ['image/webp', 'webp'],
 ]);
 const MAX_BYTES = 5 * 1024 * 1024;
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
+const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 export async function POST(req: NextRequest) {
   const session = await getOptionalSession();
@@ -20,20 +20,20 @@ export async function POST(req: NextRequest) {
   }
 
   const formData = await req.formData();
-  const file = formData.get("file");
+  const file = formData.get('file');
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "file is required" }, { status: 400 });
+    return NextResponse.json({ error: 'file is required' }, { status: 400 });
   }
 
   const ext = ALLOWED_EXTENSIONS.get(file.type);
   if (!ext) {
     return NextResponse.json(
-      { error: "unsupported file type (png, jpg, gif, webp only)" },
+      { error: 'unsupported file type (png, jpg, gif, webp only)' },
       { status: 400 },
     );
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "file too large (max 5MB)" }, { status: 400 });
+    return NextResponse.json({ error: 'file too large (max 5MB)' }, { status: 400 });
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());

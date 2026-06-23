@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "db:push": "drizzle-kit push",
     "db:seed": "node scripts/seed.mts",
     "db:migrate-content": "node scripts/migrate-content.mts"
@@ -43,6 +45,7 @@
     "drizzle-kit": "0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "prettier": "3.8.4",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
