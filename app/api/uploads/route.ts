@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
@@ -31,9 +31,20 @@ export async function POST(req: NextRequest) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const name = `${randomUUID()}.${ext}`;
+  // Content-addressed name: re-uploading the same image resolves to the same
+  // file, so identical content is stored once (dedup). Skip the write when the
+  // file already exists. Deletion must stay reference-based (the GC sweep is),
+  // since one file can now be referenced by multiple posts.
+  const name = `${createHash('sha256').update(bytes).digest('hex')}.${ext}`;
+  const filePath = path.join(UPLOAD_DIR, name);
   await mkdir(UPLOAD_DIR, { recursive: true });
-  await writeFile(path.join(UPLOAD_DIR, name), bytes);
+  const exists = await access(filePath).then(
+    () => true,
+    () => false,
+  );
+  if (!exists) {
+    await writeFile(filePath, bytes);
+  }
 
   return NextResponse.json({ url: `/uploads/${name}` });
 }
