@@ -28,6 +28,11 @@ const emptyState: PostFormState = {};
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
 
+function imageFilesFromList(list: FileList | null | undefined): File[] {
+  if (!list) return [];
+  return Array.from(list).filter((file) => file.type.startsWith('image/'));
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className='block text-sm'>
@@ -75,36 +80,49 @@ export function PostEditor({ action, initial, mode }: Props) {
     };
   }, [body]);
 
-  function insertAtCursor(text: string): void {
-    const view = viewRef.current;
-    if (!view) {
-      setBody((current) => (current.length > 0 ? `${current}\n${text}\n` : `${text}\n`));
-      return;
+  async function uploadFile(file: File): Promise<string | null> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/uploads', { method: 'POST', body: formData });
+    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (res.ok && typeof data.url === 'string') return data.url;
+    window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
+    return null;
+  }
+
+  async function uploadImages(files: File[], view: EditorView, startPos: number): Promise<void> {
+    setUploading(true);
+    try {
+      let pos = startPos;
+      for (const file of files) {
+        const url = await uploadFile(file);
+        if (url === null) continue;
+        const snippet = `![](${url})\n`;
+        view.dispatch({
+          changes: { from: pos, to: pos, insert: snippet },
+          selection: { anchor: pos + snippet.length },
+        });
+        pos += snippet.length;
+      }
+    } finally {
+      setUploading(false);
     }
-    const { from, to } = view.state.selection.main;
-    view.dispatch({
-      changes: { from, to, insert: text },
-      selection: { anchor: from + text.length },
-    });
   }
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    const view = viewRef.current;
+    if (view) {
+      await uploadImages([file], view, view.state.selection.main.from);
+      return;
+    }
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-      const data = (await res.json().catch(() => ({}))) as {
-        url?: string;
-        error?: string;
-      };
-      if (res.ok && typeof data.url === 'string') {
-        insertAtCursor(`![](${data.url})`);
-      } else {
-        window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
+      const url = await uploadFile(file);
+      if (url !== null) {
+        setBody((current) => (current.length > 0 ? `${current}\n![](${url})\n` : `![](${url})\n`));
       }
     } finally {
       setUploading(false);
@@ -162,7 +180,9 @@ export function PostEditor({ action, initial, mode }: Props) {
             onChange={handleUpload}
           />
         </label>
-        <span className='text-xs text-zinc-500'>本文（左）にMDX、右にプレビュー</span>
+        <span className='text-xs text-zinc-500'>
+          本文（左）にMDX、右にプレビュー。画像はボタン・貼り付け・ドラッグ&ドロップで挿入
+        </span>
       </div>
 
       <div className='grid gap-4 lg:grid-cols-2'>
@@ -170,7 +190,36 @@ export function PostEditor({ action, initial, mode }: Props) {
           <CodeMirror
             value={body}
             height='480px'
-            extensions={[markdown(), EditorView.lineWrapping]}
+            extensions={[
+              markdown(),
+              EditorView.lineWrapping,
+              EditorView.domEventHandlers({
+                dragover(event) {
+                  if (event.dataTransfer?.types.includes('Files')) {
+                    event.preventDefault();
+                    return true;
+                  }
+                  return false;
+                },
+                drop(event, view) {
+                  const files = imageFilesFromList(event.dataTransfer?.files);
+                  if (files.length === 0) return false;
+                  event.preventDefault();
+                  const pos =
+                    view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+                    view.state.selection.main.from;
+                  void uploadImages(files, view, pos);
+                  return true;
+                },
+                paste(event, view) {
+                  const files = imageFilesFromList(event.clipboardData?.files);
+                  if (files.length === 0) return false;
+                  event.preventDefault();
+                  void uploadImages(files, view, view.state.selection.main.from);
+                  return true;
+                },
+              }),
+            ]}
             onChange={(value) => setBody(value)}
             onCreateEditor={(view) => {
               viewRef.current = view;
