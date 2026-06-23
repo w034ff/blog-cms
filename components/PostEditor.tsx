@@ -46,6 +46,20 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
+// Build a starting alt text from a dropped/pasted file name: drop the
+// extension and turn separators into spaces so it reads as words. It's only a
+// placeholder for accessibility — the caller selects it after insertion so the
+// author can type a real description over it. Strip characters that would break
+// the markdown image (']' closes the alt early; newlines split it).
+function altTextFromFilename(name: string): string {
+  return name
+    .replace(/\.[^./\\]+$/, '')
+    .replace(/[[\]\r\n]+/g, ' ')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className='block text-sm'>
@@ -191,10 +205,14 @@ export function PostEditor({ action, initial, mode }: Props) {
       for (const file of files) {
         const url = await uploadFile(file);
         if (url === null) continue;
-        const snippet = `![](${url})\n`;
+        const alt = altTextFromFilename(file.name);
+        const snippet = `![${alt}](${url})\n`;
+        // Select the alt text (between "![" and "]") so the author can
+        // immediately overwrite the filename with a real description.
+        const altStart = pos + 2;
         view.dispatch({
           changes: { from: pos, to: pos, insert: snippet },
-          selection: { anchor: pos + snippet.length },
+          selection: { anchor: altStart, head: altStart + alt.length },
         });
         pos += snippet.length;
       }
@@ -216,7 +234,10 @@ export function PostEditor({ action, initial, mode }: Props) {
     try {
       const url = await uploadFile(file);
       if (url !== null) {
-        setBody((current) => (current.length > 0 ? `${current}\n![](${url})\n` : `![](${url})\n`));
+        // No editor view here, so we can't select the alt; insert the
+        // filename-derived alt as a starting point the author can refine.
+        const snippet = `![${altTextFromFilename(file.name)}](${url})`;
+        setBody((current) => (current.length > 0 ? `${current}\n${snippet}\n` : `${snippet}\n`));
       }
     } finally {
       setUploading(false);
