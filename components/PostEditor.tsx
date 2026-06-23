@@ -36,6 +36,15 @@ function imageFilesFromList(list: FileList | null | undefined): File[] {
   return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
 }
 
+// Derive a URL-safe slug matching the server's [a-z0-9]+(?:-[a-z0-9]+)* rule.
+// Non-ASCII titles (e.g. Japanese) collapse to '', leaving manual entry.
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className='block text-sm'>
@@ -48,6 +57,9 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 export function PostEditor({ action, initial, mode }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   const [body, setBody] = useState(initial.body);
+  const [title, setTitle] = useState(initial.title);
+  const [slug, setSlug] = useState(initial.slug);
+  const [slugLocked, setSlugLocked] = useState(false);
   const [html, setHtml] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -170,12 +182,26 @@ export function PostEditor({ action, initial, mode }: Props) {
       className='space-y-5'>
       <div className='grid gap-4 sm:grid-cols-2'>
         <Field label='タイトル'>
-          <input name='title' defaultValue={initial.title} required className={inputClass} />
+          <input
+            name='title'
+            value={title}
+            onChange={(event) => {
+              const next = event.target.value;
+              setTitle(next);
+              if (mode === 'create' && !slugLocked) setSlug(slugify(next));
+            }}
+            required
+            className={inputClass}
+          />
         </Field>
         <Field label='slug（URL・英小文字/数字/ハイフン）'>
           <input
             name='slug'
-            defaultValue={initial.slug}
+            value={slug}
+            onChange={(event) => {
+              setSlug(event.target.value);
+              setSlugLocked(event.target.value.length > 0);
+            }}
             required
             readOnly={mode === 'edit'}
             pattern='[a-z0-9]+(?:-[a-z0-9]+)*'
