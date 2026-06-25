@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import CodeMirror, { EditorView } from '@uiw/react-codemirror';
@@ -84,6 +84,9 @@ export function PostEditor({ action, initial, mode }: Props) {
   // successful preview or save (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // True while a file is being dragged over the window, so a drop overlay
+  // appears on the editor container as a target.
+  const [dragging, setDragging] = useState(false);
   const [fieldsDirty, setFieldsDirty] = useState(false);
   // Baseline the dirty check resets to on each successful save, so the editor
   // can stay mounted and still know when it's back to a clean (saved) state.
@@ -203,7 +206,7 @@ export function PostEditor({ action, initial, mode }: Props) {
     setSavedDraft(saved.draft);
   }, [state, mode, router]);
 
-  async function uploadFile(file: File): Promise<string | null> {
+  const uploadFile = useCallback(async (file: File): Promise<string | null> => {
     const formData = new FormData();
     formData.append('file', file);
     const res = await fetch('/api/uploads', { method: 'POST', body: formData });
@@ -211,30 +214,83 @@ export function PostEditor({ action, initial, mode }: Props) {
     if (res.ok && typeof data.url === 'string') return data.url;
     window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
     return null;
-  }
+  }, []);
 
-  async function uploadImages(files: File[], view: EditorView, startPos: number): Promise<void> {
-    setUploading(true);
-    try {
-      let pos = startPos;
-      for (const file of files) {
-        const url = await uploadFile(file);
-        if (url === null) continue;
-        const alt = altTextFromFilename(file.name);
-        const snippet = `![${alt}](${url})\n`;
-        // Select the alt text (between "![" and "]") so the author can
-        // immediately overwrite the filename with a real description.
-        const altStart = pos + 2;
-        view.dispatch({
-          changes: { from: pos, to: pos, insert: snippet },
-          selection: { anchor: altStart, head: altStart + alt.length },
-        });
-        pos += snippet.length;
+  const uploadImages = useCallback(
+    async (files: File[], view: EditorView, startPos: number): Promise<void> => {
+      setUploading(true);
+      try {
+        let pos = startPos;
+        for (const file of files) {
+          const url = await uploadFile(file);
+          if (url === null) continue;
+          const alt = altTextFromFilename(file.name);
+          const snippet = `![${alt}](${url})\n`;
+          // Select the alt text (between "![" and "]") so the author can
+          // immediately overwrite the filename with a real description.
+          const altStart = pos + 2;
+          view.dispatch({
+            changes: { from: pos, to: pos, insert: snippet },
+            selection: { anchor: altStart, head: altStart + alt.length },
+          });
+          pos += snippet.length;
+        }
+      } finally {
+        setUploading(false);
       }
-    } finally {
-      setUploading(false);
-    }
-  }
+    },
+    [uploadFile],
+  );
+
+  // While a file is dragged anywhere over the window, show a drop overlay on the
+  // editor container and let a drop add the image at the cursor. Intercepting
+  // the drag also stops the browser default (opening the dropped image as a page
+  // and navigating away from the editor, losing the draft). Only file drags
+  // count, so dragging text within the editor is unaffected. dragenter/dragleave
+  // fire for descendants too, so a depth counter tracks whether the pointer is
+  // still somewhere over the window before hiding the overlay.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
+    const handleDragEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      depth += 1;
+      setDragging(true);
+    };
+    const handleDragLeave = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      depth -= 1;
+      if (depth <= 0) {
+        depth = 0;
+        setDragging(false);
+      }
+    };
+    const handleDragOver = (event: DragEvent) => {
+      if (hasFiles(event)) event.preventDefault();
+    };
+    const handleDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const view = viewRef.current;
+      if (!view) return;
+      const files = imageFilesFromList(event.dataTransfer?.files);
+      if (files.length === 0) return;
+      view.focus();
+      void uploadImages(files, view, view.state.selection.main.from);
+    };
+    window.addEventListener('dragenter', handleDragEnter);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleDrop);
+    return () => {
+      window.removeEventListener('dragenter', handleDragEnter);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleDrop);
+    };
+  }, [uploadImages]);
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
@@ -369,23 +425,6 @@ export function PostEditor({ action, initial, mode }: Props) {
               markdown(),
               EditorView.lineWrapping,
               EditorView.domEventHandlers({
-                dragover(event) {
-                  if (event.dataTransfer?.types.includes('Files')) {
-                    event.preventDefault();
-                    return true;
-                  }
-                  return false;
-                },
-                drop(event, view) {
-                  const files = imageFilesFromList(event.dataTransfer?.files);
-                  if (files.length === 0) return false;
-                  event.preventDefault();
-                  const pos =
-                    view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
-                    view.state.selection.main.from;
-                  void uploadImages(files, view, pos);
-                  return true;
-                },
                 paste(event, view) {
                   const files = imageFilesFromList(event.clipboardData?.files);
                   if (files.length === 0) return false;
@@ -453,6 +492,33 @@ export function PostEditor({ action, initial, mode }: Props) {
           <span className='text-xs text-zinc-500'>Ctrl / ⌘ + S でも保存できます</span>
         )}
       </div>
+
+      {dragging && (
+        // Full-window so the highlighted area matches where a drop is actually
+        // accepted (anywhere on the page). marginTop:0 cancels the form's
+        // space-y so the fixed layer covers the viewport edge-to-edge.
+        <div
+          style={{ marginTop: 0 }}
+          className='pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-zinc-900/55'>
+          <div className='flex flex-col items-center gap-4 text-zinc-900 dark:text-zinc-50'>
+            <svg
+              xmlns='http://www.w3.org/2000/svg'
+              fill='none'
+              viewBox='0 0 24 24'
+              strokeWidth={1.5}
+              stroke='currentColor'
+              aria-hidden='true'
+              className='h-20 w-20'>
+              <path
+                strokeLinecap='round'
+                strokeLinejoin='round'
+                d='m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z'
+              />
+            </svg>
+            <span className='text-xl font-medium'>ここに画像をドロップして追加</span>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
