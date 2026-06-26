@@ -17,13 +17,20 @@ export default async function AdminHome() {
       ) : (
         <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
           {posts.map((post) => (
-            <li key={post.slug} className='flex items-center justify-between gap-4 py-3'>
+            <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
               <div className='min-w-0'>
                 <div className='flex items-center gap-2'>
                   <Link
-                    href={`/admin/posts/${encodeURIComponent(post.slug)}/edit`}
+                    href={`/admin/posts/${post.id}/edit`}
                     className='truncate font-medium hover:underline'>
-                    {post.title}
+                    {/* A titleless draft would render an empty, unclickable link
+                        (publish requires a title, so only drafts reach here);
+                        show a placeholder so it stays reachable from the list. */}
+                    {post.title.trim() ? (
+                      post.title
+                    ) : (
+                      <span className='text-zinc-400'>（無題）</span>
+                    )}
                   </Link>
                   {post.draft && (
                     <span className='rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
@@ -36,7 +43,7 @@ export default async function AdminHome() {
                 </div>
               </div>
               <form action={deletePostAction}>
-                <input type='hidden' name='slug' value={post.slug} />
+                <input type='hidden' name='id' value={post.id} />
                 <button type='submit' className='text-sm text-red-600 hover:underline'>
                   削除
                 </button>

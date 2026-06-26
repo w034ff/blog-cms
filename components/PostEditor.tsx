@@ -2,20 +2,21 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
 import CodeMirror, { EditorView } from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import type { PostFormState } from '@/app/actions/posts';
+import type { DraftContent } from '@/lib/types';
 import { ALLOWED_IMAGE_ACCEPT, ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
 
 export type PostEditorInitial = {
+  // Null in create mode; the row id in edit mode.
+  id: number | null;
   slug: string;
   title: string;
   date: string;
   description: string;
   category: string;
   tags: string[];
-  draft: boolean;
   body: string;
 };
 
@@ -23,9 +24,16 @@ type Props = {
   action: (prev: PostFormState, formData: FormData) => Promise<PostFormState>;
   initial: PostEditorInitial;
   mode: 'create' | 'edit';
+  // Current visibility of the live post: true once it has been published.
+  published: boolean;
+  // Whether the loaded content is a working copy ahead of the published version
+  // (a published post with unsaved-to-public edits). Always false in create mode.
+  hasPendingEdits: boolean;
 };
 
 const emptyState: PostFormState = {};
+
+const AUTOSAVE_DELAY_MS = 800;
 
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
@@ -35,15 +43,6 @@ const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
 function imageFilesFromList(list: FileList | null | undefined): File[] {
   if (!list) return [];
   return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
-}
-
-// Derive a URL-safe slug matching the server's [a-z0-9]+(?:-[a-z0-9]+)* rule.
-// Non-ASCII titles (e.g. Japanese) collapse to '', leaving manual entry.
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 // Build a starting alt text from a dropped/pasted file name: drop the
@@ -60,6 +59,29 @@ function altTextFromFilename(name: string): string {
     .trim();
 }
 
+// Snapshot the editable content from the live form DOM. Reading the form (rather
+// than mirroring every field into React state) lets the metadata fields stay
+// uncontrolled while autosave and publish both see their current values.
+function readDraftContent(form: HTMLFormElement): DraftContent {
+  const data = new FormData(form);
+  const get = (name: string): string => {
+    const value = data.get(name);
+    return typeof value === 'string' ? value : '';
+  };
+  const tags = get('tags')
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return {
+    title: get('title'),
+    date: get('date'),
+    description: get('description'),
+    category: get('category'),
+    tags,
+    body: get('body'),
+  };
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className='block text-sm'>
@@ -69,57 +91,199 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function PostEditor({ action, initial, mode }: Props) {
-  const router = useRouter();
+type AutosaveState = 'idle' | 'saving' | 'saved' | 'failed';
+
+export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
+  // The opaque public slug, only needed to build the 表示 link. Empty in create
+  // mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
-  const [slugLocked, setSlugLocked] = useState(false);
   const [html, setHtml] = useState('');
   const [previewFailed, setPreviewFailed] = useState(false);
-  // The session cookie lapsed mid-edit: preview/save return 401. We keep the
-  // editor mounted (content intact) and prompt a re-login. Set by the preview
-  // 401 path and by a save returning { sessionExpired }; cleared by any
-  // successful preview or save (proof the session is valid again).
+  // The session cookie lapsed mid-edit: preview/autosave/publish return 401. We
+  // keep the editor mounted (content intact) and prompt a re-login. Cleared by
+  // any successful preview/autosave/publish (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
   const [uploading, setUploading] = useState(false);
   // True while a file is being dragged over the window, so a drop overlay
   // appears on the editor container as a target.
   const [dragging, setDragging] = useState(false);
-  const [fieldsDirty, setFieldsDirty] = useState(false);
-  // Baseline the dirty check resets to on each successful save, so the editor
-  // can stay mounted and still know when it's back to a clean (saved) state.
-  const [savedBody, setSavedBody] = useState(initial.body);
+
+  // The post's server identity (row id). Null in create mode until the first
+  // autosave (or a publish) materializes the row; from then on edits update it.
+  const [committedId, setCommittedId] = useState<number | null>(initial.id);
+  // Live visibility, and whether the editor holds edits not yet pushed public.
+  const [isPublished, setIsPublished] = useState(published);
+  const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
+  // Autosave feedback (whether the in-progress work is safely persisted), kept
+  // separate from the publish state above — they are two independent axes.
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  // The saved (live) draft visibility, so the "view" link only appears when
-  // the public page would actually resolve. Updated from the server response,
-  // since an in-place save keeps this component mounted (initial goes stale).
-  const [savedDraft, setSavedDraft] = useState(initial.draft);
+  const [unsaved, setUnsaved] = useState(false);
+
   // A returned server error (e.g. duplicate slug) shows until the next edit, so
-  // it doesn't linger while the user fixes the input — including when the next
-  // submit is blocked client-side by HTML validation, in which case the action
-  // (and thus a fresh state) never runs and the stale error would otherwise stay.
+  // it doesn't linger while the user fixes the input.
   const [errorVisible, setErrorVisible] = useState(false);
-  // Reset visibility whenever a new action result arrives (each submit yields a
-  // fresh state object), re-showing even an identical message. Done during
-  // render per React's "adjust state when a value changes" guidance, not in an
-  // effect.
+  // Reset visibility whenever a new action result arrives, per React's "adjust
+  // state when a value changes" guidance, not in an effect.
   const [handledState, setHandledState] = useState(state);
   if (state !== handledState) {
     setHandledState(state);
     setErrorVisible(Boolean(state.error));
-    if (state.sessionExpired) setSessionExpired(true);
-    else if (state.saved) setSessionExpired(false);
+    // React to a publish/unpublish result during render (the sanctioned
+    // "adjust state when a value changes" pattern). The matching URL side-effect
+    // lives in an effect below.
+    if (state.sessionExpired) {
+      setSessionExpired(true);
+    } else if (state.saved) {
+      setIsPublished(state.saved.published);
+      setPendingPublish(false);
+      setUnsaved(false);
+      setSavedAt(state.saved.at);
+      setAutosaveState('saved');
+      setSessionExpired(false);
+      if (committedId === null) setCommittedId(state.saved.id);
+      // Adopt the slug the server finalized at publish (and lock it via the
+      // published state below) so the field and 表示 link reflect the real URL.
+      if (state.saved.slug !== null) setSlug(state.saved.slug);
+    }
   }
+
   const viewRef = useRef<EditorView | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
-  // The success effect runs only on save (keyed by state), so it reads the
-  // latest body through a ref (synced below) rather than depending on it.
-  const bodyRef = useRef(body);
+  // Refs mirror state the autosave machinery reads outside React's render flow.
+  const committedIdRef = useRef<number | null>(committedId);
+  // Edit-mode posts already sit at their final URL; only create-mode posts need
+  // a one-time address-bar sync once they gain an identity.
+  const urlSyncedRef = useRef(mode === 'edit');
+  const publishedRef = useRef(isPublished);
+  const unsavedRef = useRef(false);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
+  const retryRef = useRef(false);
+  // Holds the autosave routine (published from an effect below) so the timer,
+  // Ctrl/⌘+S flush, and mid-flight retry can invoke it without a stale closure.
+  const autosaveRef = useRef<() => Promise<void>>(async () => {});
 
-  const dirty = fieldsDirty || body !== savedBody;
+  useEffect(() => {
+    committedIdRef.current = committedId;
+  }, [committedId]);
+  useEffect(() => {
+    publishedRef.current = isPublished;
+  }, [isPublished]);
+  useEffect(() => {
+    unsavedRef.current = unsaved;
+  }, [unsaved]);
 
+  const hasIdentity = committedId !== null;
+
+  const runAutosave = useCallback(async () => {
+    // Serialize saves; if an edit lands mid-flight, retry once we're done.
+    if (savingRef.current) {
+      retryRef.current = true;
+      return;
+    }
+    const form = formRef.current;
+    if (!form) return;
+    savingRef.current = true;
+    setAutosaveState('saving');
+    let ok = false;
+    try {
+      const content = readDraftContent(form);
+      const payload =
+        committedIdRef.current === null ? { content } : { id: committedIdRef.current, content };
+      const res = await fetch('/api/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.status === 401) {
+        setSessionExpired(true);
+        setAutosaveState('failed');
+        return;
+      }
+      if (!res.ok) {
+        setAutosaveState('failed');
+        return;
+      }
+      const data = (await res.json()) as {
+        id?: number;
+        savedAt?: number;
+        created?: boolean;
+        skipped?: boolean;
+      };
+      // Nothing worth saving yet (empty brand-new post): not an error.
+      if (data.skipped) {
+        ok = true;
+        setAutosaveState('idle');
+        return;
+      }
+      // First save of a new post: adopt the server-assigned id and move to its
+      // edit URL without a navigation, so the editor (and cursor) stay put.
+      if (data.created && typeof data.id === 'number') {
+        committedIdRef.current = data.id;
+        setCommittedId(data.id);
+      }
+      ok = true;
+      setAutosaveState('saved');
+      setSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now());
+      setSessionExpired(false);
+    } catch {
+      setAutosaveState('failed');
+    } finally {
+      savingRef.current = false;
+      if (retryRef.current) {
+        retryRef.current = false;
+        void autosaveRef.current();
+      } else if (ok) {
+        unsavedRef.current = false;
+        setUnsaved(false);
+      }
+    }
+  }, []);
+
+  // Publish the stable autosave routine to the ref the timer/flush/retry call,
+  // so they never capture a stale closure (and we don't write the ref in render).
+  useEffect(() => {
+    autosaveRef.current = runAutosave;
+  }, [runAutosave]);
+
+  const scheduleAutosave = useCallback(() => {
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      autosaveTimerRef.current = null;
+      void autosaveRef.current();
+    }, AUTOSAVE_DELAY_MS);
+  }, []);
+
+  // Flush a pending autosave immediately (Ctrl/⌘+S). No-op when nothing is dirty.
+  const flushAutosave = useCallback(() => {
+    if (!unsavedRef.current) return;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    void autosaveRef.current();
+  }, []);
+
+  // Record an edit: mark dirty, flag pending publish for a live post, and (re)arm
+  // the autosave debounce.
+  const markEdited = useCallback(() => {
+    unsavedRef.current = true;
+    setUnsaved(true);
+    if (publishedRef.current) setPendingPublish(true);
+    scheduleAutosave();
+  }, [scheduleAutosave]);
+
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  }, []);
+
+  // Debounced live preview (unchanged): render the current body to HTML.
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
@@ -145,6 +309,8 @@ export function PostEditor({ action, initial, mode }: Props) {
           if (!cancelled) {
             setHtml(typeof data.html === 'string' ? data.html : '');
             setPreviewFailed(false);
+            // A successful preview proves the session is valid again — clear the
+            // expiry banner (parity with the autosave/publish success paths).
             setSessionExpired(false);
           }
         } catch {
@@ -158,53 +324,39 @@ export function PostEditor({ action, initial, mode }: Props) {
     };
   }, [body]);
 
-  // Warn before leaving (reload / tab close / external nav) with unsaved
-  // changes. Suppressed while a save is in flight; a successful save then
-  // resets the dirty baseline, so the warning clears on its own.
-  // In-app <Link> navigation is not covered (App Router has no stable block API).
+  // Warn before leaving (reload / tab close / external nav) while edits are not
+  // yet persisted. Autosave clears `unsaved` on success, so the warning lifts on
+  // its own. In-app <Link> navigation is not covered (App Router has no stable
+  // block API).
   useEffect(() => {
-    if (!dirty || pending) return;
+    if (!unsaved) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [dirty, pending]);
+  }, [unsaved]);
 
-  // Save with Ctrl/Cmd+S, intercepting the browser's "save page" dialog.
-  // requestSubmit() (not submit()) runs the form action and HTML validation,
-  // exactly like clicking the save button. No-op while a save is in flight.
+  // Ctrl/⌘+S flushes the autosave instead of opening the browser's save dialog.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
       event.preventDefault();
-      if (!pending) formRef.current?.requestSubmit();
+      flushAutosave();
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [pending]);
+  }, [flushAutosave]);
 
+  // Sync the address bar to a newly created post's edit URL without navigating
+  // (keeps the editor mounted, cursor intact). Runs once when a create-mode post
+  // first gains an identity, whether via autosave or publish.
   useEffect(() => {
-    bodyRef.current = body;
-  }, [body]);
-
-  // On a successful save, stay in the editor instead of navigating away.
-  // Create mode has no edit route yet, so switch to it once (using the
-  // server-confirmed slug); subsequent saves are then in-place updates that
-  // just reset the dirty baseline and flash a saved indicator.
-  useEffect(() => {
-    const saved = state.saved;
-    if (!saved) return;
-    if (mode === 'create') {
-      router.replace(`/admin/posts/${saved.slug}/edit`);
-      return;
-    }
-    setSavedBody(bodyRef.current);
-    setFieldsDirty(false);
-    setSavedAt(saved.at);
-    setSavedDraft(saved.draft);
-  }, [state, mode, router]);
+    if (committedId === null || urlSyncedRef.current) return;
+    urlSyncedRef.current = true;
+    window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
+  }, [committedId]);
 
   const uploadFile = useCallback(async (file: File): Promise<string | null> => {
     const formData = new FormData();
@@ -309,10 +461,43 @@ export function PostEditor({ action, initial, mode }: Props) {
         // filename-derived alt as a starting point the author can refine.
         const snippet = `![${altTextFromFilename(file.name)}](${url})`;
         setBody((current) => (current.length > 0 ? `${current}\n${snippet}\n` : `${snippet}\n`));
+        markEdited();
       }
     } finally {
       setUploading(false);
     }
+  }
+
+  const publishLabel = pending
+    ? isPublished
+      ? '更新中…'
+      : '公開中…'
+    : isPublished
+      ? '更新'
+      : '投稿';
+  // Block publish while a brand-new post's first autosave is still creating its
+  // row, so a click can't race it into a duplicate post.
+  const publishDisabled =
+    pending || (isPublished && !pendingPublish) || (!hasIdentity && autosaveState === 'saving');
+
+  const publishStatus = isPublished
+    ? pendingPublish
+      ? { text: '未公開の変更あり', className: 'text-amber-600' }
+      : { text: '公開済み（最新）', className: 'text-green-600' }
+    : { text: '未公開', className: 'text-zinc-400' };
+
+  // No 'saving' row: on a local CMS the save round-trip is a blink, so it would
+  // flash imperceptibly and says no more than '未保存…' (both mean "not yet
+  // persisted"). The 'saving' state still exists internally to gate publish and
+  // serialize saves — it just isn't surfaced. A save in flight reads as '未保存…'
+  // because `unsaved` stays true until the save succeeds.
+  let autosaveStatus: { text: string; className: string } | null = null;
+  if (autosaveState === 'failed') {
+    autosaveStatus = { text: '保存に失敗', className: 'text-red-600' };
+  } else if (unsaved) {
+    autosaveStatus = { text: '未保存…', className: 'text-zinc-500' };
+  } else if (savedAt !== null) {
+    autosaveStatus = { text: '保存済み ✓', className: 'text-green-600' };
   }
 
   return (
@@ -320,8 +505,15 @@ export function PostEditor({ action, initial, mode }: Props) {
       ref={formRef}
       action={formAction}
       onInput={() => {
-        setFieldsDirty(true);
         setErrorVisible(false);
+        markEdited();
+      }}
+      onSubmit={() => {
+        // A publish carries the current content, so a queued autosave is moot.
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
       }}
       className='space-y-5'>
       {sessionExpired && (
@@ -344,36 +536,9 @@ export function PostEditor({ action, initial, mode }: Props) {
           <input
             name='title'
             value={title}
-            onChange={(event) => {
-              const next = event.target.value;
-              setTitle(next);
-              if (mode === 'create' && !slugLocked) setSlug(slugify(next));
-            }}
+            onChange={(event) => setTitle(event.target.value)}
             required
             className={inputClass}
-          />
-        </Field>
-        <Field label='slug（URL・英小文字/数字/ハイフン）'>
-          <input
-            name='slug'
-            value={slug}
-            onChange={(event) => {
-              const next = event.target.value;
-              // Clearing the slug resumes auto-follow: regenerate from the
-              // current title now, instead of waiting for the next title edit.
-              if (next.length === 0) {
-                setSlug(slugify(title));
-                setSlugLocked(false);
-                return;
-              }
-              setSlug(next);
-              setSlugLocked(true);
-            }}
-            required={mode === 'edit'}
-            readOnly={mode === 'edit'}
-            placeholder={mode === 'create' ? '空欄なら自動生成（日本語タイトル等）' : undefined}
-            pattern='[a-z0-9]+(?:-[a-z0-9]+)*'
-            className={`${inputClass} ${mode === 'edit' ? 'opacity-60' : ''}`}
           />
         </Field>
         <Field label='日付'>
@@ -395,11 +560,6 @@ export function PostEditor({ action, initial, mode }: Props) {
           <input name='description' defaultValue={initial.description} className={inputClass} />
         </Field>
       </div>
-
-      <label className='flex items-center gap-2 text-sm'>
-        <input type='checkbox' name='draft' defaultChecked={initial.draft} />
-        下書き（公開しない）
-      </label>
 
       <div className='flex items-center gap-2'>
         <label className='cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
@@ -434,7 +594,10 @@ export function PostEditor({ action, initial, mode }: Props) {
                 },
               }),
             ]}
-            onChange={(value) => setBody(value)}
+            onChange={(value) => {
+              setBody(value);
+              markEdited();
+            }}
             onCreateEditor={(view) => {
               viewRef.current = view;
             }}
@@ -457,39 +620,45 @@ export function PostEditor({ action, initial, mode }: Props) {
       </div>
 
       <input type='hidden' name='body' value={body} />
-      {/* Tells the server whether the slug was typed by hand: a manual duplicate
-          is reported as an error, an auto-derived one is suffixed (foo-2). */}
-      {mode === 'create' && (
-        <input type='hidden' name='slugManual' value={slugLocked ? 'true' : 'false'} />
-      )}
+      {/* The row identity once it exists (blank for a brand-new post, so publish
+          takes the create-and-publish path). */}
+      <input type='hidden' name='id' value={committedId ?? ''} />
 
       {state.error && errorVisible && <p className='text-sm text-red-600'>{state.error}</p>}
 
       <div className='flex items-center gap-3'>
         <button
           type='submit'
-          disabled={pending}
+          name='intent'
+          value='publish'
+          disabled={publishDisabled}
           className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-          {pending ? '保存中…' : '保存'}
+          {publishLabel}
         </button>
-        {mode === 'edit' &&
-          (savedDraft ? (
-            <span className='text-xs text-zinc-400' title='下書きは公開ページがありません'>
-              下書き（非公開）
-            </span>
-          ) : (
-            <a
-              href={`/posts/${initial.slug}`}
-              className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
-              表示
-            </a>
-          ))}
-        {!dirty && savedAt !== null ? (
-          <span className='text-xs text-green-600' aria-live='polite'>
-            保存しました ✓
+        {isPublished && (
+          <button
+            type='submit'
+            name='intent'
+            value='unpublish'
+            disabled={pending}
+            className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+            下書きに戻す
+          </button>
+        )}
+        {isPublished && slug && (
+          <a
+            href={`/posts/${slug}`}
+            className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
+            表示
+          </a>
+        )}
+        <span className={`text-xs ${publishStatus.className}`} aria-live='polite'>
+          {publishStatus.text}
+        </span>
+        {autosaveStatus && (
+          <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+            {autosaveStatus.text}
           </span>
-        ) : (
-          <span className='text-xs text-zinc-500'>Ctrl / ⌘ + S でも保存できます</span>
         )}
       </div>
 

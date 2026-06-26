@@ -3,14 +3,20 @@ import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
-import type { CategoryCount, Post, TagCount } from '@/lib/types';
+import type { CategoryCount, DraftContent, Post, TagCount } from '@/lib/types';
 
 const tagsSchema = z.array(z.string()).catch([]);
 
 type PostRow = typeof posts.$inferSelect;
 
+// A post as seen in the editor: the live (published) version plus its private
+// working copy of pending edits, if any. draftContent is non-null only for a
+// published post with unpublished changes.
+export type PostForEdit = Post & { draftContent: DraftContent | null };
+
 function toPost(row: PostRow): Post {
   return {
+    id: row.id,
     slug: row.slug,
     title: row.title,
     date: row.date,
@@ -43,9 +49,10 @@ export async function listAllPosts(): Promise<Post[]> {
   return rows.map(toPost);
 }
 
-export async function getPostForEdit(slug: string): Promise<Post | null> {
-  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
-  return row ? toPost(row) : null;
+export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
+  const row = db.select().from(posts).where(eq(posts.id, id)).get();
+  if (!row) return null;
+  return { ...toPost(row), draftContent: row.draftContent ?? null };
 }
 
 export async function getPostsByTag(tag: string): Promise<Post[]> {
