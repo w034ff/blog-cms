@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd /home/user/test && npm run test:run >/tmp/claude-vitest-stop.log 2>&1 || printf '{\"systemMessage\":\"⚠️ vitest failed on Stop — run: npm run test:run (log:/tmp/claude-vitest-stop.log)\"}'",
+            "timeout": 120,
+            "statusMessage": "Running vitest…"
+          }
+        ]
+      }
+    ]
+  }
+}
