@@ -9,6 +9,8 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test": "vitest",
+    "test:run": "vitest run",
     "db:push": "drizzle-kit push",
     "db:seed": "node scripts/seed.mts",
     "db:migrate-content": "node scripts/migrate-content.mts",
@@ -49,6 +51,7 @@
     "eslint-config-next": "16.2.6",
     "prettier": "3.8.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "4.1.9"
   }
 }
