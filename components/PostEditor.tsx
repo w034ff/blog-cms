@@ -570,6 +570,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           <CodeMirror
             value={body}
             height='480px'
+            basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLineGutter: false }}
             extensions={[
               markdown(),
               EditorView.lineWrapping,
