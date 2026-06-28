@@ -17,11 +17,13 @@ export type Post = PostFrontmatter & {
   body: string;
 };
 
-// The editable content of a post, minus its identity (slug) and visibility
-// (draft) flag. Stored in posts.draft_content as a private working copy of a
-// *published* post: autosave writes here so the live (public) columns stay
-// untouched until the author explicitly publishes.
-export type DraftContent = Omit<PostFrontmatter, 'draft'> & {
+// The editable content of a post, minus its identity (slug), visibility (draft)
+// flag, and publish date. `date` is captured automatically at first publish and
+// never hand-edited, so it is not part of the editable content. Stored in
+// posts.draft_content as a private working copy of a *published* post: autosave
+// writes here so the live (public) columns stay untouched until the author
+// explicitly publishes.
+export type DraftContent = Omit<PostFrontmatter, 'draft' | 'date'> & {
   body: string;
 };
 

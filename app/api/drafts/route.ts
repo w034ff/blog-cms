@@ -5,15 +5,15 @@ import { autosavePost, createPost, postExists } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
 
 // Autosave is intentionally lenient: it must persist partial, half-written work
-// without ever rejecting it. Strict validation (required title/date, slug shape)
-// is enforced only at publish time in app/actions/posts.ts.
+// without ever rejecting it. Strict validation (required title, slug shape) is
+// enforced only at publish time in app/actions/posts.ts. The publish date is not
+// part of the content — it is stamped automatically at first publish.
 const autosaveSchema = z.object({
   // Present when updating an existing post. Absent on the first save of a
   // brand-new post, which has no row (and no slug) yet.
   id: z.number().int().optional(),
   content: z.object({
     title: z.string().catch(''),
-    date: z.string().catch(''),
     description: z.string().catch(''),
     category: z.string().catch(''),
     tags: z.array(z.string()).catch([]),
@@ -55,6 +55,8 @@ export async function POST(req: NextRequest) {
     slug: generateUniqueSlug(),
     ...content,
     category: content.category || 'uncategorized',
+    // Unset until first publish stamps the real date; '' marks "never published".
+    date: '',
     draft: true,
   });
   return NextResponse.json({ id: newId, savedAt: Date.now(), created: true });

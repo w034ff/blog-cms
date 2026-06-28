@@ -89,10 +89,16 @@ export function autosavePost(id: number, content: DraftContent): void {
 // live version always matches what the author sees at the moment they commit.
 // The slug is never touched here — it was assigned at row creation and is the
 // post's permanent URL.
-export function commitPost(id: number, content: DraftContent, draft: boolean): void {
+//
+// `date` is the public publish date, decided by the caller. It is captured once
+// at first publish and preserved verbatim thereafter (re-publish, plain update,
+// and unpublish all pass the existing value back), so it reflects when the post
+// first went live rather than the latest edit.
+export function commitPost(id: number, content: DraftContent, draft: boolean, date: string): void {
   db.update(posts)
     .set({
       ...content,
+      date,
       draft,
       draftContent: null,
       updatedAt: new Date().toISOString(),

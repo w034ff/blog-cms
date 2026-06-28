@@ -15,7 +15,6 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   // load the published content.
   const content = post.draftContent ?? {
     title: post.title,
-    date: post.date,
     description: post.description,
     category: post.category,
     tags: post.tags,

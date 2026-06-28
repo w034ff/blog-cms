@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Post } from '@/lib/types';
+import { formatPostDate } from '@/lib/format';
 
 type Props = {
   post: Post;
@@ -14,7 +15,7 @@ export function PostCard({ post }: Props) {
         </h2>
       </Link>
       <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
-        <time dateTime={post.date}>{formatDate(post.date)}</time>
+        <time dateTime={post.date}>{formatPostDate(post.date)}</time>
         <Link href={`/categories/${encodeURIComponent(post.category)}`} className='hover:underline'>
           {post.category}
         </Link>
@@ -37,14 +38,4 @@ export function PostCard({ post }: Props) {
       )}
     </article>
   );
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('ja-JP', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 }

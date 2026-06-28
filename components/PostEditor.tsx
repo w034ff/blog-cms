@@ -13,7 +13,6 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  date: string;
   description: string;
   category: string;
   tags: string[];
@@ -74,7 +73,6 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
     .filter((t) => t.length > 0);
   return {
     title: get('title'),
-    date: get('date'),
     description: get('description'),
     category: get('category'),
     tags,
@@ -537,15 +535,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             name='title'
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            required
-            className={inputClass}
-          />
-        </Field>
-        <Field label='日付'>
-          <input
-            name='date'
-            type='date'
-            defaultValue={initial.date.slice(0, 10)}
             required
             className={inputClass}
           />

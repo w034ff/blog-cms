@@ -14,7 +14,6 @@ import type { DraftContent } from '@/lib/types';
 // here — autosave (app/api/drafts) stays lenient so partial work is never lost.
 const contentSchema = z.object({
   title: z.string().min(1),
-  date: z.string().min(1),
   description: z.string(),
   category: z.string().min(1),
   tags: z.array(z.string()),
@@ -55,7 +54,6 @@ function parseContent(formData: FormData): DraftContent | null {
     .filter((t) => t.length > 0);
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
-    date: field(formData, 'date'),
     description: field(formData, 'description'),
     category: field(formData, 'category') || 'uncategorized',
     tags,
@@ -70,16 +68,20 @@ function revalidateBlog(): void {
 
 // Make a post public with the current editor content. The opaque slug is
 // assigned once at row creation, so publish never touches it — it only flips
-// visibility and refreshes the live columns. Two cases, told apart by whether
-// the row already exists:
+// visibility and refreshes the live columns. The public date is captured here at
+// first publish (`existing.date` is the '' sentinel until then) and preserved on
+// every later publish, so it reflects when the post first went live; the
+// timestamp is UTC, rendered as the Asia/Tokyo date at display time. Two cases,
+// told apart by whether the row already exists:
 //  - existing row (draft or published) → commit the live content; the slug it
-//    was born with stays its permanent URL.
+//    was born with stays its permanent URL, and its date is kept once set.
 //  - no row yet → create-and-publish (the author clicked 投稿 before autosave
-//    materialized the row): create it with a fresh opaque slug, already public.
+//    materialized the row): create it with a fresh opaque slug and today's date,
+//    already public.
 async function publish(formData: FormData): Promise<PostFormState> {
   const content = parseContent(formData);
   if (!content) {
-    return { error: '入力が不正です。タイトルと日付は必須です。' };
+    return { error: '入力が不正です。タイトルは必須です。' };
   }
   const id = parseId(formData);
 
@@ -88,14 +90,16 @@ async function publish(formData: FormData): Promise<PostFormState> {
     if (!existing) {
       return { error: '記事が見つかりません。' };
     }
-    commitPost(id, content, false);
+    // First publish stamps the date; once set it never changes.
+    const date = existing.date || new Date().toISOString();
+    commitPost(id, content, false, date);
     revalidateBlog();
     return { saved: { id, slug: existing.slug, published: true, at: Date.now() } };
   }
 
   // Create-and-publish.
   const slug = generateUniqueSlug();
-  const newId = createPost({ slug, ...content, draft: false });
+  const newId = createPost({ slug, ...content, date: new Date().toISOString(), draft: false });
   revalidateBlog();
   return { saved: { id: newId, slug, published: true, at: Date.now() } };
 }
@@ -106,14 +110,15 @@ async function publish(formData: FormData): Promise<PostFormState> {
 async function unpublish(formData: FormData): Promise<PostFormState> {
   const content = parseContent(formData);
   if (!content) {
-    return { error: '入力が不正です。タイトルと日付は必須です。' };
+    return { error: '入力が不正です。タイトルは必須です。' };
   }
   const id = parseId(formData);
   if (id === null || !postExists(id)) {
     return { error: '記事が見つかりません。' };
   }
   const existing = await getPostForEdit(id);
-  commitPost(id, content, true);
+  // Keep the first-publish date so re-publishing later reuses it.
+  commitPost(id, content, true, existing?.date ?? '');
   revalidateBlog();
   return { saved: { id, slug: existing?.slug ?? null, published: false, at: Date.now() } };
 }

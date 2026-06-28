@@ -5,7 +5,6 @@ const emptyInitial: PostEditorInitial = {
   id: null,
   slug: '',
   title: '',
-  date: new Date().toISOString().slice(0, 10),
   description: '',
   category: 'uncategorized',
   tags: [],

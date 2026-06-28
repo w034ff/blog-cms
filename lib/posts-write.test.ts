@@ -40,7 +40,6 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
 
 const content: DraftContent = {
   title: 'Edited',
-  date: '2026-02-02',
   description: 'desc',
   category: 'cat',
   tags: ['a', 'b'],
@@ -98,20 +97,26 @@ describe('autosavePost', () => {
 });
 
 describe('commitPost', () => {
-  it('writes content to the live columns, sets visibility, and clears draft_content', () => {
+  it('writes content to the live columns, sets visibility, the date, and clears draft_content', () => {
     const id = seed({ slug: 'c', draft: false, title: 'Live', body: 'live body' });
     autosavePost(id, content); // stash a pending working copy first
-    commitPost(id, { ...content, title: 'Final', body: 'final body' }, false);
+    commitPost(
+      id,
+      { ...content, title: 'Final', body: 'final body' },
+      false,
+      '2026-02-02T00:00:00.000Z',
+    );
     const r = row(id);
     expect(r?.title).toBe('Final');
     expect(r?.body).toBe('final body');
+    expect(r?.date).toBe('2026-02-02T00:00:00.000Z');
     expect(r?.draft).toBe(false);
     expect(r?.draftContent).toBeNull();
   });
 
   it('can take a published post back to a draft', () => {
     const id = seed({ slug: 'u', draft: false });
-    commitPost(id, content, true);
+    commitPost(id, content, true, '2026-01-01');
     expect(row(id)?.draft).toBe(true);
   });
 });

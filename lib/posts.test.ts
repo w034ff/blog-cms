@@ -93,7 +93,6 @@ describe('getPostForEdit', () => {
   it('returns the pending working copy when present', async () => {
     const pending: DraftContent = {
       title: 'Pending',
-      date: '2026-02-02',
       description: 'd',
       category: 'cat',
       tags: ['x'],
