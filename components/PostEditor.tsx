@@ -2,11 +2,23 @@
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
-import CodeMirror, { EditorView } from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
+import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import { TableKit } from '@tiptap/extension-table';
+import ImageExtension from '@tiptap/extension-image';
+import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import type { PostFormState } from '@/app/actions/posts';
 import type { DraftContent } from '@/lib/types';
 import { ALLOWED_IMAGE_ACCEPT, ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
+
+// tiptap-markdown adds a `markdown` storage exposing getMarkdown(), but ships no
+// type augmentation for it — register it here so editor.storage.markdown is typed.
+declare module '@tiptap/core' {
+  interface Storage {
+    markdown: MarkdownStorage;
+  }
+}
 
 export type PostEditorInitial = {
   // Null in create mode; the row id in edit mode.
@@ -44,11 +56,10 @@ function imageFilesFromList(list: FileList | null | undefined): File[] {
   return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
 }
 
-// Build a starting alt text from a dropped/pasted file name: drop the
-// extension and turn separators into spaces so it reads as words. It's only a
-// placeholder for accessibility — the caller selects it after insertion so the
-// author can type a real description over it. Strip characters that would break
-// the markdown image (']' closes the alt early; newlines split it).
+// Build a starting alt text from a dropped/pasted file name: drop the extension
+// and turn separators into spaces so it reads as words. It seeds the image's alt
+// attribute (which tiptap-markdown serializes to `![alt](url)`); the author can
+// refine it later. Strip characters that would break the markdown image.
 function altTextFromFilename(name: string): string {
   return name
     .replace(/\.[^./\\]+$/, '')
@@ -60,7 +71,8 @@ function altTextFromFilename(name: string): string {
 
 // Snapshot the editable content from the live form DOM. Reading the form (rather
 // than mirroring every field into React state) lets the metadata fields stay
-// uncontrolled while autosave and publish both see their current values.
+// uncontrolled while autosave and publish both see their current values. The
+// body comes from the hidden input the editor keeps in sync with its markdown.
 function readDraftContent(form: HTMLFormElement): DraftContent {
   const data = new FormData(form);
   const get = (name: string): string => {
@@ -89,20 +101,102 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function ToolbarButton({
+  onClick,
+  active,
+  children,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      className={`rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 ${
+        active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
+      }`}>
+      {children}
+    </button>
+  );
+}
+
+// Format controls. Each command is also reachable by markdown shortcut while
+// typing (e.g. `# `, `- `), so the author can format either way.
+function Toolbar({ editor }: { editor: Editor }) {
+  return (
+    <div className='flex flex-wrap items-center gap-1'>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
+        active={editor.isActive('heading', { level: 2 })}>
+        見出し2
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
+        active={editor.isActive('heading', { level: 3 })}>
+        見出し3
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleBold().run()}
+        active={editor.isActive('bold')}>
+        太字
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleItalic().run()}
+        active={editor.isActive('italic')}>
+        斜体
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleBulletList().run()}
+        active={editor.isActive('bulletList')}>
+        箇条書き
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        active={editor.isActive('orderedList')}>
+        番号付き
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        active={editor.isActive('blockquote')}>
+        引用
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleCode().run()}
+        active={editor.isActive('code')}>
+        コード
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+        active={editor.isActive('codeBlock')}>
+        コードブロック
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>
+        表
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+        区切り線
+      </ToolbarButton>
+    </div>
+  );
+}
+
 type AutosaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
 export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
+  // Markdown source of the body, kept in sync with the editor and mirrored into a
+  // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
   // The opaque public slug, only needed to build the 表示 link. Empty in create
   // mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
-  const [html, setHtml] = useState('');
-  const [previewFailed, setPreviewFailed] = useState(false);
-  // The session cookie lapsed mid-edit: preview/autosave/publish return 401. We
-  // keep the editor mounted (content intact) and prompt a re-login. Cleared by
-  // any successful preview/autosave/publish (proof the session is valid again).
+  // The session cookie lapsed mid-edit: autosave/publish return 401. We keep the
+  // editor mounted (content intact) and prompt a re-login. Cleared by any
+  // successful autosave/publish (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
   const [uploading, setUploading] = useState(false);
   // True while a file is being dragged over the window, so a drop overlay
@@ -149,7 +243,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     }
   }
 
-  const viewRef = useRef<EditorView | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   // Refs mirror state the autosave machinery reads outside React's render flow.
   const committedIdRef = useRef<number | null>(committedId);
@@ -164,6 +257,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Holds the autosave routine (published from an effect below) so the timer,
   // Ctrl/⌘+S flush, and mid-flight retry can invoke it without a stale closure.
   const autosaveRef = useRef<() => Promise<void>>(async () => {});
+  // Editor event handlers (set once at editor creation) reach the latest closures
+  // through these refs, avoiding stale captures without re-creating the editor.
+  const markEditedRef = useRef<() => void>(() => {});
+  const uploadImagesRef = useRef<(files: File[]) => Promise<void>>(async () => {});
 
   useEffect(() => {
     committedIdRef.current = committedId;
@@ -276,51 +373,48 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   }, [scheduleAutosave]);
 
   useEffect(() => {
+    markEditedRef.current = markEdited;
+  }, [markEdited]);
+
+  // The WYSIWYG editor. Markdown is the source of truth: content loads from the
+  // post's markdown, and every change re-serializes to markdown (kept in `body`
+  // and the hidden input) so publish and the public render pipeline are unchanged.
+  const editor = useEditor({
+    immediatelyRender: false, // required under Next SSR
+    shouldRerenderOnTransaction: true, // keep toolbar active states in sync
+    extensions: [
+      StarterKit,
+      TableKit,
+      ImageExtension,
+      Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
+    ],
+    content: initial.body,
+    editorProps: {
+      attributes: {
+        class:
+          'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] px-4 py-3 focus:outline-none',
+      },
+      // Intercept pasted image files and upload them instead of letting the
+      // browser inline them as data URLs.
+      handlePaste: (_view, event) => {
+        const files = imageFilesFromList(event.clipboardData?.files);
+        if (files.length === 0) return false;
+        event.preventDefault();
+        void uploadImagesRef.current(files);
+        return true;
+      },
+    },
+    onUpdate: ({ editor }) => {
+      setBody(editor.storage.markdown.getMarkdown());
+      markEditedRef.current();
+    },
+  });
+
+  useEffect(() => {
     return () => {
       if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
     };
   }, []);
-
-  // Debounced live preview (unchanged): render the current body to HTML.
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const res = await fetch('/api/preview', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: body }),
-          });
-          if (!res.ok) {
-            if (!cancelled) {
-              if (res.status === 401) {
-                setSessionExpired(true);
-                setPreviewFailed(false);
-              } else {
-                setPreviewFailed(true);
-              }
-            }
-            return;
-          }
-          const data = (await res.json()) as { html?: string };
-          if (!cancelled) {
-            setHtml(typeof data.html === 'string' ? data.html : '');
-            setPreviewFailed(false);
-            // A successful preview proves the session is valid again — clear the
-            // expiry banner (parity with the autosave/publish success paths).
-            setSessionExpired(false);
-          }
-        } catch {
-          if (!cancelled) setPreviewFailed(true);
-        }
-      })();
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [body]);
 
   // Warn before leaving (reload / tab close / external nav) while edits are not
   // yet persisted. Autosave clears `unsaved` on success, so the warning lifts on
@@ -366,39 +460,36 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     return null;
   }, []);
 
+  // Upload each image and insert it at the cursor as an editor image node. The
+  // insertion is a transaction, so onUpdate re-serializes the body and marks the
+  // post edited — no manual body/markEdited bookkeeping needed here.
   const uploadImages = useCallback(
-    async (files: File[], view: EditorView, startPos: number): Promise<void> => {
+    async (files: File[]): Promise<void> => {
+      if (!editor) return;
       setUploading(true);
       try {
-        let pos = startPos;
         for (const file of files) {
           const url = await uploadFile(file);
           if (url === null) continue;
-          const alt = altTextFromFilename(file.name);
-          const snippet = `![${alt}](${url})\n`;
-          // Select the alt text (between "![" and "]") so the author can
-          // immediately overwrite the filename with a real description.
-          const altStart = pos + 2;
-          view.dispatch({
-            changes: { from: pos, to: pos, insert: snippet },
-            selection: { anchor: altStart, head: altStart + alt.length },
-          });
-          pos += snippet.length;
+          editor.chain().focus().setImage({ src: url, alt: altTextFromFilename(file.name) }).run();
         }
       } finally {
         setUploading(false);
       }
     },
-    [uploadFile],
+    [editor, uploadFile],
   );
 
-  // While a file is dragged anywhere over the window, show a drop overlay on the
-  // editor container and let a drop add the image at the cursor. Intercepting
-  // the drag also stops the browser default (opening the dropped image as a page
-  // and navigating away from the editor, losing the draft). Only file drags
-  // count, so dragging text within the editor is unaffected. dragenter/dragleave
-  // fire for descendants too, so a depth counter tracks whether the pointer is
-  // still somewhere over the window before hiding the overlay.
+  useEffect(() => {
+    uploadImagesRef.current = uploadImages;
+  }, [uploadImages]);
+
+  // While a file is dragged anywhere over the window, show a drop overlay and let
+  // a drop add the image at the cursor. Intercepting the drag also stops the
+  // browser default (opening the dropped image as a page and navigating away from
+  // the editor, losing the draft). Only file drags count, so dragging text within
+  // the editor is unaffected. dragenter/dragleave fire for descendants too, so a
+  // depth counter tracks whether the pointer is still somewhere over the window.
   useEffect(() => {
     let depth = 0;
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
@@ -423,12 +514,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       event.preventDefault();
       depth = 0;
       setDragging(false);
-      const view = viewRef.current;
-      if (!view) return;
       const files = imageFilesFromList(event.dataTransfer?.files);
       if (files.length === 0) return;
-      view.focus();
-      void uploadImages(files, view, view.state.selection.main.from);
+      void uploadImagesRef.current(files);
     };
     window.addEventListener('dragenter', handleDragEnter);
     window.addEventListener('dragleave', handleDragLeave);
@@ -440,30 +528,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       window.removeEventListener('dragover', handleDragOver);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [uploadImages]);
+  }, []);
 
   async function handleUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    const view = viewRef.current;
-    if (view) {
-      await uploadImages([file], view, view.state.selection.main.from);
-      return;
-    }
-    setUploading(true);
-    try {
-      const url = await uploadFile(file);
-      if (url !== null) {
-        // No editor view here, so we can't select the alt; insert the
-        // filename-derived alt as a starting point the author can refine.
-        const snippet = `![${altTextFromFilename(file.name)}](${url})`;
-        setBody((current) => (current.length > 0 ? `${current}\n${snippet}\n` : `${snippet}\n`));
-        markEdited();
-      }
-    } finally {
-      setUploading(false);
-    }
+    await uploadImages([file]);
   }
 
   const publishLabel = pending
@@ -561,50 +632,17 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           />
         </label>
         <span className='text-xs text-zinc-500'>
-          本文（左）にMDX、右にプレビュー。画像はボタン・貼り付け・ドラッグ&ドロップで挿入
+          ツールバーまたは記法（#、- など）で編集。画像はボタン・貼り付け・ドラッグ&ドロップで挿入
         </span>
       </div>
 
-      <div className='grid gap-4 lg:grid-cols-2'>
+      <div className='space-y-2'>
+        {editor && <Toolbar editor={editor} />}
         <div className='overflow-hidden rounded border border-zinc-300 dark:border-zinc-700'>
-          <CodeMirror
-            value={body}
-            height='480px'
-            basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLineGutter: false }}
-            extensions={[
-              markdown(),
-              EditorView.lineWrapping,
-              EditorView.domEventHandlers({
-                paste(event, view) {
-                  const files = imageFilesFromList(event.clipboardData?.files);
-                  if (files.length === 0) return false;
-                  event.preventDefault();
-                  void uploadImages(files, view, view.state.selection.main.from);
-                  return true;
-                },
-              }),
-            ]}
-            onChange={(value) => {
-              setBody(value);
-              markEdited();
-            }}
-            onCreateEditor={(view) => {
-              viewRef.current = view;
-            }}
-          />
-        </div>
-        <div className='max-h-[520px] overflow-auto rounded border border-zinc-300 p-4 dark:border-zinc-700'>
-          {sessionExpired ? (
-            <p className='text-sm text-amber-600'>
-              セッションが切れたため、プレビューを更新できません。
-            </p>
-          ) : previewFailed ? (
-            <p className='text-sm text-red-600'>プレビューを取得できませんでした。</p>
+          {editor ? (
+            <EditorContent editor={editor} />
           ) : (
-            <div
-              className='prose prose-zinc dark:prose-invert max-w-none'
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
           )}
         </div>
       </div>

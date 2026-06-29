@@ -17,9 +17,12 @@
     "gc:uploads": "node scripts/gc-uploads.mts"
   },
   "dependencies": {
-    "@codemirror/lang-markdown": "6.5.0",
     "@tailwindcss/typography": "^0.5.19",
-    "@uiw/react-codemirror": "4.25.10",
+    "@tiptap/extension-image": "3.27.1",
+    "@tiptap/extension-table": "3.27.1",
+    "@tiptap/pm": "3.27.1",
+    "@tiptap/react": "3.27.1",
+    "@tiptap/starter-kit": "3.27.1",
     "bcryptjs": "3.0.3",
     "better-sqlite3": "12.11.1",
     "drizzle-orm": "0.45.2",
@@ -36,6 +39,7 @@
     "remark-parse": "11.0.0",
     "remark-rehype": "11.1.2",
     "shiki": "^4.0.2",
+    "tiptap-markdown": "0.9.0",
     "unified": "11.0.5",
     "zod": "4.4.3"
   },

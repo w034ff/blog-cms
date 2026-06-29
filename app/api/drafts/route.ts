@@ -22,8 +22,8 @@ const autosaveSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  // Mirrors /api/preview: a lapsed session returns 401 (no redirect) so the
-  // editor keeps the unsaved draft mounted and prompts a re-login.
+  // A lapsed session returns 401 (no redirect) so the editor keeps the unsaved
+  // draft mounted and prompts a re-login.
   if (!(await getOptionalSession())) {
     return new NextResponse(null, { status: 401 });
   }
