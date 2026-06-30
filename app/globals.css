@@ -71,3 +71,70 @@ body {
   font-size: 0.875em;
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+
+/* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
+   little so paragraphs read tighter. Headings, <pre>, and lead text set their own
+   line-height and are unaffected — this only reaches paragraphs and list items,
+   which inherit it. Applies to both surfaces (editor and post both use .prose). */
+.prose {
+  line-height: 1.6;
+}
+
+/* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
+   full mouse-cursor of empty space. Re-assert prose's own first/last-child margin
+   reset too — these rules are unlayered, so they outrank the plugin's (layered)
+   reset and would otherwise put a stray margin back on the body's top/bottom edge.
+   Applies to both surfaces (editor and post both use .prose). */
+.prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* Full-grid tables: the typography plugin draws only horizontal rules, which
+   leaves column and empty-cell boundaries invisible. Borders on every cell make
+   the structure legible — and matter especially in the TipTap editor, where you
+   need to see cells to edit them. Applies to both surfaces (both use .prose). */
+.prose table {
+  border-collapse: collapse;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid #d4d4d8; /* zinc-300 */
+  padding: 0.5rem 0.75rem;
+}
+
+/* Header-cell shading. Targets `th` (not `thead th`): the public page wraps the
+   header row in <thead>, but the TipTap editor renders header cells as bare <th>
+   with no <thead>, so matching on `th` shades them in both surfaces (WYSIWYG). On
+   public GFM tables every <th> is a header-row cell, so this is unchanged there. */
+.prose th {
+  background: rgba(127, 127, 127, 0.08);
+}
+
+/* The editor wraps each cell's content in <p>, but the published GFM table puts
+   text directly in the cell. Those cell paragraphs carry the prose paragraph
+   margins, which inflate cell height and make editor tables taller than the
+   published ones. Drop the outer margins (keeping spacing between paragraphs in
+   multi-paragraph cells) so a cell is the same height in both surfaces. */
+.prose th > p:first-child,
+.prose td > p:first-child {
+  margin-top: 0;
+}
+.prose th > p:last-child,
+.prose td > p:last-child {
+  margin-bottom: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose th,
+  .prose td {
+    border-color: #3f3f46; /* zinc-700 */
+  }
+}

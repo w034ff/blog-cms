@@ -1,8 +1,9 @@
 'use client';
 
-import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { BubbleMenu } from '@tiptap/react/menus';
 import type { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
@@ -130,12 +131,12 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         active={editor.isActive('heading', { level: 2 })}>
-        見出し2
+        大見出し
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
         active={editor.isActive('heading', { level: 3 })}>
-        見出し3
+        小見出し
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
@@ -180,6 +181,64 @@ function Toolbar({ editor }: { editor: Editor }) {
         区切り線
       </ToolbarButton>
     </div>
+  );
+}
+
+// Table editing controls. TipTap ships no table UI, so these wire the table
+// commands to buttons, shown in a floating menu anchored just above the selected
+// table (shouldShow gates it to when the cursor is inside a table). Appended to
+// <body> so the editor wrapper's overflow-hidden can't clip it, and it floats
+// over the content instead of pushing it down.
+function TableToolbar({ editor }: { editor: Editor }) {
+  // BubbleMenu dispatches an editor transaction whenever shouldShow/appendTo/options/
+  // getReferencedVirtualElement change by reference; with shouldRerenderOnTransaction
+  // that re-renders us, so fresh inline props each render would loop forever
+  // ("Maximum update depth"). Keep them all stable.
+  const shouldShow = useCallback(() => editor.isActive('table'), [editor]);
+  const appendTo = useCallback(() => document.body, []);
+  const options = useMemo(
+    () => ({ placement: 'top-start' as const, offset: 8, flip: true, shift: true }),
+    [],
+  );
+  // Anchor the menu to the current table's top-left cell so it stays put while the
+  // cursor moves between cells, instead of following the selection. floating-ui
+  // positions relative to the returned element's bounding rect.
+  const getReferencedVirtualElement = useCallback(() => {
+    const domNode = editor.view.domAtPos(editor.state.selection.from).node;
+    const el = domNode instanceof Element ? domNode : domNode.parentElement;
+    const cell = el?.closest('table')?.querySelector('th, td') ?? null;
+    return cell
+      ? { getBoundingClientRect: () => cell.getBoundingClientRect(), contextElement: cell }
+      : null;
+  }, [editor]);
+  return (
+    <BubbleMenu
+      editor={editor}
+      pluginKey='tableMenu'
+      shouldShow={shouldShow}
+      appendTo={appendTo}
+      options={options}
+      getReferencedVirtualElement={getReferencedVirtualElement}
+      className='z-50 flex flex-wrap items-center gap-1 rounded border border-zinc-300 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
+        見出し行
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().addRowAfter().run()}>
+        行を追加
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().deleteRow().run()}>
+        行を削除
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().addColumnAfter().run()}>
+        列を追加
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().deleteColumn().run()}>
+        列を削除
+      </ToolbarButton>
+      <ToolbarButton onClick={() => editor.chain().focus().deleteTable().run()}>
+        表を削除
+      </ToolbarButton>
+    </BubbleMenu>
   );
 }
 
@@ -383,7 +442,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     immediatelyRender: false, // required under Next SSR
     shouldRerenderOnTransaction: true, // keep toolbar active states in sync
     extensions: [
-      StarterKit,
+      // Body headings are limited to the two levels the toolbar exposes (大見出し
+      // = H2, 小見出し = H3). The post title is the page's only H1, so restricting
+      // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
+      StarterKit.configure({ heading: { levels: [2, 3] } }),
       TableKit,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
@@ -645,6 +707,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
           )}
         </div>
+        {editor && <TableToolbar editor={editor} />}
       </div>
 
       <input type='hidden' name='body' value={body} />
