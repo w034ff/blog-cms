@@ -72,6 +72,15 @@ body {
   font-family: var(--font-mono), ui-monospace, monospace;
 }
 
+/* Tailwind Typography decorates inline <code> with literal backticks via
+   ::before/::after. The chip style above already marks inline code, so drop
+   them (they're noise in the WYSIWYG editor and on the post page — both use
+   .prose). pre code already has none (the plugin sets content:none). */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+
 /* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
    little so paragraphs read tighter. Headings, <pre>, and lead text set their own
    line-height and are unaffected — this only reaches paragraphs and list items,

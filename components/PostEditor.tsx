@@ -105,6 +105,97 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ToolbarButton({
   onClick,
   active,
+  title,
+  children,
+}: {
+  onClick: () => void;
+  active?: boolean;
+  // Set for icon-only buttons, where it supplies both the hover tooltip and the
+  // accessible name (text buttons don't need it — their label is the text).
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type='button'
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      className={`rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 ${
+        active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
+      }`}>
+      {children}
+    </button>
+  );
+}
+
+// Bulleted-list glyph: three dots stacked at the left with a bar beside each —
+// the platform-standard "list" mark. Inherits the button's color via currentColor.
+function ListIcon() {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      className='block h-4 w-4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={2}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'>
+      <line x1='8' y1='6' x2='21' y2='6' />
+      <line x1='8' y1='12' x2='21' y2='12' />
+      <line x1='8' y1='18' x2='21' y2='18' />
+      <line x1='3' y1='6' x2='3.01' y2='6' />
+      <line x1='3' y1='12' x2='3.01' y2='12' />
+      <line x1='3' y1='18' x2='3.01' y2='18' />
+    </svg>
+  );
+}
+
+// Chevron beside the list icon, signalling this is the toolbar's one menu-opening
+// button (the rest fire immediately). Rotates to point up while the menu is open.
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      className={`block h-3 w-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={2}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'>
+      <path d='m6 9 6 6 6-6' />
+    </svg>
+  );
+}
+
+// Framed-photo glyph (frame, sun, mountain) for the image-insert button, in the
+// same stroke style as the other toolbar icons.
+function ImageIcon() {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      className='block h-4 w-4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={2}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'>
+      <rect x='3' y='3' width='18' height='18' rx='2' ry='2' />
+      <circle cx='8.5' cy='8.5' r='1.5' />
+      <polyline points='21 15 16 10 5 21' />
+    </svg>
+  );
+}
+
+// One row of the list menu. Full-width and border-less so the hover highlight
+// spans the whole dropdown edge-to-edge, instead of sitting inside a bordered
+// button box (the container clips these to its rounded corners).
+function ListMenuItem({
+  onClick,
+  active,
   children,
 }: {
   onClick: () => void;
@@ -115,7 +206,7 @@ function ToolbarButton({
     <button
       type='button'
       onClick={onClick}
-      className={`rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 ${
+      className={`px-3 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       }`}>
       {children}
@@ -123,9 +214,75 @@ function ToolbarButton({
   );
 }
 
+// A single toolbar entry that folds the two list types into one control. It
+// highlights whenever the cursor is in any list, and the open menu marks which
+// kind — which the rendered bullets/numbers also show — so merging them doesn't
+// hide the active state. No dropdown lib is in the project, so it wires its own
+// outside-click / Escape close.
+function ListMenu({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const bullet = editor.isActive('bulletList');
+  const ordered = editor.isActive('orderedList');
+  const select = (toggle: () => void) => {
+    toggle();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} className='relative'>
+      <ToolbarButton onClick={() => setOpen((prev) => !prev)} active={bullet || ordered} title='リスト'>
+        <span className='flex items-center gap-0.5'>
+          <ListIcon />
+          <ChevronIcon open={open} />
+        </span>
+      </ToolbarButton>
+      {open && (
+        <div className='absolute left-0 top-full z-50 mt-1 flex min-w-max flex-col overflow-hidden rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+          <ListMenuItem
+            onClick={() => select(() => editor.chain().focus().toggleBulletList().run())}
+            active={bullet}>
+            箇条書き
+          </ListMenuItem>
+          <ListMenuItem
+            onClick={() => select(() => editor.chain().focus().toggleOrderedList().run())}
+            active={ordered}>
+            番号付き
+          </ListMenuItem>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Format controls. Each command is also reachable by markdown shortcut while
 // typing (e.g. `# `, `- `), so the author can format either way.
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({
+  editor,
+  uploading,
+  onImageChange,
+}: {
+  editor: Editor;
+  uploading: boolean;
+  onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
   return (
     <div className='flex flex-wrap items-center gap-1'>
       <ToolbarButton
@@ -148,25 +305,11 @@ function Toolbar({ editor }: { editor: Editor }) {
         active={editor.isActive('italic')}>
         斜体
       </ToolbarButton>
-      <ToolbarButton
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
-        active={editor.isActive('bulletList')}>
-        箇条書き
-      </ToolbarButton>
-      <ToolbarButton
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        active={editor.isActive('orderedList')}>
-        番号付き
-      </ToolbarButton>
+      <ListMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         active={editor.isActive('blockquote')}>
         引用
-      </ToolbarButton>
-      <ToolbarButton
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        active={editor.isActive('code')}>
-        コード
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -180,6 +323,14 @@ function Toolbar({ editor }: { editor: Editor }) {
       <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()}>
         区切り線
       </ToolbarButton>
+      {/* Image insert belongs in the toolbar too, but needs a file picker rather
+          than an editor command, so it's a <label>-wrapped hidden input styled to
+          match ToolbarButton. Paste and drag-and-drop also insert images. */}
+      <label className='inline-flex cursor-pointer items-center gap-1 rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+        <ImageIcon />
+        {uploading ? 'アップロード中…' : '画像'}
+        <input type='file' accept={ALLOWED_IMAGE_ACCEPT} className='hidden' onChange={onImageChange} />
+      </label>
     </div>
   );
 }
@@ -683,23 +834,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         </Field>
       </div>
 
-      <div className='flex items-center gap-2'>
-        <label className='cursor-pointer rounded border border-zinc-300 px-3 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-          {uploading ? 'アップロード中…' : '画像を挿入'}
-          <input
-            type='file'
-            accept={ALLOWED_IMAGE_ACCEPT}
-            className='hidden'
-            onChange={handleUpload}
-          />
-        </label>
-        <span className='text-xs text-zinc-500'>
-          ツールバーまたは記法（#、- など）で編集。画像はボタン・貼り付け・ドラッグ&ドロップで挿入
-        </span>
-      </div>
-
       <div className='space-y-2'>
-        {editor && <Toolbar editor={editor} />}
+        {editor && <Toolbar editor={editor} uploading={uploading} onImageChange={handleUpload} />}
         <div className='overflow-hidden rounded border border-zinc-300 dark:border-zinc-700'>
           {editor ? (
             <EditorContent editor={editor} />
