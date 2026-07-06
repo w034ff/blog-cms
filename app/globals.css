@@ -117,6 +117,9 @@ body {
 .prose td {
   border: 1px solid #d4d4d8; /* zinc-300 */
   padding: 0.5rem 0.75rem;
+  /* Positioning context for the drag-selection overlay below (its ::after is
+     absolutely positioned and must anchor to the cell, not the table). */
+  position: relative;
 }
 
 /* Header-cell shading. Targets `th` (not `thead th`): the public page wraps the
@@ -158,6 +161,23 @@ body {
 .prose th[align='right'],
 .prose td[align='right'] {
   text-align: right;
+}
+
+/* Drag-to-select across cells. ProseMirror's tableEditing plugin already makes
+   the CellSelection and tags each selected cell with `.selectedCell`, but the
+   highlight lives in prosemirror-tables' own stylesheet, which we don't import
+   (globals.css hand-rolls the table styling). Re-create just the overlay so the
+   selected range is visible — without it the drag works but shows nothing, which
+   reads as "can't drag across cells". Editor-only: `.selectedCell` never appears
+   on the published GFM table. */
+.prose .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Standard window selection blue, translucent so cell text stays readable. */
+  background: rgba(51, 144, 255, 0.3);
+  pointer-events: none;
+  z-index: 2;
 }
 
 @media (prefers-color-scheme: dark) {
