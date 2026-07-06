@@ -13,8 +13,19 @@
 # testing
 /coverage
 
+# playwright e2e (isolated test DB copy, saved auth state, reports)
+/e2e/.tmp/
+/e2e/.auth/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+# Next redirects its tsconfig auto-edits here during E2E (keeps tsconfig.json clean)
+/tsconfig.e2e.json
+
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production

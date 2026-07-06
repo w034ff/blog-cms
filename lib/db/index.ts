@@ -4,8 +4,13 @@ import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 
-const DB_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DB_DIR, 'blog.db');
+// Default to the repo-local data/blog.db. BLOG_DB_PATH overrides it so an
+// isolated copy can be swapped in — the Playwright E2E harness points here at a
+// throwaway seeded copy, never touching the real DB. Unset = unchanged behavior.
+const DB_PATH = process.env.BLOG_DB_PATH
+  ? path.resolve(process.env.BLOG_DB_PATH)
+  : path.join(process.cwd(), 'data', 'blog.db');
+const DB_DIR = path.dirname(DB_PATH);
 
 type Schema = typeof schema;
 export type AppDatabase = BetterSQLite3Database<Schema>;

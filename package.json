@@ -14,7 +14,8 @@
     "db:push": "drizzle-kit push",
     "db:seed": "node scripts/seed.mts",
     "db:migrate-content": "node scripts/migrate-content.mts",
-    "gc:uploads": "node scripts/gc-uploads.mts"
+    "gc:uploads": "node scripts/gc-uploads.mts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
@@ -44,6 +45,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "2.4.6",
     "@types/better-sqlite3": "7.6.13",
