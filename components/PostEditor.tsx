@@ -4,11 +4,14 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ChangeEvent, ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { getHTMLFromFragment, type Editor } from '@tiptap/core';
+import { Extension, getHTMLFromFragment, type Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit, Table } from '@tiptap/extension-table';
-import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
+import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { isInTable, selectedRect } from '@tiptap/pm/tables';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { dropPoint } from '@tiptap/pm/transform';
+import type { EditorView } from '@tiptap/pm/view';
 import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import type { PostFormState } from '@/app/actions/posts';
@@ -85,6 +88,87 @@ interface TableMarkdownState {
   closeBlock(node: PMNode): void;
 }
 
+// Whether a drop at this position should be blocked. Two kinds of table drop turn
+// into structure instead of a plain text move, and neither is a useful edit here:
+//   • in a table but not in any cell (the gap between cells/rows) — ProseMirror
+//     fits the slice by creating a stray cell, which tableEditing's fixTables then
+//     rectangularizes into a whole spurious column;
+//   • in a cell but at block level (its top/bottom edge, not inside the text) — the
+//     drop adds a second paragraph to the cell, which forces the whole table out of
+//     the clean GFM pipe form into an HTML fallback (and drops that table's column
+//     alignment on the public page, where sanitize strips the inline style).
+// A drop inside a cell's textblock (merges inline) or entirely outside any table is
+// fine and left to ProseMirror.
+function isDisallowedTableDrop($pos: ResolvedPos): boolean {
+  let inTable = false;
+  let inCell = false;
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role: string | undefined = $pos.node(depth).type.spec.tableRole;
+    if (role === 'table') inTable = true;
+    if (role === 'cell' || role === 'header_cell') inCell = true;
+  }
+  if (!inTable) return false;
+  if (!inCell) return true;
+  // Inside a cell: allow only when the position lands in its text, not at the
+  // block level between/around paragraphs (which would add a paragraph).
+  return !$pos.parent.isTextblock;
+}
+
+const tableDropGuardKey = new PluginKey('tableDropGuard');
+
+// Suppress table drops that ProseMirror would turn into structure rather than a
+// plain text move (see isDisallowedTableDrop). Drops into a cell's text, or outside
+// any table, fall through to the default handling, so moving text between cells and
+// dragging elsewhere in the document still work.
+function tableDropGuard(): Plugin {
+  return new Plugin({
+    key: tableDropGuardKey,
+    props: {
+      handleDrop(view, event, slice) {
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (!coords) return false;
+        // Mirror ProseMirror's own drop math so we test its real insertion point.
+        const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
+        if (!isDisallowedTableDrop(view.state.doc.resolve(insertPos))) return false;
+        // Returning true makes ProseMirror preventDefault and skip the whole drop,
+        // so the dragged text stays put rather than being deleted from its source.
+        event.preventDefault();
+        return true;
+      },
+    },
+  });
+}
+
+// prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop
+// indicator). It evaluates this on the node under the pointer but *draws* the cursor
+// at dropPoint's target, so those two can disagree near a cell's top edge. We
+// recompute that same target and reuse isDisallowedTableDrop, making the indicator
+// appear exactly when tableDropGuard would accept the drop and hide when it would
+// reject it. Flagged on paragraphs too (below), since a pointer over cell text
+// resolves to the paragraph; outside a table isDisallowedTableDrop is false, so
+// drops elsewhere are unaffected.
+function disableTableDropCursor(view: EditorView, pos: { pos: number }): boolean {
+  const slice = view.dragging?.slice;
+  const target = slice ? (dropPoint(view.state.doc, pos.pos, slice) ?? pos.pos) : pos.pos;
+  return isDisallowedTableDrop(view.state.doc.resolve(target));
+}
+
+const tableDropCursorNodeNames = new Set([
+  'paragraph',
+  'table',
+  'tableRow',
+  'tableHeader',
+  'tableCell',
+]);
+const TableDropCursorGuard = Extension.create({
+  name: 'tableDropCursorGuard',
+  extendNodeSchema(extension) {
+    return tableDropCursorNodeNames.has(extension.name)
+      ? { disableDropCursor: disableTableDropCursor }
+      : {};
+  },
+});
+
 // @tiptap/extension-table already stores an `align` attribute per cell (parsed
 // from the `text-align` style markdown-it emits for `:-:`, rendered back as an
 // inline style), but tiptap-markdown's built-in table serializer always writes a
@@ -155,6 +239,10 @@ const MarkdownTable = Table.extend({
           return true;
         },
     };
+  },
+  addProseMirrorPlugins() {
+    // Keep the base table plugins (tableEditing, etc.) and add the drop guard.
+    return [...(this.parent?.() ?? []), tableDropGuard()];
   },
 });
 
@@ -780,6 +868,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // (same node, extended to serialize column alignment), so disable its own.
       TableKit.configure({ table: false }),
       MarkdownTable,
+      TableDropCursorGuard,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
     ],
