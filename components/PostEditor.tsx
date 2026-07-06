@@ -4,9 +4,11 @@ import { useActionState, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { ChangeEvent, ReactNode } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import type { Editor } from '@tiptap/core';
+import { getHTMLFromFragment, type Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import { TableKit } from '@tiptap/extension-table';
+import { TableKit, Table } from '@tiptap/extension-table';
+import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
+import { isInTable, selectedRect } from '@tiptap/pm/tables';
 import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import type { PostFormState } from '@/app/actions/posts';
@@ -20,6 +22,141 @@ declare module '@tiptap/core' {
     markdown: MarkdownStorage;
   }
 }
+
+// A column's text alignment. `null` is GFM's default (`---`, renders left) and is
+// what an untouched column carries; the three explicit values map to `:--`/`:-:`/`--:`.
+type CellAlign = 'left' | 'center' | 'right' | null;
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    tableColumnAlign: {
+      // Set the alignment of every cell in the current column (GFM alignment is
+      // per-column, so a single-cell change would not round-trip).
+      setColumnAlign: (align: CellAlign) => ReturnType;
+    };
+  }
+}
+
+// Collect a node's direct children as an array via the public API (avoids reaching
+// into Fragment internals).
+function childrenOf(node: PMNode): PMNode[] {
+  const children: PMNode[] = [];
+  node.forEach((child) => children.push(child));
+  return children;
+}
+
+function cellHasSpan(cell: PMNode): boolean {
+  return cell.attrs.colspan > 1 || cell.attrs.rowspan > 1;
+}
+
+// A table maps to a GFM pipe table only when its first row is all header cells and
+// no cell spans or holds more than one block. Merged/multi-paragraph tables have
+// no pipe-table form, so those fall back to raw HTML — matching tiptap-markdown's
+// own serializer, so such tables keep working exactly as before this change.
+function isPipeTable(node: PMNode): boolean {
+  const [firstRow, ...bodyRows] = childrenOf(node);
+  if (!firstRow) return false;
+  const headerBad = childrenOf(firstRow).some(
+    (cell) => cell.type.name !== 'tableHeader' || cellHasSpan(cell) || cell.childCount > 1,
+  );
+  if (headerBad) return false;
+  return !bodyRows.some((row) =>
+    childrenOf(row).some(
+      (cell) => cell.type.name === 'tableHeader' || cellHasSpan(cell) || cell.childCount > 1,
+    ),
+  );
+}
+
+// GFM encodes column alignment in the delimiter row that follows the header.
+function alignDelimiter(align: CellAlign): string {
+  if (align === 'left') return ':---';
+  if (align === 'center') return ':--:';
+  if (align === 'right') return '---:';
+  return '---';
+}
+
+// Minimal view of tiptap-markdown's serializer state (it exports no types); only
+// the methods the table serializer calls are declared, so we avoid `any`.
+interface TableMarkdownState {
+  inTable: boolean;
+  write(text: string): void;
+  ensureNewLine(): void;
+  renderInline(node: PMNode): void;
+  closeBlock(node: PMNode): void;
+}
+
+// @tiptap/extension-table already stores an `align` attribute per cell (parsed
+// from the `text-align` style markdown-it emits for `:-:`, rendered back as an
+// inline style), but tiptap-markdown's built-in table serializer always writes a
+// plain `---` delimiter, dropping that alignment on save. We override just the
+// table node's markdown serializer to write the header row's alignment into the
+// delimiter, and add a command to set a whole column's `align`. Everything else —
+// cell parsing/display and the public render (remark emits `<td align>`, honored
+// by globals.css) — already round-trips.
+const MarkdownTable = Table.extend({
+  addStorage() {
+    return {
+      ...this.parent?.(),
+      markdown: {
+        serialize(state: TableMarkdownState, node: PMNode) {
+          if (!isPipeTable(node)) {
+            // No pipe-table form: emit raw HTML like tiptap-markdown does (html
+            // mode is on), so merged/multi-paragraph tables don't regress.
+            state.write(getHTMLFromFragment(Fragment.from(node), node.type.schema));
+            state.closeBlock(node);
+            return;
+          }
+          state.inTable = true;
+          const headerCells = childrenOf(childrenOf(node)[0]);
+          node.forEach((row, _offset, rowIndex) => {
+            state.write('| ');
+            row.forEach((cell, _cellOffset, cellIndex) => {
+              if (cellIndex) state.write(' | ');
+              const content = cell.firstChild;
+              if (content && content.textContent.trim()) state.renderInline(content);
+            });
+            state.write(' |');
+            state.ensureNewLine();
+            if (rowIndex === 0) {
+              const delimiter = headerCells
+                .map((cell) => alignDelimiter(cell.attrs.align))
+                .join(' | ');
+              state.write(`| ${delimiter} |`);
+              state.ensureNewLine();
+            }
+          });
+          state.closeBlock(node);
+          state.inTable = false;
+        },
+      },
+    };
+  },
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      setColumnAlign:
+        (align: CellAlign) =>
+        ({ state, tr, dispatch }) => {
+          if (!isInTable(state)) return false;
+          const { map, table, tableStart, left, right } = selectedRect(state);
+          // A cell can appear in the map more than once (row/col spans), so gather
+          // unique offsets before mutating.
+          const offsets = new Set<number>();
+          for (let col = left; col < right; col += 1) {
+            for (let row = 0; row < map.height; row += 1) {
+              offsets.add(map.map[row * map.width + col]);
+            }
+          }
+          offsets.forEach((offset) => {
+            const cell = table.nodeAt(offset);
+            if (cell) tr.setNodeMarkup(tableStart + offset, undefined, { ...cell.attrs, align });
+          });
+          if (dispatch) dispatch(tr);
+          return true;
+        },
+    };
+  },
+});
 
 export type PostEditorInitial = {
   // Null in create mode; the row id in edit mode.
@@ -186,6 +323,28 @@ function ImageIcon() {
       <rect x='3' y='3' width='18' height='18' rx='2' ry='2' />
       <circle cx='8.5' cy='8.5' r='1.5' />
       <polyline points='21 15 16 10 5 21' />
+    </svg>
+  );
+}
+
+// Center-align glyph for the table column-alignment button: four horizontal rules,
+// the middle two shortened and centered, in the same stroke style as the other
+// toolbar icons.
+function AlignCenterIcon() {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      className='block h-4 w-4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={2}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'>
+      <line x1='3' y1='6' x2='21' y2='6' />
+      <line x1='6' y1='10' x2='18' y2='10' />
+      <line x1='3' y1='14' x2='21' y2='14' />
+      <line x1='6' y1='18' x2='18' y2='18' />
     </svg>
   );
 }
@@ -362,6 +521,11 @@ function TableToolbar({ editor }: { editor: Editor }) {
       ? { getBoundingClientRect: () => cell.getBoundingClientRect(), contextElement: cell }
       : null;
   }, [editor]);
+  // The current column's alignment, read from whichever cell type holds the cursor
+  // (header or body), to light up the active button. shouldRerenderOnTransaction
+  // keeps this current as the selection moves.
+  const cellAlign: CellAlign =
+    editor.getAttributes('tableCell').align ?? editor.getAttributes('tableHeader').align ?? null;
   return (
     <BubbleMenu
       editor={editor}
@@ -388,6 +552,21 @@ function TableToolbar({ editor }: { editor: Editor }) {
       </ToolbarButton>
       <ToolbarButton onClick={() => editor.chain().focus().deleteTable().run()}>
         表を削除
+      </ToolbarButton>
+      <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
+      {/* A single toggle: center the current column, or clear it back to the
+          default (left) when it is already centered. */}
+      <ToolbarButton
+        title='列を中央揃え'
+        active={cellAlign === 'center'}
+        onClick={() =>
+          editor
+            .chain()
+            .focus()
+            .setColumnAlign(cellAlign === 'center' ? null : 'center')
+            .run()
+        }>
+        <AlignCenterIcon />
       </ToolbarButton>
     </BubbleMenu>
   );
@@ -597,7 +776,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // = H2, 小見出し = H3). The post title is the page's only H1, so restricting
       // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
       StarterKit.configure({ heading: { levels: [2, 3] } }),
-      TableKit,
+      // TableKit bundles the table node too, but we replace it with MarkdownTable
+      // (same node, extended to serialize column alignment), so disable its own.
+      TableKit.configure({ table: false }),
+      MarkdownTable,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
     ],

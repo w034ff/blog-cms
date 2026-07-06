@@ -141,6 +141,25 @@ body {
   margin-bottom: 0;
 }
 
+/* Honor GFM column alignment on the published page. remark renders `:-:` as an
+   `align="center"` attribute on the cell — a presentational hint the typography
+   plugin's `.prose :where(th,td){text-align:start}` rule (specificity 0,1,0)
+   would otherwise beat. These attribute selectors outrank it so the column
+   actually aligns. (In the editor the cell carries an inline `text-align` style,
+   which already wins, so this only matters for the public surface.) */
+.prose th[align='left'],
+.prose td[align='left'] {
+  text-align: left;
+}
+.prose th[align='center'],
+.prose td[align='center'] {
+  text-align: center;
+}
+.prose th[align='right'],
+.prose td[align='right'] {
+  text-align: right;
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
