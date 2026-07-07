@@ -11,6 +11,7 @@ import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import type { PostFormState } from '@/app/actions/posts';
+import { parseTags } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
 
@@ -81,15 +82,11 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
     const value = data.get(name);
     return typeof value === 'string' ? value : '';
   };
-  const tags = get('tags')
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
   return {
     title: get('title'),
     description: get('description'),
     category: get('category'),
-    tags,
+    tags: parseTags(get('tags')),
     body: get('body'),
   };
 }
