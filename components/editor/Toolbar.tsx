@@ -94,41 +94,48 @@ export function Toolbar({
     <div className='flex flex-wrap items-center gap-0.5'>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        active={editor.isActive('heading', { level: 2 })}>
+        active={editor.isActive('heading', { level: 2 })}
+        shortcut='Mod-Alt-2'>
         大見出し
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-        active={editor.isActive('heading', { level: 3 })}>
+        active={editor.isActive('heading', { level: 3 })}
+        shortcut='Mod-Alt-3'>
         小見出し
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
         active={editor.isActive('bold')}
-        title='太字'>
+        title='太字'
+        shortcut='Mod-b'>
         <span className='flex items-center text-sm leading-4 font-bold'>B</span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleItalic().run()}
         active={editor.isActive('italic')}
-        title='斜体'>
+        title='斜体'
+        shortcut='Mod-i'>
         <span className='flex items-center text-sm leading-4 font-serif italic -skew-x-6 '>I</span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleStrike().run()}
         active={editor.isActive('strike')}
-        title='取り消し線'>
+        title='取り消し線'
+        shortcut='Mod-Shift-s'>
         <span className='flex items-center text-sm leading-4 line-through'>S</span>
       </ToolbarButton>
       <ListMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        active={editor.isActive('blockquote')}>
+        active={editor.isActive('blockquote')}
+        shortcut='Mod-Shift-b'>
         引用
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        active={editor.isActive('codeBlock')}>
+        active={editor.isActive('codeBlock')}
+        shortcut='Mod-Alt-c'>
         コードブロック
       </ToolbarButton>
       <TableGridMenu editor={editor} />
