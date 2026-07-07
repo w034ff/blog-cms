@@ -81,6 +81,17 @@ body {
   content: none;
 }
 
+/* Tailwind Typography wraps blockquotes in decorative curly quotes via
+   `blockquote p:first-of-type::before {content:open-quote}` (and the closing
+   ::after). Drop them — same call as the inline-code backticks above — so a
+   quote reads as an indented, bordered block without the injected "…" glyphs.
+   Applies to both surfaces (editor and post use .prose). Alerts are unaffected:
+   the GitHub-alert transform emits <div>, not <blockquote>. */
+.prose blockquote p:first-of-type::before,
+.prose blockquote p:last-of-type::after {
+  content: none;
+}
+
 /* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
    little so paragraphs read tighter. Headings, <pre>, and lead text set their own
    line-height and are unaffected — this only reaches paragraphs and list items,
