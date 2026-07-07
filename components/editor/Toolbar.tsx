@@ -124,6 +124,27 @@ function AlignCenterIcon() {
   );
 }
 
+// Grid glyph for the table-insert button: a framed box with a continuous header
+// row across the top and a 2×2 body, in the same stroke style as the other icons.
+function TableIcon() {
+  return (
+    <svg
+      viewBox='0 0 24 24'
+      className='block h-4 w-4'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth={2}
+      strokeLinecap='round'
+      strokeLinejoin='round'
+      aria-hidden='true'>
+      <rect x='3' y='3' width='18' height='18' rx='2' ry='2' />
+      <line x1='3' y1='9' x2='21' y2='9' />
+      <line x1='3' y1='15' x2='21' y2='15' />
+      <line x1='12' y1='9' x2='12' y2='21' />
+    </svg>
+  );
+}
+
 // One row of the list menu. Full-width and border-less so the hover highlight
 // spans the whole dropdown edge-to-edge, instead of sitting inside a bordered
 // button box (the container clips these to its rounded corners).
@@ -363,7 +384,8 @@ function TableGridMenu({ editor }: { editor: Editor }) {
   return (
     <div ref={ref} className='relative'>
       <ToolbarButton onClick={() => setOpen((prev) => !prev)} active={open} title='表'>
-        <span className='flex items-center gap-0.5'>
+        <span className='flex items-center gap-1'>
+          <TableIcon />
           表
           <ChevronIcon open={open} />
         </span>
