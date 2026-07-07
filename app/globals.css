@@ -105,6 +105,21 @@ body {
   margin-bottom: 0;
 }
 
+/* Body italics: Geist carries no Japanese glyphs, so JP text falls back to a system
+   gothic with no italic face — and browsers won't reliably synthesize a slant for
+   CJK, leaving `font-style: italic`/`oblique` upright for Japanese. Force a geometric
+   slant with skewX so BOTH scripts lean the same amount, independent of the font.
+   transform is a no-op on non-replaced inline boxes, so the <em> is made
+   inline-block for the skew to take. font-style is reset to normal so Latin isn't
+   double-slanted (its italic glyph plus the skew). `i` covers raw-HTML italics
+   (Markdown itself emits <em>). Applies to both surfaces (editor and post use .prose). */
+.prose em,
+.prose i {
+  display: inline-block;
+  font-style: normal;
+  transform: skewX(-24deg);
+}
+
 /* List marker colors. prose-zinc ships very light bullets (zinc-300) and mid-gray
    counters (zinc-500), which read as washed-out. Match both the bullets and the
    ordered-list numbers to the body text color so markers carry the same weight as

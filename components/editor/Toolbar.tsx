@@ -104,13 +104,15 @@ export function Toolbar({
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
-        active={editor.isActive('bold')}>
-        太字
+        active={editor.isActive('bold')}
+        title='太字'>
+        <span className='flex items-center text-sm leading-4 font-bold'>B</span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleItalic().run()}
-        active={editor.isActive('italic')}>
-        斜体
+        active={editor.isActive('italic')}
+        title='斜体'>
+        <span className='flex items-center text-sm leading-4 font-serif italic -skew-x-6 '>I</span>
       </ToolbarButton>
       <ListMenu editor={editor} />
       <ToolbarButton
