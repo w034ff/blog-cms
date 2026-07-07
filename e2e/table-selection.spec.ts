@@ -10,7 +10,9 @@ test('dragging across table cells shows the selection highlight', async ({ page 
   await expect(editor).toBeVisible();
   await editor.click();
 
+  // The 表 button opens a size picker; pick 3×3 from the grid.
   await page.getByRole('button', { name: '表', exact: true }).click();
+  await page.getByRole('button', { name: '3行3列の表を挿入' }).click();
   await expect(editor.locator('table')).toBeVisible();
 
   // TipTap renders the header row as bare <th> (no <thead>) and body rows as
