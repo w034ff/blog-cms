@@ -305,7 +305,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             // as the frame) divides the header from the content. z-30 sits above the
             // editor but below the drop overlay (z-50); its own dropdowns (z-50) still
             // open over the content.
-            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950'>
+            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
               <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
             </div>
           )}

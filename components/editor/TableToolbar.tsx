@@ -47,7 +47,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
-      className='z-50 flex flex-wrap items-center gap-1 rounded border border-zinc-300 bg-white p-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      className='z-50 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>

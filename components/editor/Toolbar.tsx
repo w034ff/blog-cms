@@ -91,7 +91,7 @@ export function Toolbar({
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
-    <div className='flex flex-wrap items-center gap-1'>
+    <div className='flex flex-wrap items-center gap-0.5'>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         active={editor.isActive('heading', { level: 2 })}>
