@@ -71,3 +71,138 @@ body {
   font-size: 0.875em;
   font-family: var(--font-mono), ui-monospace, monospace;
 }
+
+/* Tailwind Typography decorates inline <code> with literal backticks via
+   ::before/::after. The chip style above already marks inline code, so drop
+   them (they're noise in the WYSIWYG editor and on the post page — both use
+   .prose). pre code already has none (the plugin sets content:none). */
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+
+/* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
+   little so paragraphs read tighter. Headings, <pre>, and lead text set their own
+   line-height and are unaffected — this only reaches paragraphs and list items,
+   which inherit it. Applies to both surfaces (editor and post both use .prose). */
+.prose {
+  line-height: 1.6;
+}
+
+/* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
+   full mouse-cursor of empty space. Re-assert prose's own first/last-child margin
+   reset too — these rules are unlayered, so they outrank the plugin's (layered)
+   reset and would otherwise put a stray margin back on the body's top/bottom edge.
+   Applies to both surfaces (editor and post both use .prose). */
+.prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* Full-grid tables: the typography plugin draws only horizontal rules, which
+   leaves column and empty-cell boundaries invisible. Borders on every cell make
+   the structure legible — and matter especially in the TipTap editor, where you
+   need to see cells to edit them. Applies to both surfaces (both use .prose). */
+.prose table {
+  border-collapse: collapse;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid #d4d4d8; /* zinc-300 */
+  padding: 0.5rem 0.75rem;
+  /* Positioning context for the drag-selection overlay below (its ::after is
+     absolutely positioned and must anchor to the cell, not the table). */
+  position: relative;
+}
+
+/* Header-cell shading. Targets `th` (not `thead th`): the public page wraps the
+   header row in <thead>, but the TipTap editor renders header cells as bare <th>
+   with no <thead>, so matching on `th` shades them in both surfaces (WYSIWYG). On
+   public GFM tables every <th> is a header-row cell, so this is unchanged there. */
+.prose th {
+  background: rgba(127, 127, 127, 0.08);
+}
+
+/* The editor wraps each cell's content in <p>, but the published GFM table puts
+   text directly in the cell. Those cell paragraphs carry the prose paragraph
+   margins, which inflate cell height and make editor tables taller than the
+   published ones. Drop the outer margins (keeping spacing between paragraphs in
+   multi-paragraph cells) so a cell is the same height in both surfaces. */
+.prose th > p:first-child,
+.prose td > p:first-child {
+  margin-top: 0;
+}
+.prose th > p:last-child,
+.prose td > p:last-child {
+  margin-bottom: 0;
+}
+
+/* Honor GFM column alignment on the published page. remark renders `:-:` as an
+   `align="center"` attribute on the cell — a presentational hint the typography
+   plugin's `.prose :where(th,td){text-align:start}` rule (specificity 0,1,0)
+   would otherwise beat. These attribute selectors outrank it so the column
+   actually aligns. (In the editor the cell carries an inline `text-align` style,
+   which already wins, so this only matters for the public surface.) */
+.prose th[align='left'],
+.prose td[align='left'] {
+  text-align: left;
+}
+.prose th[align='center'],
+.prose td[align='center'] {
+  text-align: center;
+}
+.prose th[align='right'],
+.prose td[align='right'] {
+  text-align: right;
+}
+
+/* Drag-to-select across cells. ProseMirror's tableEditing plugin already makes
+   the CellSelection and tags each selected cell with `.selectedCell`, but the
+   highlight lives in prosemirror-tables' own stylesheet, which we don't import
+   (globals.css hand-rolls the table styling). Re-create just the overlay so the
+   selected range is visible — without it the drag works but shows nothing, which
+   reads as "can't drag across cells". Editor-only: `.selectedCell` never appears
+   on the published GFM table. */
+.prose .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Standard window selection blue, translucent so cell text stays readable. */
+  background: rgba(51, 144, 255, 0.3);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Mask the browser's native text-selection highlight inside a table CellSelection.
+   prosemirror-tables tags each selected cell with `.selectedCell` (the overlay
+   above), but the native highlight is meant to be hidden by prosemirror-view's
+   `.ProseMirror-hideselection` ::selection rule — which we don't import, and which
+   in any case is only added after mouseup (its selectionToDOM bails on a focus check
+   mid-drag). So during a cross-cell drag the browser keeps painting a raw text
+   highlight across the dragged-over cells, on top of the overlay — it reads as the
+   head cell's text being "stuck" selected. `.selectedCell` is present for the whole
+   drag, so key the mask on it. ::selection and ::-moz-selection must be separate
+   rules — one unknown pseudo-element drops the whole selector list. Editor-only:
+   `.selectedCell` never appears on the published table. */
+.prose .selectedCell::selection,
+.prose .selectedCell *::selection {
+  background: transparent;
+}
+.prose .selectedCell::-moz-selection,
+.prose .selectedCell *::-moz-selection {
+  background: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .prose th,
+  .prose td {
+    border-color: #3f3f46; /* zinc-700 */
+  }
+}

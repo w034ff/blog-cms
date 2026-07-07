@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getPostBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
+import { formatPostDate } from '@/lib/format';
 
 type Params = { slug: string };
 
@@ -30,13 +31,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
       <header className='mb-8'>
         <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
         <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
-          <time dateTime={post.date}>
-            {new Date(post.date).toLocaleDateString('ja-JP', {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </time>
+          <time dateTime={post.date}>{formatPostDate(post.date)}</time>
           <Link
             href={`/categories/${encodeURIComponent(post.category)}`}
             className='hover:underline'>

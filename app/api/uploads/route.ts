@@ -1,16 +1,10 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
+import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
 
-const ALLOWED_EXTENSIONS = new Map<string, string>([
-  ['image/png', 'png'],
-  ['image/jpeg', 'jpg'],
-  ['image/gif', 'gif'],
-  ['image/webp', 'webp'],
-]);
-const MAX_BYTES = 5 * 1024 * 1024;
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 
 export async function POST(req: NextRequest) {
@@ -25,21 +19,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
   }
 
-  const ext = ALLOWED_EXTENSIONS.get(file.type);
+  const ext = ALLOWED_IMAGE_EXTENSIONS.get(file.type);
   if (!ext) {
     return NextResponse.json(
       { error: 'unsupported file type (png, jpg, gif, webp only)' },
       { status: 400 },
     );
   }
-  if (file.size > MAX_BYTES) {
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: 'file too large (max 5MB)' }, { status: 400 });
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  const name = `${randomUUID()}.${ext}`;
+  // Content-addressed name: re-uploading the same image resolves to the same
+  // file, so identical content is stored once (dedup). Skip the write when the
+  // file already exists. Deletion must stay reference-based (the GC sweep is),
+  // since one file can now be referenced by multiple posts.
+  const name = `${createHash('sha256').update(bytes).digest('hex')}.${ext}`;
+  const filePath = path.join(UPLOAD_DIR, name);
   await mkdir(UPLOAD_DIR, { recursive: true });
-  await writeFile(path.join(UPLOAD_DIR, name), bytes);
+  const exists = await access(filePath).then(
+    () => true,
+    () => false,
+  );
+  if (!exists) {
+    await writeFile(filePath, bytes);
+  }
 
   return NextResponse.json({ url: `/uploads/${name}` });
 }
