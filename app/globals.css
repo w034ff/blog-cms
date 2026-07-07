@@ -180,6 +180,26 @@ body {
   z-index: 2;
 }
 
+/* Mask the browser's native text-selection highlight inside a table CellSelection.
+   prosemirror-tables tags each selected cell with `.selectedCell` (the overlay
+   above), but the native highlight is meant to be hidden by prosemirror-view's
+   `.ProseMirror-hideselection` ::selection rule — which we don't import, and which
+   in any case is only added after mouseup (its selectionToDOM bails on a focus check
+   mid-drag). So during a cross-cell drag the browser keeps painting a raw text
+   highlight across the dragged-over cells, on top of the overlay — it reads as the
+   head cell's text being "stuck" selected. `.selectedCell` is present for the whole
+   drag, so key the mask on it. ::selection and ::-moz-selection must be separate
+   rules — one unknown pseudo-element drops the whole selector list. Editor-only:
+   `.selectedCell` never appears on the published table. */
+.prose .selectedCell::selection,
+.prose .selectedCell *::selection {
+  background: transparent;
+}
+.prose .selectedCell::-moz-selection,
+.prose .selectedCell *::-moz-selection {
+  background: transparent;
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
