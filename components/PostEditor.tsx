@@ -552,8 +552,23 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       </div>
 
       <div className='space-y-2'>
-        {editor && <Toolbar editor={editor} uploading={uploading} onImageChange={handleUpload} />}
-        <div className='overflow-hidden rounded border border-zinc-300 dark:border-zinc-700'>
+        {/* The frame must NOT be overflow-hidden: that would make the sticky toolbar
+            below pin to the frame instead of the viewport. Its rounded corners are
+            preserved by rounding the toolbar's top and the editor content sits within
+            px padding, so nothing squares off the border. */}
+        <div className='rounded border border-zinc-300 dark:border-zinc-700'>
+          {editor && (
+            // Toolbar as the frame's sticky header: top-0 pins it to the viewport top
+            // (SiteHeader scrolls away, so no offset) so the controls stay reachable
+            // when editing far down a long post. The opaque bg hides content scrolling
+            // beneath; rounded-t matches the frame's corners and border-b (same weight
+            // as the frame) divides the header from the content. z-30 sits above the
+            // editor but below the drop overlay (z-50); its own dropdowns (z-50) still
+            // open over the content.
+            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-2 dark:border-zinc-700 dark:bg-zinc-950'>
+              <Toolbar editor={editor} uploading={uploading} onImageChange={handleUpload} />
+            </div>
+          )}
           {editor ? (
             <EditorContent editor={editor} />
           ) : (

@@ -33,7 +33,7 @@ function ToolbarButton({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={`rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 ${tone} ${
+      className={`rounded px-2 py-1 text-xs ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       }`}>
       {children}
@@ -500,7 +500,7 @@ export function Toolbar({
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
           than an editor command, so it's a <label>-wrapped hidden input styled to
           match ToolbarButton. Paste and drag-and-drop also insert images. */}
-      <label className='inline-flex cursor-pointer items-center gap-1 rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+      <label className='inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800'>
         <ImageIcon />
         {uploading ? 'アップロード中…' : '画像'}
         <input
