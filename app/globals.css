@@ -105,6 +105,18 @@ body {
   margin-bottom: 0;
 }
 
+/* List marker colors. prose-zinc ships very light bullets (zinc-300) and mid-gray
+   counters (zinc-500), which read as washed-out. Match both the bullets and the
+   ordered-list numbers to the body text color so markers carry the same weight as
+   the content. Dark overrides live in the bottom prefers-color-scheme block, keyed
+   to prose-invert's body color. These vars are unlayered, so they outrank both the
+   plugin's base assignment and its layered `dark:prose-invert` re-assignment.
+   Applies to both surfaces (editor and post). */
+.prose {
+  --tw-prose-bullets: #3f3f46; /* zinc-700 — matches prose-zinc body */
+  --tw-prose-counters: #3f3f46; /* zinc-700 — matches prose-zinc body */
+}
+
 /* Full-grid tables: the typography plugin draws only horizontal rules, which
    leaves column and empty-cell boundaries invisible. Borders on every cell make
    the structure legible — and matter especially in the TipTap editor, where you
@@ -204,5 +216,12 @@ body {
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */
+  }
+
+  /* Dark counterpart of the light list-marker overrides above: bullets and
+     numbers both match prose-invert's body color. */
+  .prose {
+    --tw-prose-bullets: #d4d4d8; /* zinc-300 — matches prose-invert body */
+    --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
   }
 }
