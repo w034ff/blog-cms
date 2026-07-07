@@ -4,9 +4,34 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
+import { remarkGithubAlerts } from './remark-github-alerts';
+
+// defaultSchema (GitHub's allowlist) minus className, so the alert transform's
+// container/title classes survive sanitization. The nested `['className', …]`
+// form is a value allowlist: only these exact class names pass on div/p — no
+// arbitrary classes, no `style`, so the untrusted-author guard is unweakened.
+// The `['className', …values]` value-allowlist form is a tuple, so type it as one.
+const alertClasses: [string, ...string[]] = [
+  'className',
+  'markdown-alert',
+  'markdown-alert-note',
+  'markdown-alert-tip',
+  'markdown-alert-important',
+  'markdown-alert-warning',
+  'markdown-alert-caution',
+];
+const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
+const schema: SanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    div: [...(defaultSchema.attributes?.div ?? []), alertClasses],
+    p: [...(defaultSchema.attributes?.p ?? []), titleClass],
+  },
+};
 
 // Shared pipeline used by both the public post page and the editor preview,
 // so what an author previews matches exactly what gets published.
@@ -22,9 +47,11 @@ import rehypeStringify from 'rehype-stringify';
 const processor = unified()
   .use(remarkParse)
   .use(remarkGfm)
+  // GitHub alerts (`> [!NOTE]` …) run on the mdast, before it becomes hast.
+  .use(remarkGithubAlerts)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(rehypeRaw)
-  .use(rehypeSanitize, defaultSchema)
+  .use(rehypeSanitize, schema)
   .use(rehypePrettyCode, {
     theme: { dark: 'github-dark', light: 'github-light' },
     keepBackground: false,

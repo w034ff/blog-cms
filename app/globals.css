@@ -227,6 +227,52 @@ body {
   background: transparent;
 }
 
+/* GitHub-style alert callouts. lib/remark-github-alerts.ts rewrites a
+   `> [!NOTE]`-style blockquote into `<div class="markdown-alert markdown-alert-<type>">`
+   with a `.markdown-alert-title` label; these paint the accent border + tint per
+   type. Public-surface only: the editor stores the source as a plain blockquote
+   and doesn't run the transform, so it shows a normal 引用 there (accepted
+   limitation). Colors are per-type accents with a faint same-hue background;
+   dark variants live in the prefers-color-scheme block below. */
+.prose .markdown-alert {
+  margin: 1em 0;
+  padding: 0.6em 1em;
+  border-left: 0.25rem solid var(--alert-accent);
+  border-radius: 0.25rem;
+  background: var(--alert-bg);
+}
+.prose .markdown-alert > :first-child {
+  margin-top: 0;
+}
+.prose .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+.prose .markdown-alert-title {
+  margin-bottom: 0.4em;
+  font-weight: 600;
+  color: var(--alert-accent);
+}
+.prose .markdown-alert-note {
+  --alert-accent: #0969da;
+  --alert-bg: rgba(9, 105, 218, 0.06);
+}
+.prose .markdown-alert-tip {
+  --alert-accent: #1a7f37;
+  --alert-bg: rgba(26, 127, 55, 0.06);
+}
+.prose .markdown-alert-important {
+  --alert-accent: #8250df;
+  --alert-bg: rgba(130, 80, 223, 0.06);
+}
+.prose .markdown-alert-warning {
+  --alert-accent: #9a6700;
+  --alert-bg: rgba(154, 103, 0, 0.06);
+}
+.prose .markdown-alert-caution {
+  --alert-accent: #cf222e;
+  --alert-bg: rgba(207, 34, 46, 0.06);
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
@@ -238,5 +284,28 @@ body {
   .prose {
     --tw-prose-bullets: #d4d4d8; /* zinc-300 — matches prose-invert body */
     --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
+  }
+
+  /* Brighter accents + faint tint for the dark surface (the light hues above go
+     muddy on a dark background). */
+  .prose .markdown-alert-note {
+    --alert-accent: #4493f8;
+    --alert-bg: rgba(68, 147, 248, 0.1);
+  }
+  .prose .markdown-alert-tip {
+    --alert-accent: #3fb950;
+    --alert-bg: rgba(63, 185, 80, 0.1);
+  }
+  .prose .markdown-alert-important {
+    --alert-accent: #ab7df8;
+    --alert-bg: rgba(171, 125, 248, 0.1);
+  }
+  .prose .markdown-alert-warning {
+    --alert-accent: #d29922;
+    --alert-bg: rgba(210, 153, 34, 0.1);
+  }
+  .prose .markdown-alert-caution {
+    --alert-accent: #f85149;
+    --alert-bg: rgba(248, 81, 73, 0.1);
   }
 }
