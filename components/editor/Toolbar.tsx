@@ -114,6 +114,12 @@ export function Toolbar({
         title='斜体'>
         <span className='flex items-center text-sm leading-4 font-serif italic -skew-x-6 '>I</span>
       </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleStrike().run()}
+        active={editor.isActive('strike')}
+        title='取り消し線'>
+        <span className='flex items-center text-sm leading-4 line-through'>S</span>
+      </ToolbarButton>
       <ListMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
