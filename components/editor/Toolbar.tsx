@@ -51,7 +51,7 @@ function ListMenu({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div ref={ref} className='relative'>
+    <div ref={ref} className='relative flex'>
       <ToolbarButton
         onClick={() => setOpen((prev) => !prev)}
         active={bullet || ordered}

@@ -148,7 +148,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div ref={ref} className='relative'>
+    <div ref={ref} className='relative flex'>
       <ToolbarButton onClick={() => setOpen((prev) => !prev)} active={open} title='表'>
         <span className='flex items-center gap-1'>
           <TableIcon />
