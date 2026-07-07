@@ -11,6 +11,7 @@ function ToolbarButton({
   onClick,
   active,
   title,
+  destructive,
   children,
 }: {
   onClick: () => void;
@@ -18,15 +19,21 @@ function ToolbarButton({
   // Set for icon-only buttons, where it supplies both the hover tooltip and the
   // accessible name (text buttons don't need it — their label is the text).
   title?: string;
+  // Red tint for a destructive action (e.g. delete the whole table), so it reads as
+  // "danger" and isn't mistaken for the neutral controls beside it.
+  destructive?: boolean;
   children: ReactNode;
 }) {
+  const tone = destructive
+    ? 'text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300'
+    : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
   return (
     <button
       type='button'
       onClick={onClick}
       title={title}
       aria-label={title}
-      className={`rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 ${
+      className={`rounded border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       }`}>
       {children}
@@ -541,9 +548,6 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       <ToolbarButton onClick={() => editor.chain().focus().deleteColumn().run()}>
         列を削除
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().deleteTable().run()}>
-        表を削除
-      </ToolbarButton>
       <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
       {/* A single toggle: center the current column, or clear it back to the
           default (left) when it is already centered. */}
@@ -558,6 +562,14 @@ export function TableToolbar({ editor }: { editor: Editor }) {
             .run()
         }>
         <AlignCenterIcon />
+      </ToolbarButton>
+      {/* Whole-table delete: isolated at the far end behind its own divider and
+          tinted red, so this destructive action isn't mis-hit among the additive
+          row/column controls (a table can also be removed by selecting every cell
+          and pressing Backspace). */}
+      <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
+      <ToolbarButton destructive onClick={() => editor.chain().focus().deleteTable().run()}>
+        表を削除
       </ToolbarButton>
     </BubbleMenu>
   );
