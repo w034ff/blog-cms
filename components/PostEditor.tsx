@@ -9,6 +9,7 @@ import { TableKit } from '@tiptap/extension-table';
 import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
+import { AlertHighlight } from './editor/alert-highlight';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
@@ -172,6 +173,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       TableDropCursorGuard,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
+      // Editor-only: tints a `> [!NOTE]`-style blockquote to preview the callout.
+      // A decoration, so it never touches the markdown the editor serializes.
+      AlertHighlight,
     ],
     content: initial.body,
     editorProps: {

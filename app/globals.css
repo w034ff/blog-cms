@@ -251,6 +251,12 @@ body {
   border-left: 0.25rem solid var(--alert-accent);
   border-radius: 0.25rem;
   background: var(--alert-bg);
+  /* On the public page .markdown-alert is a <div>, but the editor reuses these
+     classes on the source <blockquote> (see components/editor/alert-highlight.ts)
+     to preview the callout — reset Typography's blockquote italic/medium weight so
+     the tinted editor block reads like the published one. */
+  font-style: normal;
+  font-weight: 400;
 }
 .prose .markdown-alert > :first-child {
   margin-top: 0;
