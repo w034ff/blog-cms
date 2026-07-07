@@ -1,8 +1,17 @@
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import type { DraftContent } from '@/lib/types';
 
 export const posts = sqliteTable('posts', {
-  slug: text('slug').primaryKey(),
+  // Stable internal identity, decoupled from the public slug. Autosave can
+  // materialize a row (and the editor can address it) before any slug exists.
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  // Public URL: an opaque auto-generated slug (20 hex chars) assigned once at row
+  // creation, drafts included, and never changed. Unique. Kept nullable at the
+  // column level only because tightening it to NOT NULL needs a full table
+  // rebuild (drizzle-kit push is broken on this table); in practice every row
+  // has a slug.
+  slug: text('slug').unique(),
   title: text('title').notNull(),
   date: text('date').notNull(),
   description: text('description').notNull().default(''),
@@ -16,6 +25,11 @@ export const posts = sqliteTable('posts', {
   updatedAt: text('updated_at')
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
+  // Private working copy of a published post's pending edits. Null unless the
+  // post is published (draft=false) and has unpublished changes. Public reads
+  // never touch this — only the editor and publish/unpublish flows do.
+  // Appended last so drizzle-kit push can ALTER TABLE ADD COLUMN in place.
+  draftContent: text('draft_content', { mode: 'json' }).$type<DraftContent>(),
 });
 
 export const users = sqliteTable('users', {

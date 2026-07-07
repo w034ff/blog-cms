@@ -8,9 +8,6 @@ export function SiteHeader() {
           Tech Blog
         </Link>
         <nav className='flex gap-4 text-sm'>
-          <Link href='/' className='hover:underline'>
-            Home
-          </Link>
           <Link href='/tags' className='hover:underline'>
             Tags
           </Link>

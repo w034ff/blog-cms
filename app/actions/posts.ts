@@ -3,43 +3,60 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { verifySession } from '@/lib/dal';
-import { createPost, deletePost, postExists, updatePost, type PostInput } from '@/lib/posts-write';
+import { getOptionalSession, verifySession } from '@/lib/dal';
+import { commitPost, createPost, deletePost, postExists } from '@/lib/posts-write';
+import { generateUniqueSlug } from '@/lib/slug';
+import { getPostForEdit } from '@/lib/posts';
+import type { DraftContent } from '@/lib/types';
 
-const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-const postSchema = z.object({
-  slug: z.string().regex(slugRegex),
+// Editable content (no slug, no visibility flag). Strict: this runs only when
+// the author explicitly publishes/unpublishes, so required fields are enforced
+// here — autosave (app/api/drafts) stays lenient so partial work is never lost.
+const contentSchema = z.object({
   title: z.string().min(1),
-  date: z.string().min(1),
   description: z.string(),
   category: z.string().min(1),
   tags: z.array(z.string()),
-  draft: z.boolean(),
   body: z.string(),
 });
 
-export type PostFormState = { error?: string };
+export type PostFormState = {
+  error?: string;
+  // The session lapsed mid-edit (14-day cookie expired). Returned instead of a
+  // /login redirect so the editor stays mounted and the unsaved draft survives;
+  // the client prompts a re-login.
+  sessionExpired?: boolean;
+  // Set on a successful publish/unpublish so the editor can react without
+  // navigating away: adopt the row id (create-and-publish materializes it here),
+  // learn the finalized slug, reset the pending-changes baseline, and flash an
+  // indicator. `at` makes each result a distinct state object.
+  saved?: { id: number; slug: string | null; published: boolean; at: number };
+};
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
   return typeof value === 'string' ? value : '';
 }
 
-function parseForm(formData: FormData): PostInput | null {
+// The hidden `id` carries the post's row identity once autosave (or a prior
+// publish) has materialized it; empty means a brand-new post with no row yet.
+function parseId(formData: FormData): number | null {
+  const raw = field(formData, 'id');
+  if (raw === '') return null;
+  const id = Number(raw);
+  return Number.isInteger(id) ? id : null;
+}
+
+function parseContent(formData: FormData): DraftContent | null {
   const tags = field(formData, 'tags')
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
-  const draftRaw = field(formData, 'draft');
-  const parsed = postSchema.safeParse({
-    slug: field(formData, 'slug'),
+  const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
-    date: field(formData, 'date'),
     description: field(formData, 'description'),
     category: field(formData, 'category') || 'uncategorized',
     tags,
-    draft: draftRaw === 'on' || draftRaw === 'true',
     body: field(formData, 'body'),
   });
   return parsed.success ? parsed.data : null;
@@ -49,51 +66,81 @@ function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }
 
-function destinationFor(input: PostInput): string {
-  return input.draft ? '/admin' : `/posts/${input.slug}`;
+// Make a post public with the current editor content. The opaque slug is
+// assigned once at row creation, so publish never touches it — it only flips
+// visibility and refreshes the live columns. The public date is captured here at
+// first publish (`existing.date` is the '' sentinel until then) and preserved on
+// every later publish, so it reflects when the post first went live; the
+// timestamp is UTC, rendered as the Asia/Tokyo date at display time. Two cases,
+// told apart by whether the row already exists:
+//  - existing row (draft or published) → commit the live content; the slug it
+//    was born with stays its permanent URL, and its date is kept once set.
+//  - no row yet → create-and-publish (the author clicked 投稿 before autosave
+//    materialized the row): create it with a fresh opaque slug and today's date,
+//    already public.
+async function publish(formData: FormData): Promise<PostFormState> {
+  const content = parseContent(formData);
+  if (!content) {
+    return { error: '入力が不正です。タイトルは必須です。' };
+  }
+  const id = parseId(formData);
+
+  if (id !== null) {
+    const existing = await getPostForEdit(id);
+    if (!existing) {
+      return { error: '記事が見つかりません。' };
+    }
+    // First publish stamps the date; once set it never changes.
+    const date = existing.date || new Date().toISOString();
+    commitPost(id, content, false, date);
+    revalidateBlog();
+    return { saved: { id, slug: existing.slug, published: true, at: Date.now() } };
+  }
+
+  // Create-and-publish.
+  const slug = generateUniqueSlug();
+  const newId = createPost({ slug, ...content, date: new Date().toISOString(), draft: false });
+  revalidateBlog();
+  return { saved: { id: newId, slug, published: true, at: Date.now() } };
 }
 
-export async function createPostAction(
+// Take a published post down (back to a draft) while keeping the current content
+// and its slug (so re-publishing reuses the same URL). Only offered for existing
+// published posts, so the row must exist.
+async function unpublish(formData: FormData): Promise<PostFormState> {
+  const content = parseContent(formData);
+  if (!content) {
+    return { error: '入力が不正です。タイトルは必須です。' };
+  }
+  const id = parseId(formData);
+  if (id === null || !postExists(id)) {
+    return { error: '記事が見つかりません。' };
+  }
+  const existing = await getPostForEdit(id);
+  // Keep the first-publish date so re-publishing later reuses it.
+  commitPost(id, content, true, existing?.date ?? '');
+  revalidateBlog();
+  return { saved: { id, slug: existing?.slug ?? null, published: false, at: Date.now() } };
+}
+
+export async function submitPostAction(
   _prev: PostFormState,
   formData: FormData,
 ): Promise<PostFormState> {
-  await verifySession();
-  const input = parseForm(formData);
-  if (!input) {
-    return {
-      error: '入力が不正です。slug は英小文字・数字・ハイフンのみ、タイトルと日付は必須です。',
-    };
+  // Don't redirect on an expired session — that would discard the in-progress
+  // editor content. Signal the client instead so it keeps the draft and prompts
+  // a re-login. (Admin pages still use verifySession's redirect.)
+  if (!(await getOptionalSession())) {
+    return { sessionExpired: true };
   }
-  if (postExists(input.slug)) {
-    return { error: `slug '${input.slug}' は既に存在します。` };
-  }
-  createPost(input);
-  revalidateBlog();
-  redirect(destinationFor(input));
-}
-
-export async function updatePostAction(
-  _prev: PostFormState,
-  formData: FormData,
-): Promise<PostFormState> {
-  await verifySession();
-  const input = parseForm(formData);
-  if (!input) {
-    return { error: '入力が不正です。' };
-  }
-  if (!postExists(input.slug)) {
-    return { error: `slug '${input.slug}' が見つかりません。` };
-  }
-  updatePost(input.slug, input);
-  revalidateBlog();
-  redirect(destinationFor(input));
+  return field(formData, 'intent') === 'unpublish' ? unpublish(formData) : publish(formData);
 }
 
 export async function deletePostAction(formData: FormData): Promise<void> {
   await verifySession();
-  const slug = field(formData, 'slug');
-  if (slug.length > 0) {
-    deletePost(slug);
+  const id = parseId(formData);
+  if (id !== null) {
+    deletePost(id);
     revalidateBlog();
   }
   redirect('/admin');
