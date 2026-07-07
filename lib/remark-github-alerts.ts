@@ -55,6 +55,10 @@ export function remarkGithubAlerts() {
         firstInline.value = remainder;
       } else {
         firstBlock.children.shift();
+        // A hard break the author put right after the marker (Shift+Enter in the
+        // WYSIWYG editor) would otherwise leave a leading <br> inside the callout;
+        // drop any leading breaks so Enter and Shift+Enter both render clean.
+        while (firstBlock.children[0]?.type === 'break') firstBlock.children.shift();
         if (firstBlock.children.length === 0) node.children.shift();
       }
 

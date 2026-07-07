@@ -61,6 +61,23 @@ describe('remarkGithubAlerts', () => {
     expect(html).toContain('<p class="markdown-alert-title">ヒント</p>');
   });
 
+  it('drops a hard break right after the marker (no leading <br>)', () => {
+    // The WYSIWYG editor serializes a Shift+Enter as a hard break, so the marker
+    // and content share a paragraph split by a <br>. The callout must not keep it.
+    const html = render('> [!NOTE]\n> \\\n> Body after a hard break.');
+    expect(html).toContain('markdown-alert-note');
+    expect(html).toContain('Body after a hard break.');
+    expect(html).not.toContain('<br>');
+  });
+
+  it('resolves escaped brackets the editor emits (\\[!NOTE\\])', () => {
+    // tiptap-markdown escapes the brackets; remark resolves them before this
+    // transform sees the text, so the alert still matches.
+    const html = render('> \\[!NOTE\\]\n> ok');
+    expect(html).toContain('markdown-alert-note');
+    expect(html).not.toContain('[!NOTE]');
+  });
+
   it('leaves an ordinary blockquote untouched', () => {
     const html = render('> just a quote');
     expect(html).toContain('<blockquote>');
