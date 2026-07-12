@@ -9,7 +9,7 @@ import { TableKit } from '@tiptap/extension-table';
 import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
-import { AlertHighlight } from './editor/alert-highlight';
+import { Callout } from './editor/callout-extension';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
@@ -173,9 +173,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       TableDropCursorGuard,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
-      // Editor-only: tints a `> [!NOTE]`-style blockquote to preview the callout.
-      // A decoration, so it never touches the markdown the editor serializes.
-      AlertHighlight,
+      // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
+      // non-editable label chip and only the body is editable, so it can't be broken
+      // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
+      // and the public render pipeline are unchanged.
+      Callout,
     ],
     content: initial.body,
     editorProps: {

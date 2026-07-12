@@ -238,23 +238,22 @@ body {
   background: transparent;
 }
 
-/* GitHub-style alert callouts. lib/remark-github-alerts.ts rewrites a
-   `> [!NOTE]`-style blockquote into `<div class="markdown-alert markdown-alert-<type>">`
-   with a `.markdown-alert-title` label; these paint the accent border + tint per
-   type. Public-surface only: the editor stores the source as a plain blockquote
-   and doesn't run the transform, so it shows a normal 引用 there (accepted
-   limitation). Colors are per-type accents with a faint same-hue background;
-   dark variants live in the prefers-color-scheme block below. */
+/* GitHub-style alert callouts. Both surfaces render the same markup: on the public
+   page lib/remark-github-alerts.ts rewrites a `> [!NOTE]`-style blockquote into
+   `<div class="markdown-alert markdown-alert-<type>">` with a `.markdown-alert-title`
+   label, and in the editor the Callout node's NodeView builds the identical DOM
+   (components/editor/callout-extension.ts) — so these rules style the live preview and
+   the published page alike. They paint the accent border + tint per type; colors are
+   per-type accents with a faint same-hue background, dark variants in the
+   prefers-color-scheme block below. */
 .prose .markdown-alert {
   margin: 1em 0;
   padding: 0.6em 1em;
   border-left: 0.25rem solid var(--alert-accent);
   border-radius: 0.25rem;
   background: var(--alert-bg);
-  /* On the public page .markdown-alert is a <div>, but the editor reuses these
-     classes on the source <blockquote> (see components/editor/alert-highlight.ts)
-     to preview the callout — reset Typography's blockquote italic/medium weight so
-     the tinted editor block reads like the published one. */
+  /* Guard against any inherited emphasis (e.g. a blockquote in the body) tilting the
+     callout — keep it upright and regular-weight like the published page. */
   font-style: normal;
   font-weight: 400;
 }
@@ -264,10 +263,9 @@ body {
 .prose .markdown-alert > :last-child {
   margin-bottom: 0;
 }
-/* Public page only: lay the callout out as two columns — icon | content — like
-   Zenn/Qiita. The editor reuses .markdown-alert on a <blockquote> with no title/
-   content children, so scope the flex to the public <div> and leave the editor's
-   live tint as a plain block. */
+/* Lay the callout out as two columns — icon | content — like Zenn/Qiita. Scoped to the
+   `<div>` form both surfaces now emit (the public transform and the editor NodeView),
+   so a stray plain blockquote is never caught by it. */
 .prose div.markdown-alert {
   display: flex;
   align-items: flex-start;

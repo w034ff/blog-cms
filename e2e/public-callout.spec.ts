@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // End-to-end over the *public* render path (which no other spec touches): author a
 // `> [!CAUTION]` callout in the editor, publish it, then open the public post and
 // confirm the alert renders as a titled callout with its icon. This guards the
-// whole chain — editor markdown (escaped `\[!CAUTION\]`) → remark transform →
+// whole chain — the Callout node's markdown (`> [!CAUTION]`) → remark transform →
 // sanitize → the icon CSS in globals.css.
 test('a published [!CAUTION] callout renders with title + icon on the public page', async ({
   page,
@@ -14,8 +14,9 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
 
   await page.getByLabel('タイトル').fill('Public callout spec');
   await editor.click();
+  // `> [!CAUTION]` auto-converts to a callout node with the caret already in the body,
+  // so the content is typed straight in (no Enter — that would exit the empty callout).
   await page.keyboard.type('> [!CAUTION]');
-  await page.keyboard.press('Enter');
   await page.keyboard.type('破壊的操作の前に確認してください。');
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
