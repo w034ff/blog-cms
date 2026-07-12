@@ -33,6 +33,14 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
   await expect(title).toHaveText('注意');
   await expect(alert).not.toContainText('[!CAUTION]');
 
+  // 2-column layout: the container is a flex row and the body sits in its own
+  // content column beside the icon.
+  const display = await alert.evaluate((el) => getComputedStyle(el).display);
+  expect(display).toBe('flex');
+  await expect(alert.locator('.markdown-alert-content')).toContainText(
+    '破壊的操作の前に確認してください。',
+  );
+
   // The icon is a masked SVG tinted to the caution accent, drawn on the title's
   // ::before — assert both the mask (icon present) and the accent tint.
   const icon = await title.evaluate((el) => {
@@ -40,5 +48,5 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
     return { mask: s.maskImage || s.webkitMaskImage, bg: s.backgroundColor };
   });
   expect(icon.mask).toContain('svg');
-  expect(icon.bg).toBe('rgb(207, 34, 46)'); // caution accent (#cf222e), light theme
+  expect(icon.bg).toBe('rgb(154, 103, 0)'); // caution accent (#9a6700, amber after the warning/caution color swap), light theme
 });

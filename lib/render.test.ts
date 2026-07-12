@@ -10,8 +10,12 @@ describe('renderMdxToHtml — GitHub alerts', () => {
   it('renders a [!WARNING] blockquote as a styled alert, marker stripped', async () => {
     const html = await renderMdxToHtml('> [!WARNING]\n> Be careful **here**.');
     expect(html).toContain('markdown-alert markdown-alert-warning');
-    expect(html).toContain('markdown-alert-title');
-    expect(html).toContain('警告');
+    // The type word survives sanitize inside its sr-only label span (icon-only
+    // visually, but announced to screen readers) — pins that the schema edit lets
+    // the span + its one allowed class through.
+    expect(html).toContain('<span class="markdown-alert-title-label">警告</span>');
+    // Body is wrapped in a content column div; the sanitize schema must allow it.
+    expect(html).toContain('<div class="markdown-alert-content">');
     expect(html).toContain('<strong>here</strong>');
     expect(html).not.toContain('[!WARNING]');
   });

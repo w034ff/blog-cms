@@ -5,27 +5,27 @@ import { visit } from 'unist-util-visit';
 import type {} from 'mdast-util-to-hast';
 
 // GitHub-flavored alerts (a.k.a. admonitions): a blockquote whose first line is
-// `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]` renders as a
-// styled callout. remark-gfm does NOT implement this, so this local transform
+// `[!NOTE]` / `[!WARNING]` / `[!CAUTION]` renders as a styled callout. We scope to
+// this 3-tier severity set (情報 → 警告 → 注意) to match the Zenn/Qiita convention;
+// GitHub's `[!TIP]` / `[!IMPORTANT]` are intentionally left as plain blockquotes.
+// remark-gfm does NOT implement this, so this local transform
 // does it on the mdast — no new dependency. It rewrites the blockquote to a
 // `<div class="markdown-alert markdown-alert-<type>">` (GitHub's class names) with
 // a `<p class="markdown-alert-title">` label prepended; the CSS in globals.css
 // paints the border/tint per type. Operating on the parsed tree (not raw source)
 // means it's robust to how the markdown was escaped on the way in.
-type AlertType = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+type AlertType = 'note' | 'warning' | 'caution';
 
 // Japanese labels shown as the callout title (the site UI is Japanese).
 const TITLES: Record<AlertType, string> = {
-  note: 'ノート',
-  tip: 'ヒント',
-  important: '重要',
+  note: '情報',
   warning: '警告',
   caution: '注意',
 };
 
 // Marker must sit alone on the blockquote's first line (GitHub's rule): the type
 // tag, optional trailing spaces, then a newline or the end of the text.
-const MARKER = /^\[!(note|tip|important|warning|caution)\][^\S\n]*(?:\n|$)/i;
+const MARKER = /^\[!(note|warning|caution)\][^\S\n]*(?:\n|$)/i;
 
 function isParagraph(node: Blockquote['children'][number]): node is Paragraph {
   return node.type === 'paragraph';
@@ -62,13 +62,35 @@ export function remarkGithubAlerts() {
         if (firstBlock.children.length === 0) node.children.shift();
       }
 
-      // Prepend the title, then render the blockquote as the alert container.
+      // Build the icon/title column, wrap the body in a content column, then render
+      // the blockquote as the 2-column alert container (icon | content — globals.css).
+      // The type word goes in a visually-hidden <span>: the CSS ::before icon on
+      // .markdown-alert-title carries the meaning on screen (icon-only, like
+      // Zenn/Qiita), while screen readers still announce the callout type from the
+      // sr-only label. The `emphasis` node is only a carrier for the hName/
+      // hProperties override — mdast-util-to-hast emits it as the <span>, not <em>.
       const title: Paragraph = {
         type: 'paragraph',
         data: { hProperties: { className: ['markdown-alert-title'] } },
-        children: [{ type: 'text', value: TITLES[type] }],
+        children: [
+          {
+            type: 'emphasis',
+            data: {
+              hName: 'span',
+              hProperties: { className: ['markdown-alert-title-label'] },
+            },
+            children: [{ type: 'text', value: TITLES[type] }],
+          },
+        ],
       };
-      node.children.unshift(title);
+      // The body becomes a content column beside the icon. `blockquote` is only a
+      // carrier for the hName override — emitted as <div class="markdown-alert-content">.
+      const content: Blockquote = {
+        type: 'blockquote',
+        data: { hName: 'div', hProperties: { className: ['markdown-alert-content'] } },
+        children: node.children,
+      };
+      node.children = [title, content];
       node.data = {
         ...node.data,
         hName: 'div',

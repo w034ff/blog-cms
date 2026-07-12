@@ -3,12 +3,12 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 
-type AlertType = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+type AlertType = 'note' | 'warning' | 'caution';
 
 // Parallels lib/remark-github-alerts.ts (the render-side transform): the marker
 // must sit alone on the blockquote's first line. Kept as a local copy so this
 // client extension never imports the server-only render module.
-const MARKER = /^\[!(note|tip|important|warning|caution)\][^\S\n]*(?:\n|$)/i;
+const MARKER = /^\[!(note|warning|caution)\][^\S\n]*(?:\n|$)/i;
 
 function alertTypeOf(blockquote: ProseMirrorNode): AlertType | null {
   const paragraph = blockquote.firstChild;
@@ -42,8 +42,9 @@ function buildDecorations(doc: ProseMirrorNode): DecorationSet {
 }
 
 // Editor-only live tint for GitHub-style alert callouts: colors a blockquote
-// whose first line is `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` / `[!WARNING]` /
-// `[!CAUTION]`. It is a *decoration*, not a node — the stored markdown and its
+// whose first line is `[!NOTE]` / `[!WARNING]` / `[!CAUTION]` (the same 3-tier
+// set the render transform styles). It is a *decoration*, not a node — the
+// stored markdown and its
 // round-trip are untouched. Approximate preview by design: the `[!NOTE]` marker
 // stays visible and no title label is injected (the render-side transform adds
 // those on the published page).

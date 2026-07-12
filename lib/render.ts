@@ -10,26 +10,31 @@ import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 
 // defaultSchema (GitHub's allowlist) minus className, so the alert transform's
-// container/title classes survive sanitization. The nested `['className', …]`
-// form is a value allowlist: only these exact class names pass on div/p — no
+// container/title/content classes survive sanitization. The nested `['className', …]`
+// form is a value allowlist: only these exact class names pass on div/p/span — no
 // arbitrary classes, no `style`, so the untrusted-author guard is unweakened.
 // The `['className', …values]` value-allowlist form is a tuple, so type it as one.
 const alertClasses: [string, ...string[]] = [
   'className',
   'markdown-alert',
   'markdown-alert-note',
-  'markdown-alert-tip',
-  'markdown-alert-important',
   'markdown-alert-warning',
   'markdown-alert-caution',
+  'markdown-alert-content',
 ];
 const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
+// The sr-only <span> the transform wraps the type word in (announced to screen
+// readers; hidden visually). Same tight value-allowlist form — only this exact
+// class passes on <span>, so an author's `<span class="…">` is still stripped and
+// pretty-code's post-sanitize highlight spans are unaffected.
+const titleLabelClass: [string, ...string[]] = ['className', 'markdown-alert-title-label'];
 const schema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div ?? []), alertClasses],
     p: [...(defaultSchema.attributes?.p ?? []), titleClass],
+    span: [...(defaultSchema.attributes?.span ?? []), titleLabelClass],
   },
 };
 
