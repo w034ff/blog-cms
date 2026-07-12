@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/core';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { ToolbarButton } from './ToolbarButton';
 import { useDismiss } from './useDismiss';
+import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
 import { ChevronIcon } from './svg/ChevronIcon';
 import { ImageIcon } from './svg/ImageIcon';
@@ -132,6 +133,7 @@ export function Toolbar({
         shortcut='Mod-Shift-b'>
         引用
       </ToolbarButton>
+      <CalloutMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
         active={editor.isActive('codeBlock')}
