@@ -10,6 +10,7 @@ import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
+import { CalloutSlashCommand } from './editor/callout-slash-command';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
@@ -178,6 +179,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
       // and the public render pipeline are unchanged.
       Callout,
+      // `/` at the start of a line opens a small menu to insert a callout (calls setCallout).
+      CalloutSlashCommand,
     ],
     content: initial.body,
     editorProps: {
