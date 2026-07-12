@@ -1,6 +1,7 @@
-import { Node as TiptapNode } from '@tiptap/core';
+import { InputRule, Node as TiptapNode } from '@tiptap/core';
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
-import { Plugin, PluginKey, TextSelection, type Transaction } from '@tiptap/pm/state';
+import { TextSelection } from '@tiptap/pm/state';
+import { findWrapping } from '@tiptap/pm/transform';
 
 // GitHub-style alert callouts as a first-class editor node. The three tiers
 // (情報 → 警告 → 注意) mirror the render transform (lib/remark-github-alerts.ts): the
@@ -107,63 +108,22 @@ function updateCalloutDOM(element: HTMLElement): void {
   });
 }
 
-// Live equivalent of the parse hook for hand-typed markdown: when a blockquote's first
-// line becomes exactly a marker (the author typed `> [!NOTE]`), upgrade it to the node
-// so the marker instantly becomes the protected chip — the toolbar menu's typing twin.
-function blockquoteMarkerType(node: PMNode): CalloutType | null {
-  if (node.type.name !== 'blockquote') return null;
-  const firstPara = node.firstChild;
-  if (!firstPara || firstPara.type.name !== 'paragraph') return null;
-  const text = firstPara.textContent;
-  const match = text.match(MARKER);
-  // Only convert when the marker fills the paragraph (the `$` branch): a marker with
-  // trailing content is left as a plain quote, matching "type after `]` = not a callout".
-  if (!match || match[0].length !== text.length) return null;
-  return toCalloutType(match[1].toLowerCase());
-}
+// Both callout shortcuts commit with a trailing space or Enter (see addInputRules), matching
+// `#`, `>`, and the rest of the markdown shortcuts. Zenn/Qiita-style `:::` trigger words
+// follow the intuitive info < warn < alert severity ladder, deliberately NOT the internal
+// note/warning/caution names — so `:::warn` = caution (amber) and `:::alert` = warning (red).
+// Typing conveniences only; storage stays `> [!TYPE]`.
+const DIRECTIVE_TYPES: Record<string, CalloutType> = {
+  info: 'note',
+  warn: 'caution',
+  alert: 'warning',
+};
 
-const calloutAutoConvertKey = new PluginKey('calloutAutoConvert');
+const DIRECTIVE = /^:::(info|warn|alert)\s$/;
 
-function calloutAutoConvert(): Plugin {
-  return new Plugin({
-    key: calloutAutoConvertKey,
-    appendTransaction(transactions, oldState, newState) {
-      if (!transactions.some((tr) => tr.docChanged)) return null;
-      const calloutNode = newState.schema.nodes.callout;
-      const paragraph = newState.schema.nodes.paragraph;
-      const selectionFrom = newState.selection.from;
-      let tr: Transaction | null = null;
-
-      newState.doc.descendants((node, pos) => {
-        const type = blockquoteMarkerType(node);
-        if (!type) return true;
-
-        // Body = the blockquote's blocks after the marker paragraph, or a fresh empty
-        // paragraph when the author only typed the marker.
-        const body: PMNode[] = [];
-        node.forEach((child, _offset, index) => {
-          if (index > 0) body.push(child);
-        });
-        const content =
-          body.length > 0 ? Fragment.fromArray(body) : Fragment.from(paragraph.create());
-        const callout = calloutNode.create({ type }, content);
-
-        if (!tr) tr = newState.tr;
-        const from = tr.mapping.map(pos);
-        const to = tr.mapping.map(pos + node.nodeSize);
-        tr.replaceWith(from, to, callout);
-        // Keep the caret in the callout body only if it was inside the blockquote being
-        // converted, so an unfocused conversion never yanks the cursor.
-        if (selectionFrom >= pos && selectionFrom <= pos + node.nodeSize) {
-          tr.setSelection(TextSelection.near(tr.doc.resolve(from + 2)));
-        }
-        return false; // don't descend into the node we just replaced
-      });
-
-      return tr;
-    },
-  });
-}
+// The GitHub-alert marker on a blockquote's first line, ready to commit. Distinct from
+// MARKER above, which detects an already-stored marker (followed by newline/end) at parse time.
+const MARKER_INPUT = /^\[!(note|warning|caution)\]\s$/i;
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -278,7 +238,58 @@ export const Callout = TiptapNode.create({
     };
   },
 
-  addProseMirrorPlugins() {
-    return [calloutAutoConvert()];
+  // Two typing shortcuts, both committed with a trailing space or Enter (like `#`, `>`): the
+  // Zenn/Qiita `:::info` directive on a top-level paragraph, and the GitHub `> [!NOTE]` marker
+  // on a top-level blockquote's first line. Both leave the caret in the callout body.
+  addInputRules() {
+    const calloutType = this.type;
+    return [
+      new InputRule({
+        find: DIRECTIVE,
+        handler: ({ state, range, match }) => {
+          const type = DIRECTIVE_TYPES[match[1]];
+          // Top-level only ($start.depth === 1): never wrap inside a quote, list, cell, or
+          // another callout.
+          if (!type || state.doc.resolve(range.from).depth !== 1) return null;
+          const { tr } = state;
+          tr.delete(range.from, range.to);
+          const blockRange = tr.doc.resolve(range.from).blockRange();
+          const wrapping = blockRange && findWrapping(blockRange, calloutType, { type });
+          if (!wrapping) return null;
+          tr.wrap(blockRange, wrapping);
+          return undefined;
+        },
+      }),
+      new InputRule({
+        find: MARKER_INPUT,
+        handler: ({ state, range, match }) => {
+          const type = toCalloutType(match[1].toLowerCase());
+          // The marker must be the first line of a top-level blockquote (doc > blockquote >
+          // paragraph); anything else is left as a plain quote.
+          const $from = state.doc.resolve(range.from);
+          if (
+            $from.depth !== 2 ||
+            $from.node(1).type.name !== 'blockquote' ||
+            $from.index(1) !== 0
+          ) {
+            return null;
+          }
+          // Body = the blockquote's blocks after the marker paragraph, or a fresh empty one.
+          const body: PMNode[] = [];
+          $from.node(1).forEach((child, _offset, index) => {
+            if (index > 0) body.push(child);
+          });
+          const content =
+            body.length > 0
+              ? Fragment.fromArray(body)
+              : Fragment.from(state.schema.nodes.paragraph.create());
+          const callout = calloutType.create({ type }, content);
+          const { tr } = state;
+          tr.replaceWith($from.before(1), $from.after(1), callout);
+          tr.setSelection(TextSelection.near(tr.doc.resolve($from.before(1) + 2)));
+          return undefined;
+        },
+      }),
+    ];
   },
 });

@@ -14,9 +14,10 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
 
   await page.getByLabel('タイトル').fill('Public callout spec');
   await editor.click();
-  // `> [!CAUTION]` auto-converts to a callout node with the caret already in the body,
-  // so the content is typed straight in (no Enter — that would exit the empty callout).
+  // `> [!CAUTION]` + Enter commits the marker into a callout node with the caret already in
+  // the body (the Enter is the trigger, consumed by the conversion), then type the content.
   await page.keyboard.type('> [!CAUTION]');
+  await page.keyboard.press('Enter');
   await page.keyboard.type('破壊的操作の前に確認してください。');
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
