@@ -169,7 +169,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
       // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
       // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
-      StarterKit.configure({ heading: { levels: [2, 3] }, codeBlock: false }),
+      // Turn off the browser's native spellcheck for inline `code` marks — code tokens
+      // aren't dictionary words, so it paints them with red squiggles (the code block's
+      // <code> is likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
+      StarterKit.configure({
+        heading: { levels: [2, 3] },
+        codeBlock: false,
+        code: { HTMLAttributes: { spellcheck: 'false' } },
+      }),
       // TableKit bundles the table node too, but we replace it with MarkdownTable
       // (same node, extended to serialize column alignment), so disable its own.
       TableKit.configure({ table: false }),

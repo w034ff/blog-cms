@@ -134,8 +134,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       const filenameInput = document.createElement('input');
       filenameInput.type = 'text';
       filenameInput.className = 'code-block-filename';
-      filenameInput.placeholder = 'ファイル名';
+      // The filename renders as a borderless caption, so the placeholder copy (not a background)
+      // is what signals the empty field is an add-a-filename control.
+      filenameInput.placeholder = 'ファイル名を追加';
       filenameInput.setAttribute('aria-label', 'コードブロックのファイル名');
+      // Filenames aren't dictionary words, so opt this field out of the browser's native
+      // spellcheck too (matching the code body <code>) — otherwise `useState.tsx` and the
+      // like get red squiggles. The <select> is a picker, so it needs no such opt-out.
+      filenameInput.setAttribute('spellcheck', 'false');
       // These chrome controls sit inside PostEditor's single <form>. A server-action submit
       // (投稿/更新) makes React auto-reset that form, which would blank an associated
       // <input>/<select> — the node's attrs survive, but the *displayed* value clears (no
@@ -200,8 +206,12 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       header.appendChild(filenameInput);
       header.appendChild(select);
 
+      // Turn off the browser's native spellcheck for the code body: variable/function names
+      // aren't dictionary words, so it paints most of the code with red squiggles. Prose
+      // outside the code block keeps spellcheck (the editor sets no spellcheck attr globally).
       const pre = document.createElement('pre');
       const code = document.createElement('code');
+      code.setAttribute('spellcheck', 'false');
       pre.appendChild(code);
 
       dom.appendChild(header);
