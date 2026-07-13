@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
-import { ToolbarButton } from './ToolbarButton';
-import { useDismiss } from './useDismiss';
-import { ChevronIcon } from './svg/ChevronIcon';
+import { ToolbarDropdown } from './ToolbarDropdown';
 import { TableIcon } from './svg/TableIcon';
 
 // Upper bound of the size picker. The grid is only for creating the table — the
@@ -134,75 +132,79 @@ function TableSizeDialog({
 // button's previous fixed 3×3 insert. Beats typing numbers — you see the shape you
 // get.
 export function TableGridMenu({ editor }: { editor: Editor }) {
-  const [open, setOpen] = useState(false);
   // The cell under the pointer/focus (1-indexed), defining the pending table size;
   // null when nothing is hovered, which clears the highlight and the size readout.
   const [hover, setHover] = useState<{ rows: number; cols: number } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
   const insert = (rows: number, cols: number) => {
     editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
-    setOpen(false);
     setHover(null);
   };
 
   return (
-    <div ref={ref} className='relative flex'>
-      <ToolbarButton onClick={() => setOpen((prev) => !prev)} active={open} title='表'>
-        <span className='flex items-center gap-1'>
-          <TableIcon />
-          表
-          <ChevronIcon open={open} />
-        </span>
-      </ToolbarButton>
-      {open && (
-        <div className='absolute left-1/2 top-full z-50 mt-1 flex -translate-x-1/2 flex-col gap-2 rounded border border-zinc-300 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
-          <div
-            className='grid gap-0.5'
-            style={{ gridTemplateColumns: `repeat(${TABLE_PICKER_COLS}, 1rem)` }}
-            onMouseLeave={() => setHover(null)}>
-            {Array.from({ length: TABLE_PICKER_ROWS * TABLE_PICKER_COLS }, (_, i) => {
-              // Fill row by row: the CSS grid has TABLE_PICKER_COLS columns, so the
-              // flat index maps to (row, col) and lands in visual order.
-              const rows = Math.floor(i / TABLE_PICKER_COLS) + 1;
-              const cols = (i % TABLE_PICKER_COLS) + 1;
-              const selected = hover !== null && rows <= hover.rows && cols <= hover.cols;
-              return (
-                <button
-                  key={i}
-                  type='button'
-                  aria-label={`${rows}行${cols}列の表を挿入`}
-                  onMouseEnter={() => setHover({ rows, cols })}
-                  onFocus={() => setHover({ rows, cols })}
-                  onClick={() => insert(rows, cols)}
-                  className={`h-4 w-4 rounded-sm border ${
-                    selected
-                      ? 'border-blue-400 bg-blue-200 dark:border-blue-500 dark:bg-blue-500/40'
-                      : 'border-zinc-300 dark:border-zinc-600'
-                  }`}
-                />
-              );
-            })}
-          </div>
-          <div className='text-center text-xs tabular-nums text-zinc-600 dark:text-zinc-400'>
-            {hover ? `${hover.rows} 行 × ${hover.cols} 列` : 'サイズを選択'}
-          </div>
-          <div className='-mx-2 border-t border-zinc-200 dark:border-zinc-700' />
-          {/* Escape hatch for tables bigger than the grid: hand off to the numeric
-              dialog. Close the dropdown first so they don't stack. */}
-          <button
-            type='button'
-            onClick={() => {
-              setOpen(false);
-              setHover(null);
-              setDialogOpen(true);
-            }}
-            className='rounded px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'>
-            行数・列数を入力…
-          </button>
-        </div>
-      )}
+    <>
+      <ToolbarDropdown
+        trigger={
+          <>
+            <TableIcon />表
+          </>
+        }
+        title='表'
+        panelClass='flex-col gap-2 p-2'>
+        {(close) => (
+          <>
+            <div
+              className='grid gap-0.5'
+              style={{ gridTemplateColumns: `repeat(${TABLE_PICKER_COLS}, 1rem)` }}
+              onMouseLeave={() => setHover(null)}>
+              {Array.from({ length: TABLE_PICKER_ROWS * TABLE_PICKER_COLS }, (_, i) => {
+                // Fill row by row: the CSS grid has TABLE_PICKER_COLS columns, so the
+                // flat index maps to (row, col) and lands in visual order.
+                const rows = Math.floor(i / TABLE_PICKER_COLS) + 1;
+                const cols = (i % TABLE_PICKER_COLS) + 1;
+                const selected = hover !== null && rows <= hover.rows && cols <= hover.cols;
+                return (
+                  <button
+                    key={i}
+                    type='button'
+                    aria-label={`${rows}行${cols}列の表を挿入`}
+                    onMouseEnter={() => setHover({ rows, cols })}
+                    onFocus={() => setHover({ rows, cols })}
+                    onClick={() => {
+                      insert(rows, cols);
+                      close();
+                    }}
+                    className={`h-4 w-4 rounded-sm border ${
+                      selected
+                        ? 'border-blue-400 bg-blue-200 dark:border-blue-500 dark:bg-blue-500/40'
+                        : 'border-zinc-300 dark:border-zinc-600'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+            <div className='text-center text-xs tabular-nums text-zinc-600 dark:text-zinc-400'>
+              {hover ? `${hover.rows} 行 × ${hover.cols} 列` : 'サイズを選択'}
+            </div>
+            <div className='-mx-2 border-t border-zinc-200 dark:border-zinc-700' />
+            {/* Escape hatch for tables bigger than the grid: hand off to the numeric
+                dialog. Close the dropdown first so they don't stack. */}
+            <button
+              type='button'
+              onClick={() => {
+                close();
+                setHover(null);
+                setDialogOpen(true);
+              }}
+              className='rounded px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'>
+              行数・列数を入力…
+            </button>
+          </>
+        )}
+      </ToolbarDropdown>
+      {/* Modal top-layer dialog: DOM position is irrelevant, so it sits outside the
+          dropdown (which is closed before it opens). */}
       <TableSizeDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -211,6 +213,6 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
           setDialogOpen(false);
         }}
       />
-    </div>
+    </>
   );
 }

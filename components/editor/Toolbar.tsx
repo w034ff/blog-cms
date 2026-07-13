@@ -1,82 +1,46 @@
 'use client';
 
-import { useState } from 'react';
-import type { ChangeEvent, ReactNode } from 'react';
+import type { ChangeEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { ToolbarButton } from './ToolbarButton';
-import { useDismiss } from './useDismiss';
+import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
-import { ChevronIcon } from './svg/ChevronIcon';
 import { ImageIcon } from './svg/ImageIcon';
 import { ListIcon } from './svg/ListIcon';
-
-// One row of the list menu. Full-width and border-less so the hover highlight
-// spans the whole dropdown edge-to-edge, instead of sitting inside a bordered
-// button box (the container clips these to its rounded corners).
-function ListMenuItem({
-  onClick,
-  active,
-  children,
-}: {
-  onClick: () => void;
-  active?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type='button'
-      onClick={onClick}
-      className={`px-3 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-        active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
-      }`}>
-      {children}
-    </button>
-  );
-}
 
 // A single toolbar entry that folds the two list types into one control. It
 // highlights whenever the cursor is in any list, and the open menu marks which
 // kind — which the rendered bullets/numbers also show — so merging them doesn't
 // hide the active state.
 function ListMenu({ editor }: { editor: Editor }) {
-  const [open, setOpen] = useState(false);
-  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
-
   const bullet = editor.isActive('bulletList');
   const ordered = editor.isActive('orderedList');
-  const select = (toggle: () => void) => {
-    toggle();
-    setOpen(false);
-  };
 
   return (
-    <div ref={ref} className='relative flex'>
-      <ToolbarButton
-        onClick={() => setOpen((prev) => !prev)}
-        active={bullet || ordered}
-        title='リスト'>
-        <span className='flex items-center gap-0.5'>
-          <ListIcon />
-          <ChevronIcon open={open} />
-        </span>
-      </ToolbarButton>
-      {open && (
-        <div className='absolute left-1/2 top-full z-50 mt-1 flex min-w-max -translate-x-1/2 flex-col overflow-hidden rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
-          <ListMenuItem
-            onClick={() => select(() => editor.chain().focus().toggleBulletList().run())}
-            active={bullet}>
-            箇条書き
-          </ListMenuItem>
-          <ListMenuItem
-            onClick={() => select(() => editor.chain().focus().toggleOrderedList().run())}
-            active={ordered}>
-            番号付き
-          </ListMenuItem>
-        </div>
-      )}
-    </div>
+    <ToolbarDropdown trigger={<ListIcon />} title='リスト' active={bullet || ordered}>
+      {(close) => {
+        const select = (toggle: () => void) => {
+          toggle();
+          close();
+        };
+        return (
+          <>
+            <DropdownItem
+              onClick={() => select(() => editor.chain().focus().toggleBulletList().run())}
+              active={bullet}>
+              箇条書き
+            </DropdownItem>
+            <DropdownItem
+              onClick={() => select(() => editor.chain().focus().toggleOrderedList().run())}
+              active={ordered}>
+              番号付き
+            </DropdownItem>
+          </>
+        );
+      }}
+    </ToolbarDropdown>
   );
 }
 
