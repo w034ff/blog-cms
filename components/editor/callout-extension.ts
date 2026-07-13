@@ -2,6 +2,7 @@ import { InputRule, Node as TiptapNode } from '@tiptap/core';
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { findWrapping } from '@tiptap/pm/transform';
+import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // GitHub-style alert callouts as a first-class editor node. The three tiers
 // (情報 → 警告 → 注意) mirror the render transform (lib/remark-github-alerts.ts): the
@@ -41,22 +42,13 @@ function calloutTypeOf(node: PMNode): CalloutType {
   return toCalloutType(node.attrs.type);
 }
 
-// Minimal view of tiptap-markdown's serializer state (it exports no types); it extends
-// prosemirror-markdown's MarkdownSerializerState, so wrapBlock/renderContent are here.
-interface CalloutMarkdownState {
-  write(content: string): void;
-  closeBlock(node: PMNode): void;
-  wrapBlock(delim: string, firstDelim: string | null, node: PMNode, f: () => void): void;
-  renderContent(node: PMNode): void;
-}
-
 // Serialize the node back to a blank-line GFM alert:
 //   > [!NOTE]
 //   >
 //   > body…
 // The blank `>` line comes from closing the marker as its own block before the body —
 // exactly the two-paragraph shape existing posts already store, so nothing regresses.
-function serializeCallout(state: CalloutMarkdownState, node: PMNode): void {
+function serializeCallout(state: MarkdownSerializerState, node: PMNode): void {
   const marker = CALLOUT_MARKERS[calloutTypeOf(node)];
   state.wrapBlock('> ', null, node, () => {
     state.write(marker);

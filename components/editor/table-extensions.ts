@@ -5,6 +5,7 @@ import { isInTable, selectedRect } from '@tiptap/pm/tables';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
+import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // A column's text alignment. `null` is GFM's default (`---`, renders left) and is
 // what an untouched column carries; the three explicit values map to `:--`/`:-:`/`--:`.
@@ -56,16 +57,6 @@ function alignDelimiter(align: CellAlign): string {
   if (align === 'center') return ':--:';
   if (align === 'right') return '---:';
   return '---';
-}
-
-// Minimal view of tiptap-markdown's serializer state (it exports no types); only
-// the methods the table serializer calls are declared, so we avoid `any`.
-interface TableMarkdownState {
-  inTable: boolean;
-  write(text: string): void;
-  ensureNewLine(): void;
-  renderInline(node: PMNode): void;
-  closeBlock(node: PMNode): void;
 }
 
 // Whether a drop at this position should be blocked. Two kinds of table drop turn
@@ -162,7 +153,7 @@ export const MarkdownTable = Table.extend({
     return {
       ...this.parent?.(),
       markdown: {
-        serialize(state: TableMarkdownState, node: PMNode) {
+        serialize(state: MarkdownSerializerState, node: PMNode) {
           if (!isPipeTable(node)) {
             // No pipe-table form: emit raw HTML like tiptap-markdown does (html
             // mode is on), so merged/multi-paragraph tables don't regress.

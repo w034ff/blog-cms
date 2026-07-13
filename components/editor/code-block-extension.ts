@@ -1,5 +1,6 @@
 import { CodeBlock } from '@tiptap/extension-code-block';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // Curated language menu for the in-editor code block. The ids are Shiki language ids
 // (the public render pipeline highlights via rehype-pretty-code → Shiki, lib/render.ts),
@@ -45,19 +46,10 @@ function stringAttr(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
-// Minimal view of tiptap-markdown's serializer state (it extends prosemirror-markdown's
-// MarkdownSerializerState but exports no types) — just the methods serialize needs.
-interface CodeMarkdownState {
-  write(content: string): void;
-  text(text: string, escape?: boolean): void;
-  ensureNewLine(): void;
-  closeBlock(node: PMNode): void;
-}
-
 // Serialize a code block as a Zenn/Qiita-style fence: `language` plus, when set, `:filename`
 // (e.g. ```ts:index.ts). Mirrors prosemirror-markdown's default code_block serializer,
 // including the dynamic fence length so backtick runs inside the code can't close it early.
-function serializeCodeBlock(state: CodeMarkdownState, node: PMNode): void {
+function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void {
   const language = stringAttr(node.attrs.language);
   const filename = stringAttr(node.attrs.filename);
   const backticks = node.textContent.match(/`{3,}/g);
