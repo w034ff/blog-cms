@@ -109,17 +109,17 @@ function updateCalloutDOM(element: HTMLElement): void {
 }
 
 // Both callout shortcuts commit with a trailing space or Enter (see addInputRules), matching
-// `#`, `>`, and the rest of the markdown shortcuts. Zenn/Qiita-style `:::` trigger words
-// follow the intuitive info < warn < alert severity ladder, deliberately NOT the internal
-// note/warning/caution names — so `:::warn` = caution (amber) and `:::alert` = warning (red).
-// Typing conveniences only; storage stays `> [!TYPE]`.
+// `#`, `>`, and the rest of the markdown shortcuts. The `:::` trigger words follow the
+// unambiguous info < warning < danger severity ladder (Docusaurus-style), mapped onto the
+// internal note/warning/caution types — so `:::warning` = caution (amber) and `:::danger` =
+// warning (red). Typing conveniences only; storage stays `> [!TYPE]`.
 const DIRECTIVE_TYPES: Record<string, CalloutType> = {
   info: 'note',
-  warn: 'caution',
-  alert: 'warning',
+  warning: 'caution',
+  danger: 'warning',
 };
 
-const DIRECTIVE = /^:::(info|warn|alert)\s$/;
+const DIRECTIVE = /^:::(info|warning|danger)\s$/;
 
 // The GitHub-alert marker on a blockquote's first line, ready to commit. Distinct from
 // MARKER above, which detects an already-stored marker (followed by newline/end) at parse time.

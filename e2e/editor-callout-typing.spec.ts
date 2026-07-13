@@ -31,13 +31,13 @@ test('typing `> [!WARNING]` + Enter upgrades the blockquote to a protected callo
   await expect(callout).toBeVisible();
 });
 
-// The `:::` shortcut maps to the same node: `:::info`, `:::warn`, `:::alert` follow the
-// intuitive info < warn < alert severity ladder → note / caution / warning, committed with
-// a trailing space.
+// The `:::` shortcut maps to the same node: `:::info`, `:::warning`, `:::danger` follow the
+// unambiguous info < warning < danger severity ladder → note / caution / warning, committed
+// with a trailing space.
 for (const { directive, type, title } of [
   { directive: ':::info', type: 'note', title: '情報' },
-  { directive: ':::warn', type: 'caution', title: '注意' },
-  { directive: ':::alert', type: 'warning', title: '警告' },
+  { directive: ':::warning', type: 'caution', title: '注意' },
+  { directive: ':::danger', type: 'warning', title: '警告' },
 ] as const) {
   test(`typing \`${directive}\` + space inserts a ${type} callout`, async ({ page }) => {
     await page.goto('/admin/posts/new');

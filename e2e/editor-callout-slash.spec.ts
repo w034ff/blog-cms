@@ -26,8 +26,8 @@ test('the slash menu filters by query and inserts with Enter', async ({ page }) 
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // `alert` is the keyword for 警告 only.
-  await page.keyboard.type('/alert');
+  // `danger` is the keyword for 警告 only.
+  await page.keyboard.type('/danger');
   const menu = page.locator('[data-callout-slash]');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('button')).toHaveCount(1);

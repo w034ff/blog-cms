@@ -9,12 +9,12 @@ import {
 } from './CalloutSlashList';
 import { CALLOUT_TITLES, CALLOUT_TYPES, type CalloutType } from './callout-extension';
 
-// Extra search terms per type so `/info`, `/alert`, `/callout`, `/コ` all filter sensibly —
-// aligned with the `:::` directive words (info/warn/alert) plus a shared "callout" alias.
+// Extra search terms per type so `/info`, `/danger`, `/callout`, `/コ` all filter sensibly —
+// aligned with the `:::` directive words (info/warning/danger) plus a shared "callout" alias.
 const KEYWORDS: Record<CalloutType, string[]> = {
   note: ['info', 'note', 'callout', 'コールアウト'],
-  warning: ['alert', 'warning', 'callout', 'コールアウト'],
-  caution: ['warn', 'caution', 'callout', 'コールアウト'],
+  warning: ['danger', 'error', 'callout', 'コールアウト'],
+  caution: ['warning', 'caution', 'callout', 'コールアウト'],
 };
 
 const ITEMS: CalloutSlashItem[] = CALLOUT_TYPES.map((type) => ({
