@@ -32,6 +32,7 @@ body {
    blend in. Inner margins are zeroed (prose adds them to figure/figcaption/pre) so the title
    bar and code sit flush; the figure keeps prose's outer margin for spacing. */
 [data-rehype-pretty-code-figure] {
+  position: relative; /* anchors the injected copy button (components/CodeCopyButtons.tsx) */
   border: 1px solid #30363d;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -164,6 +165,87 @@ body {
   [data-rehype-pretty-code-title] {
     background: #1c2128;
     border-bottom-color: #30363d;
+  }
+}
+
+/* Copy button injected into each code block by components/CodeCopyButtons.tsx. Always visible
+   but subtle; a keyboard focus ring is kept for a11y. Pinned to the figure's top-right so it
+   stays put while the code scrolls horizontally. On a successful copy, "Copied!" text appears to
+   the left of the icon (GitHub-style). Base colors are dark; the light media query below
+   overrides them. */
+.code-copy-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.3rem;
+  border: 0;
+  border-radius: 0.25rem;
+  /* No border and an OPAQUE background that matches the code area, so the button reads as part
+     of the block (masking any code underneath) instead of a bordered chip floating on top. */
+  background: #161b22;
+  color: #8b949e;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+/* Enlarge the tap target without growing the visible box: an invisible halo extends the
+   clickable (and hover-trigger) area a few px past every edge, so the seamless background and
+   hover box stay exactly as sized while the button is easier to press — notably on touch. */
+.code-copy-btn::before {
+  content: '';
+  position: absolute;
+  inset: -0.25rem;
+}
+.code-copy-btn:focus-visible {
+  outline: 2px solid #4493f8;
+  outline-offset: 1px;
+}
+.code-copy-icon {
+  display: inline-flex;
+}
+.code-copy-icon svg {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+/* Empty until a copy; hide it so the flex gap doesn't pad the icon's left. */
+.code-copy-label:empty {
+  display: none;
+}
+.code-copy-btn.is-copied {
+  color: #3fb950;
+}
+/* When the block has a filename bar the button overlaps it, so match the bar's shade there
+   instead of the code area's — otherwise a faint patch shows. Result: seamless in both cases.
+   Wrapped in :where() so this stays specificity (0,1,0) — otherwise :has() would outrank the
+   .code-copy-btn:hover rule below and the hover background would never apply over a filename. */
+:where([data-rehype-pretty-code-figure]:has([data-rehype-pretty-code-title])) .code-copy-btn {
+  background: #1c2128;
+}
+/* Hover changes just the background (leaving the copied-state green text intact) with clear
+   contrast: brighter in dark mode, a darker gray in light mode (see the light block below).
+   Placed after the :has() rule so it wins the specificity tie over both bg cases. */
+.code-copy-btn:hover {
+  background: #30363d;
+}
+@media (prefers-color-scheme: light) {
+  .code-copy-btn {
+    background: #f6f8fa;
+    color: #6e7781;
+  }
+  .code-copy-btn.is-copied {
+    color: #1a7f37;
+  }
+  :where([data-rehype-pretty-code-figure]:has([data-rehype-pretty-code-title])) .code-copy-btn {
+    background: #eaeef2;
+  }
+  .code-copy-btn:hover {
+    background: #dfe3e8;
   }
 }
 
