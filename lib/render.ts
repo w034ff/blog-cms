@@ -8,6 +8,7 @@ import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'r
 import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
+import { rehypeCodeFilename } from './rehype-code-filename';
 
 // defaultSchema (GitHub's allowlist) minus className, so the alert transform's
 // container/title/content classes survive sanitization. The nested `['className', …]`
@@ -57,6 +58,11 @@ const processor = unified()
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(rehypeRaw)
   .use(rehypeSanitize, schema)
+  // Split a Zenn-style ```lang:filename fence (the whole info string survives sanitize as
+  // the `language-…` class) into a real language + a title="…" meta for pretty-code. MUST sit
+  // after sanitize (which would otherwise strip the meta) and before pretty-code, which reads
+  // the title from the code element's data.meta.
+  .use(rehypeCodeFilename)
   .use(rehypePrettyCode, {
     theme: { dark: 'github-dark', light: 'github-light' },
     keepBackground: false,

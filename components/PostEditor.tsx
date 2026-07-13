@@ -11,6 +11,7 @@ import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
 import { CalloutSlashCommand } from './editor/callout-slash-command';
+import { CodeBlockWithLanguage } from './editor/code-block-extension';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
@@ -166,7 +167,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Body headings are limited to the two levels the toolbar exposes (大見出し
       // = H2, 小見出し = H3). The post title is the page's only H1, so restricting
       // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
-      StarterKit.configure({ heading: { levels: [2, 3] } }),
+      // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
+      // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
+      StarterKit.configure({ heading: { levels: [2, 3] }, codeBlock: false }),
       // TableKit bundles the table node too, but we replace it with MarkdownTable
       // (same node, extended to serialize column alignment), so disable its own.
       TableKit.configure({ table: false }),
@@ -181,6 +184,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       Callout,
       // `/` at the start of a line opens a small menu to insert a callout (calls setCallout).
       CalloutSlashCommand,
+      // Plain code block + an editor-only language <select> (drives Shiki highlighting on
+      // the public page); the `language` attribute still round-trips as a ```lang fence.
+      CodeBlockWithLanguage,
     ],
     content: initial.body,
     editorProps: {

@@ -28,3 +28,24 @@ describe('renderMdxToHtml — GitHub alerts', () => {
     expect(html).not.toContain('evil');
   });
 });
+
+// The Zenn/Qiita ```lang:filename fence: remarkCodeFilename splits the colon so the language
+// still highlights and the filename becomes a pretty-code title bar (figcaption).
+describe('renderMdxToHtml — code block filename', () => {
+  it('renders ```lang:filename as a highlighted block with a title figcaption', async () => {
+    const html = await renderMdxToHtml('```ts:index.ts\nconst x = 1;\n```');
+    // pretty-code emits the filename in a <figcaption data-rehype-pretty-code-title>.
+    expect(html).toContain('data-rehype-pretty-code-title');
+    expect(html).toContain('index.ts');
+    // The block still highlights as TS (pretty-code wraps it in its figure), and the raw
+    // `ts:index.ts` info string never leaks into a bogus language class.
+    expect(html).toContain('data-rehype-pretty-code-figure');
+    expect(html).not.toContain('index.ts"><code'); // no `language-ts:index.ts`-style leak
+  });
+
+  it('leaves a plain ```lang fence without a title', async () => {
+    const html = await renderMdxToHtml('```ts\nconst x = 1;\n```');
+    expect(html).toContain('data-rehype-pretty-code-figure');
+    expect(html).not.toContain('data-rehype-pretty-code-title');
+  });
+});
