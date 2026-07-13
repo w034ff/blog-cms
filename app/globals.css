@@ -45,6 +45,12 @@ body {
 [data-rehype-pretty-code-figure] pre {
   margin: 0;
   background: transparent;
+  /* Inherit the figure's foreground instead of Tailwind Typography's grey `--tw-prose-pre-code`.
+     Highlighted code overrides this per-token via `--shiki-*`, but a plaintext block (a
+     language-less ``` fence, given `defaultLang: plaintext`) emits no color var, so its text would
+     otherwise fall back through `var(--shiki-light, inherit)` to that grey — making "no language"
+     blocks look washed out next to highlighted ones. */
+  color: inherit;
   padding: 1rem;
   overflow-x: auto;
   font-family: var(--font-mono), ui-monospace, monospace;

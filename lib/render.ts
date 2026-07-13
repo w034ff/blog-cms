@@ -66,6 +66,11 @@ const processor = unified()
   .use(rehypePrettyCode, {
     theme: { dark: 'github-dark', light: 'github-light' },
     keepBackground: false,
+    // Give a language-less ```` ``` ```` fence a default so pretty-code still wraps it in a
+    // [data-rehype-pretty-code-figure] card (it early-returns on an empty lang otherwise), so
+    // "no language" blocks get the same card/filename/copy-button chrome as highlighted ones —
+    // just no token colors. Object form scopes this to block code, leaving inline code untouched.
+    defaultLang: { block: 'plaintext' },
   })
   .use(rehypeStringify);
 
