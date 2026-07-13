@@ -26,12 +26,25 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
-/* rehype-pretty-code: shiki tokens use inline styles via CSS vars */
-[data-rehype-pretty-code-figure] pre {
-  background: #0d1117;
-  color: #e6edf3;
-  padding: 1rem;
+/* rehype-pretty-code: shiki tokens use inline styles via CSS vars. The figure is the card —
+   a border + rounded, clipped container so the block reads as a distinct panel even in dark
+   mode, where the code bg (#161b22) sits close to the page bg (#0a0a0a) and would otherwise
+   blend in. Inner margins are zeroed (prose adds them to figure/figcaption/pre) so the title
+   bar and code sit flush; the figure keeps prose's outer margin for spacing. */
+[data-rehype-pretty-code-figure] {
+  border: 1px solid #30363d;
   border-radius: 0.5rem;
+  overflow: hidden;
+  /* The card's background lives on the rounded element itself; pre/title are transparent.
+     A child with its own background would bleed 1px past the rounded corners (a known
+     overflow:hidden + border-radius artifact) — this avoids that entirely. */
+  background: #161b22;
+  color: #e6edf3;
+}
+[data-rehype-pretty-code-figure] pre {
+  margin: 0;
+  background: transparent;
+  padding: 1rem;
   overflow-x: auto;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.875rem;
@@ -49,7 +62,8 @@ body {
 }
 
 @media (prefers-color-scheme: light) {
-  [data-rehype-pretty-code-figure] pre {
+  [data-rehype-pretty-code-figure] {
+    border-color: #d0d7de;
     background: #f6f8fa;
     color: #24292f;
   }
@@ -133,25 +147,23 @@ body {
 }
 
 /* Public page: rehype-pretty-code renders a code block's filename (from the ```lang:filename
-   fence, split by lib/rehype-code-filename.ts) as this figcaption above the <pre>. Style it as
-   a title bar joined to the code block. */
+   fence, split by lib/rehype-code-filename.ts) as this figcaption above the <pre>. It's a header
+   tab at the top of the card — a shade off the code area, with a divider below. Its top corners
+   are rounded to the card's INNER radius (outer 0.5rem − 1px border) so its own background can't
+   bleed past the figure's rounded corners (the artifact we avoid by keeping pre transparent). */
 [data-rehype-pretty-code-title] {
+  margin: 0;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.8rem;
   padding: 0.4rem 1rem;
-  background: #e6e9ee;
-  color: #24292f;
-  border-radius: 0.5rem 0.5rem 0 0;
-}
-[data-rehype-pretty-code-title] + pre {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  border-radius: calc(0.5rem - 1px) calc(0.5rem - 1px) 0 0;
+  background: #eaeef2;
+  border-bottom: 1px solid #d0d7de;
 }
 @media (prefers-color-scheme: dark) {
   [data-rehype-pretty-code-title] {
-    background: #161b22;
-    color: #e6edf3;
-    border-bottom: 1px solid #30363d;
+    background: #1c2128;
+    border-bottom-color: #30363d;
   }
 }
 
