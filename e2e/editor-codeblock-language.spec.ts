@@ -81,3 +81,31 @@ test('the filename survives a save + reload (```lang:filename round-trip)', asyn
   await expect(page.locator('.ProseMirror .code-block-lang')).toHaveValue('ts');
   await expect(page.locator('.ProseMirror .code-block code')).toContainText('const x = 1;');
 });
+
+test('the header controls keep their values across a form-action save (投稿/更新)', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  await page.getByLabel('タイトル').fill('E2E code block 更新');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const a = 1;');
+  const block = editor.locator('.code-block');
+  await block.hover();
+  await block.locator('.code-block-filename').fill('index.ts');
+  await block.locator('.code-block-filename').blur();
+
+  // Submitting the post's <form> via a server action makes React auto-reset the form. The
+  // header <input>/<select> are detached from that form (form attr → non-existent id), so
+  // their displayed values must survive — regression: they used to blank in place while the
+  // node's attrs stayed intact (no ProseMirror transaction fired to re-sync the NodeView).
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: '投稿' }).click();
+  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+
+  await expect(block.locator('.code-block-filename')).toHaveValue('index.ts');
+  await expect(block.locator('.code-block-lang')).toHaveValue('ts');
+  await expect(editor.locator('.code-block code')).toContainText('const a = 1;');
+});

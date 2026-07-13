@@ -46,6 +46,10 @@ function stringAttr(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
+// A form id that intentionally matches no <form> element, used to orphan the NodeView's
+// header controls from PostEditor's form (see the NodeView for why).
+const DETACHED_FORM_ID = 'code-block-detached-controls';
+
 // Serialize a code block as a Zenn/Qiita-style fence: `language` plus, when set, `:filename`
 // (e.g. ```ts:index.ts). Mirrors prosemirror-markdown's default code_block serializer,
 // including the dynamic fence length so backtick runs inside the code can't close it early.
@@ -132,10 +136,17 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       filenameInput.className = 'code-block-filename';
       filenameInput.placeholder = 'ファイル名';
       filenameInput.setAttribute('aria-label', 'コードブロックのファイル名');
+      // These chrome controls sit inside PostEditor's single <form>. A server-action submit
+      // (投稿/更新) makes React auto-reset that form, which would blank an associated
+      // <input>/<select> — the node's attrs survive, but the *displayed* value clears (no
+      // ProseMirror transaction fires, so the NodeView never re-syncs). Point their `form` at
+      // a non-existent id so they have no form owner: immune to the reset, never submitted.
+      filenameInput.setAttribute('form', DETACHED_FORM_ID);
 
       const select = document.createElement('select');
       select.className = 'code-block-lang';
       select.setAttribute('aria-label', 'コードブロックの言語');
+      select.setAttribute('form', DETACHED_FORM_ID);
       for (const { id, label } of CODE_LANGUAGES) {
         const option = document.createElement('option');
         option.value = id;
