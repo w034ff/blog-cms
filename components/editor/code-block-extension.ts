@@ -1,5 +1,8 @@
+import { textblockTypeInputRule } from '@tiptap/core';
+import type { CommandProps, Editor, InputRule } from '@tiptap/core';
 import { CodeBlock } from '@tiptap/extension-code-block';
-import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -51,6 +54,78 @@ function stringAttr(value: string | null | undefined): string {
 // header controls from PostEditor's form (see the NodeView for why).
 const DETACHED_FORM_ID = 'code-block-detached-controls';
 
+// The fence text a just-fired code block input rule consumed, tracked so Backspace can
+// restore it. TipTap has this natively (undoInputRule), but its bookkeeping is wiped by any
+// appended transaction that changes the doc — and StarterKit's TrailingNode appends exactly
+// such a transaction whenever the block is created at the end of the document (the common
+// case: typing a fence at the bottom of the post). The plugin in addProseMirrorPlugins keeps
+// this record alive while — and only while — the caret still sits inside the still-empty
+// code block the rule just created, which TrailingNode's paragraph append doesn't disturb.
+type FenceUndo = { pos: number; text: string };
+
+const fenceUndoKey = new PluginKey<FenceUndo | null>('codeBlockFenceUndo');
+
+// Wrap a fence input rule so the transaction it applies also stamps the matched fence text
+// for the fenceUndo plugin. An Enter trigger's trailing "\n" is stripped (it can't live in
+// the restored text node); a space trigger stays, matching what the native undo restores.
+function undoableFenceRule(config: Parameters<typeof textblockTypeInputRule>[0]): InputRule {
+  const rule = textblockTypeInputRule(config);
+  const applyRule = rule.handler;
+  rule.handler = (props) => {
+    const result = applyRule(props);
+    if (result !== null) {
+      props.state.tr.setMeta(fenceUndoKey, { text: props.match[0].replace(/\n$/, '') });
+    }
+    return result;
+  };
+  return rule;
+}
+
+// Deleting a code block's final character is normally left to the browser (ProseMirror
+// keymaps don't handle mid-text deletes) — but Chrome, after emptying the <code>, folds the
+// now-empty <pre> into the contenteditable=false header above and removes pre and code from
+// the NodeView entirely. That's a structural change outside the content hole, which
+// ignoreMutation used to hide, leaving the view desynced from the model until a reload.
+// Handle exactly the emptying deletion in ProseMirror instead, so the DOM never goes empty
+// mid-native-edit. (A word/line delete that empties a longer block still hits the native
+// path; the NodeView's ignoreMutation lets ProseMirror see and repair that destruction.)
+function deleteSoleCodeChar(
+  codeType: NodeType,
+  dir: -1 | 1,
+  { state, dispatch }: CommandProps,
+): boolean {
+  const { empty, $from } = state.selection;
+  const text = $from.parent.textContent;
+  // Spread by code points so a sole surrogate-pair character (e.g. an emoji) still counts
+  // as "one character" and is deleted whole rather than natively.
+  if (!empty || $from.parent.type !== codeType || [...text].length !== 1) return false;
+  if ($from.parentOffset !== (dir === -1 ? text.length : 0)) return false;
+  if (dispatch) {
+    dispatch(state.tr.delete($from.start(), $from.end()).scrollIntoView());
+  }
+  return true;
+}
+
+// Restore the fence text recorded by fenceUndoKey: swap the still-empty code block for a
+// paragraph holding the literal fence, caret at its end. False when no live record exists,
+// letting Backspace fall through to the inherited behaviour.
+function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps): boolean {
+  const stored = fenceUndoKey.getState(state);
+  if (!stored) return false;
+  const node = state.doc.nodeAt(stored.pos);
+  if (!node || node.type !== codeType || node.content.size > 0) return false;
+  if (dispatch) {
+    const paragraph = state.schema.nodes.paragraph.createChecked(
+      null,
+      stored.text === '' ? undefined : state.schema.text(stored.text),
+    );
+    const tr = state.tr.replaceWith(stored.pos, stored.pos + node.nodeSize, paragraph);
+    tr.setSelection(TextSelection.create(tr.doc, stored.pos + 1 + stored.text.length));
+    dispatch(tr.scrollIntoView());
+  }
+  return true;
+}
+
 // Serialize a code block as a Zenn/Qiita-style fence: `language` plus, when set, `:filename`
 // (e.g. ```ts:index.ts). Mirrors prosemirror-markdown's default code_block serializer,
 // including the dynamic fence length so backtick runs inside the code can't close it early.
@@ -101,16 +176,60 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   isolating: true,
 
   // Keep CodeBlock's own shortcuts (empty → clear on Backspace, exit-on-arrow-down, Mod-Alt-c, …)
-  // and only augment Backspace: try the inherited handler first, then the shared boundary step-in.
+  // and only augment Backspace, trying in order:
+  // 1. undoInputRule. Extension keymaps run before the core Keymap extension (ExtensionManager
+  //    reverses the extension list), so the inherited "empty → clear" handler would consume the
+  //    Backspace typed right after a ``` fence conversion (the new block is empty) and the core
+  //    escape hatch that restores the literal ```lang:filename text could never fire. Trying it
+  //    here first restores that heading/list-like undo; the command only succeeds while the
+  //    input rule is the latest transaction, so normal Backspace behaviour is untouched.
+  // 2. undoFenceTyping — covers the case native undo can't: a fence typed at the end of the
+  //    document, where TrailingNode's appended transaction has already wiped the native record
+  //    (see fenceUndoKey).
+  // 3. deleteSoleCodeChar — keeps the emptying deletion away from the browser (see its comment);
+  //    also bound to Delete and the word-delete chords, where it guards the same case.
+  // 4. The inherited handler. 5. The shared isolating-boundary step-in.
   addKeyboardShortcuts() {
     const parentShortcuts = this.parent?.();
     const codeType = this.type;
+    const deleteSole =
+      (dir: -1 | 1) =>
+      ({ editor }: { editor: Editor }) =>
+        editor.commands.command((props) => deleteSoleCodeChar(codeType, dir, props));
     return {
       ...parentShortcuts,
       Backspace: ({ editor }) =>
+        editor.commands.undoInputRule() ||
+        editor.commands.command((props) => undoFenceTyping(codeType, props)) ||
+        deleteSole(-1)({ editor }) ||
         (parentShortcuts?.Backspace?.({ editor }) ?? false) ||
         editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)),
+      Delete: deleteSole(1),
+      'Mod-Backspace': deleteSole(-1),
+      'Mod-Delete': deleteSole(1),
+      'Alt-Backspace': deleteSole(-1),
+      'Alt-Delete': deleteSole(1),
     };
+  },
+
+  // The base ``` / ~~~ rules, recreated (not inherited) so every fence rule stamps the
+  // fence-undo meta, plus a Zenn/Qiita-style ` ```lang:filename ` variant (e.g. ```ts:index.ts)
+  // that sets both attrs — the plain backtick rule matches only `[a-z]+`, so a colon made the
+  // whole fence fail and left it as literal text. The language is optional (```:memo.txt): the
+  // serializer/parser already round-trip that form. The filename must be a single token without
+  // backticks — whitespace splits the fence info string and CommonMark forbids backticks in
+  // it — matching the NodeView field's trim-to-one-token rule.
+  addInputRules() {
+    const language = (match: RegExpMatchArray) => ({ language: match[1] });
+    return [
+      undoableFenceRule({ find: /^```([a-z]+)?[\s\n]$/, type: this.type, getAttributes: language }),
+      undoableFenceRule({ find: /^~~~([a-z]+)?[\s\n]$/, type: this.type, getAttributes: language }),
+      undoableFenceRule({
+        find: /^```([a-z]+)?:([^\s`]+)[\s\n]$/,
+        type: this.type,
+        getAttributes: (match) => ({ language: match[1], filename: match[2] }),
+      }),
+    ];
   },
 
   addAttributes() {
@@ -133,6 +252,43 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         parse: { updateDOM: updateCodeBlockDOM },
       },
     };
+  },
+
+  // The fence-undo record (see fenceUndoKey). Stored when a fence rule's transaction carries
+  // the meta; kept afterwards only while the caret still sits inside the same still-empty
+  // code block. TrailingNode's appended paragraph-insert passes that test (it touches nothing
+  // before the doc end), while typing in the block, deleting it, or moving the caret out all
+  // invalidate the record — so a stale fence can never resurface later.
+  addProseMirrorPlugins() {
+    const codeType = this.type;
+    return [
+      ...(this.parent?.() ?? []),
+      new Plugin({
+        key: fenceUndoKey,
+        state: {
+          init: () => null,
+          apply: (tr, prev, _oldState, newState): FenceUndo | null => {
+            const meta = tr.getMeta(fenceUndoKey) as { text: string } | undefined;
+            const text = meta ? meta.text : prev?.text;
+            if (text === undefined) return null;
+            const { $from, empty } = newState.selection;
+            if (
+              !empty ||
+              $from.depth === 0 ||
+              $from.parent.type !== codeType ||
+              $from.parent.content.size > 0
+            ) {
+              return null;
+            }
+            const pos = $from.before();
+            // On a plain carry-over, the caret must still be in the block recorded (mapped
+            // through this transaction) — not in some other empty code block.
+            if (!meta && prev && tr.mapping.map(prev.pos) !== pos) return null;
+            return { pos, text };
+          },
+        },
+      }),
+    ];
   },
 
   // Vanilla-DOM NodeView (mirrors the Callout node): a contenteditable=false chrome header
@@ -254,6 +410,10 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
           mutation: MutationRecord | { type: 'selection'; target: globalThis.Node },
         ) => {
           if (mutation.type === 'selection') return false;
+          // If a native edit destroyed the content hole itself (Chrome folds an emptied
+          // <pre> into the ce=false header — see deleteSoleCodeChar), report the mutation
+          // so ProseMirror redraws the NodeView instead of silently diverging.
+          if (!code.isConnected) return false;
           return !code.contains(mutation.target);
         },
       };

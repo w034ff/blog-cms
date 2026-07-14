@@ -48,9 +48,11 @@ test('a paragraph after a code block is not merged into it by Backspace at its s
   await expect(editor).toContainText('あとの段落');
 });
 
-// Regression: `isolating` must not trap the code block. CodeBlock's own Backspace (empty → clear)
-// still removes an empty block from inside.
-test('Backspace in an empty code block still clears it to a paragraph', async ({ page }) => {
+// Regression: `isolating` must not trap the code block — Backspace from inside an empty block
+// must still remove it. Right after typing the fence it takes the fence-undo path (the literal
+// ``` text comes back, see fenceUndoKey in the extension); once the record has expired, the
+// inherited empty → clear kicks in instead (covered in editor-codeblock-language.spec.ts).
+test('Backspace in a just-typed empty code block restores the fence text', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
@@ -61,4 +63,29 @@ test('Backspace in an empty code block still clears it to a paragraph', async ({
 
   await page.keyboard.press('Backspace');
   await expect(editor.locator('.code-block')).toHaveCount(0);
+  await expect(editor).toContainText('```');
+});
+
+// Regression: deleting the block's final character used to be left to the browser, and
+// Chrome's native edit folded the emptied <pre><code> into the ce=false header — removing
+// the code body from the DOM while ignoreMutation hid the damage from ProseMirror (the
+// header remained but the block was uneditable until a reload). deleteSoleCodeChar in the
+// extension now performs that one deletion through ProseMirror.
+test('deleting the last character keeps the code body editable', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await expect(editor.locator('.code-block-lang')).toHaveValue('ts');
+  const code = editor.locator('.code-block code');
+  await page.keyboard.type('x');
+  await expect(code).toHaveText('x');
+
+  await page.keyboard.press('Backspace');
+  await expect(code).toHaveText(''); // the <code> survives, now empty
+
+  await page.keyboard.type('y'); // …and still receives typing
+  await expect(code).toHaveText('y');
 });
