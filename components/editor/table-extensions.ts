@@ -1,5 +1,5 @@
 import { Extension, getHTMLFromFragment } from '@tiptap/core';
-import { Table } from '@tiptap/extension-table';
+import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { isInTable, selectedRect } from '@tiptap/pm/tables';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
@@ -140,6 +140,17 @@ export const TableDropCursorGuard = Extension.create({
   },
 });
 
+// Markdown can't hold block structure in a table cell: the GFM pipe form is one line
+// of inline content, and even the raw-HTML fallback (spans / multi-paragraph, see
+// isPipeTable) only survives for paragraph content. With the stock `block+` cells a
+// nested code block, callout, list, or table silently flattens to its text on save
+// (a lone block in a cell still counts as the pipe form and is rendered inline).
+// Narrow the schema to paragraphs so such structure can't be authored in a cell at
+// all — block input rules simply don't fire there, and block inserts land outside
+// the table instead of inside the cell.
+export const ParagraphTableCell = TableCell.extend({ content: 'paragraph+' });
+export const ParagraphTableHeader = TableHeader.extend({ content: 'paragraph+' });
+
 // @tiptap/extension-table already stores an `align` attribute per cell (parsed
 // from the `text-align` style markdown-it emits for `:-:`, rendered back as an
 // inline style), but tiptap-markdown's built-in table serializer always writes a
@@ -187,8 +198,17 @@ export const MarkdownTable = Table.extend({
     };
   },
   addCommands() {
+    const parent = this.parent?.();
     return {
-      ...this.parent?.(),
+      ...parent,
+      // A table can't nest inside a cell (paragraph-only cells), so inserting from
+      // within one would split the host table in two around the new table. Refuse
+      // instead; the picker is a no-op while the caret is in a table.
+      insertTable:
+        (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
+          if (isInTable(props.state)) return false;
+          return parent?.insertTable?.(options)(props) ?? false;
+        },
       setColumnAlign:
         (align: CellAlign) =>
         ({ state, tr, dispatch }) => {

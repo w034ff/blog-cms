@@ -8,7 +8,12 @@ import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
-import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
+import {
+  MarkdownTable,
+  ParagraphTableCell,
+  ParagraphTableHeader,
+  TableDropCursorGuard,
+} from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
 import { CalloutSlashCommand } from './editor/callout-slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
@@ -177,10 +182,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         codeBlock: false,
         code: { HTMLAttributes: { spellcheck: 'false' } },
       }),
-      // TableKit bundles the table node too, but we replace it with MarkdownTable
-      // (same node, extended to serialize column alignment), so disable its own.
-      TableKit.configure({ table: false }),
+      // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
+      // (same node, extended to serialize column alignment) and the paragraph-only
+      // cells (markdown can't store block structure inside a cell), so disable its own.
+      TableKit.configure({ table: false, tableCell: false, tableHeader: false }),
       MarkdownTable,
+      ParagraphTableCell,
+      ParagraphTableHeader,
       TableDropCursorGuard,
       ImageExtension,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),

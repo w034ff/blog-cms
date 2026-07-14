@@ -236,6 +236,10 @@ export const Callout = TiptapNode.create({
           if (editor.isActive(this.name)) {
             return commands.updateAttributes(this.name, { type });
           }
+          // A table cell can't hold a callout (paragraph-only cells — markdown has no
+          // way to store one), and inserting from inside a table would split it in two
+          // around the callout. Refuse, mirroring the input rules' top-level-only checks.
+          if (editor.isActive('table')) return false;
           return commands.insertContent({
             type: this.name,
             attrs: { type },
