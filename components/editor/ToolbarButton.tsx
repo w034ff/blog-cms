@@ -29,7 +29,15 @@ function formatShortcut(token: string, mac: boolean): string {
 function ariaKeyshortcuts(token: string, mac: boolean): string {
   return token
     .split('-')
-    .map((part) => (part === 'Mod' ? (mac ? 'Meta' : 'Control') : part.toUpperCase().length === 1 ? part.toUpperCase() : part))
+    .map((part) =>
+      part === 'Mod'
+        ? mac
+          ? 'Meta'
+          : 'Control'
+        : part.toUpperCase().length === 1
+          ? part.toUpperCase()
+          : part,
+    )
     .join('+');
 }
 
@@ -39,6 +47,7 @@ export function ToolbarButton({
   title,
   shortcut,
   destructive,
+  tooltipHidden,
   children,
 }: {
   onClick: () => void;
@@ -54,6 +63,9 @@ export function ToolbarButton({
   // Red tint for a destructive action (e.g. delete the whole table), so it reads as
   // "danger" and isn't mistaken for the neutral controls beside it.
   destructive?: boolean;
+  // Suppress the visible tooltip while keeping the accessible name. Dropdown triggers
+  // set this when open so the tooltip doesn't collide with the panel directly below.
+  tooltipHidden?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
@@ -61,7 +73,7 @@ export function ToolbarButton({
     : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
   const mac = isMac();
   const shortcutLabel = shortcut ? formatShortcut(shortcut, mac) : undefined;
-  const hasTip = Boolean(title || shortcutLabel);
+  const hasTip = Boolean(title || shortcutLabel) && !tooltipHidden;
   return (
     // `group/tt relative` anchors the custom tooltip below the button. The native
     // `title` attribute is intentionally dropped (it renders near the cursor with

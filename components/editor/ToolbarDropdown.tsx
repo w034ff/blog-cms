@@ -32,7 +32,11 @@ export function ToolbarDropdown({
 
   return (
     <div ref={ref} className='relative flex'>
-      <ToolbarButton onClick={() => setOpen((prev) => !prev)} active={active ?? open} title={title}>
+      <ToolbarButton
+        onClick={() => setOpen((prev) => !prev)}
+        active={active ?? open}
+        title={title}
+        tooltipHidden={open}>
         <span className='flex items-center gap-1'>
           {trigger}
           <ChevronIcon open={open} />
