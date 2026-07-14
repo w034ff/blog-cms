@@ -12,7 +12,7 @@ test('the callout menu inserts a protected note callout that round-trips', async
   await expect(editor).toBeVisible();
 
   await editor.click();
-  await page.getByRole('button', { name: 'コールアウト' }).click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
   await page.getByRole('button', { name: '情報' }).click();
 
   // A callout <div> (not a blockquote), tinted, with the type as a label chip.
@@ -44,7 +44,7 @@ test('a callout survives a reload — markdown parses back into the node', async
 
   await page.getByLabel('タイトル').fill('Callout round-trip');
   await editor.click();
-  await page.getByRole('button', { name: 'コールアウト' }).click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
   await page.getByRole('button', { name: '警告', exact: true }).click();
   await page.keyboard.type('保存して読み込み直しても壊れない。');
 
@@ -62,6 +62,31 @@ test('a callout survives a reload — markdown parses back into the node', async
   await expect(page.locator('.ProseMirror')).not.toContainText('[!WARNING]');
 });
 
+// Inside an existing callout the menu switches its type in place — callouts never nest (the
+// toolbar mirrors the top-level-only input rules). Insert a note, type into it, then reopen
+// from the still-in-callout cursor and pick 警告; assert the single callout changed type and
+// kept its body, rather than gaining a nested note+warning.
+test('picking a type inside a callout switches it in place (no nesting)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  await page.keyboard.type('切り替えテスト');
+
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '警告', exact: true }).click();
+
+  // Exactly one callout, now a warning, body preserved — not an outer note wrapping a warning.
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  const callout = editor.locator('div.markdown-alert.markdown-alert-warning');
+  await expect(callout).toBeVisible();
+  await expect(callout.locator('.markdown-alert-title-label')).toHaveText('警告');
+  await expect(callout.locator('.markdown-alert-content')).toContainText('切り替えテスト');
+});
+
 // The other two tiers wire the same way — assert each menu choice inserts a callout node
 // carrying the matching type + label.
 for (const { label, type, title } of [
@@ -75,7 +100,7 @@ for (const { label, type, title } of [
     await expect(editor).toBeVisible();
 
     await editor.click();
-    await page.getByRole('button', { name: 'コールアウト' }).click();
+    await page.getByRole('button', { name: '囲み枠' }).click();
     await page.getByRole('button', { name: label, exact: true }).click();
 
     const callout = editor.locator(`div.markdown-alert.markdown-alert-${type}`);

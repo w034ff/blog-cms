@@ -12,7 +12,9 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 // parsed from it, so the public render pipeline and existing posts are unchanged.
 export type CalloutType = 'note' | 'warning' | 'caution';
 
-export const CALLOUT_TYPES: readonly CalloutType[] = ['note', 'warning', 'caution'];
+// Menu display order (toolbar dropdown + slash menu), 情報 → 注意 → 警告. Distinct from the
+// render/severity ladder below — it's just the order the insert menus list the types in.
+export const CALLOUT_TYPES: readonly CalloutType[] = ['note', 'caution', 'warning'];
 
 // The GitHub-alert tag written to markdown, one per type.
 const CALLOUT_MARKERS: Record<CalloutType, string> = {
@@ -34,7 +36,7 @@ export const CALLOUT_TITLES: Record<CalloutType, string> = {
 const MARKER = /^\[!(note|warning|caution)\][^\S\n]*(?:\n|$)/i;
 
 // Narrow a raw attribute / capture group to a CalloutType, defaulting to note.
-function toCalloutType(value: string | null | undefined): CalloutType {
+export function toCalloutType(value: string | null | undefined): CalloutType {
   return value === 'warning' || value === 'caution' ? value : 'note';
 }
 
@@ -221,12 +223,19 @@ export const Callout = TiptapNode.create({
     return {
       setCallout:
         (type: CalloutType) =>
-        ({ commands }) =>
-          commands.insertContent({
+        ({ editor, commands }) => {
+          // Callouts are top-level only — the input rules refuse to nest them, so keep this
+          // command consistent: inside an existing callout, switch its type in place instead
+          // of inserting a nested one. Covers both the toolbar menu and the `/` slash command.
+          if (editor.isActive(this.name)) {
+            return commands.updateAttributes(this.name, { type });
+          }
+          return commands.insertContent({
             type: this.name,
             attrs: { type },
             content: [{ type: 'paragraph' }],
-          }),
+          });
+        },
     };
   },
 
