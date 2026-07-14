@@ -11,7 +11,9 @@ import type { CellAlign } from './table-extensions';
 // commands to buttons, shown in a floating menu anchored just above the selected
 // table (shouldShow gates it to when the cursor is inside a table). Appended to
 // <body> so the editor wrapper's overflow-hidden can't clip it, and it floats
-// over the content instead of pushing it down.
+// over the content instead of pushing it down. z-20 keeps it above the (unpositioned)
+// editor content but below the sticky main toolbar's z-30 stacking context — the
+// pinned toolbar and its dropdown panels/tooltips must never be covered by this menu.
 export function TableToolbar({ editor }: { editor: Editor }) {
   // BubbleMenu dispatches an editor transaction whenever shouldShow/appendTo/options/
   // getReferencedVirtualElement change by reference; with shouldRerenderOnTransaction
@@ -47,7 +49,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
-      className='z-50 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      className='z-20 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>
