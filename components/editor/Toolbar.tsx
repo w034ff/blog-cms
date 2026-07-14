@@ -9,6 +9,8 @@ import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
 import { ListIcon } from './svg/ListIcon';
+import { QuoteIcon } from './svg/QuoteIcon';
+import { HorizontalRuleIcon } from './svg/HorizontalRuleIcon';
 
 // A single toolbar entry that folds the two list types into one control. It
 // highlights whenever the cursor is in any list, and the open menu marks which
@@ -94,15 +96,18 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         active={editor.isActive('blockquote')}
+        title='引用'
         shortcut='Mod-Shift-b'>
-        引用
+        <QuoteIcon />
       </ToolbarButton>
       <CalloutMenu editor={editor} />
       {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
           menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
-      <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()}>
-        区切り線
+      <ToolbarButton
+        onClick={() => editor.chain().focus().setHorizontalRule().run()}
+        title='区切り線'>
+        <HorizontalRuleIcon />
       </ToolbarButton>
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
           than an editor command, so it's a <label>-wrapped hidden input styled to
