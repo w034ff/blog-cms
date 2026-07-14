@@ -98,12 +98,8 @@ export function Toolbar({
         引用
       </ToolbarButton>
       <CalloutMenu editor={editor} />
-      <ToolbarButton
-        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        active={editor.isActive('codeBlock')}
-        shortcut='Mod-Alt-c'>
-        コードブロック
-      </ToolbarButton>
+      {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
+          menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
       <ToolbarButton onClick={() => editor.chain().focus().setHorizontalRule().run()}>
         区切り線

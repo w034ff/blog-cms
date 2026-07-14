@@ -15,7 +15,7 @@ import {
   TableDropCursorGuard,
 } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
-import { CalloutSlashCommand } from './editor/callout-slash-command';
+import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
@@ -197,8 +197,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
       // and the public render pipeline are unchanged.
       Callout,
-      // `/` at the start of a line opens a small menu to insert a callout (calls setCallout).
-      CalloutSlashCommand,
+      // `/` at the start of a line opens a small block-insert menu (callouts + code block);
+      // choosing a row deletes the `/query` and runs that block's command.
+      SlashCommand,
       // Plain code block + an editor-only language <select> (drives Shiki highlighting on
       // the public page); the `language` attribute still round-trips as a ```lang fence.
       CodeBlockWithLanguage,
