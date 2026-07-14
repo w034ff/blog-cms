@@ -15,6 +15,7 @@ import {
   TableDropCursorGuard,
 } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
+import { Blockquote } from './editor/blockquote-extension';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
 import { Toolbar } from './editor/Toolbar';
@@ -174,12 +175,16 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
       // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
       // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
+      // blockquote is likewise replaced by our Blockquote (StarterKit's copy bundles a
+      // duplicate prosemirror-state whose Backspace join breaks `instanceof` — see
+      // blockquote-extension.ts), so disable it here to avoid a double registration.
       // Turn off the browser's native spellcheck for inline `code` marks — code tokens
       // aren't dictionary words, so it paints them with red squiggles (the code block's
       // <code> is likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
       StarterKit.configure({
         heading: { levels: [2, 3] },
         codeBlock: false,
+        blockquote: false,
         code: { HTMLAttributes: { spellcheck: 'false' } },
       }),
       // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
@@ -197,6 +202,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
       // and the public render pipeline are unchanged.
       Callout,
+      // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
+      // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
+      Blockquote,
       // `/` at the start of a line opens a small block-insert menu (callouts + code block);
       // choosing a row deletes the `/query` and runs that block's command.
       SlashCommand,
