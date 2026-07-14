@@ -2,6 +2,7 @@ import { InputRule, Node as TiptapNode } from '@tiptap/core';
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { findWrapping } from '@tiptap/pm/transform';
+import { stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // GitHub-style alert callouts as a first-class editor node. The three tiers
@@ -133,6 +134,11 @@ export const Callout = TiptapNode.create({
   group: 'block',
   content: 'block+',
   defining: true,
+  // Treat the callout's edges as hard boundaries (like a table cell): regular edits —
+  // Backspace at the start of the following block, Delete at the end of the callout — won't
+  // cross them, so an adjacent block can't be joined into the callout. Without this, ProseMirror's
+  // default joinBackward pulls e.g. a code block right below the callout into its body.
+  isolating: true,
 
   addAttributes() {
     return {
@@ -236,6 +242,46 @@ export const Callout = TiptapNode.create({
             content: [{ type: 'paragraph' }],
           });
         },
+    };
+  },
+
+  // `isolating` (above) stops Backspace from crossing the callout's edges, reshaping two boundary
+  // presses — we tune both so they feel right:
+  //   • at the start of an *empty* callout → unwrap it to a plain paragraph (there's no toolbar
+  //     toggle to clear a callout, so this is how you remove one from inside);
+  //   • at the start of the block right *after* a callout → step the caret into the callout's end
+  //     (backspaceIntoPreviousIsolating), shared with the code block, not a bare node-selection.
+  // A non-empty callout's own start is left alone (clear it first).
+  addKeyboardShortcuts() {
+    const calloutType = this.type;
+    return {
+      Backspace: ({ editor }) =>
+        editor.commands.command((props) => {
+          const { state, tr, dispatch } = props;
+          const { selection } = state;
+          if (!selection.empty) return false;
+          const { $from } = selection;
+
+          // Case 1 (callout-specific): inside an *empty* callout — a single empty textblock —
+          // unwrap it to a plain paragraph. A non-empty callout is left alone (clear it first).
+          let depth = $from.depth;
+          while (depth > 0 && $from.node(depth).type !== calloutType) depth -= 1;
+          if (depth > 0) {
+            const callout = $from.node(depth);
+            const child = callout.childCount === 1 ? callout.firstChild : null;
+            if (!child || !child.isTextblock || child.content.size > 0) return false;
+            if (dispatch) {
+              const from = $from.before(depth);
+              tr.replaceWith(from, from + callout.nodeSize, state.schema.nodes.paragraph.create());
+              tr.setSelection(TextSelection.create(tr.doc, from + 1));
+              tr.scrollIntoView();
+            }
+            return true;
+          }
+
+          // Case 2 (shared): from the block just below, step into the callout's end.
+          return stepIntoPreviousIsolating(calloutType, props);
+        }),
     };
   },
 

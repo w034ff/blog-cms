@@ -1,5 +1,6 @@
 import { CodeBlock } from '@tiptap/extension-code-block';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import { stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // Curated language menu for the in-editor code block. The ids are Shiki language ids
@@ -93,6 +94,25 @@ function updateCodeBlockDOM(element: HTMLElement): void {
 // StarterKit's built-in codeBlock (`StarterKit.configure({ codeBlock: false })`); the node
 // name stays `codeBlock`.
 export const CodeBlockWithLanguage = CodeBlock.extend({
+  // Treat the code block's edges as hard boundaries (like the callout). Without this, Backspace at
+  // the start of the block below merges that block's text *into* the code — turning prose into code
+  // (and corrupting the stored fence). `isolating` blocks that join; the Backspace shortcut below
+  // then steps the caret into the code block's end instead of ProseMirror's node-selection default.
+  isolating: true,
+
+  // Keep CodeBlock's own shortcuts (empty → clear on Backspace, exit-on-arrow-down, Mod-Alt-c, …)
+  // and only augment Backspace: try the inherited handler first, then the shared boundary step-in.
+  addKeyboardShortcuts() {
+    const parentShortcuts = this.parent?.();
+    const codeType = this.type;
+    return {
+      ...parentShortcuts,
+      Backspace: ({ editor }) =>
+        (parentShortcuts?.Backspace?.({ editor }) ?? false) ||
+        editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)),
+    };
+  },
+
   addAttributes() {
     return {
       ...this.parent?.(),
