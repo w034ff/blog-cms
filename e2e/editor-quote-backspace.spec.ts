@@ -1,34 +1,10 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { expectCanonicalSelection, pressKeyUntil, settle } from './editor-probe';
 
 // Regressions for blockquote Backspace joins, both served by components/editor/blockquote-extension.ts.
 // @tiptap/extension-blockquote@3.27.1 bundles its own copy of prosemirror-state into its dist and
 // its Backspace join is single-level only; we replace it. Browser-only — the duplicate class and
 // the join behaviour only exist in the bundled runtime, so tsc/vitest can't observe them.
-
-// Read "<caret's textblock text>@<offset in it>" from the live editor (TipTap 3 hangs the editor
-// off the .ProseMirror DOM node). Used to assert exactly where a Backspace left the caret.
-async function caret(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const el = document.querySelector('.ProseMirror') as
-      | (Element & {
-          editor?: {
-            state: {
-              selection: { $from: { parent: { textContent: string }; parentOffset: number } };
-            };
-          };
-        })
-      | null;
-    const sel = el?.editor?.state.selection;
-    return sel ? `${sel.$from.parent.textContent}@${sel.$from.parentOffset}` : '';
-  });
-}
-
-// Let ProseMirror's 20ms selection-sync debounce (DOMObserver.flushSoon) settle without recreating
-// the selection — a page-side timeout, never an arrow/click (those take the DOM-readback path and
-// would paper over a stuck selection).
-async function settle(page: Page): Promise<void> {
-  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
-}
 
 // The original bug: the extension's join built the caret with a *duplicate* TextSelection class,
 // which failed `instanceof TextSelection` in prosemirror-view and left the next Backspace dead.
@@ -57,6 +33,8 @@ test('Backspace still deletes text after joining a paragraph into a blockquote',
   // Precondition: the join happened — one blockquote holding "quote1", nothing below it.
   await expect(editor.locator('blockquote')).toHaveCount(1);
   await expect(quote).toContainText('quote1');
+  // The caret is a canonical selection (not the bundler-renamed duplicate) — the actual root cause.
+  await expectCanonicalSelection(page);
 
   // The killer Backspace: with the fix it deletes the trailing "1"; with the bug it was dead.
   await page.keyboard.press('Backspace');
@@ -89,16 +67,10 @@ test('Backspace merges a nested-quote line up to the previous line instead of os
   }
   await expect(editor.locator('blockquote blockquote blockquote')).toContainText('ccc');
 
-  // Backspace repeatedly: it must collapse the innermost "ccc" quote and land the caret at the END
-  // of "bbb" (offset 3) — the merge. The pre-fix oscillation never reached "bbb@3", so this poll
-  // would spin until it times out.
-  let where = '';
-  for (let i = 0; i < 8 && where !== 'bbb@3'; i++) {
-    await page.keyboard.press('Backspace');
-    await settle(page);
-    where = await caret(page);
-  }
-  expect(where).toBe('bbb@3');
+  // Backspace must collapse the innermost "ccc" quote and land the caret at the END of "bbb"
+  // (offset 3) — the merge. The pre-fix oscillation never reached "bbb@3", so pressKeyUntil would
+  // exhaust its budget and this assertion would fail instead of the caret converging.
+  expect(await pressKeyUntil(page, 'Backspace', 'bbb@3')).toBe('bbb@3');
   await expect(editor).not.toContainText('ccc');
 
   // The caret really sits inside the "bbb" text (not a foreign/empty selection): one more Backspace

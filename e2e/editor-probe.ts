@@ -1,0 +1,92 @@
+import { expect, type Page } from '@playwright/test';
+
+// Shared read-only probes into the *live* TipTap editor. TipTap 3 hangs the Editor instance off
+// the .ProseMirror DOM node, so any spec can read the running editor state via page.evaluate —
+// the only way to observe browser-only editor behaviour (neither tsc nor vitest sees the runtime).
+// Everything here is side-effect free except pressKeyUntil, which is the "does this action make
+// progress?" primitive (drive a key and watch where the caret lands).
+//
+// These exist to catch two bug classes we've actually hit (see components/editor/blockquote-
+// extension.ts): duplicate module instances that break `instanceof` — spotted via the bundler-
+// renamed constructor name (`_TextSelection`) from selectionClassName — and boundary/nesting
+// logic that never converges (oscillation), spotted via pressKeyUntil timing out.
+
+// `editor.state.doc.toString()` — ProseMirror's compact tree, e.g.
+// `doc(blockquote(paragraph("aaa"), blockquote(paragraph("bbb"))))`. Ideal for asserting structure.
+export function docString(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { state: { doc: { toString(): string } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    return el.editor.state.doc.toString();
+  });
+}
+
+// The runtime class name of the current selection. A canonical selection reads `TextSelection`;
+// a duplicate prosemirror-state copy shows the bundler-renamed `_TextSelection` (or `TextSelection2`
+// …) — the signature of an `instanceof`-breaking module duplication.
+export function selectionClassName(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { state: { selection: { constructor: { name: string } } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    return el.editor.state.selection.constructor.name;
+  });
+}
+
+// "<caret's textblock text>@<offset within it>", e.g. `bbb@3` = caret at the end of a "bbb" line.
+// Compact enough to assert exactly where a keystroke left the caret.
+export function caret(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & {
+          editor?: {
+            state: {
+              selection: { $from: { parent: { textContent: string }; parentOffset: number } };
+            };
+          };
+        })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const { $from } = el.editor.state.selection;
+    return `${$from.parent.textContent}@${$from.parentOffset}`;
+  });
+}
+
+// Let ProseMirror's 20ms selection-sync debounce (DOMObserver.flushSoon) settle WITHOUT recreating
+// the selection — a page-side timeout, never an arrow/click (those take the DOM-readback path and
+// would paper over a stuck/foreign selection).
+export function settle(page: Page): Promise<void> {
+  return page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
+}
+
+// Press `key` repeatedly (settling between presses) until the caret reaches `wantCaret` (a value
+// from caret()), or the budget runs out. Returns the caret where it stopped, so a test can assert
+// convergence: `expect(await pressKeyUntil(page, 'Backspace', 'bbb@3')).toBe('bbb@3')`. A handler
+// that oscillates or no-ops never reaches the target, so the assertion fails instead of hanging —
+// this is how the nested-blockquote Backspace oscillation is guarded.
+export async function pressKeyUntil(
+  page: Page,
+  key: string,
+  wantCaret: string,
+  maxPresses = 10,
+): Promise<string> {
+  let where = await caret(page);
+  for (let i = 0; i < maxPresses && where !== wantCaret; i++) {
+    await page.keyboard.press(key);
+    await settle(page);
+    where = await caret(page);
+  }
+  return where;
+}
+
+// Assert the current selection is a canonical (not duplicated) class. Guards against the
+// `instanceof`-breaking duplicate prosemirror-state — pass the expected class, default TextSelection.
+export async function expectCanonicalSelection(
+  page: Page,
+  className = 'TextSelection',
+): Promise<void> {
+  expect(await selectionClassName(page)).toBe(className);
+}
