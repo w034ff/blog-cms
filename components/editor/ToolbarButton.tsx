@@ -48,6 +48,7 @@ export function ToolbarButton({
   shortcut,
   destructive,
   tooltipHidden,
+  compact,
   children,
 }: {
   onClick: () => void;
@@ -66,6 +67,9 @@ export function ToolbarButton({
   // Suppress the visible tooltip while keeping the accessible name. Dropdown triggers
   // set this when open so the tooltip doesn't collide with the panel directly below.
   tooltipHidden?: boolean;
+  // Tighter hit area (px-1.5 py-0.5 instead of px-2 py-1) for the tightly-packed
+  // inline-mark cluster (B/I/S/code), where the default padding reads oversized.
+  compact?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
@@ -85,7 +89,7 @@ export function ToolbarButton({
       onClick={onClick}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      className={`group/tt relative rounded px-2 py-1 text-xs ${tone} ${
+      className={`group/tt relative rounded text-xs ${compact ? 'px-1 py-1' : 'px-2 py-1'} ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       }`}>
       {children}

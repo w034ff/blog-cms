@@ -11,6 +11,7 @@ import { ImageIcon } from './svg/ImageIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
 import { HorizontalRuleIcon } from './svg/HorizontalRuleIcon';
+import { CodeIcon } from './svg/CodeIcon';
 
 // A single toolbar entry that folds the two list types into one control. It
 // highlights whenever the cursor is in any list, and the open menu marks which
@@ -75,29 +76,45 @@ export function Toolbar({
         onClick={() => editor.chain().focus().toggleBold().run()}
         active={editor.isActive('bold')}
         title='太字'
-        shortcut='Mod-b'>
-        <span className='flex items-center text-sm leading-4 font-bold'>B</span>
+        shortcut='Mod-b'
+        compact>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 font-bold'>B</span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleItalic().run()}
         active={editor.isActive('italic')}
         title='斜体'
-        shortcut='Mod-i'>
-        <span className='flex items-center text-sm leading-4 font-serif italic -skew-x-6 '>I</span>
+        shortcut='Mod-i'
+        compact>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 font-serif italic -skew-x-6'>
+          I
+        </span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleStrike().run()}
         active={editor.isActive('strike')}
         title='取り消し線'
-        shortcut='Mod-Shift-s'>
-        <span className='flex items-center text-sm leading-4 line-through'>S</span>
+        shortcut='Mod-Shift-s'
+        compact>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 line-through'>
+          S
+        </span>
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().toggleCode().run()}
+        active={editor.isActive('code')}
+        title='コード'
+        shortcut='Mod-e'
+        compact>
+        <CodeIcon />
       </ToolbarButton>
       <ListMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         active={editor.isActive('blockquote')}
         title='引用'
-        shortcut='Mod-Shift-b'>
+        shortcut='Mod-Shift-b'
+        compact>
         <QuoteIcon />
       </ToolbarButton>
       <CalloutMenu editor={editor} />
@@ -106,7 +123,8 @@ export function Toolbar({
       <TableGridMenu editor={editor} />
       <ToolbarButton
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        title='区切り線'>
+        title='区切り線'
+        compact>
         <HorizontalRuleIcon />
       </ToolbarButton>
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
