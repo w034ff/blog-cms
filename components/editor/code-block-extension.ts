@@ -3,6 +3,8 @@ import type { CommandProps, Editor, InputRule } from '@tiptap/core';
 import { CodeBlock } from '@tiptap/extension-code-block';
 import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import type { EditorState } from '@tiptap/pm/state';
 import { stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -64,6 +66,45 @@ const DETACHED_FORM_ID = 'code-block-detached-controls';
 type FenceUndo = { pos: number; text: string };
 
 const fenceUndoKey = new PluginKey<FenceUndo | null>('codeBlockFenceUndo');
+
+// Mirrors the public render pipeline's two diff rules on a ```diff block's lines. There's no
+// per-line node to decorate (a code block's lines are just \n characters inside one text node),
+// so this wraps each line's text — not the trailing \n — in an inline decoration; the class's
+// styling then covers exactly the line's own characters (see the CSS in app/globals.css for why
+// that reads as a full row in practice). The two rules, each matched separately against Shiki's
+// actual output for a ```diff fence:
+// 1. Text color (Shiki's diff grammar, github-dark/github-light themes): every +/- led line,
+//    including the +++/--- file-header lines of a unified diff.
+// 2. Row background (lib/shiki-diff-line-transformer.ts, added because Shiki only colors the
+//    text): +/- content lines only — the same transformer excludes +++/--- there too.
+const diffHighlightKey = new PluginKey<DecorationSet>('codeBlockDiffHighlight');
+
+function diffLineDecorations(doc: PMNode, codeType: NodeType): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.descendants((node, pos) => {
+    if (node.type !== codeType || stringAttr(node.attrs.language) !== 'diff') return;
+    const contentStart = pos + 1;
+    let offset = 0;
+    for (const line of node.textContent.split('\n')) {
+      if (line.length > 0) {
+        const from = contentStart + offset;
+        const to = from + line.length;
+        if (line.startsWith('+')) {
+          const isHeader = line.startsWith('+++');
+          const cls = isHeader ? 'diff-text-add' : 'diff-text-add diff-line-add';
+          decorations.push(Decoration.inline(from, to, { class: cls }));
+        } else if (line.startsWith('-')) {
+          const isHeader = line.startsWith('---');
+          const cls = isHeader ? 'diff-text-remove' : 'diff-text-remove diff-line-remove';
+          decorations.push(Decoration.inline(from, to, { class: cls }));
+        }
+      }
+      offset += line.length + 1;
+    }
+    return false;
+  });
+  return DecorationSet.create(doc, decorations);
+}
 
 // Wrap a fence input rule so the transaction it applies also stamps the matched fence text
 // for the fenceUndo plugin. An Enter trigger's trailing "\n" is stripped (it can't live in
@@ -263,6 +304,16 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
     const codeType = this.type;
     return [
       ...(this.parent?.() ?? []),
+      new Plugin({
+        key: diffHighlightKey,
+        state: {
+          init: (_, state: EditorState) => diffLineDecorations(state.doc, codeType),
+          apply: (tr, prev) => (tr.docChanged ? diffLineDecorations(tr.doc, codeType) : prev),
+        },
+        props: {
+          decorations: (state) => diffHighlightKey.getState(state),
+        },
+      }),
       new Plugin({
         key: fenceUndoKey,
         state: {

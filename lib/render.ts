@@ -9,6 +9,7 @@ import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 import { rehypeCodeFilename } from './rehype-code-filename';
+import { diffLineHighlight } from './shiki-diff-line-transformer';
 
 // defaultSchema (GitHub's allowlist) minus className, so the alert transform's
 // container/title/content classes survive sanitization. The nested `['className', …]`
@@ -71,6 +72,7 @@ const processor = unified()
     // "no language" blocks get the same card/filename/copy-button chrome as highlighted ones —
     // just no token colors. Object form scopes this to block code, leaving inline code untouched.
     defaultLang: { block: 'plaintext' },
+    transformers: [diffLineHighlight()],
   })
   .use(rehypeStringify);
 

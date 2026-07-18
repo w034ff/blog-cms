@@ -68,6 +68,16 @@ body {
   padding: 0 0.25rem;
 }
 
+/* ```diff fences: shiki's diff grammar only sets a token *foreground* color for +/- lines
+   (see lib/shiki-diff-line-transformer.ts), so paint the full row here to read as a real
+   diff. Colors match GitHub's diff view; the transformer excludes +++/--- header lines. */
+[data-rehype-pretty-code-figure] [data-line].diff-line-add {
+  background: rgba(46, 160, 67, 0.15);
+}
+[data-rehype-pretty-code-figure] [data-line].diff-line-remove {
+  background: rgba(248, 81, 73, 0.15);
+}
+
 @media (prefers-color-scheme: light) {
   [data-rehype-pretty-code-figure] {
     border-color: #d0d7de;
@@ -178,6 +188,27 @@ body {
 .prose .code-block-header .code-block-filename::placeholder {
   color: rgba(173, 184, 199, 0.55);
 }
+
+/* Editor-only mirror of the public diff line rules (components/editor/code-block-extension.ts
+   adds these classes via a ProseMirror decoration, since a code block's lines are just \n
+   characters in one text node — not the [data-line] elements Shiki emits on the public page).
+   diff-line-add/-remove match the row background from the diffLineHighlight transformer above;
+   diff-text-add/-remove match Shiki's own github-dark/github-light token colors for the diff
+   grammar's markup.inserted/deleted scopes (dark values here, light override below — same
+   dark-first pattern as the rest of this card). */
+.prose .code-block .diff-line-add {
+  background: rgba(46, 160, 67, 0.15);
+}
+.prose .code-block .diff-line-remove {
+  background: rgba(248, 81, 73, 0.15);
+}
+.prose .code-block .diff-text-add {
+  color: #85e89d;
+}
+.prose .code-block .diff-text-remove {
+  color: #fdaeb7;
+}
+
 @media (prefers-color-scheme: light) {
   .prose .code-block {
     border-color: #d0d7de;
@@ -202,6 +233,12 @@ body {
     background: rgba(0, 0, 0, 0.07);
     color: #24292f;
     box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  }
+  .prose .code-block .diff-text-add {
+    color: #22863a;
+  }
+  .prose .code-block .diff-text-remove {
+    color: #b31d28;
   }
   .prose .code-block-header .code-block-filename::placeholder {
     color: rgba(87, 96, 106, 0.6);
