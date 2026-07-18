@@ -142,11 +142,12 @@ body {
   background: transparent;
   color: inherit;
 }
-/* Filename and language <select> share the same quiet caption styling — transparent at rest,
-   revealing a faint tint (and, on focus, an inset ring) only on hover/focus. The filename reads
-   as the code's title and stays borderless; when empty, its placeholder copy ("ファイル名を追加",
-   set in the NodeView) — not a background — signals it's editable. The <select> is a control, so
-   it keeps a hairline border (set below) to read as openable. Shared type + states here. */
+/* Filename and language <select> share the same quiet caption type + states (font, hover/focus
+   tint, focus ring). They differ in resting background: the filename reads as the code's title
+   and stays fully transparent — when empty, its placeholder copy ("ファイル名を追加", set in the
+   NodeView), not a background, signals it's editable. The <select> is an operable control, so it
+   keeps a static tint + hairline border even at rest (set below) so it reads as "clickable"
+   instead of blending into the header. */
 .prose .code-block-header .code-block-filename,
 .prose .code-block-header .code-block-lang {
   border: 0;
@@ -169,8 +170,14 @@ body {
 .prose .code-block-header .code-block-lang {
   flex: 0 0 auto;
   cursor: pointer;
-  /* A hairline border (no fill) marks the <select> as a control you can open — the filename
-     is content (a title) and stays borderless, but a picker earns a quiet boundary. */
+  /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
+     language is content you want to read at a glance — fixed to the same bright color used
+     elsewhere on hover/focus, rather than fading in only on interaction. Also unlike the
+     filename: a hairline border plus its own static tint mark it as "clickable" at rest,
+     instead of blending into the header's own background — a plain hairline border alone
+     read as too subtle. Hover/focus below still step the background tint up further. */
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(160, 160, 160, 0.25);
 }
 .prose .code-block-header .code-block-filename:hover,
@@ -187,6 +194,102 @@ body {
 }
 .prose .code-block-header .code-block-filename::placeholder {
   color: rgba(173, 184, 199, 0.55);
+}
+
+/* Diff-display toggle (components/editor/code-block-extension.ts's NodeView): a compact pill
+   switch appended after the language <select>, grouped with it as the header's right-aligned
+   controls (the filename fills the bar as a title on the left; both the <select> and this
+   toggle are right-aligned controls). No permanent text label — `.code-block-diff-toggle-tip`
+   is a hover-only tooltip, shown the same way ToolbarButton.tsx's tooltip is (a CSS opacity
+   transition, not the native `title` attribute, which renders near the cursor with a
+   browser-controlled delay). The "on" track is a plain blue accent, kept distinct from the
+   diff-add/-remove green/red below it so the switch itself doesn't read as "add". Base colors
+   are dark; the light media query below overrides. */
+.prose .code-block-header .code-block-diff-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0.125rem;
+  cursor: pointer;
+}
+.prose .code-block-header .code-block-diff-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 2rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background: rgba(160, 160, 160, 0.35);
+  transition: background-color 0.12s ease;
+}
+.prose .code-block-header .code-block-diff-toggle-thumb {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-left: 0.125rem;
+  border-radius: 50%;
+  background: #adbac7;
+  transform: translateX(0);
+  transition:
+    transform 0.12s ease,
+    background-color 0.12s ease;
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']
+  .code-block-diff-toggle-track {
+  background: #1f6feb;
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']
+  .code-block-diff-toggle-thumb {
+  background: #e6edf3;
+  transform: translateX(0.875rem);
+}
+.prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-track {
+  background: rgba(255, 255, 255, 0.25);
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']:hover
+  .code-block-diff-toggle-track {
+  background: #388bfd;
+}
+.prose .code-block-header .code-block-diff-toggle:focus-visible {
+  outline: none;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+.prose .code-block-header .code-block-diff-toggle-tip {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  z-index: 1;
+  margin-top: 0.375rem;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 0.25rem;
+  /* Matches ToolbarButton.tsx's tooltip chip (Tailwind zinc-700/zinc-900): a fixed dark
+     bubble with white text regardless of the surrounding theme, not the header's own
+     background — reusing the header's bg here (as a first pass) made the tip blend in and
+     become unreadable, since a floating tooltip needs to read as distinct from what's behind
+     it. Dark-mode value here; the light query below overrides to the lighter-theme pairing. */
+  background: #3f3f46;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+.prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-tip,
+.prose .code-block-header .code-block-diff-toggle:focus-visible .code-block-diff-toggle-tip {
+  opacity: 1;
+  transition-delay: 0.3s;
 }
 
 /* Editor-only mirror of the public diff line rules (components/editor/code-block-extension.ts
@@ -219,8 +322,7 @@ body {
     background: #eaeef2;
     border-bottom-color: #d0d7de;
   }
-  .prose .code-block-header .code-block-filename,
-  .prose .code-block-header .code-block-lang {
+  .prose .code-block-header .code-block-filename {
     color: #57606a;
   }
   .prose .code-block-header .code-block-filename:hover,
@@ -244,7 +346,46 @@ body {
     color: rgba(87, 96, 106, 0.6);
   }
   .prose .code-block-header .code-block-lang {
+    /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
+       language is content you want to read at a glance — fixed to the same near-black used
+       elsewhere on hover/focus, rather than fading in only on interaction. */
+    color: #24292f;
+    background: rgba(0, 0, 0, 0.04);
     border-color: rgba(127, 127, 127, 0.3);
+  }
+  .prose .code-block-header .code-block-diff-toggle-track {
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .prose .code-block-header .code-block-diff-toggle-thumb {
+    background: #57606a;
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']
+    .code-block-diff-toggle-track {
+    background: #0969da;
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']
+    .code-block-diff-toggle-thumb {
+    background: #ffffff;
+  }
+  .prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-track {
+    background: rgba(0, 0, 0, 0.22);
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']:hover
+    .code-block-diff-toggle-track {
+    /* #1f6feb (the dark base "on" color, reused as light's hover per the dark-first pairing
+       pattern elsewhere in this file) read too close to #0969da to notice on hover, but the
+       dark mode's own hover blue (#388bfd) read too bright — this is the midpoint of the two. */
+    background: #2c7df4;
+  }
+  .prose .code-block-header .code-block-diff-toggle-tip {
+    background: #18181b;
+    color: #ffffff;
   }
 }
 

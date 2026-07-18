@@ -16,7 +16,7 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 // rule can't produce — it only captures `[a-z]+`, so `cpp` (C++) and `csharp` (C#) are
 // reachable only here.
 export const CODE_LANGUAGES: readonly { id: string; label: string }[] = [
-  { id: '', label: 'なし' },
+  { id: '', label: 'Plain Text' },
   { id: 'bash', label: 'Bash' },
   { id: 'shell', label: 'Shell' },
   { id: 'js', label: 'JavaScript' },
@@ -42,7 +42,6 @@ export const CODE_LANGUAGES: readonly { id: string; label: string }[] = [
   { id: 'yaml', label: 'YAML' },
   { id: 'toml', label: 'TOML' },
   { id: 'markdown', label: 'Markdown' },
-  { id: 'diff', label: 'Diff' },
   { id: 'dockerfile', label: 'Dockerfile' },
   { id: 'graphql', label: 'GraphQL' },
 ];
@@ -67,36 +66,42 @@ type FenceUndo = { pos: number; text: string };
 
 const fenceUndoKey = new PluginKey<FenceUndo | null>('codeBlockFenceUndo');
 
-// Mirrors the public render pipeline's two diff rules on a ```diff block's lines. There's no
+// Mirrors the public render pipeline's diff rules on any code block with `diff: true`
+// (independent of `language`, which is now just the underlying Shiki grammar). There's no
 // per-line node to decorate (a code block's lines are just \n characters inside one text node),
 // so this wraps each line's text — not the trailing \n — in an inline decoration; the class's
 // styling then covers exactly the line's own characters (see the CSS in app/globals.css for why
 // that reads as a full row in practice). The two rules, each matched separately against Shiki's
-// actual output for a ```diff fence:
-// 1. Text color (Shiki's diff grammar, github-dark/github-light themes): every +/- led line,
-//    including the +++/--- file-header lines of a unified diff.
-// 2. Row background (lib/shiki-diff-line-transformer.ts, added because Shiki only colors the
-//    text): +/- content lines only — the same transformer excludes +++/--- there too.
+// actual output on the public page:
+// 1. Text color (diff-text-*): only for blocks with NO real language, where the public page
+//    highlights with Shiki's own `diff` grammar and its markup.inserted/deleted scopes color
+//    every +/- led line — including +++/--- file headers. With a real language (```diff_ts),
+//    the public page tokenizes with that grammar instead, so green/red text here would show
+//    something publishing never does.
+// 2. Row background (diff-line-*, lib/shiki-diff-line-transformer.ts — added because Shiki
+//    only colors the text): +/- content lines of every diff block, language or not; the
+//    transformer excludes +++/--- there too.
 const diffHighlightKey = new PluginKey<DecorationSet>('codeBlockDiffHighlight');
 
 function diffLineDecorations(doc: PMNode, codeType: NodeType): DecorationSet {
   const decorations: Decoration[] = [];
   doc.descendants((node, pos) => {
-    if (node.type !== codeType || stringAttr(node.attrs.language) !== 'diff') return;
+    if (node.type !== codeType || !node.attrs.diff) return;
+    const hasLanguage = stringAttr(node.attrs.language) !== '';
     const contentStart = pos + 1;
     let offset = 0;
     for (const line of node.textContent.split('\n')) {
-      if (line.length > 0) {
-        const from = contentStart + offset;
-        const to = from + line.length;
-        if (line.startsWith('+')) {
-          const isHeader = line.startsWith('+++');
-          const cls = isHeader ? 'diff-text-add' : 'diff-text-add diff-line-add';
-          decorations.push(Decoration.inline(from, to, { class: cls }));
-        } else if (line.startsWith('-')) {
-          const isHeader = line.startsWith('---');
-          const cls = isHeader ? 'diff-text-remove' : 'diff-text-remove diff-line-remove';
-          decorations.push(Decoration.inline(from, to, { class: cls }));
+      if (line.length > 0 && (line.startsWith('+') || line.startsWith('-'))) {
+        const sign = line.startsWith('+') ? 'add' : 'remove';
+        const isHeader = line.startsWith(line[0].repeat(3));
+        const classes: string[] = [];
+        if (!hasLanguage) classes.push(`diff-text-${sign}`);
+        if (!isHeader) classes.push(`diff-line-${sign}`);
+        if (classes.length > 0) {
+          const from = contentStart + offset;
+          decorations.push(
+            Decoration.inline(from, from + line.length, { class: classes.join(' ') }),
+          );
         }
       }
       offset += line.length + 1;
@@ -170,12 +175,16 @@ function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps):
 // Serialize a code block as a Zenn/Qiita-style fence: `language` plus, when set, `:filename`
 // (e.g. ```ts:index.ts). Mirrors prosemirror-markdown's default code_block serializer,
 // including the dynamic fence length so backtick runs inside the code can't close it early.
+// A `diff: true` block writes `diff` (or `diff_<language>`, when a language is also set) as
+// the fence's language segment instead of the bare language — the inverse of the `diff`/
+// `diff_<lang>` prefix updateCodeBlockDOM strips back out below.
 function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void {
   const language = stringAttr(node.attrs.language);
   const filename = stringAttr(node.attrs.filename);
   const backticks = node.textContent.match(/`{3,}/g);
   const fence = backticks ? backticks.sort().slice(-1)[0] + '`' : '```';
-  const params = language + (filename ? `:${filename}` : '');
+  const langSegment = node.attrs.diff ? 'diff' + (language ? `_${language}` : '') : language;
+  const params = langSegment + (filename ? `:${filename}` : '');
   state.write(fence + params + '\n');
   state.text(node.textContent, false);
   state.ensureNewLine();
@@ -188,19 +197,47 @@ function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void 
 // `<code class="language-ts:index.ts">`. Split it: restore the real `language-ts` class (so
 // the base `language` attr parses right) and stash the filename on the <pre> as `data-title`
 // for the `filename` attr below. A plain ```ts fence has no colon and is left untouched.
+//
+// Also recognizes a `diff`/`diff_<language>` prefix on the language segment itself (before the
+// `:filename` colon, same convention) — e.g. ```diff_ts:index.ts arrives as
+// `language-diff_ts:index.ts`. Strips the prefix down to the real language (or no class at all,
+// for bare ```diff/```diff_), and stashes a `data-diff` marker on the <pre> for the `diff`
+// attr's parseHTML below. This also covers old posts' bare ```diff fences (no colon, no `_lang`),
+// which is exactly what lets them load as `language: null, diff: true` with no migration step.
 function updateCodeBlockDOM(element: HTMLElement): void {
   element.querySelectorAll('pre > code').forEach((code) => {
     const languageClass = Array.from(code.classList).find((c) => c.startsWith('language-'));
     if (!languageClass) return;
     const value = languageClass.slice('language-'.length);
     const colon = value.indexOf(':');
-    if (colon === -1) return;
-    const language = value.slice(0, colon);
-    const filename = value.slice(colon + 1);
+    let langPart = colon === -1 ? value : value.slice(0, colon);
+    const filename = colon === -1 ? '' : value.slice(colon + 1);
+
+    const isDiff = langPart === 'diff' || langPart.startsWith('diff_');
+    if (isDiff) langPart = langPart === 'diff' ? '' : langPart.slice('diff_'.length);
+
+    if (!isDiff && colon === -1) return;
     code.classList.remove(languageClass);
-    if (language) code.classList.add(`language-${language}`);
+    if (langPart) code.classList.add(`language-${langPart}`);
     if (filename) code.parentElement?.setAttribute('data-title', filename);
+    if (isDiff) code.parentElement?.setAttribute('data-diff', '');
   });
+}
+
+// The `language-*` class value on a <pre>'s first child <code> — what base CodeBlock's
+// `language` parseHTML reads ('' when absent). Re-read by both attribute overrides below:
+// directly pasted HTML never goes through updateCodeBlockDOM (a markdown-parse-only hook), so
+// a `<pre><code class="language-diff">` from an external page (Prism/highlight.js emit exactly
+// this) must be folded into `language: null, diff: true` — the same state a ```diff fence
+// loads as. Left unfolded, `language: 'diff'` would be a shadow state: undecorated in the
+// editor and shown as a stray select entry, yet serialized as a bare ```diff fence that flips
+// to diff-on at the next load.
+function domLanguage(element: HTMLElement): string {
+  const code = element.firstElementChild;
+  const languageClass = code
+    ? Array.from(code.classList).find((c) => c.startsWith('language-'))
+    : undefined;
+  return languageClass ? languageClass.slice('language-'.length) : '';
 }
 
 // StarterKit's plain CodeBlock, extended so the editor surfaces (and can edit) the block's
@@ -262,7 +299,37 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   // it — matching the NodeView field's trim-to-one-token rule.
   addInputRules() {
     const language = (match: RegExpMatchArray) => ({ language: match[1] });
+    // Bare `diff` and `diff_<lang>` both set `diff: true`; the captured letters (if any)
+    // become the real `language` — empty/absent means "no language, just diff coloring".
+    const diffLanguage = (match: RegExpMatchArray) => ({
+      language: match[1] ? match[1] : null,
+      diff: true,
+    });
     return [
+      // Diff-specific rules must come first: a bare ```diff also matches the generic
+      // `[a-z]+` rule below (diff reads as a plain "language" to that regex), so these need
+      // to win the race for that literal prefix. `diff_<lang>` (contains `_`) never matches
+      // the generic rule at all, but it's kept alongside bare `diff` here for one shared
+      // `diffLanguage` mapping.
+      undoableFenceRule({
+        find: /^```diff(?:_([a-z]*))?[\s\n]$/,
+        type: this.type,
+        getAttributes: diffLanguage,
+      }),
+      undoableFenceRule({
+        find: /^~~~diff(?:_([a-z]*))?[\s\n]$/,
+        type: this.type,
+        getAttributes: diffLanguage,
+      }),
+      undoableFenceRule({
+        find: /^```diff(?:_([a-z]*))?:([^\s`]+)[\s\n]$/,
+        type: this.type,
+        getAttributes: (match) => ({
+          language: match[1] ? match[1] : null,
+          diff: true,
+          filename: match[2],
+        }),
+      }),
       undoableFenceRule({ find: /^```([a-z]+)?[\s\n]$/, type: this.type, getAttributes: language }),
       undoableFenceRule({ find: /^~~~([a-z]+)?[\s\n]$/, type: this.type, getAttributes: language }),
       undoableFenceRule({
@@ -276,12 +343,43 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      // Round-trips through the `data-title` attribute that updateCodeBlockDOM stashes on
-      // the <pre>; serialized as the `:filename` fence suffix, so it needs no HTML rendering.
-      filename: {
+      // Base CodeBlock's `language`, re-read via domLanguage so 'diff' folds into the `diff`
+      // attr below instead of surviving as a literal language (see domLanguage's comment).
+      language: {
         default: null,
         rendered: false,
+        parseHTML: (element) => {
+          const language = domLanguage(element);
+          return language === '' || language === 'diff' ? null : language;
+        },
+      },
+      // Round-trips through the `data-title` attribute on the <pre>: updateCodeBlockDOM
+      // stashes it when parsing markdown, and renderHTML writes it back out. The write-out
+      // matters for in-editor copy/paste — ProseMirror serializes a copied block to clipboard
+      // HTML via the schema's renderHTML (never the NodeView DOM), so without it a pasted
+      // copy would silently lose the filename. Storage is unaffected (markdown, via
+      // serializeCodeBlock's `:filename` suffix).
+      filename: {
+        default: null,
         parseHTML: (element) => element.getAttribute('data-title'),
+        renderHTML: (attributes: { filename?: string | null }) => {
+          const filename = stringAttr(attributes.filename);
+          return filename === '' ? {} : { 'data-title': filename };
+        },
+      },
+      // Independent of `language`: whether this block is a manually-authored diff (+/- lines
+      // get row/text coloring — see diffLineDecorations). Round-trips through the `data-diff`
+      // marker on the <pre> (stashed by updateCodeBlockDOM, written back by renderHTML for
+      // the same clipboard reason as `filename`) — or, for pasted external HTML that never
+      // met that hook, through a literal language-diff class (see domLanguage); serialized as
+      // the `diff`/`diff_<lang>` fence prefix instead of the bare language (see
+      // serializeCodeBlock).
+      diff: {
+        default: false,
+        parseHTML: (element) =>
+          element.hasAttribute('data-diff') || domLanguage(element) === 'diff',
+        renderHTML: (attributes: { diff?: boolean }) =>
+          attributes.diff ? { 'data-diff': '' } : {},
       },
     };
   },
@@ -397,6 +495,27 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         select.appendChild(option);
       };
 
+      // Diff-display toggle: independent of the language <select>, sits at the header's
+      // right edge (after it) as the outermost "control" — matching the header's existing
+      // title-fills-left/controls-cluster-right layout. Icon-only; the tip span below is a
+      // hover-revealed tooltip built the same way as ToolbarButton's (CSS opacity transition,
+      // not the native `title` attribute, which renders with a browser-controlled delay).
+      const diffToggle = document.createElement('button');
+      diffToggle.type = 'button';
+      diffToggle.className = 'code-block-diff-toggle';
+      diffToggle.setAttribute('role', 'switch');
+      diffToggle.setAttribute('aria-label', '差分表示切り替え');
+      const diffToggleTrack = document.createElement('span');
+      diffToggleTrack.className = 'code-block-diff-toggle-track';
+      diffToggleTrack.appendChild(document.createElement('span')).className =
+        'code-block-diff-toggle-thumb';
+      diffToggle.appendChild(diffToggleTrack);
+      const diffToggleTip = document.createElement('span');
+      diffToggleTip.className = 'code-block-diff-toggle-tip';
+      diffToggleTip.setAttribute('aria-hidden', 'true');
+      diffToggleTip.textContent = '差分表示';
+      diffToggle.appendChild(diffToggleTip);
+
       const sync = () => {
         const language = stringAttr(currentNode.attrs.language);
         ensureOption(language);
@@ -405,12 +524,13 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         if (document.activeElement !== filenameInput) {
           filenameInput.value = stringAttr(currentNode.attrs.filename);
         }
+        diffToggle.setAttribute('aria-checked', String(Boolean(currentNode.attrs.diff)));
       };
       sync();
 
       // Both writes go through setNodeMarkup at this node's position (getPos), the same
       // way the Callout NodeView commits its type change.
-      const setAttr = (attrs: Record<string, string | null>) => {
+      const setAttr = (attrs: Record<string, string | boolean | null>) => {
         const pos = getPos();
         if (typeof pos !== 'number') return;
         const { state, dispatch } = editor.view;
@@ -430,8 +550,16 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         setAttr({ filename: trimmed === '' ? null : trimmed });
       });
 
+      // Unlike the <select> (one commit per pick, so it hands focus back to the editor), a
+      // switch invites repeated activation: keep focus on the button, or a keyboard user's
+      // second Space would type a space into the document instead of flipping it back.
+      diffToggle.addEventListener('click', () => {
+        setAttr({ diff: !currentNode.attrs.diff });
+      });
+
       header.appendChild(filenameInput);
       header.appendChild(select);
+      header.appendChild(diffToggle);
 
       // Turn off the browser's native spellcheck for the code body: variable/function names
       // aren't dictionary words, so it paints most of the code with red squiggles. Prose

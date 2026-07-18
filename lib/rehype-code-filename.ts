@@ -10,13 +10,22 @@ declare module 'hast' {
 }
 
 // Zenn/Qiita write a code block's filename in the fence info string as `lang:filename`
-// (e.g. ```ts:index.ts). markdown/remark-rehype fold the whole no-whitespace info string
-// into the `language-ts:index.ts` class, which survives rehype-sanitize intact. This step —
-// which MUST run after sanitize (so the meta it sets isn't stripped) and before
-// rehype-pretty-code — splits that class: restore a clean `language-ts` class so Shiki
-// highlights, and move the filename into `data.meta` as `title="…"` for pretty-code to render
-// as a <figcaption data-rehype-pretty-code-title>. A plain ```ts fence has no colon and is
-// left untouched.
+// (e.g. ```ts:index.ts), and the editor (components/editor/code-block-extension.ts) writes a
+// diff-flagged block's fence as `diff`/`diff_<lang>` in place of the bare language (e.g.
+// ```diff_ts, or bare ```diff for "no language, just diff coloring" — including old posts
+// written before this attribute existed, which need no migration since this runs fresh on
+// every render). markdown/remark-rehype fold the whole no-whitespace info string into the
+// `language-...` class, which survives rehype-sanitize intact. This step — which MUST run
+// after sanitize (so the meta it sets isn't stripped) and before rehype-pretty-code — splits
+// that class: strips any `diff`/`diff_` prefix down to the real language and the `:filename`
+// suffix, restoring a clean `language-<lang>` class so Shiki highlights the real language —
+// or, when no real language was given (bare ```diff/```diff_), keeps `language-diff` so Shiki
+// still applies its own `diff` grammar (see the `isDiff` branch below for why that matters).
+// The filename moves into `data.meta` as `title="…"` (rendered by pretty-code as a
+// <figcaption data-rehype-pretty-code-title>) alongside a bare `diff` word that
+// lib/shiki-diff-line-transformer.ts's transformer reads back via `this.options.meta.__raw` to
+// decide whether to paint +/- rows — independent of the real Shiki language now. A plain
+// ```ts fence (no colon, no diff prefix) is left untouched.
 export function rehypeCodeFilename() {
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
@@ -31,20 +40,37 @@ export function rehypeCodeFilename() {
 
       const value = String(className[langIndex]).slice('language-'.length);
       const colon = value.indexOf(':');
-      if (colon === -1) return;
-
-      const language = value.slice(0, colon);
+      let language = colon === -1 ? value : value.slice(0, colon);
       // Drop stray double quotes so the title="…" meta can't be broken out of. The filename
       // never contains whitespace (markdown parsing would have split the info string).
-      const filename = value.slice(colon + 1).replace(/"/g, '');
+      const filename = colon === -1 ? '' : value.slice(colon + 1).replace(/"/g, '');
+
+      const isDiff = language === 'diff' || language.startsWith('diff_');
+      if (isDiff) language = language === 'diff' ? '' : language.slice('diff_'.length);
+
+      // Nothing to rewrite: a plain ```lang fence with no filename and no diff prefix.
+      if (!isDiff && colon === -1) return;
 
       if (language) {
         className[langIndex] = `language-${language}`;
+      } else if (isDiff) {
+        // No real language (bare ```diff/```diff_): keep Shiki's own `diff` grammar rather than
+        // falling back to plaintext. Its markup.inserted/deleted scopes are what give +/- lines
+        // their token *foreground* color (the github-dark/light themes' green/red — the same
+        // values components/editor/code-block-extension.ts's CSS hardcodes for the editor's own
+        // decoration, since ProseMirror can't reuse Shiki's theme). diffLineHighlight only adds
+        // the *background* those scopes don't surface — losing the `diff` grammar here would
+        // lose that foreground coloring entirely, not just the background.
+        className[langIndex] = 'language-diff';
       } else {
         className.splice(langIndex, 1);
       }
-      if (filename) {
-        node.data = { ...node.data, meta: `title="${filename}"` };
+
+      const metaParts: string[] = [];
+      if (isDiff) metaParts.push('diff');
+      if (filename) metaParts.push(`title="${filename}"`);
+      if (metaParts.length > 0) {
+        node.data = { ...node.data, meta: metaParts.join(' ') };
       }
     });
   };
