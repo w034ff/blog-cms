@@ -2,7 +2,7 @@ import { InputRule, Node as TiptapNode } from '@tiptap/core';
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { findWrapping } from '@tiptap/pm/transform';
-import { stepIntoPreviousIsolating } from './isolating-boundary';
+import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // GitHub-style alert callouts as a first-class editor node. The three tiers
@@ -256,6 +256,9 @@ export const Callout = TiptapNode.create({
   //   • at the start of the block right *after* a callout → step the caret into the callout's end
   //     (backspaceIntoPreviousIsolating), shared with the code block, not a bare node-selection.
   // A non-empty callout's own start is left alone (clear it first).
+  //
+  // Delete gets the mirror treatment at the callout's *end*: stepIntoNextIsolating deletes a
+  // following empty block outright; a non-empty one is already a safe no-op via `isolating`.
   addKeyboardShortcuts() {
     const calloutType = this.type;
     return {
@@ -286,6 +289,8 @@ export const Callout = TiptapNode.create({
           // Case 2 (shared): from the block just below, step into the callout's end.
           return stepIntoPreviousIsolating(calloutType, props);
         }),
+      Delete: ({ editor }) =>
+        editor.commands.command((props) => stepIntoNextIsolating(calloutType, props)),
     };
   },
 

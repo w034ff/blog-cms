@@ -57,6 +57,134 @@ test('a block right after a callout is not pulled in by Backspace at its start',
   await expect(callout).not.toContainText('あとに続く段落');
 });
 
+// Unlike the non-empty case above, an *empty* line right after the callout carries nothing that
+// could corrupt its body, so stepIntoPreviousIsolating deletes it outright (matching blockquote's
+// plain join, where the empty line just disappears) instead of leaving it stranded. A second,
+// non-empty paragraph below proves the delete really happened: with the doc's last block already
+// a paragraph, StarterKit's TrailingNode has nothing to refill, so a stale line would otherwise
+// still be there to count.
+test('Backspace on an empty line after a callout deletes that line', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  await page.keyboard.type('囲み枠の本文');
+  // Escaping the isolating callout downward lands on a gap cursor (see the test above), so
+  // typing here creates one paragraph holding '次の段落' directly after the callout — not yet
+  // the empty-line-then-paragraph shape this test needs.
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('次の段落');
+  // splitBlock at the very start of that paragraph turns it into an empty paragraph followed by
+  // one holding the original text, caret landing at the start of the second — exactly the
+  // "isolating node, empty line, non-empty paragraph" shape, without depending on gap-cursor
+  // Enter semantics.
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowLeft'); // into the empty line above
+  await caretAtLineStart(page); // same native-selection-sync race as Home, above
+
+  const callout = editor.locator('div.markdown-alert.markdown-alert-note');
+  // `p:not(.markdown-alert-title)` excludes the callout's own non-editable title chip (also a
+  // <p>, see callout-extension.ts), leaving just: callout body + empty line + next paragraph.
+  const bodyParagraphs = editor.locator('p:not(.markdown-alert-title)');
+  await expect(bodyParagraphs).toHaveCount(3);
+
+  await page.keyboard.press('Backspace');
+
+  // The empty line is gone — only the callout body and the non-empty paragraph remain.
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文');
+  await expect(bodyParagraphs).toHaveCount(2);
+  await expect(editor).toContainText('次の段落');
+  await expect(callout).not.toContainText('次の段落');
+
+  // Caret landed at the callout body's end, same as the non-empty case.
+  await page.keyboard.type('と追記');
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文と追記');
+});
+
+// The Delete-direction mirror of the "not pulled in" test above: at the callout's own end,
+// Delete must not pull in the following non-empty paragraph. `isolating` already blocks
+// joinForward for this (prosemirror-commands' findCutAfter refuses to cross it), so it's a plain
+// no-op with no custom command involved — but it's exactly the case stepIntoNextIsolating must
+// also leave alone, so it's covered here alongside its empty-line counterpart below.
+test('a block right after a callout is not pulled in by Delete at the callout end', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  await page.keyboard.type('囲み枠の本文');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('あとに続く段落');
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('ArrowUp'); // back onto the callout body's line
+  await page.keyboard.press('End'); // its true end
+
+  const callout = editor.locator('div.markdown-alert.markdown-alert-note');
+  await page.keyboard.press('Delete');
+
+  // Nothing merged, nothing deleted: one callout, its body unchanged, the paragraph intact.
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文');
+  await expect(editor).toContainText('あとに続く段落');
+  await expect(callout).not.toContainText('あとに続く段落');
+
+  // The caret is still at the callout body's end, so typing appends there.
+  await page.keyboard.type('と追記');
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文と追記');
+});
+
+// The Delete-direction mirror of the empty-line Backspace test above: at the callout's own end,
+// an empty line right after it carries nothing that could corrupt its body, so
+// stepIntoNextIsolating (isolating-boundary.ts) deletes it outright. A second, non-empty
+// paragraph proves the delete happened (TrailingNode has nothing to refill, so a stale line
+// would otherwise still be there to count).
+test('Delete at a callout end deletes an empty line right after it', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  await page.keyboard.type('囲み枠の本文');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('次の段落');
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('Enter'); // splits into an empty paragraph + one holding the text
+  await page.keyboard.press('ArrowUp'); // into the (still empty) paragraph
+  await page.keyboard.press('ArrowUp'); // back onto the callout body's line
+  await page.keyboard.press('End'); // its true end
+
+  const callout = editor.locator('div.markdown-alert.markdown-alert-note');
+  const bodyParagraphs = editor.locator('p:not(.markdown-alert-title)');
+  await expect(bodyParagraphs).toHaveCount(3);
+
+  await page.keyboard.press('Delete');
+
+  // The empty line is gone — only the callout body and the non-empty paragraph remain.
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文');
+  await expect(bodyParagraphs).toHaveCount(2);
+  await expect(editor).toContainText('次の段落');
+  await expect(callout).not.toContainText('次の段落');
+
+  // Caret stayed at the callout body's end, so typing appends there.
+  await page.keyboard.type('と追記');
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文と追記');
+});
+
 // `isolating` otherwise traps an empty callout (can't be removed from inside, and there's no
 // toolbar toggle to clear it), so the Callout Backspace shortcut unwraps an empty one to a plain
 // paragraph. Insert a callout, leave it empty, Backspace at its start → the callout is gone.

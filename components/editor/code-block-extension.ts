@@ -5,7 +5,7 @@ import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
-import { stepIntoPreviousIsolating } from './isolating-boundary';
+import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // Curated language menu for the in-editor code block. The ids are Shiki language ids
@@ -267,6 +267,11 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   // 3. deleteSoleCodeChar — keeps the emptying deletion away from the browser (see its comment);
   //    also bound to Delete and the word-delete chords, where it guards the same case.
   // 4. The inherited handler. 5. The shared isolating-boundary step-in.
+  //
+  // Delete gets the mirror treatment at the block's *end*: after deleteSoleCodeChar, fall back to
+  // stepIntoNextIsolating, which only acts when the following top-level block is empty (deletes
+  // it) — a non-empty one is already a safe no-op via `isolating` (see that function's comment),
+  // so nothing else is needed here.
   addKeyboardShortcuts() {
     const parentShortcuts = this.parent?.();
     const codeType = this.type;
@@ -282,7 +287,9 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         deleteSole(-1)({ editor }) ||
         (parentShortcuts?.Backspace?.({ editor }) ?? false) ||
         editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)),
-      Delete: deleteSole(1),
+      Delete: ({ editor }) =>
+        deleteSole(1)({ editor }) ||
+        editor.commands.command((props) => stepIntoNextIsolating(codeType, props)),
       'Mod-Backspace': deleteSole(-1),
       'Mod-Delete': deleteSole(1),
       'Alt-Backspace': deleteSole(-1),

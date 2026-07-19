@@ -48,6 +48,113 @@ test('a paragraph after a code block is not merged into it by Backspace at its s
   await expect(editor).toContainText('あとの段落');
 });
 
+// Unlike the non-empty case above, an *empty* line right after the code block carries nothing
+// that could corrupt the code, so stepIntoPreviousIsolating deletes it outright (matching
+// blockquote's plain join, where the empty line just disappears) instead of leaving it stranded.
+// A second, non-empty paragraph below proves the delete really happened: with the doc's last
+// block already a paragraph, StarterKit's TrailingNode has nothing to refill, so a stale line
+// would otherwise still be there to count.
+test('Backspace on an empty line after a code block deletes that line', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const x = 1');
+  await page.keyboard.press('ArrowDown'); // exits into a fresh empty paragraph
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('次の段落');
+  await page.keyboard.press('ArrowUp'); // back into the empty line
+
+  const codeBody = editor.locator('.code-block code');
+  await expect(codeBody).toHaveText('const x = 1');
+  await expect(editor.locator('p')).toHaveCount(2);
+
+  await page.keyboard.press('Backspace');
+
+  // The empty line is gone — only the non-empty paragraph remains, directly after the code block.
+  await expect(editor.locator('.code-block')).toHaveCount(1);
+  await expect(codeBody).toHaveText('const x = 1');
+  await expect(editor.locator('p')).toHaveCount(1);
+  await expect(editor.locator('p')).toHaveText('次の段落');
+
+  // Caret landed at the code body's end, same as the non-empty case.
+  await page.keyboard.type(';');
+  await expect(codeBody).toHaveText('const x = 1;');
+});
+
+// The Delete-direction mirror of the "not merged" test above: at the code block's own end,
+// Delete must not pull in the following non-empty paragraph. `isolating` already blocks
+// joinForward for this (prosemirror-commands' findCutAfter refuses to cross it), so this is a
+// plain no-op with no custom command involved — but it's exactly the case stepIntoNextIsolating
+// must also leave alone, so it's covered here alongside its empty-line counterpart below.
+test('a paragraph after a code block is not merged into it by Delete at the code block end', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const x = 1');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('あとの段落');
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('ArrowUp'); // back onto the code block's line
+  await page.keyboard.press('End'); // its true end
+
+  const codeBody = editor.locator('.code-block code');
+  await page.keyboard.press('Delete');
+
+  // Nothing merged, nothing deleted: one code block, its body unchanged, the paragraph intact.
+  await expect(editor.locator('.code-block')).toHaveCount(1);
+  await expect(codeBody).toHaveText('const x = 1');
+  await expect(editor).toContainText('あとの段落');
+
+  // The caret is still at the code body's end, so typing appends there.
+  await page.keyboard.type(';');
+  await expect(codeBody).toHaveText('const x = 1;');
+});
+
+// The Delete-direction mirror of the empty-line Backspace test above: at the code block's own
+// end, an empty line right after it carries nothing that could corrupt the code, so
+// stepIntoNextIsolating (isolating-boundary.ts) deletes it outright. A second, non-empty
+// paragraph proves the delete happened (TrailingNode has nothing to refill, so a stale line
+// would otherwise still be there to count).
+test('Delete at a code block end deletes an empty line right after it', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const x = 1');
+  await page.keyboard.press('ArrowDown'); // exits into a fresh empty paragraph
+  await page.keyboard.press('Enter'); // splits into two empty paragraphs
+  await page.keyboard.type('次の段落'); // fills the second
+  await page.keyboard.press('ArrowUp'); // into the (still empty) first paragraph
+  await page.keyboard.press('ArrowUp'); // back onto the code block's line
+  await page.keyboard.press('End'); // its true end
+
+  const codeBody = editor.locator('.code-block code');
+  await expect(editor.locator('p')).toHaveCount(2);
+
+  await page.keyboard.press('Delete');
+
+  // The empty line is gone — only the non-empty paragraph remains, directly after the code block.
+  await expect(editor.locator('.code-block')).toHaveCount(1);
+  await expect(codeBody).toHaveText('const x = 1');
+  await expect(editor.locator('p')).toHaveCount(1);
+  await expect(editor.locator('p')).toHaveText('次の段落');
+
+  // Caret stayed at the code body's end, so typing appends there.
+  await page.keyboard.type(';');
+  await expect(codeBody).toHaveText('const x = 1;');
+});
+
 // Regression: `isolating` must not trap the code block — Backspace from inside an empty block
 // must still remove it. Right after typing the fence it takes the fence-undo path (the literal
 // ``` text comes back, see fenceUndoKey in the extension); once the record has expired, the
