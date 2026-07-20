@@ -112,6 +112,133 @@ body {
   content: none;
 }
 
+/* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
+   each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
+.ProseMirror {
+  position: relative;
+}
+
+/* Editor-only chrome: a hover-revealed grip in the left gutter of blockquotes, callouts, images,
+   tables, and code blocks (components/editor/block-drag-handle.ts) — click-drag the whole block
+   to reorder it. Each handle is a widget decoration placed immediately before its target, so it's
+   a real DOM sibling; `top` is set in JS to match the target's own `offsetTop` (see
+   block-drag-handle.ts), but the horizontal offset is this fixed left value, since every target
+   type sits at the same left edge as a top-level doc child. `:has(+ :hover)` reveals it when the
+   block right after it is hovered — :hover on a block already holds true while the pointer is
+   over any of its descendants, so this covers hovering deep inside e.g. a table cell too.
+   `left: -0.2rem` keeps the handle inside `.ProseMirror`'s own left edge, inside its bordered frame
+   (PostEditor.tsx's wrapping `<div className='rounded border ...'>` has no left padding of its
+   own, so anything past `-1rem` — the `px-4` gutter width — floats outside that visible frame
+   entirely, which read as a stray mark once the icon was made dark enough to notice). This used to
+   matter for a different reason too: prosemirror-view's native drag handlers only fired while
+   `event.target` stayed a DOM descendant of `view.dom`, so a negative `left` risked the no-drop
+   cursor. Dragging is now DragController's own mousemove/mouseup (not native HTML5 drag), so that
+   constraint is gone — position is a purely cosmetic choice again. */
+.prose .block-drag-handle {
+  position: absolute;
+  top: 0;
+  left: -0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  border-radius: 0.25rem;
+  color: rgba(
+    63,
+    63,
+    70,
+    0.9
+  ); /* zinc-700-ish; same shade at rest as on hover, just no background */
+  cursor: grab;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease;
+}
+@media (prefers-color-scheme: dark) {
+  .prose .block-drag-handle {
+    color: rgba(228, 228, 231, 0.9); /* zinc-200-ish; same shade at rest as on hover */
+  }
+}
+.prose .block-drag-handle svg {
+  width: 1rem;
+  height: 1rem;
+}
+/* :not(.block-dragging) guards the plain-hover reveal: during an active drag the pointer sweeps
+   over other blocks on its way to the drop target, and without this guard their handles would pop
+   up too via the same live `:hover`/`:has(+ :hover)` tracking discussed above — only the block
+   actually being dragged (`.is-dragging`, set unconditionally) should stay visible mid-drag. */
+body:not(.block-dragging) .prose .block-drag-handle:has(+ :hover),
+body:not(.block-dragging) .prose .block-drag-handle:hover,
+.prose .block-drag-handle.is-dragging {
+  opacity: 1;
+}
+body:not(.block-dragging) .prose .block-drag-handle:hover,
+.prose .block-drag-handle.is-dragging {
+  background: rgba(113, 113, 122, 0.15);
+}
+@media (prefers-color-scheme: dark) {
+  body:not(.block-dragging) .prose .block-drag-handle:hover,
+  .prose .block-drag-handle.is-dragging {
+    background: rgba(212, 212, 216, 0.15);
+  }
+}
+/* Opacity alone doesn't stop a still-invisible handle from being the hovered element: `cursor` is
+   set directly on `.block-drag-handle` (`cursor: grab`, below), and a rule that targets an element
+   directly always wins over `body.block-dragging`'s inherited `cursor: grabbing` — `!important` on
+   the body rule only out-prioritizes other rules targeting `body`, not a child's own declaration.
+   Dropping pointer-events instead means there's no longer any element there to be "the hovered
+   element" in the first place, so the body-level grabbing cursor shows through undisturbed. */
+body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
+  pointer-events: none;
+}
+
+/* Editor-only chrome: the drop-indicator line DragController (block-drag-handle.ts) shows while a
+   block drag is in progress. Appended to <body> as `position: fixed` — not a decoration, since it's
+   repositioned on every mousemove and going through a transaction/decoration update for that would
+   pollute undo history and force needless layout recomputation — so its own coordinates are
+   viewport-relative to match. `pointer-events: none` keeps it from ever becoming its own hit target
+   (irrelevant here since dragging isn't native-DnD/hit-test-based anymore, but cheap insurance). */
+.block-drag-indicator {
+  position: fixed;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(63, 63, 70, 0.9);
+  pointer-events: none;
+  z-index: 40;
+}
+@media (prefers-color-scheme: dark) {
+  .block-drag-indicator {
+    background: rgba(228, 228, 231, 0.9);
+  }
+}
+
+/* Editor-only chrome: while DragController (block-drag-handle.ts) has an active drag, it toggles
+   this on <body> rather than `.ProseMirror` — the pointer roams outside the editor during a drag,
+   and both the grabbing cursor and the text-selection suppression need to hold everywhere, not just
+   inside the editor's own box. */
+body.block-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
+   (block-drag-handle.ts) — useful (Delete then removes it) but invisible on its own. ProseMirror
+   tags the selected node's DOM with `.ProseMirror-selectednode`; this rings it so the selection —
+   and therefore what a subsequent Delete will remove — is obvious. The class lands on whichever
+   element represents the node (a bare <blockquote>/<img>, a NodeView's outer <div> for callout and
+   code blocks, the table wrapper for a table), so key it on the class alone, element-agnostic.
+   `outline` rather than `box-shadow`: an overflow:auto table wrapper would clip an inset shadow but
+   never an outline, and outline follows the block's own border-radius in modern browsers. Blue
+   matches the cross-cell selection overlay above. Editor-only: the class never appears on the
+   published page (no ProseMirror there). */
+.prose .ProseMirror-selectednode {
+  outline: 2px solid rgba(51, 144, 255, 0.8);
+  outline-offset: 2px;
+}
+
 /* Editor-only chrome: the code block NodeView (components/editor/code-block-extension.ts)
    renders a persistent header bar — filename field + language <select> — above the code,
    mirroring the public figcaption, which is likewise always shown. The `.code-block` wrapper

@@ -18,6 +18,7 @@ import { Callout } from './editor/callout-extension';
 import { Blockquote } from './editor/blockquote-extension';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
+import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
@@ -191,7 +192,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // (same node, extended to serialize column alignment) and the paragraph-only
       // cells (markdown can't store block structure inside a cell), so disable its own.
       TableKit.configure({ table: false, tableCell: false, tableHeader: false }),
-      MarkdownTable,
+      // allowTableNodeSelection: prosemirror-tables' tableEditing() otherwise coerces any
+      // NodeSelection wrapping a whole `table` into a CellSelection spanning it (an
+      // appendTransaction — see its normalizeSelection). BlockDragHandle's drag itself no longer
+      // depends on this — it captures the node/range directly at mousedown, so a coerced selection
+      // wouldn't break the move — but without this flag the table's "picked up" highlight would
+      // flicker from a clean NodeSelection into a CellSelection the instant you grab its handle.
+      // Purely cosmetic now; kept for that visual consistency.
+      MarkdownTable.configure({ allowTableNodeSelection: true }),
       ParagraphTableCell,
       ParagraphTableHeader,
       TableDropCursorGuard,
@@ -211,6 +219,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Plain code block + an editor-only language <select> (drives Shiki highlighting on
       // the public page); the `language` attribute still round-trips as a ```lang fence.
       CodeBlockWithLanguage,
+      // Hover-revealed left-gutter grip on blockquotes/callouts/images/tables/code blocks:
+      // click-drag the whole block to reorder it. Editor-only chrome, no markdown/model impact.
+      BlockDragHandle,
     ],
     content: initial.body,
     editorProps: {
