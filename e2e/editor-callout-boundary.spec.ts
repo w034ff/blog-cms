@@ -12,6 +12,16 @@ async function caretAtLineStart(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
 }
 
+// The same 20ms selectionchange debounce (DOMObserver.flushSoon) that caretAtLineStart guards, but
+// after a native ArrowUp/End move whose settled offset is line-dependent — there's no fixed value
+// to poll for, so a flat wait past the debounce is the only option. Without it a Delete fired inside
+// the debounce window acts on ProseMirror's stale selection and corrupts the doc. The natural gap
+// between the End keypress and Delete usually clears the debounce on its own, but not reliably —
+// this makes it deterministic rather than leaning on incidental timing margin.
+async function caretSettled(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 70)));
+}
+
 // The callout node is `isolating` (components/editor/callout-extension.ts): its edges are
 // hard boundaries, so a block sitting directly after it can't be joined into its body. Without
 // that, ProseMirror's default joinBackward pulls the following block (e.g. a code block) into
@@ -129,6 +139,7 @@ test('a block right after a callout is not pulled in by Delete at the callout en
   await caretAtLineStart(page);
   await page.keyboard.press('ArrowUp'); // back onto the callout body's line
   await page.keyboard.press('End'); // its true end
+  await caretSettled(page);
 
   const callout = editor.locator('div.markdown-alert.markdown-alert-note');
   await page.keyboard.press('Delete');
@@ -166,6 +177,7 @@ test('Delete at a callout end deletes an empty line right after it', async ({ pa
   await page.keyboard.press('ArrowUp'); // into the (still empty) paragraph
   await page.keyboard.press('ArrowUp'); // back onto the callout body's line
   await page.keyboard.press('End'); // its true end
+  await caretSettled(page);
 
   const callout = editor.locator('div.markdown-alert.markdown-alert-note');
   const bodyParagraphs = editor.locator('p:not(.markdown-alert-title)');

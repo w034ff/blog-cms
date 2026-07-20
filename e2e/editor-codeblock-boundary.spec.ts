@@ -10,6 +10,16 @@ async function caretAtLineStart(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
 }
 
+// The same 20ms selectionchange debounce (DOMObserver.flushSoon) that caretAtLineStart guards, but
+// after a native ArrowUp/End move whose settled offset is line-dependent — there's no fixed value
+// to poll for, so a flat wait past the debounce is the only option. Without it a Delete fired inside
+// the debounce window acts on ProseMirror's stale selection and corrupts the doc. The natural gap
+// between the End keypress and Delete usually clears the debounce on its own, but not reliably —
+// this makes it deterministic rather than leaning on incidental timing margin.
+async function caretSettled(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 70)));
+}
+
 // The code block is `isolating` (components/editor/code-block-extension.ts), so a block below it
 // can't be merged into the code, and the shared Backspace shortcut steps the caret into the code
 // block's end instead of node-selecting it. Browser-only — this is live-editor edit behavior.
@@ -105,6 +115,7 @@ test('a paragraph after a code block is not merged into it by Delete at the code
   await caretAtLineStart(page);
   await page.keyboard.press('ArrowUp'); // back onto the code block's line
   await page.keyboard.press('End'); // its true end
+  await caretSettled(page);
 
   const codeBody = editor.locator('.code-block code');
   await page.keyboard.press('Delete');
@@ -138,6 +149,7 @@ test('Delete at a code block end deletes an empty line right after it', async ({
   await page.keyboard.press('ArrowUp'); // into the (still empty) first paragraph
   await page.keyboard.press('ArrowUp'); // back onto the code block's line
   await page.keyboard.press('End'); // its true end
+  await caretSettled(page);
 
   const codeBody = editor.locator('.code-block code');
   await expect(editor.locator('p')).toHaveCount(2);
