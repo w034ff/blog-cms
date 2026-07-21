@@ -1,5 +1,6 @@
 import { InputRule, Node as TiptapNode } from '@tiptap/core';
-import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
+import type { CommandProps } from '@tiptap/core';
+import { Fragment, type Node as PMNode, type NodeType } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { findWrapping } from '@tiptap/pm/transform';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
@@ -127,6 +128,68 @@ declare module '@tiptap/core' {
       setCallout: (type: CalloutType) => ReturnType;
     };
   }
+}
+
+// Enter at the end of an *empty paragraph directly inside the callout* (not one nested deeper,
+// e.g. inside a blockquote typed within the callout — see below) exits into a paragraph right
+// after the callout, caret there. Mirrors @tiptap/extension-blockquote's default (unwritten)
+// behaviour, which this same case reaches via prosemirror-commands' liftEmptyBlock: lifting the
+// range out of the blockquote — if it's the blockquote's only child, `lift` has nothing left to
+// leave behind, so the whole blockquote is replaced by the lifted (empty) paragraph and
+// disappears; with earlier siblings still in it, only the trailing empty one moves out and the
+// blockquote survives non-empty. This does the same by hand for the callout — delete the whole
+// callout when this empty paragraph is its only child, or just the empty line when it isn't.
+//
+// `isolating` (below) is exactly why blockquote's own default can't be reused as-is: it blocks
+// liftEmptyBlock (and joinBackward's identical lift fallback, which is what already lets Backspace
+// remove an empty callout below — this Enter behaviour is that same restoration, applied to the
+// other key) from ever crossing the callout's boundary, so without this override Enter would just
+// keep splitting inside the callout forever instead of exiting like a blockquote does.
+//
+// Scoped to depth === 2 (paragraph is a *direct* child of the callout) rather than "any empty
+// trailing block regardless of depth": the callout's `block+` content permits nesting (e.g. typing
+// `> ` starts a blockquote inside it), and Callout's Enter binding wins the race over that inner
+// node's own (Blockquote defines no Enter shortcut at all — see blockquote-extension.ts). Without
+// this guard, an empty line at the tail of a *nested* structure would jump out of the whole
+// callout instead of that structure's own normal Enter behavior (e.g. lifting out of just the
+// blockquote, landing back in the callout body) — surprising, and not what was asked for here.
+//
+// A callout is never a textblock, so whenever it's the doc's last node, StarterKit's TrailingNode
+// already keeps an empty paragraph sitting right after it (see the fenceUndo comment in
+// code-block-extension.ts for the same mechanism). Inserting a fresh paragraph unconditionally
+// would stack a redundant blank line next to that one; reuse it instead when it's there, and only
+// insert a new paragraph when the callout is genuinely followed by something else (or nothing).
+function exitCalloutOnEmptyEnter(
+  calloutType: NodeType,
+  { state, tr, dispatch }: CommandProps,
+): boolean {
+  const { selection } = state;
+  if (!selection.empty) return false;
+  const { $from } = selection;
+  if ($from.depth !== 2 || $from.node(1).type !== calloutType) return false;
+  if ($from.parent.content.size > 0) return false;
+  // Only the callout's *last* child exits — mirroring liftEmptyBlock, which lifts an empty block
+  // out of its parent only when it's trailing and otherwise splits in place (its `$cursor.after()
+  // != $cursor.end(depth - 1)` branch). An empty line that isn't last (a blank typed or navigated
+  // into between two body blocks) must stay put and take the default in-callout split; without
+  // this guard it would be deleted and the caret would jump out of the callout entirely.
+  if ($from.index(1) !== $from.node(1).childCount - 1) return false;
+  if (dispatch) {
+    const afterCallout = $from.after(1);
+    if ($from.node(1).childCount > 1) {
+      tr.delete($from.before($from.depth), $from.after($from.depth)); // just the empty trailing line
+    } else {
+      tr.delete($from.before(1), $from.after(1)); // the callout itself, now fully empty
+    }
+    const insertAt = tr.mapping.map(afterCallout);
+    const next = tr.doc.nodeAt(insertAt);
+    if (!(next && next.isTextblock && next.content.size === 0)) {
+      tr.insert(insertAt, state.schema.nodes.paragraph.create());
+    }
+    tr.setSelection(TextSelection.near(tr.doc.resolve(insertAt + 1)));
+    tr.scrollIntoView();
+  }
+  return true;
 }
 
 export const Callout = TiptapNode.create({
@@ -259,6 +322,10 @@ export const Callout = TiptapNode.create({
   //
   // Delete gets the mirror treatment at the callout's *end*: stepIntoNextIsolating deletes a
   // following empty block outright; a non-empty one is already a safe no-op via `isolating`.
+  //
+  // Enter at that same end (an empty trailing line) exits the callout instead of splitting
+  // forever inside it — see exitCalloutOnEmptyEnter's comment for why `isolating` needs a
+  // hand-built transaction here rather than the default liftEmptyBlock.
   addKeyboardShortcuts() {
     const calloutType = this.type;
     return {
@@ -291,6 +358,9 @@ export const Callout = TiptapNode.create({
         }),
       Delete: ({ editor }) =>
         editor.commands.command((props) => stepIntoNextIsolating(calloutType, props)),
+      // Exit the callout on Enter at an empty trailing line — see exitCalloutOnEmptyEnter.
+      Enter: ({ editor }) =>
+        editor.commands.command((props) => exitCalloutOnEmptyEnter(calloutType, props)),
     };
   },
 

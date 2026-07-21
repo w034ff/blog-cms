@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { caret, docString } from './editor-probe';
 
 // A keyboard `Home` moves the caret natively: the DOM selection updates at once, but ProseMirror
 // only learns of it from `selectionchange`, whose handler flushes on a 20ms debounce
@@ -232,4 +233,188 @@ test('Backspace at the start of a non-empty callout keeps it', async ({ page }) 
   const callout = editor.locator('div.markdown-alert');
   await expect(callout).toHaveCount(1);
   await expect(callout.locator('.markdown-alert-content')).toContainText('消えない本文');
+});
+
+// `isolating` blocks the default liftEmptyBlock path (prosemirror-transform's liftTarget refuses
+// to climb past an isolating node at all), so without exitCalloutOnEmptyEnter, Enter on an empty
+// trailing line would just keep splitting inside the callout forever instead of exiting like a
+// blockquote does. Mirrors the blockquote cadence: first Enter (on non-empty text) opens a new
+// empty line still inside the box; the second (now on that empty line) exits.
+test('Enter twice at the end of a callout exits it into a new paragraph below', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  await page.keyboard.type('囲み枠の本文');
+
+  const callout = editor.locator('div.markdown-alert.markdown-alert-note');
+  const bodyParagraphs = editor.locator('p:not(.markdown-alert-title)');
+
+  // Baseline: the callout is the doc's last (non-textblock) node, so StarterKit's TrailingNode
+  // already keeps one empty paragraph after it — 1 (callout text) + 1 (trailing).
+  await expect(bodyParagraphs).toHaveCount(2);
+
+  // First Enter: still inside the callout, just a new empty line under the text — the trailing
+  // paragraph is untouched, so the count grows by exactly one.
+  await page.keyboard.press('Enter');
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  await expect(bodyParagraphs).toHaveCount(3);
+
+  // Second Enter: exits — the empty line inside the callout is consumed, and the caret lands in
+  // the pre-existing trailing paragraph rather than a newly-inserted one (count drops back to 2,
+  // not 3: a naive "always insert" implementation would stack a redundant blank line here).
+  await page.keyboard.press('Enter');
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  await expect(bodyParagraphs).toHaveCount(2);
+  await expect(callout.locator('.markdown-alert-content')).toContainText('囲み枠の本文');
+
+  await page.keyboard.type('あとに続く段落');
+  await expect(bodyParagraphs).toHaveCount(2); // still no stray blank paragraph
+  await expect(editor).toContainText('あとに続く段落');
+  await expect(callout).not.toContainText('あとに続く段落');
+});
+
+// Mirrors an empty blockquote's own Enter behaviour: with nothing else in it, "exiting" the
+// callout leaves nothing behind to keep it around for, so the whole box disappears — same outcome
+// as "Backspace at the start of an empty callout removes it" above, just reached from the other
+// edge. A freshly inserted callout already has one empty paragraph, so a single Enter (no text
+// typed yet) is enough.
+test('Enter right after inserting an empty callout removes it', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+  const bodyParagraphs = editor.locator('p:not(.markdown-alert-title)');
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(1);
+  // Baseline, same as the test above: TrailingNode already keeps an empty paragraph after the
+  // callout (its own empty body paragraph + that trailing one).
+  await expect(bodyParagraphs).toHaveCount(2);
+
+  await page.keyboard.press('Enter');
+
+  // The callout is gone entirely — reused the pre-existing trailing paragraph as the caret's new
+  // home rather than stacking a redundant blank one beside it.
+  await expect(editor.locator('div.markdown-alert')).toHaveCount(0);
+  await expect(bodyParagraphs).toHaveCount(1);
+
+  await page.keyboard.type('あとに続く段落');
+  await expect(bodyParagraphs).toHaveCount(1); // still no stray blank paragraph
+  await expect(editor).toContainText('あとに続く段落');
+});
+
+// Only the callout's *trailing* empty line exits — an empty line *between* two body blocks must
+// stay put and take the default in-callout split (exitCalloutOnEmptyEnter's `$from.index(1) !==
+// childCount - 1` guard). Without it that empty line was deleted and the caret jumped clean out of
+// the callout, so the very next keystroke landed *below* the box instead of inside it.
+test('Enter on an empty line between two callout blocks splits in place, not exits', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+
+  // Assert the live ProseMirror tree (docString) rather than counting DOM <p>s: it pins the exact
+  // structure — one callout, caret's line, in/out of the box — with no reliance on flaky arrow-key
+  // timing (every step below is gated by an `expect.poll` that waits for the tree to settle).
+  //
+  // Build a two-line callout: "前の行" then a plain in-callout split (Enter on non-empty text)
+  // opens a still-inside line that we fill with "後の行".
+  await page.keyboard.type('前の行');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('後の行');
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(callout(paragraph("前の行"), paragraph("後の行")), paragraph)');
+
+  // Open an empty line between them: Home to "後の行"'s start, Enter to insert a blank paragraph
+  // ahead of it. The blank now sits *between* two body blocks — the non-trailing case.
+  // caretAtLineStart waits out Home's 20ms selectionchange debounce; without it the Enter can fire
+  // on ProseMirror's stale (end-of-line) selection and split at the *end* instead.
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(callout(paragraph("前の行"), paragraph, paragraph("後の行")), paragraph)');
+
+  // Land the caret inside that blank (ArrowLeft crosses the boundary). `@0` = an empty line at
+  // offset 0 (a non-empty "後の行@0" would read differently), so this confirms we're about to press
+  // Enter on the empty middle line — the exact state the guard governs.
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => caret(page)).toBe('@0');
+
+  // Enter here must NOT exit: it splits in place, so the callout stays a single node with the blank
+  // still inside (a broken guard would delete the blank and eject the caret to a paragraph *after*
+  // the callout).
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(callout(paragraph("前の行"), paragraph, paragraph, paragraph("後の行")), paragraph)',
+    );
+
+  // The decisive check: the next keystroke lands *inside* the callout, not in a paragraph below it.
+  await page.keyboard.type('中の文字');
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(callout(paragraph("前の行"), paragraph, paragraph("中の文字"), paragraph("後の行")), paragraph)',
+    );
+});
+
+// The other non-trailing case: an empty line at the callout's *head* (index 0), with body below
+// it. Same guard, same expectation — Enter must split in place inside the callout, not delete the
+// line and eject the caret below the box.
+test('Enter on an empty line at the head of a callout splits in place, not exits', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.getByRole('button', { name: '囲み枠' }).click();
+  await page.getByRole('button', { name: '情報', exact: true }).click();
+
+  // Put an empty line *above* the body text: type "本文", Home to its start, Enter to open a blank
+  // paragraph ahead of it. Each step is gated on the settled ProseMirror tree (docString) rather
+  // than DOM <p> counts; caretAtLineStart waits out Home's 20ms selectionchange debounce so the
+  // Enter can't fire on a stale (end-of-line) selection.
+  await page.keyboard.type('本文');
+  await page.keyboard.press('Home');
+  await caretAtLineStart(page);
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(callout(paragraph, paragraph("本文")), paragraph)');
+
+  // Land the caret inside that leading blank (ArrowLeft crosses the boundary). `@0` on an empty
+  // line confirms the state the guard governs.
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => caret(page)).toBe('@0');
+
+  // Enter on that *leading* (non-trailing) empty line must NOT exit: split in place, callout stays
+  // a single node with the blank still inside.
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(callout(paragraph, paragraph, paragraph("本文")), paragraph)');
+
+  // The next keystroke lands *inside* the callout, not in a paragraph below it.
+  await page.keyboard.type('中の文字');
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(callout(paragraph, paragraph("中の文字"), paragraph("本文")), paragraph)');
 });
