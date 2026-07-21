@@ -45,11 +45,21 @@ export function TableToolbar({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       pluginKey='tableMenu'
+      // Default 250ms — fine normally, but a block drag (block-drag-handle.ts) that moves this
+      // table lifts the `.table-toolbar` CSS suppression (globals.css) the instant the drag ends,
+      // synchronously, before the drop's own transaction has repositioned the menu. With the
+      // default delay that transaction's reposition is scheduled via `setTimeout(updateDelay)`, so
+      // the menu visibly sits at its stale (pre-drag) spot for up to 250ms before jumping — exactly
+      // the "moves from the old position to the new one" the drop was supposed to hide. `0` routes
+      // the plugin through its synchronous branch instead (`updateDelay > 0` is what gates the
+      // debounce), so the reposition lands in the same synchronous-plus-microtask window as the
+      // drop itself, before the browser's next paint — no intermediate frame to see.
+      updateDelay={0}
       shouldShow={shouldShow}
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
-      className='z-20 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      className='table-toolbar z-20 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>

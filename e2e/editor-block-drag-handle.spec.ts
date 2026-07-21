@@ -140,8 +140,15 @@ for (const kind of ['blockquote', 'table'] as const) {
     // keeps it visible instead, matching how native HTML5 drag used to freeze :hover in place.
     await expect(handle).toHaveClass(/is-dragging/);
     await expect(handle).toHaveCSS('opacity', '1');
+    // The cursor-following preview (block-drag-handle.ts's DragController.ensurePreview) is up too,
+    // showing a clone of what's actually being moved.
+    const preview = page.locator('.block-drag-preview');
+    await expect(preview).toBeVisible();
+    await expect(preview.locator(kind === 'blockquote' ? 'blockquote' : 'table')).toHaveCount(1);
     await page.mouse.up();
     await expect(handle).not.toHaveClass(/is-dragging/);
+    // The drop path clears it too, not just Escape/abort (covered separately).
+    await expect(preview).toBeHidden();
 
     // Moved, not copied: the block now comes after "後の段落", and there's exactly one of it.
     await expect
@@ -158,6 +165,75 @@ for (const kind of ['blockquote', 'table'] as const) {
     }
   });
 }
+
+// The original reported bug, guarded directly: dropping on the very next indicator down (not the
+// one after that) must move the block by exactly one slot. Before findBoundary() excluded the
+// dragged node from its own candidates (block-drag-handle.ts), its still-full-size `from`/`to`
+// gaps sat a full block-height apart, so this exact drop was a no-op and you needed to cross both
+// before anything moved. No settle-then-remeasure dance needed here (contrast an earlier,
+// collapse-based version of this fix): nothing reflows anymore, so `boxB`'s position is stable for
+// the whole gesture.
+test('dropping on the very next indicator down moves the block by exactly one slot', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.getByRole('button', { name: '引用' }).click();
+  await page.keyboard.type('A');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('B');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('C');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const boxB = await editor.locator('p', { hasText: 'B' }).boundingBox();
+  if (!handleBox || !boxB) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  // Into B's lower half — the very next indicator stop below the dragged blockquote.
+  await page.mouse.move(boxB.x + boxB.width / 2, boxB.y + boxB.height - 2, { steps: 6 });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+  await page.mouse.up();
+
+  expect(await getMarkdown(page)).toBe('B\n\n> A\n\nC');
+});
+
+// The indicator must stay hidden while the pointer is still over the dragged block's own
+// (unmoving) rect — the "inSourceBounds" check in handleMouseMove (block-drag-handle.ts). Without
+// it, right at drag start (pointer barely past the handle, still over the block's own top) the
+// indicator would already show at the nearest real candidate — semantically a no-op, but visually
+// far away for a tall block, reading as reacting before you've gone anywhere.
+test("the indicator stays hidden while the pointer is still over the dragged block's own rect", async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.getByRole('button', { name: '引用' }).click();
+  await page.keyboard.type('A');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('B');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const boxA = await editor.locator('blockquote').boundingBox();
+  const boxB = await editor.locator('p', { hasText: 'B' }).boundingBox();
+  if (!handleBox || !boxA || !boxB) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  // Past DRAG_THRESHOLD but still within A's own rect (its bottom, minus a couple px).
+  await page.mouse.move(handleBox.x + handleBox.width / 2, boxA.y + boxA.height - 2, { steps: 3 });
+  await expect(page.locator('.block-drag-indicator')).toBeHidden();
+
+  // Now into B's lower half — outside A's rect, a real candidate.
+  await page.mouse.move(boxB.x + boxB.width / 2, boxB.y + boxB.height - 2, { steps: 6 });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+  await page.mouse.up();
+});
 
 // The mirror of the downward case above, exercising applyMove's *other* branch: dragging up to a
 // gap that sits before the dragged node, so `tr.mapping.map(target)` is a no-op (the delete happens
@@ -294,6 +370,44 @@ test('Escape cancels an in-progress drag, leaving the document unchanged', async
   expect(await getMarkdown(page)).toBe(before);
 });
 
+// The cursor-following preview (block-drag-handle.ts's DragController.ensurePreview) is a plain
+// DOM clone of the dragged node, not a decoration — no `view.dom` relationship to verify, just
+// that it shows the right content while dragging and is cleared once the session ends.
+test('a cursor-following preview of the dragged block appears mid-drag and clears on Escape', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.getByRole('button', { name: '引用' }).click();
+  await page.keyboard.type('引用文');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.type('後の段落');
+
+  const preview = page.locator('.block-drag-preview');
+  await expect(preview).toBeHidden();
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetPara = editor.locator('p', { hasText: '後の段落' });
+  const targetBox = await targetPara.boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('blockquote')).toHaveCount(1);
+  await expect(preview.locator('blockquote')).toHaveText('引用文');
+
+  await page.keyboard.press('Escape');
+  await expect(preview).toBeHidden();
+  await expect(preview.locator('blockquote')).toHaveCount(0);
+  await page.mouse.up();
+});
+
 // Pressing an edit key mid-drag must neither crash nor mutate the doc. The dragged block carries a
 // NodeSelection, so without suppression ProseMirror's deleteSelection removes it on Delete: the doc
 // shrinks, and applyMove's mousedown-captured from/to (block-drag-handle.ts) then point past the
@@ -332,6 +446,90 @@ test('pressing Delete mid-drag neither crashes nor deletes the block', async ({ 
 
   expect(errors).toEqual([]); // no "Position … out of range"
   await expect(editor.locator('table')).toHaveCount(1); // the block survived
+});
+
+// The table's own floating toolbar (components/editor/TableToolbar.tsx, a TipTap BubbleMenu) is
+// anchored to the table's on-screen position and only re-checks that position/visibility on an
+// editor transaction — but nothing dispatches one for the length of a raw mousemove-driven drag
+// (block-drag-handle.ts), so without the `body.block-dragging` CSS suppression (globals.css) it
+// would just sit there, stale, next to the cursor-following drag preview for the whole gesture.
+test('the table toolbar hides during a drag and returns after', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.getByRole('button', { name: '表', exact: true }).click();
+  await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab'); // last cell
+  await page.keyboard.press('ArrowDown'); // exit the table downward
+  await page.keyboard.type('後の段落');
+
+  await editor.locator('td, th').first().click();
+  const toolbar = page.locator('.table-toolbar');
+  await expect(toolbar).toBeVisible();
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetPara = editor.locator('p', { hasText: '後の段落' });
+  const targetBox = await targetPara.boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+  await expect(toolbar).toBeHidden();
+  await page.mouse.up();
+
+  // The drop moved the table, so it's still node-selected and still a table — the toolbar returns.
+  await expect(toolbar).toBeVisible();
+});
+
+// Regression for a follow-on bug in the fix above: hiding the toolbar during the drag isn't enough
+// on its own — endSession() lifts the `.table-toolbar` CSS suppression the instant the drag ends,
+// synchronously and before the drop's own transaction has repositioned the menu. With the bubble
+// menu's default 250ms updateDelay, that reposition is scheduled via setTimeout, so the menu would
+// reappear at its stale (pre-drag) spot and visibly jump to the new one up to 250ms later —
+// TableToolbar.tsx's `updateDelay={0}` routes the reposition through the plugin's synchronous
+// branch instead, landing it in the same synchronous-plus-microtask window as the drop, before any
+// paint. Asserted here by comparing the position read immediately after `mouse.up()` (no wait)
+// against the same read after settling — they must already match.
+test("the table toolbar's post-drop position has no stale intermediate frame", async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.getByRole('button', { name: '表', exact: true }).click();
+  await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab'); // last cell
+  await page.keyboard.press('ArrowDown'); // exit the table downward
+  await page.keyboard.type('後の段落');
+
+  await editor.locator('td, th').first().click();
+  const toolbar = page.locator('.table-toolbar');
+  await expect(toolbar).toBeVisible();
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetPara = editor.locator('p', { hasText: '後の段落' });
+  const targetBox = await targetPara.boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await page.mouse.up();
+
+  const immediateBox = await toolbar.boundingBox();
+  await page.waitForTimeout(400);
+  const settledBox = await toolbar.boundingBox();
+  expect(immediateBox).toEqual(settledBox);
 });
 
 // The visual counterpart to the NodeSelection test above: clicking a handle (no drag) node-selects

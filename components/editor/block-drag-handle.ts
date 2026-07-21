@@ -42,10 +42,15 @@ interface Boundary {
 // unnecessary) `dropPoint`. Built from `view.nodeDOM` + `getBoundingClientRect` rather than
 // `view.posAtCoords`: the pointer roams outside the content area during a drag (that's the point of
 // a custom drag), and `posAtCoords` returns null there.
-function findBoundary(view: EditorView, clientY: number): Boundary {
+//
+// `excludeFrom` skips the dragged node itself (always exactly one top-level child, at that
+// offset) — see applyMove()'s comment for why excluding it, rather than collapsing its layout
+// away, is the current approach.
+function findBoundary(view: EditorView, clientY: number, excludeFrom: number): Boundary {
   const children: { offset: number; top: number; bottom: number; left: number; width: number }[] =
     [];
   view.state.doc.forEach((_node, offset) => {
+    if (offset === excludeFrom) return;
     const dom = view.nodeDOM(offset);
     if (dom instanceof HTMLElement) {
       const rect = dom.getBoundingClientRect();
@@ -77,6 +82,7 @@ function findBoundary(view: EditorView, clientY: number): Boundary {
 class DragController {
   private session: DragSession | null = null;
   private indicator: HTMLElement | null = null;
+  private preview: HTMLElement | null = null;
   private readonly onMouseMove = (event: MouseEvent) => this.handleMouseMove(event);
   private readonly onMouseUp = () => this.handleMouseUp();
 
@@ -121,6 +127,8 @@ class DragController {
     this.endSession();
     this.indicator?.remove();
     this.indicator = null;
+    this.preview?.remove();
+    this.preview = null;
   }
 
   private handleMouseMove(event: MouseEvent): void {
@@ -141,14 +149,44 @@ class DragController {
       // dragged block, `:hover` correctly stops matching and the handle would otherwise vanish
       // mid-drag. This class forces it to stay visible for the session's duration instead.
       session.handleEl.classList.add('is-dragging');
+      // A cursor-following clone of what's being dragged — the source block itself stays exactly
+      // where it is (no collapse/reflow, see applyMove()'s comment for why), so this is the
+      // drag's only positive "here's what you're carrying" signal.
+      const dom = this.view.nodeDOM(session.from);
+      if (dom instanceof HTMLElement) {
+        const preview = this.ensurePreview();
+        preview.replaceChildren(dom.cloneNode(true) as Node);
+        const cloneRoot = preview.firstElementChild;
+        if (cloneRoot instanceof HTMLElement) {
+          cloneRoot.classList.remove('ProseMirror-selectednode');
+          cloneRoot.setAttribute('contenteditable', 'false');
+        }
+        preview.style.display = 'block';
+      }
     }
-    const { pos, y, left, width } = findBoundary(this.view, event.clientY);
-    session.target = pos;
-    const el = this.ensureIndicator();
-    el.style.display = 'block';
-    el.style.top = `${y}px`;
-    el.style.left = `${left}px`;
-    el.style.width = `${width}px`;
+    const { pos, y, left, width } = findBoundary(this.view, event.clientY, session.from);
+    // `to` (the gap right after the dragged node's own original position) is always a no-op per
+    // applyMove()'s guard — suppress the indicator for it rather than showing a target that would
+    // just put the block back where it started. This is the resolved candidate for the whole zone
+    // from the dragged node's own top down through the next sibling's midpoint — including right
+    // at drag start, when the pointer is barely past the handle and still visually over the
+    // (unmoving — see applyMove()'s comment) source block itself, where showing a "real-looking"
+    // indicator elsewhere would read as reacting before you've gone anywhere.
+    if (pos === session.to) {
+      session.target = null;
+      if (this.indicator) this.indicator.style.display = 'none';
+    } else {
+      session.target = pos;
+      const el = this.ensureIndicator();
+      el.style.display = 'block';
+      el.style.top = `${y}px`;
+      el.style.left = `${left}px`;
+      el.style.width = `${width}px`;
+    }
+    if (this.preview) {
+      this.preview.style.left = `${event.clientX}px`;
+      this.preview.style.top = `${event.clientY}px`;
+    }
   }
 
   private handleMouseUp(): void {
@@ -164,6 +202,10 @@ class DragController {
     document.body.classList.remove('block-dragging');
     this.session?.handleEl.classList.remove('is-dragging');
     if (this.indicator) this.indicator.style.display = 'none';
+    if (this.preview) {
+      this.preview.style.display = 'none';
+      this.preview.replaceChildren();
+    }
     this.session = null;
   }
 
@@ -178,21 +220,41 @@ class DragController {
     return this.indicator;
   }
 
-  // Both gaps flanking the dragged node (`from` and `to`) mean "put it back where it came from" —
-  // skip the transaction rather than issuing a no-op undo-history entry.
+  // The `prose prose-zinc dark:prose-invert` classes are the same ones PostEditor.tsx puts on
+  // `.ProseMirror` itself, so a cloned blockquote/table/code-block keeps its normal typographic
+  // styling even outside that container.
+  private ensurePreview(): HTMLElement {
+    if (!this.preview) {
+      const el = document.createElement('div');
+      el.className = 'block-drag-preview prose prose-zinc dark:prose-invert';
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      this.preview = el;
+    }
+    return this.preview;
+  }
+
+  // `to` (put it back right after itself) means "put it back where it came from" — skip the
+  // transaction rather than issuing a no-op undo-history entry. `from` can no longer actually
+  // occur (findBoundary() excludes the dragged node's own offset from its candidates, so no
+  // result ever carries that value) — the check is kept anyway since it's harmless and cheap.
   //
-  // Consequence (considered and kept, not an oversight): since findBoundary() still counts the
-  // dragged node itself among the top-level siblings it scans (its DOM hasn't gone anywhere until
-  // drop), moving it down by just one slot means the pointer has to cross *two* boundaries — its own
-  // trailing gap (`to`, a no-op per this guard) and then the next node's — not one. The fix that
-  // looks obvious, excluding the dragged node from findBoundary()'s candidates, was tried and
-  // reverted: with it excluded, the closest-boundary search can jump the indicator to the *next*
-  // node's gap while the pointer is still visually over the dragged node itself, since the node
-  // that would normally "catch" the pointer there is no longer a candidate. That desync between
-  // cursor and indicator reads as broken; needing a bit more pointer travel to register a move does
-  // not. A real fix would collapse the dragged node's own layout space during the drag (as
-  // Notion/Trello do) so the two notions of "candidate gaps" and "what's actually on screen" stay
-  // in sync — out of scope here.
+  // This exclusion is the current fix for a boundary-crossing bug: without it, findBoundary()
+  // would count the dragged node itself among the top-level siblings it scans (its DOM hasn't
+  // gone anywhere until drop), so its `from`/`to` gaps — both no-ops per this guard — would sit a
+  // full block-height apart, forcing the pointer to cross both before reaching the next real
+  // boundary. An earlier version fixed this by collapsing the dragged node's own layout to ~0
+  // height instead (so the two gaps merged visually) — reverted after trying it in the browser:
+  // the reflow (surrounding content sliding to fill the gap) was hard to track, especially for a
+  // large element like a table. Excluding the node outright was tried even earlier than that and
+  // reverted too, for a different reason — without the source's layout changing at all, the drop
+  // indicator could jump ahead to the next real gap while the pointer was still visually over the
+  // (still full-size) dragged node, reading as desynced. It's back now, paired with two things
+  // that weren't in the earlier attempt: the cursor-following preview (`ensurePreview()`) gives
+  // positive "here's what you're carrying" feedback instead of relying on the source block itself,
+  // and handleMouseMove()'s own `pos === session.to` check suppresses the indicator entirely for
+  // that no-op candidate — so the only thing the indicator can ever show is a real target, never
+  // the jump-to-a-no-op-gap that originally read as broken.
   private applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
     if (target === from || target === to) return;
     const tr = this.view.state.tr.delete(from, to);

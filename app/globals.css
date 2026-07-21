@@ -215,6 +215,28 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   }
 }
 
+/* Editor-only chrome: a cursor-following clone of the block DragController (block-drag-handle.ts)
+   is dragging — positive visual continuity, since the source block itself stays put (no
+   collapse/reflow) while dragging. `position: fixed` + `pointer-events: none` for the same
+   reasons as `.block-drag-indicator` above. `max-width`/`max-height` + `overflow: hidden` cap a
+   large table or long code block so the ghost stays a reasonably sized card instead of a
+   full-size floating copy. `background: var(--background)` (themed on `:root`) keeps it opaque
+   rather than a see-through smear over the editor content behind it. */
+.block-drag-preview {
+  position: fixed;
+  z-index: 41;
+  display: none;
+  pointer-events: none;
+  max-width: min(90vw, 480px);
+  max-height: 300px;
+  overflow: hidden;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--background);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0.95;
+}
+
 /* Editor-only chrome: while DragController (block-drag-handle.ts) has an active drag, it toggles
    this on <body> rather than `.ProseMirror` — the pointer roams outside the editor during a drag,
    and both the grabbing cursor and the text-selection suppression need to hold everywhere, not just
@@ -222,6 +244,18 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
 body.block-dragging {
   cursor: grabbing !important;
   user-select: none;
+}
+
+/* Editor-only chrome: hides the table toolbar (components/editor/TableToolbar.tsx, a TipTap
+   BubbleMenu) while a block drag is in progress. Dragging a table sets a NodeSelection over it
+   (block-drag-handle.ts), which is enough for the bubble menu's own `shouldShow` to keep it
+   visible — but nothing dispatches another editor transaction until drop, so the menu never
+   re-checks position or visibility for the whole drag; left alone it just sits at the table's
+   original spot, stale, next to the cursor-following drag preview. A CSS override is simplest
+   here: the bubble menu plugin only re-evaluates on a transaction with a selection or doc change,
+   and forcing one purely to hide this would be more machinery than the problem is worth. */
+body.block-dragging .table-toolbar {
+  display: none !important;
 }
 
 /* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
