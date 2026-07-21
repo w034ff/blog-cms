@@ -1,8 +1,8 @@
-import { Extension, getHTMLFromFragment } from '@tiptap/core';
+import { Extension, getHTMLFromFragment, type Editor } from '@tiptap/core';
 import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
-import { isInTable, selectedRect } from '@tiptap/pm/tables';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { isInTable, nextCell, selectedRect, selectionCell } from '@tiptap/pm/tables';
+import { Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
@@ -151,6 +151,33 @@ export const TableDropCursorGuard = Extension.create({
 export const ParagraphTableCell = TableCell.extend({ content: 'paragraph+' });
 export const ParagraphTableHeader = TableHeader.extend({ content: 'paragraph+' });
 
+// Whether `selection` covers a whole textblock's content start-to-end — the shape
+// Tab's own goToNextCell leaves behind (it selects the entire destination cell,
+// mirroring spreadsheet overwrite-on-type UX), as opposed to an ordinary partial
+// selection a user made by hand.
+function isWholeTextblockSelected(selection: Selection): boolean {
+  const { $from, $to } = selection;
+  if (selection.empty || $from.parent !== $to.parent) return false;
+  return $from.parentOffset === 0 && $to.parentOffset === $from.parent.content.size;
+}
+
+// prosemirror-view's own vertical-arrow handling (selectVertically) refuses to act
+// on a non-empty TextSelection at all, so right after Tab the keydown falls through
+// to the browser's native behavior for a range selection, which collapses it to an
+// edge instead of moving a row — ArrowDown after Tab, Tab looks like it moved
+// sideways instead of down. Recognize that specific "whole cell selected" shape and
+// move to the same column one row up/down ourselves, the same way prosemirror-tables'
+// own (selection-empty-only) arrow keymap would. An ordinary partial selection made
+// by hand is left alone, so plain shift-selecting text still collapses normally.
+function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
+  const { state, view } = editor;
+  if (!isInTable(state) || !isWholeTextblockSelected(state.selection)) return false;
+  const $next = nextCell(selectionCell(state), 'vert', dir);
+  if (!$next) return false;
+  view.dispatch(state.tr.setSelection(Selection.near($next, 1)).scrollIntoView());
+  return true;
+}
+
 // @tiptap/extension-table already stores an `align` attribute per cell (parsed
 // from the `text-align` style markdown-it emits for `:-:`, rendered back as an
 // inline style), but tiptap-markdown's built-in table serializer always writes a
@@ -229,6 +256,15 @@ export const MarkdownTable = Table.extend({
           if (dispatch) dispatch(tr);
           return true;
         },
+    };
+  },
+  addKeyboardShortcuts() {
+    // Merge with the parent's Tab/Shift-Tab/Backspace/Delete shortcuts — returning
+    // a fresh object here would replace them outright, not just add to them.
+    return {
+      ...(this.parent?.() ?? {}),
+      ArrowDown: () => tableVerticalArrow(1, this.editor),
+      ArrowUp: () => tableVerticalArrow(-1, this.editor),
     };
   },
   addProseMirrorPlugins() {
