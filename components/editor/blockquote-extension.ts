@@ -4,23 +4,19 @@ import type { NodeType } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 
 // Custom Backspace join for blockquotes, replacing @tiptap/extension-blockquote's own
-// (upstream src/handleBackspace.ts), for two reasons:
+// (upstream src/handleBackspace.ts): upstream only merges when the preceding blockquote's last
+// child is itself a textblock, and otherwise `lift`s the current block out of its quote. With
+// *nested* quotes that produced an infinite Backspace toggle: the empty block bounced in and out
+// of the quote (lift ↔ ProseMirror's default join-into-quote) and never reached the text. Here we
+// instead descend the preceding quote's trailing edge to its deepest textblock and merge there, so
+// one Backspace lands the caret at the end of that line regardless of nesting depth. Plain
+// textblock-to-textblock joins are left to ProseMirror's default (it already merges paragraphs
+// correctly). Regression: e2e/editor-quote-backspace.spec.ts (nested-quote case).
 //
-// 1. That extension ships with prosemirror-model/-transform/-state bundled straight into its
-//    dist (it `import`s only @tiptap/core), so it carries a *second* copy of the prosemirror-state
-//    classes. Its join built the resulting caret with that duplicate `TextSelection`, which then
-//    fails `instanceof TextSelection` inside prosemirror-view's captureKeyDown — eating the *next*
-//    Backspace as a no-op ("dead Backspace after a quote join"). We set the selection with the
-//    canonical @tiptap/pm/state TextSelection instead. Regression: e2e/editor-quote-backspace.spec.ts.
-//
-// 2. Upstream only merged when the preceding blockquote's last child was itself a textblock, and
-//    otherwise `lift`ed the current block out of its quote. With *nested* quotes that produced an
-//    infinite Backspace toggle: the empty block bounced in and out of the quote (lift ↔ ProseMirror's
-//    default join-into-quote) and never reached the text. Here we instead descend the preceding
-//    quote's trailing edge to its deepest textblock and merge there, so one Backspace lands the
-//    caret at the end of that line regardless of nesting depth. Plain textblock-to-textblock joins
-//    are left to ProseMirror's default (it already merges paragraphs correctly).
-//    Regression: e2e/editor-quote-backspace.spec.ts (nested-quote case).
+// (Historically this also worked around @tiptap/extension-blockquote inlining its own
+// prosemirror-state copy, whose duplicate TextSelection broke `instanceof` in prosemirror-view
+// — the "dead Backspace" bug. That packaging bug was fixed upstream in 3.28.0, which now imports
+// @tiptap/pm/state; the canonical TextSelection below is kept but no longer load-bearing for it.)
 function joinIntoBlockquote(editor: Editor, type: NodeType): boolean {
   const { state, view } = editor;
   const { selection } = state;

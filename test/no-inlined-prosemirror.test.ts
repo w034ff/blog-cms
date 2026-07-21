@@ -11,10 +11,11 @@ import { join } from 'node:path';
 // duplication happens at the DEPENDENCY's publish-time bundling, not in our tree. So instead we
 // scan the @tiptap dependency surface (where our editor extensions come from) for the inlined copy.
 //
-// We already know and neutralise @tiptap/extension-blockquote (blockquote-extension.ts overrides its
-// Backspace with a canonical @tiptap/pm/state join and PostEditor disables StarterKit's copy). If a
-// dependency bump makes a NEW package show up here, this test fails with its name: mitigate it the
-// same way (a `.extend` that rebuilds selections with @tiptap/pm/state), then add it to HANDLED.
+// @tiptap/extension-blockquote inlined prosemirror-state through 3.27.x; that packaging bug was
+// fixed upstream in 3.28.0 (it now imports @tiptap/pm/state), so no @tiptap package should inline it
+// anymore and HANDLED is empty. If a dependency bump makes a package show up here again, this test
+// fails with its name: mitigate it (a `.extend` that rebuilds selections with @tiptap/pm/state, the
+// way blockquote-extension.ts historically did), then add it to HANDLED.
 
 const TIPTAP_ROOT = join(process.cwd(), 'node_modules', '@tiptap');
 
@@ -23,8 +24,8 @@ const TIPTAP_ROOT = join(process.cwd(), 'node_modules', '@tiptap');
 const INLINED_STATE =
   /class TextSelection extends Selection|\/prosemirror-state@[\d.]+\/[^\s'"]*index\.js/;
 
-// Packages already mitigated in-tree.
-const HANDLED = ['@tiptap/extension-blockquote'];
+// Packages already mitigated in-tree. Empty since 3.28.0 fixed the extension-blockquote inlining.
+const HANDLED: string[] = [];
 
 function distJsFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
