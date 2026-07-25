@@ -10,7 +10,6 @@ import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
-import { HorizontalRuleIcon } from './svg/HorizontalRuleIcon';
 import { CodeIcon } from './svg/CodeIcon';
 
 // A single toolbar entry that folds the two list types into one control. It
@@ -121,12 +120,9 @@ export function Toolbar({
       {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
           menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
-      <ToolbarButton
-        onClick={() => editor.chain().focus().setHorizontalRule().run()}
-        title='区切り線'
-        compact>
-        <HorizontalRuleIcon />
-      </ToolbarButton>
+      {/* Horizontal rule has no toolbar button: h2's red underline already carries the
+          section-divider role, so this is left to the `---` + Enter input rule (StarterKit
+          default) for the rare case someone wants an in-section break. */}
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
           than an editor command, so it's a <label>-wrapped hidden input styled to
           match ToolbarButton. Paste and drag-and-drop also insert images. */}

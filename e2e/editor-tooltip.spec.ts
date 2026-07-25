@@ -49,6 +49,6 @@ test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   await expect(heading2).toHaveAttribute('aria-keyshortcuts', 'Control+Alt+2');
 
   // A command without a shortcut gets no shortcut text.
-  const rule = page.getByRole('button', { name: '区切り線' });
-  await expect(rule).not.toHaveAttribute('aria-keyshortcuts', /.+/);
+  const list = page.getByRole('button', { name: 'リスト' });
+  await expect(list).not.toHaveAttribute('aria-keyshortcuts', /.+/);
 });
