@@ -44,6 +44,7 @@ function ariaKeyshortcuts(token: string, mac: boolean): string {
 export function ToolbarButton({
   onClick,
   active,
+  disabled,
   title,
   shortcut,
   destructive,
@@ -53,6 +54,11 @@ export function ToolbarButton({
 }: {
   onClick: () => void;
   active?: boolean;
+  // Grays the button out and blocks clicks — for a command that would currently be a no-op
+  // (e.g. accentEmphasis's `excludes` blocks bold/italic/strike on the selection). The
+  // shortcut itself is unaffected by this (see guarded-toggle.ts): it already no-ops cleanly
+  // without touching undo history, so this prop is purely a discoverability affordance.
+  disabled?: boolean;
   // Set for icon-only buttons, where it supplies both the hover tooltip and the
   // accessible name (text buttons don't need it — their label is the text).
   title?: string;
@@ -87,11 +93,12 @@ export function ToolbarButton({
     <button
       type='button'
       onClick={onClick}
+      disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
       className={`group/tt relative rounded text-xs ${compact ? 'px-1 py-1' : 'px-2 py-1'} ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
-      }`}>
+      } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>
       {children}
       {hasTip && (
         // Centered below (left-1/2 + -translate-x-1/2, top-full). pointer-events-none

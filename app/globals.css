@@ -753,6 +753,16 @@ body.block-dragging .table-toolbar {
   border-left: 0.25rem solid #cf222e; /* same red as markdown-alert-warning */
 }
 
+/* The "強調" inline mark (accent-emphasis-extension.ts): bold + the same red accent as
+   h2/h3 above, as a single toggle. Deliberately NOT scoped under `.prose` (unlike the rest
+   of this file) — the identical rule also colors the toolbar button's "A" preview glyph,
+   which sits outside `.prose` entirely. Dark counterpart lives in the bottom
+   prefers-color-scheme block. */
+.accent-emphasis {
+  font-weight: 700;
+  color: #cf222e;
+}
+
 /* Full-grid tables: the typography plugin draws only horizontal rules, which
    leaves column and empty-cell boundaries invisible. Borders on every cell make
    the structure legible — and matter especially in the TipTap editor, where you
@@ -969,6 +979,11 @@ body.block-dragging .table-toolbar {
      .markdown-alert-warning's dark accent below. */
   .prose h3 {
     border-left-color: #f85149;
+  }
+
+  /* Dark counterpart of the accent-emphasis color above (also unscoped — see there). */
+  .accent-emphasis {
+    color: #f85149;
   }
 
   /* Brighter accents + faint tint for the dark surface (the light hues above go

@@ -16,6 +16,8 @@ import {
 } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
 import { Blockquote } from './editor/blockquote-extension';
+import { AccentEmphasis } from './editor/accent-emphasis-extension';
+import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
 import { BlockDragHandle } from './editor/block-drag-handle';
@@ -179,14 +181,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // blockquote is likewise replaced by our Blockquote (StarterKit's copy bundles a
       // duplicate prosemirror-state whose Backspace join breaks `instanceof` — see
       // blockquote-extension.ts), so disable it here to avoid a double registration.
-      // Turn off the browser's native spellcheck for inline `code` marks — code tokens
-      // aren't dictionary words, so it paints them with red squiggles (the code block's
-      // <code> is likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
+      // underline is disabled outright: it had no toolbar button (reachable only via the
+      // undocumented Mod-u), and rehype-sanitize's schema (lib/render.ts) doesn't allow a
+      // bare <u> tag, so it silently vanished on publish — a WYSIWYG lie with no UI to fix.
+      // bold/italic/strike/code are replaced by the guarded versions below (same behavior,
+      // but toggling one that's excluded by accentEmphasis is a true no-op — see
+      // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
       StarterKit.configure({
         heading: { levels: [2, 3] },
         codeBlock: false,
         blockquote: false,
-        code: { HTMLAttributes: { spellcheck: 'false' } },
+        bold: false,
+        italic: false,
+        strike: false,
+        code: false,
+        underline: false,
       }),
       // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
       // (same node, extended to serialize column alignment) and the paragraph-only
@@ -222,6 +231,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Hover-revealed left-gutter grip on blockquotes/callouts/images/tables/code blocks:
       // click-drag the whole block to reorder it. Editor-only chrome, no markdown/model impact.
       BlockDragHandle,
+      // Bold + the site's red accent as one toggle ("強調"). No native markdown syntax, so it
+      // round-trips as raw `<span class="accent-emphasis">` (safe under this Markdown
+      // extension's `html: true` above) — see accent-emphasis-extension.ts.
+      AccentEmphasis,
+      // Guarded replacements for StarterKit's bold/italic/strike (disabled above) — see
+      // guarded-toggle-marks.ts and guarded-toggle.ts.
+      Bold,
+      Italic,
+      Strike,
+      // Turn off the browser's native spellcheck for inline `code` marks — code tokens aren't
+      // dictionary words, so it paints them with red squiggles (the code block's <code> is
+      // likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
+      Code.configure({ HTMLAttributes: { spellcheck: 'false' } }),
     ],
     content: initial.body,
     editorProps: {

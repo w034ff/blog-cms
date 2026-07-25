@@ -10,7 +10,6 @@ import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
-import { CodeIcon } from './svg/CodeIcon';
 
 // A single toolbar entry that folds the two list types into one control. It
 // highlights whenever the cursor is in any list, and the open menu marks which
@@ -74,6 +73,7 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBold().run()}
         active={editor.isActive('bold')}
+        disabled={!editor.can().toggleBold()}
         title='太字'
         shortcut='Mod-b'
         compact>
@@ -82,6 +82,7 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleItalic().run()}
         active={editor.isActive('italic')}
+        disabled={!editor.can().toggleItalic()}
         title='斜体'
         shortcut='Mod-i'
         compact>
@@ -92,6 +93,7 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleStrike().run()}
         active={editor.isActive('strike')}
+        disabled={!editor.can().toggleStrike()}
         title='取り消し線'
         shortcut='Mod-Shift-s'
         compact>
@@ -99,13 +101,19 @@ export function Toolbar({
           S
         </span>
       </ToolbarButton>
+      {/* Inline code has no toolbar button: it already has three entry points that cover both
+          typing-as-you-go and marking already-typed text — Mod-e, the `` `text` `` input rule,
+          and the matching paste rule (all from @tiptap/extension-code). */}
       <ToolbarButton
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        active={editor.isActive('code')}
-        title='コード'
-        shortcut='Mod-e'
+        onClick={() => editor.chain().focus().toggleAccentEmphasis().run()}
+        active={editor.isActive('accentEmphasis')}
+        disabled={!editor.can().toggleAccentEmphasis()}
+        title='強調'
+        shortcut='Mod-Shift-e'
         compact>
-        <CodeIcon />
+        <span className='accent-emphasis flex w-4 items-center justify-center text-sm leading-4'>
+          A
+        </span>
       </ToolbarButton>
       <ListMenu editor={editor} />
       <ToolbarButton

@@ -25,18 +25,30 @@ const alertClasses: [string, ...string[]] = [
   'markdown-alert-content',
 ];
 const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
-// The sr-only <span> the transform wraps the type word in (announced to screen
-// readers; hidden visually). Same tight value-allowlist form — only this exact
-// class passes on <span>, so an author's `<span class="…">` is still stripped and
-// pretty-code's post-sanitize highlight spans are unaffected.
-const titleLabelClass: [string, ...string[]] = ['className', 'markdown-alert-title-label'];
+// Both allowed <span> classes, merged into one value-allowlist tuple: a schema attribute list
+// holds at most one usable tuple per attribute name — hast-util-sanitize's findDefinition
+// returns on the first entry whose name matches, so appending a second `['className', …]` for
+// the same tag would leave it dead rather than widen what the first one allows.
+//   - markdown-alert-title-label: the sr-only <span> the alert transform wraps the type word
+//     in (announced to screen readers; hidden visually) — pretty-code's post-sanitize
+//     highlight spans are unaffected.
+//   - accent-emphasis: the "強調" inline mark (components/editor/accent-emphasis-extension.ts),
+//     which round-trips as raw `<span class="accent-emphasis">` since bold+color has no
+//     native markdown syntax.
+// Only these exact class names pass on <span>; an author's own `<span class="…">` is
+// still stripped.
+const spanClasses: [string, ...string[]] = [
+  'className',
+  'markdown-alert-title-label',
+  'accent-emphasis',
+];
 const schema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
     div: [...(defaultSchema.attributes?.div ?? []), alertClasses],
     p: [...(defaultSchema.attributes?.p ?? []), titleClass],
-    span: [...(defaultSchema.attributes?.span ?? []), titleLabelClass],
+    span: [...(defaultSchema.attributes?.span ?? []), spanClasses],
   },
 };
 

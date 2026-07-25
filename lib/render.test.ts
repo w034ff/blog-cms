@@ -29,6 +29,34 @@ describe('renderMdxToHtml — GitHub alerts', () => {
   });
 });
 
+// The "強調" inline mark (components/editor/accent-emphasis-extension.ts) has no native
+// markdown syntax, so it round-trips as raw `<span class="accent-emphasis">` — pins that
+// the sanitize schema edit keeps that exact span/class through rehype-raw + rehype-sanitize.
+describe('renderMdxToHtml — accent emphasis', () => {
+  it('keeps a `<span class="accent-emphasis">` from raw inline HTML', async () => {
+    const html = await renderMdxToHtml('Some <span class="accent-emphasis">text</span>.');
+    expect(html).toContain('<span class="accent-emphasis">text</span>');
+  });
+
+  it('strips a non-allowlisted class on a span', async () => {
+    const html = await renderMdxToHtml('<span class="evil">x</span>');
+    expect(html).not.toContain('evil');
+  });
+
+  // Regression (found 2026-07-25): unlike bold/italic/strike, layering inline code onto an
+  // accent-emphasis span doesn't corrupt the surrounding markdown (a code span's content is
+  // never re-parsed, so no flanking-rule issue) — but nesting the *reverse* way, an
+  // accent-emphasis span inside a code span, is still broken: code-span content is always
+  // literal, so the span tags show up as escaped `&lt;span…&gt;` text instead of an element.
+  // accentEmphasis's `excludes: '… code'` (accent-emphasis-extension.ts) stops the editor from
+  // ever producing this nesting; this pins the underlying markdown-level reason why.
+  it('does not parse a span nested inside a code span — it stays literal text', async () => {
+    const html = await renderMdxToHtml('`<span class="accent-emphasis">a</span>`');
+    expect(html).toContain('&#x3C;span class="accent-emphasis">a&#x3C;/span>');
+    expect(html).not.toContain('<span class="accent-emphasis">');
+  });
+});
+
 // The Zenn/Qiita ```lang:filename fence: remarkCodeFilename splits the colon so the language
 // still highlights and the filename becomes a pretty-code title bar (figcaption).
 describe('renderMdxToHtml — code block filename', () => {
