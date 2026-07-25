@@ -671,6 +671,17 @@ body.block-dragging .table-toolbar {
   line-height: 1.6;
 }
 
+/* A long unbroken token (a heading with no spaces, a bare URL, ...) has no
+   whitespace to wrap at, so normal word-wrap leaves it overflowing the column
+   instead of breaking. break-word wraps mid-token only as a last resort, once
+   the whole word doesn't fit — normal text still wraps at spaces first. `pre`
+   is excluded (scrolls horizontally instead, see [data-rehype-pretty-code-figure]
+   pre above) since breaking code mid-token would corrupt it. Applies to both
+   surfaces (editor and post both use .prose). */
+.prose :not(pre) {
+  overflow-wrap: break-word;
+}
+
 /* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
    full mouse-cursor of empty space. Re-assert prose's own first/last-child margin
    reset too — these rules are unlayered, so they outrank the plugin's (layered)
@@ -712,6 +723,34 @@ body.block-dragging .table-toolbar {
 .prose {
   --tw-prose-bullets: #3f3f46; /* zinc-700 — matches prose-zinc body */
   --tw-prose-counters: #3f3f46; /* zinc-700 — matches prose-zinc body */
+}
+
+/* Underline the major heading (h2) so section breaks are scannable at a glance.
+   Plain border-bottom (not text-decoration): it draws exactly once, below the
+   whole box, regardless of how many lines a long heading wraps into — a
+   text-hugging underline would instead draw once per wrapped line, leaving a
+   short first line and a long last line. Same red accent as h3's left rule
+   below, so both heading tiers share one color language — the underline vs.
+   left-bar shape still keeps h2 and h3 visually distinct from each other.
+   Dark counterpart lives in the bottom prefers-color-scheme block. Applies to
+   both surfaces (editor and post both use .prose). */
+.prose h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid #cf222e; /* same red as h3 / markdown-alert-warning */
+}
+
+/* Give h3 the same left rule as blockquote (border-inline-start), but in a red
+   accent so a subheading reads as its own tier rather than a quieter h2. Color
+   reuses the GitHub-alert warning red already in the palette (see
+   .markdown-alert-warning below) instead of introducing a new hue — the
+   warning callout's border-left was dropped (see .markdown-alert above) so
+   the two no longer share the same bar-shaped motif. Padding is kept tight
+   since this sits on a heading, not a quoted block. Dark counterpart lives in
+   the bottom prefers-color-scheme block. Applies to both surfaces (editor and
+   post both use .prose). */
+.prose h3 {
+  padding-left: 0.5em;
+  border-left: 0.25rem solid #cf222e; /* same red as markdown-alert-warning */
 }
 
 /* Full-grid tables: the typography plugin draws only horizontal rules, which
@@ -814,13 +853,13 @@ body.block-dragging .table-toolbar {
    `<div class="markdown-alert markdown-alert-<type>">` with a `.markdown-alert-title`
    label, and in the editor the Callout node's NodeView builds the identical DOM
    (components/editor/callout-extension.ts) — so these rules style the live preview and
-   the published page alike. They paint the accent border + tint per type; colors are
-   per-type accents with a faint same-hue background, dark variants in the
-   prefers-color-scheme block below. */
+   the published page alike. They paint an accent tint per type (icon color + faint
+   same-hue background), dark variants in the prefers-color-scheme block below. No
+   left border — that bar motif is reserved for blockquote/h3 elsewhere in this
+   file, and the icon + tint already carry the per-type accent on their own. */
 .prose .markdown-alert {
   margin: 1em 0;
   padding: 0.6em 1em;
-  border-left: 0.25rem solid var(--alert-accent);
   border-radius: 0.25rem;
   background: var(--alert-bg);
   /* Guard against any inherited emphasis (e.g. a blockquote in the body) tilting the
@@ -918,6 +957,18 @@ body.block-dragging .table-toolbar {
   .prose {
     --tw-prose-bullets: #d4d4d8; /* zinc-300 — matches prose-invert body */
     --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
+  }
+
+  /* Dark counterpart of the h2 underline above — matches
+     .markdown-alert-warning's dark accent below. */
+  .prose h2 {
+    border-bottom-color: #f85149;
+  }
+
+  /* Dark counterpart of the h3 left rule above — matches
+     .markdown-alert-warning's dark accent below. */
+  .prose h3 {
+    border-left-color: #f85149;
   }
 
   /* Brighter accents + faint tint for the dark surface (the light hues above go
