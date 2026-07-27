@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
-import { loadMarkdown, setRange } from './editor-authoring';
+import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 
 // The clipboard half of e2e/callout-drop-guard.spec.ts. Copying a selection that crosses a callout's
 // edge puts the callout node on the clipboard — `data-pm-slice` round-trips the open depths, so the
@@ -158,10 +158,11 @@ test('pasting a quote that holds a callout does not carry the box into a quote',
     'doc(paragraph("前の段落です"), blockquote(callout(paragraph("囲みの中身です"))), blockquote(paragraph("引用の中身です")), paragraph)',
   );
 
-  // 7 = end of 「前の段落です」, 21 = the boundary after the first quote, so that quote (and the
-  // callout inside it) is covered whole and closed; 30 = end of 「引用の中身です」, inside the
-  // second quote.
-  await copyThenCaret(page, 7, 21, 30);
+  // The whole first quote, taken as a node so the slice carries it closed on both sides; then the
+  // caret at 30 = end of 「引用の中身です」, inside the second quote.
+  await selectNode(page, 'blockquote');
+  await page.keyboard.press('Control+c');
+  await setRange(page, 30);
   await page.keyboard.press('Control+v');
 
   // The quote wrapper comes over — nested quotes are native markdown and stay allowed — but the
