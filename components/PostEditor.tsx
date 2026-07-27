@@ -1,17 +1,30 @@
 'use client';
 
 import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
-import type { ChangeEvent, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
-import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
-import { MarkdownTable, TableDropCursorGuard } from './editor/table-extensions';
-import { TableToolbar, Toolbar } from './editor/Toolbar';
+import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
+import { Callout } from './editor/callout-extension';
+import { DropCursorGuard } from './editor/drop-cursor-guard';
+import { Blockquote } from './editor/blockquote-extension';
+import { Image } from './editor/image-extension';
+import { AccentEmphasis } from './editor/accent-emphasis-extension';
+import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
+import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
+import { SlashCommand } from './editor/slash-command';
+import { CodeBlockWithLanguage } from './editor/code-block-extension';
+import { BlockDragHandle } from './editor/block-drag-handle';
+import { Toolbar } from './editor/Toolbar';
+import { TableToolbar } from './editor/TableToolbar';
+import { DropOverlay } from './editor/DropOverlay';
+import { EditorToast } from './editor/EditorToast';
+import { useAutosave } from './editor/useAutosave';
+import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import type { PostFormState } from '@/app/actions/posts';
-import type { DraftContent } from '@/lib/types';
-import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
 
 // tiptap-markdown adds a `markdown` storage exposing getMarkdown(), but ships no
 // type augmentation for it — register it here so editor.storage.markdown is typed.
@@ -45,53 +58,8 @@ type Props = {
 
 const emptyState: PostFormState = {};
 
-const AUTOSAVE_DELAY_MS = 800;
-
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
-
-const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
-
-function imageFilesFromList(list: FileList | null | undefined): File[] {
-  if (!list) return [];
-  return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
-}
-
-// Build a starting alt text from a dropped/pasted file name: drop the extension
-// and turn separators into spaces so it reads as words. It seeds the image's alt
-// attribute (which tiptap-markdown serializes to `![alt](url)`); the author can
-// refine it later. Strip characters that would break the markdown image.
-function altTextFromFilename(name: string): string {
-  return name
-    .replace(/\.[^./\\]+$/, '')
-    .replace(/[[\]\r\n]+/g, ' ')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Snapshot the editable content from the live form DOM. Reading the form (rather
-// than mirroring every field into React state) lets the metadata fields stay
-// uncontrolled while autosave and publish both see their current values. The
-// body comes from the hidden input the editor keeps in sync with its markdown.
-function readDraftContent(form: HTMLFormElement): DraftContent {
-  const data = new FormData(form);
-  const get = (name: string): string => {
-    const value = data.get(name);
-    return typeof value === 'string' ? value : '';
-  };
-  const tags = get('tags')
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-  return {
-    title: get('title'),
-    description: get('description'),
-    category: get('category'),
-    tags,
-    body: get('body'),
-  };
-}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -101,8 +69,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     </label>
   );
 }
-
-type AutosaveState = 'idle' | 'saving' | 'saved' | 'failed';
 
 export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
@@ -117,10 +83,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // editor mounted (content intact) and prompt a re-login. Cleared by any
   // successful autosave/publish (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  // True while a file is being dragged over the window, so a drop overlay
-  // appears on the editor container as a target.
-  const [dragging, setDragging] = useState(false);
 
   // The post's server identity (row id). Null in create mode until the first
   // autosave (or a publish) materializes the row; from then on edits update it.
@@ -128,18 +90,57 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Live visibility, and whether the editor holds edits not yet pushed public.
   const [isPublished, setIsPublished] = useState(published);
   const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
-  // Autosave feedback (whether the in-progress work is safely persisted), kept
-  // separate from the publish state above — they are two independent axes.
-  const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [unsaved, setUnsaved] = useState(false);
 
   // A returned server error (e.g. duplicate slug) shows until the next edit, so
   // it doesn't linger while the user fixes the input.
   const [errorVisible, setErrorVisible] = useState(false);
+  const [handledState, setHandledState] = useState(state);
+
+  const formRef = useRef<HTMLFormElement>(null);
+  // Refs mirror state the autosave machinery reads outside React's render flow.
+  const committedIdRef = useRef<number | null>(committedId);
+  // Edit-mode posts already sit at their final URL; only create-mode posts need
+  // a one-time address-bar sync once they gain an identity.
+  const urlSyncedRef = useRef(mode === 'edit');
+  const publishedRef = useRef(isPublished);
+  // The editor's onUpdate handler (set once at editor creation) reaches the
+  // latest markEdited through this ref, avoiding a stale capture without
+  // re-creating the editor.
+  const markEditedRef = useRef<() => void>(() => {});
+  // The live editor instance, handed to the image-upload hook (set from an
+  // effect once useEditor delivers it).
+  const editorRef = useRef<Editor | null>(null);
+
+  useEffect(() => {
+    committedIdRef.current = committedId;
+  }, [committedId]);
+  useEffect(() => {
+    publishedRef.current = isPublished;
+  }, [isPublished]);
+
+  const hasIdentity = committedId !== null;
+
+  // Autosave wiring: the hook owns the dirty/debounce/save machinery; the
+  // publish-flow state stays here and is updated through these callbacks.
+  const handleCreated = useCallback((id: number) => setCommittedId(id), []);
+  // An edit to a live post is a pending publish until pushed public again.
+  const handleDirty = useCallback(() => {
+    if (publishedRef.current) setPendingPublish(true);
+  }, []);
+  const { autosaveState, savedAt, unsaved, markEdited, cancelPendingAutosave, acceptSaved } =
+    useAutosave({
+      formRef,
+      committedIdRef,
+      onCreated: handleCreated,
+      onDirty: handleDirty,
+      onSessionExpired: setSessionExpired,
+    });
+
+  const { uploading, dragging, blockedMessage, uploadImages, handleImageChange } =
+    useImageUpload(editorRef);
+
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.
-  const [handledState, setHandledState] = useState(state);
   if (state !== handledState) {
     setHandledState(state);
     setErrorVisible(Boolean(state.error));
@@ -151,9 +152,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     } else if (state.saved) {
       setIsPublished(state.saved.published);
       setPendingPublish(false);
-      setUnsaved(false);
-      setSavedAt(state.saved.at);
-      setAutosaveState('saved');
+      acceptSaved(state.saved.at);
       setSessionExpired(false);
       if (committedId === null) setCommittedId(state.saved.id);
       // Adopt the slug the server finalized at publish (and lock it via the
@@ -161,135 +160,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       if (state.saved.slug !== null) setSlug(state.saved.slug);
     }
   }
-
-  const formRef = useRef<HTMLFormElement>(null);
-  // Refs mirror state the autosave machinery reads outside React's render flow.
-  const committedIdRef = useRef<number | null>(committedId);
-  // Edit-mode posts already sit at their final URL; only create-mode posts need
-  // a one-time address-bar sync once they gain an identity.
-  const urlSyncedRef = useRef(mode === 'edit');
-  const publishedRef = useRef(isPublished);
-  const unsavedRef = useRef(false);
-  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savingRef = useRef(false);
-  const retryRef = useRef(false);
-  // Holds the autosave routine (published from an effect below) so the timer,
-  // Ctrl/⌘+S flush, and mid-flight retry can invoke it without a stale closure.
-  const autosaveRef = useRef<() => Promise<void>>(async () => {});
-  // Editor event handlers (set once at editor creation) reach the latest closures
-  // through these refs, avoiding stale captures without re-creating the editor.
-  const markEditedRef = useRef<() => void>(() => {});
-  const uploadImagesRef = useRef<(files: File[]) => Promise<void>>(async () => {});
-
-  useEffect(() => {
-    committedIdRef.current = committedId;
-  }, [committedId]);
-  useEffect(() => {
-    publishedRef.current = isPublished;
-  }, [isPublished]);
-  useEffect(() => {
-    unsavedRef.current = unsaved;
-  }, [unsaved]);
-
-  const hasIdentity = committedId !== null;
-
-  const runAutosave = useCallback(async () => {
-    // Serialize saves; if an edit lands mid-flight, retry once we're done.
-    if (savingRef.current) {
-      retryRef.current = true;
-      return;
-    }
-    const form = formRef.current;
-    if (!form) return;
-    savingRef.current = true;
-    setAutosaveState('saving');
-    let ok = false;
-    try {
-      const content = readDraftContent(form);
-      const payload =
-        committedIdRef.current === null ? { content } : { id: committedIdRef.current, content };
-      const res = await fetch('/api/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.status === 401) {
-        setSessionExpired(true);
-        setAutosaveState('failed');
-        return;
-      }
-      if (!res.ok) {
-        setAutosaveState('failed');
-        return;
-      }
-      const data = (await res.json()) as {
-        id?: number;
-        savedAt?: number;
-        created?: boolean;
-        skipped?: boolean;
-      };
-      // Nothing worth saving yet (empty brand-new post): not an error.
-      if (data.skipped) {
-        ok = true;
-        setAutosaveState('idle');
-        return;
-      }
-      // First save of a new post: adopt the server-assigned id and move to its
-      // edit URL without a navigation, so the editor (and cursor) stay put.
-      if (data.created && typeof data.id === 'number') {
-        committedIdRef.current = data.id;
-        setCommittedId(data.id);
-      }
-      ok = true;
-      setAutosaveState('saved');
-      setSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now());
-      setSessionExpired(false);
-    } catch {
-      setAutosaveState('failed');
-    } finally {
-      savingRef.current = false;
-      if (retryRef.current) {
-        retryRef.current = false;
-        void autosaveRef.current();
-      } else if (ok) {
-        unsavedRef.current = false;
-        setUnsaved(false);
-      }
-    }
-  }, []);
-
-  // Publish the stable autosave routine to the ref the timer/flush/retry call,
-  // so they never capture a stale closure (and we don't write the ref in render).
-  useEffect(() => {
-    autosaveRef.current = runAutosave;
-  }, [runAutosave]);
-
-  const scheduleAutosave = useCallback(() => {
-    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = setTimeout(() => {
-      autosaveTimerRef.current = null;
-      void autosaveRef.current();
-    }, AUTOSAVE_DELAY_MS);
-  }, []);
-
-  // Flush a pending autosave immediately (Ctrl/⌘+S). No-op when nothing is dirty.
-  const flushAutosave = useCallback(() => {
-    if (!unsavedRef.current) return;
-    if (autosaveTimerRef.current) {
-      clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = null;
-    }
-    void autosaveRef.current();
-  }, []);
-
-  // Record an edit: mark dirty, flag pending publish for a live post, and (re)arm
-  // the autosave debounce.
-  const markEdited = useCallback(() => {
-    unsavedRef.current = true;
-    setUnsaved(true);
-    if (publishedRef.current) setPendingPublish(true);
-    scheduleAutosave();
-  }, [scheduleAutosave]);
 
   useEffect(() => {
     markEditedRef.current = markEdited;
@@ -302,17 +172,91 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     immediatelyRender: false, // required under Next SSR
     shouldRerenderOnTransaction: true, // keep toolbar active states in sync
     extensions: [
-      // Body headings are limited to the two levels the toolbar exposes (大見出し
-      // = H2, 小見出し = H3). The post title is the page's only H1, so restricting
-      // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
-      StarterKit.configure({ heading: { levels: [2, 3] } }),
-      // TableKit bundles the table node too, but we replace it with MarkdownTable
-      // (same node, extended to serialize column alignment), so disable its own.
-      TableKit.configure({ table: false }),
-      MarkdownTable,
-      TableDropCursorGuard,
-      ImageExtension,
+      // heading/bulletList/orderedList are replaced by the guarded versions below (same
+      // nodes, but they refuse to convert a code block into prose — see
+      // guarded-block-toggles.ts), so disable StarterKit's own to avoid a double
+      // registration. Heading keeps its level restriction there rather than here.
+      // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
+      // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
+      // blockquote is likewise replaced by our Blockquote (StarterKit's copy bundles a
+      // duplicate prosemirror-state whose Backspace join breaks `instanceof` — see
+      // blockquote-extension.ts), so disable it here to avoid a double registration.
+      // underline is disabled outright: it had no toolbar button (reachable only via the
+      // undocumented Mod-u), and rehype-sanitize's schema (lib/render.ts) doesn't allow a
+      // bare <u> tag, so it silently vanished on publish — a WYSIWYG lie with no UI to fix.
+      // bold/italic/strike/code are replaced by the guarded versions below (same behavior,
+      // but toggling one that's excluded by accentEmphasis is a true no-op — see
+      // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
+      StarterKit.configure({
+        heading: false,
+        bulletList: false,
+        orderedList: false,
+        codeBlock: false,
+        blockquote: false,
+        bold: false,
+        italic: false,
+        strike: false,
+        code: false,
+        underline: false,
+      }),
+      // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
+      // (same node, extended to serialize column alignment) and the paragraph-only
+      // cells (markdown can't store block structure inside a cell), so disable its own.
+      TableKit.configure({ table: false, tableCell: false, tableHeader: false }),
+      // allowTableNodeSelection: prosemirror-tables' tableEditing() otherwise coerces any
+      // NodeSelection wrapping a whole `table` into a CellSelection spanning it (an
+      // appendTransaction — see its normalizeSelection). BlockDragHandle's drag itself no longer
+      // depends on this — it captures the node/range directly at mousedown, so a coerced selection
+      // wouldn't break the move — but without this flag the table's "picked up" highlight would
+      // flicker from a clean NodeSelection into a CellSelection the instant you grab its handle.
+      // Purely cosmetic now; kept for that visual consistency.
+      MarkdownTable.configure({ allowTableNodeSelection: true }),
+      ParagraphTableCell,
+      ParagraphTableHeader,
+      DropCursorGuard,
+      // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
+      // the block, so a quote/fence right after an image isn't glued onto the image's line —
+      // see image-extension.ts.
+      Image,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
+      // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
+      // non-editable label chip and only the body is editable, so it can't be broken
+      // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
+      // and the public render pipeline are unchanged.
+      Callout,
+      // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
+      // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
+      Blockquote,
+      // `/` at the start of a line opens a small block-insert menu (callouts + code block);
+      // choosing a row deletes the `/query` and runs that block's command.
+      SlashCommand,
+      // Plain code block + an editor-only language <select> (drives Shiki highlighting on
+      // the public page); the `language` attribute still round-trips as a ```lang fence.
+      CodeBlockWithLanguage,
+      // Hover-revealed left-gutter grip on blockquotes/callouts/images/tables/code blocks:
+      // click-drag the whole block to reorder it. Editor-only chrome, no markdown/model impact.
+      BlockDragHandle,
+      // Bold + the site's red accent as one toggle ("強調"). No native markdown syntax, so it
+      // round-trips as raw `<span class="accent-emphasis">` (safe under this Markdown
+      // extension's `html: true` above) — see accent-emphasis-extension.ts.
+      AccentEmphasis,
+      // Guarded replacements for StarterKit's bold/italic/strike (disabled above) — see
+      // guarded-toggle-marks.ts and guarded-toggle.ts.
+      Bold,
+      Italic,
+      Strike,
+      // Guarded replacements for StarterKit's heading/bulletList/orderedList (disabled above):
+      // same nodes, but each refuses inside a code block instead of shredding it into prose —
+      // see guarded-block-toggles.ts. Body headings stay limited to the two levels the toolbar
+      // exposes (大見出し = H2, 小見出し = H3): the post title is the page's only H1, so this
+      // also stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
+      Heading.configure({ levels: [2, 3] }),
+      BulletList,
+      OrderedList,
+      // Turn off the browser's native spellcheck for inline `code` marks — code tokens aren't
+      // dictionary words, so it paints them with red squiggles (the code block's <code> is
+      // likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
+      Code.configure({ HTMLAttributes: { spellcheck: 'false' } }),
     ],
     content: initial.body,
     editorProps: {
@@ -321,12 +265,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] px-4 py-3 focus:outline-none',
       },
       // Intercept pasted image files and upload them instead of letting the
-      // browser inline them as data URLs.
+      // browser inline them as data URLs. uploadImages is identity-stable (the
+      // hook reaches the editor through a ref), so this once-created handler
+      // never goes stale.
       handlePaste: (_view, event) => {
         const files = imageFilesFromList(event.clipboardData?.files);
         if (files.length === 0) return false;
         event.preventDefault();
-        void uploadImagesRef.current(files);
+        void uploadImages(files);
         return true;
       },
     },
@@ -337,35 +283,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   });
 
   useEffect(() => {
-    return () => {
-      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-    };
-  }, []);
-
-  // Warn before leaving (reload / tab close / external nav) while edits are not
-  // yet persisted. Autosave clears `unsaved` on success, so the warning lifts on
-  // its own. In-app <Link> navigation is not covered (App Router has no stable
-  // block API).
-  useEffect(() => {
-    if (!unsaved) return;
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [unsaved]);
-
-  // Ctrl/⌘+S flushes the autosave instead of opening the browser's save dialog.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's') return;
-      event.preventDefault();
-      flushAutosave();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [flushAutosave]);
+    editorRef.current = editor;
+  }, [editor]);
 
   // Sync the address bar to a newly created post's edit URL without navigating
   // (keeps the editor mounted, cursor intact). Runs once when a create-mode post
@@ -375,97 +294,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     urlSyncedRef.current = true;
     window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
   }, [committedId]);
-
-  const uploadFile = useCallback(async (file: File): Promise<string | null> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (res.ok && typeof data.url === 'string') return data.url;
-    window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
-    return null;
-  }, []);
-
-  // Upload each image and insert it at the cursor as an editor image node. The
-  // insertion is a transaction, so onUpdate re-serializes the body and marks the
-  // post edited — no manual body/markEdited bookkeeping needed here.
-  const uploadImages = useCallback(
-    async (files: File[]): Promise<void> => {
-      if (!editor) return;
-      setUploading(true);
-      try {
-        for (const file of files) {
-          const url = await uploadFile(file);
-          if (url === null) continue;
-          editor
-            .chain()
-            .focus()
-            .setImage({ src: url, alt: altTextFromFilename(file.name) })
-            .run();
-        }
-      } finally {
-        setUploading(false);
-      }
-    },
-    [editor, uploadFile],
-  );
-
-  useEffect(() => {
-    uploadImagesRef.current = uploadImages;
-  }, [uploadImages]);
-
-  // While a file is dragged anywhere over the window, show a drop overlay and let
-  // a drop add the image at the cursor. Intercepting the drag also stops the
-  // browser default (opening the dropped image as a page and navigating away from
-  // the editor, losing the draft). Only file drags count, so dragging text within
-  // the editor is unaffected. dragenter/dragleave fire for descendants too, so a
-  // depth counter tracks whether the pointer is still somewhere over the window.
-  useEffect(() => {
-    let depth = 0;
-    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
-    const handleDragEnter = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
-      depth += 1;
-      setDragging(true);
-    };
-    const handleDragLeave = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
-      depth -= 1;
-      if (depth <= 0) {
-        depth = 0;
-        setDragging(false);
-      }
-    };
-    const handleDragOver = (event: DragEvent) => {
-      if (hasFiles(event)) event.preventDefault();
-    };
-    const handleDrop = (event: DragEvent) => {
-      if (!hasFiles(event)) return;
-      event.preventDefault();
-      depth = 0;
-      setDragging(false);
-      const files = imageFilesFromList(event.dataTransfer?.files);
-      if (files.length === 0) return;
-      void uploadImagesRef.current(files);
-    };
-    window.addEventListener('dragenter', handleDragEnter);
-    window.addEventListener('dragleave', handleDragLeave);
-    window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('drop', handleDrop);
-    return () => {
-      window.removeEventListener('dragenter', handleDragEnter);
-      window.removeEventListener('dragleave', handleDragLeave);
-      window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('drop', handleDrop);
-    };
-  }, []);
-
-  async function handleUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    await uploadImages([file]);
-  }
 
   const publishLabel = pending
     ? isPublished
@@ -509,10 +337,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       }}
       onSubmit={() => {
         // A publish carries the current content, so a queued autosave is moot.
-        if (autosaveTimerRef.current) {
-          clearTimeout(autosaveTimerRef.current);
-          autosaveTimerRef.current = null;
-        }
+        cancelPendingAutosave();
       }}
       className='space-y-5'>
       {sessionExpired && (
@@ -552,8 +377,26 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       </div>
 
       <div className='space-y-2'>
-        {editor && <Toolbar editor={editor} uploading={uploading} onImageChange={handleUpload} />}
-        <div className='overflow-hidden rounded border border-zinc-300 dark:border-zinc-700'>
+        {/* The frame must NOT be overflow-hidden: that would make the sticky toolbar
+            below pin to the frame instead of the viewport. Its rounded corners are
+            preserved by rounding the toolbar's top and the editor content sits within
+            px padding, so nothing squares off the border. */}
+        <div className='rounded border border-zinc-300 dark:border-zinc-700'>
+          {editor && (
+            // Toolbar as the frame's sticky header: top-0 pins it to the viewport top
+            // (SiteHeader scrolls away, so no offset) so the controls stay reachable
+            // when editing far down a long post. The opaque bg hides content scrolling
+            // beneath; rounded-t matches the frame's corners and border-b (same weight
+            // as the frame) divides the header from the content. z-30 sits above the
+            // editor but below the drop overlay (z-50); its own dropdowns (z-50) still
+            // open over the content.
+            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
+              <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
+              {/* Refusal notices hang off the sticky header (which is a containing block for them),
+                  so they stay in view over the content — see EditorToast. */}
+              {blockedMessage && <EditorToast message={blockedMessage} />}
+            </div>
+          )}
           {editor ? (
             <EditorContent editor={editor} />
           ) : (
@@ -606,32 +449,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         )}
       </div>
 
-      {dragging && (
-        // Full-window so the highlighted area matches where a drop is actually
-        // accepted (anywhere on the page). marginTop:0 cancels the form's
-        // space-y so the fixed layer covers the viewport edge-to-edge.
-        <div
-          style={{ marginTop: 0 }}
-          className='pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-zinc-900/55'>
-          <div className='flex flex-col items-center gap-4 text-zinc-900 dark:text-zinc-50'>
-            <svg
-              xmlns='http://www.w3.org/2000/svg'
-              fill='none'
-              viewBox='0 0 24 24'
-              strokeWidth={1.5}
-              stroke='currentColor'
-              aria-hidden='true'
-              className='h-20 w-20'>
-              <path
-                strokeLinecap='round'
-                strokeLinejoin='round'
-                d='m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z'
-              />
-            </svg>
-            <span className='text-xl font-medium'>ここに画像をドロップして追加</span>
-          </div>
-        </div>
-      )}
+      {dragging && <DropOverlay />}
     </form>
   );
 }

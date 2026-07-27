@@ -1,10 +1,11 @@
-import { Extension, getHTMLFromFragment } from '@tiptap/core';
-import { Table } from '@tiptap/extension-table';
+import { getHTMLFromFragment, type Editor } from '@tiptap/core';
+import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
-import { isInTable, selectedRect } from '@tiptap/pm/tables';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { dropPoint } from '@tiptap/pm/transform';
-import type { EditorView } from '@tiptap/pm/view';
+import { isInTable, nextCell, selectedRect, selectionCell } from '@tiptap/pm/tables';
+import { Plugin, PluginKey, Selection } from '@tiptap/pm/state';
+import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { resolveDropTarget } from './drop-target';
+import { selectionTouches } from './selection-scan';
 
 // A column's text alignment. `null` is GFM's default (`---`, renders left) and is
 // what an untouched column carries; the three explicit values map to `:--`/`:-:`/`--:`.
@@ -58,16 +59,6 @@ function alignDelimiter(align: CellAlign): string {
   return '---';
 }
 
-// Minimal view of tiptap-markdown's serializer state (it exports no types); only
-// the methods the table serializer calls are declared, so we avoid `any`.
-interface TableMarkdownState {
-  inTable: boolean;
-  write(text: string): void;
-  ensureNewLine(): void;
-  renderInline(node: PMNode): void;
-  closeBlock(node: PMNode): void;
-}
-
 // Whether a drop at this position should be blocked. Two kinds of table drop turn
 // into structure instead of a plain text move, and neither is a useful edit here:
 //   • in a table but not in any cell (the gap between cells/rows) — ProseMirror
@@ -79,7 +70,7 @@ interface TableMarkdownState {
 //     alignment on the public page, where sanitize strips the inline style).
 // A drop inside a cell's textblock (merges inline) or entirely outside any table is
 // fine and left to ProseMirror.
-function isDisallowedTableDrop($pos: ResolvedPos): boolean {
+export function isDisallowedTableDrop($pos: ResolvedPos): boolean {
   let inTable = false;
   let inCell = false;
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
@@ -104,12 +95,17 @@ function tableDropGuard(): Plugin {
   return new Plugin({
     key: tableDropGuardKey,
     props: {
-      handleDrop(view, event, slice) {
+      handleDrop(view, event, slice, moved) {
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
-        // Mirror ProseMirror's own drop math so we test its real insertion point.
-        const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
-        if (!isDisallowedTableDrop(view.state.doc.resolve(insertPos))) return false;
+        // resolveDropTarget rather than a local dropPoint call, so this and the drop *indicator*
+        // (drop-cursor-guard.ts) compute the same target. They used to differ: this side resolved
+        // against the document on screen, the indicator against the one the move's own deletion
+        // leaves behind. The two agree except where that deletion joins two nodes — which changes
+        // the depth the mapped position resolves at, and is exactly the case resolveDropTarget
+        // exists for — so the indicator could promise a drop this then refused, or hide on one it
+        // would have taken. Both silent.
+        if (!isDisallowedTableDrop(resolveDropTarget(view, coords.pos, slice, moved))) return false;
         // Returning true makes ProseMirror preventDefault and skip the whole drop,
         // so the dragged text stays put rather than being deleted from its source.
         event.preventDefault();
@@ -119,35 +115,43 @@ function tableDropGuard(): Plugin {
   });
 }
 
-// prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop
-// indicator). It evaluates this on the node under the pointer but *draws* the cursor
-// at dropPoint's target, so those two can disagree near a cell's top edge. We
-// recompute that same target and reuse isDisallowedTableDrop, making the indicator
-// appear exactly when tableDropGuard would accept the drop and hide when it would
-// reject it. Flagged on paragraphs too (below), since a pointer over cell text
-// resolves to the paragraph; outside a table isDisallowedTableDrop is false, so
-// drops elsewhere are unaffected.
-function disableTableDropCursor(view: EditorView, pos: { pos: number }): boolean {
-  const slice = view.dragging?.slice;
-  const target = slice ? (dropPoint(view.state.doc, pos.pos, slice) ?? pos.pos) : pos.pos;
-  return isDisallowedTableDrop(view.state.doc.resolve(target));
+// Markdown can't hold block structure in a table cell: the GFM pipe form is one line
+// of inline content, and even the raw-HTML fallback (spans / multi-paragraph, see
+// isPipeTable) only survives for paragraph content. With the stock `block+` cells a
+// nested code block, callout, list, or table silently flattens to its text on save
+// (a lone block in a cell still counts as the pipe form and is rendered inline).
+// Narrow the schema to paragraphs so such structure can't be authored in a cell at
+// all — block input rules simply don't fire there, and block inserts land outside
+// the table instead of inside the cell.
+export const ParagraphTableCell = TableCell.extend({ content: 'paragraph+' });
+export const ParagraphTableHeader = TableHeader.extend({ content: 'paragraph+' });
+
+// Whether `selection` covers a whole textblock's content start-to-end — the shape
+// Tab's own goToNextCell leaves behind (it selects the entire destination cell,
+// mirroring spreadsheet overwrite-on-type UX), as opposed to an ordinary partial
+// selection a user made by hand.
+function isWholeTextblockSelected(selection: Selection): boolean {
+  const { $from, $to } = selection;
+  if (selection.empty || $from.parent !== $to.parent) return false;
+  return $from.parentOffset === 0 && $to.parentOffset === $from.parent.content.size;
 }
 
-const tableDropCursorNodeNames = new Set([
-  'paragraph',
-  'table',
-  'tableRow',
-  'tableHeader',
-  'tableCell',
-]);
-export const TableDropCursorGuard = Extension.create({
-  name: 'tableDropCursorGuard',
-  extendNodeSchema(extension) {
-    return tableDropCursorNodeNames.has(extension.name)
-      ? { disableDropCursor: disableTableDropCursor }
-      : {};
-  },
-});
+// prosemirror-view's own vertical-arrow handling (selectVertically) refuses to act
+// on a non-empty TextSelection at all, so right after Tab the keydown falls through
+// to the browser's native behavior for a range selection, which collapses it to an
+// edge instead of moving a row — ArrowDown after Tab, Tab looks like it moved
+// sideways instead of down. Recognize that specific "whole cell selected" shape and
+// move to the same column one row up/down ourselves, the same way prosemirror-tables'
+// own (selection-empty-only) arrow keymap would. An ordinary partial selection made
+// by hand is left alone, so plain shift-selecting text still collapses normally.
+function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
+  const { state, view } = editor;
+  if (!isInTable(state) || !isWholeTextblockSelected(state.selection)) return false;
+  const $next = nextCell(selectionCell(state), 'vert', dir);
+  if (!$next) return false;
+  view.dispatch(state.tr.setSelection(Selection.near($next, 1)).scrollIntoView());
+  return true;
+}
 
 // @tiptap/extension-table already stores an `align` attribute per cell (parsed
 // from the `text-align` style markdown-it emits for `:-:`, rendered back as an
@@ -162,7 +166,7 @@ export const MarkdownTable = Table.extend({
     return {
       ...this.parent?.(),
       markdown: {
-        serialize(state: TableMarkdownState, node: PMNode) {
+        serialize(state: MarkdownSerializerState, node: PMNode) {
           if (!isPipeTable(node)) {
             // No pipe-table form: emit raw HTML like tiptap-markdown does (html
             // mode is on), so merged/multi-paragraph tables don't regress.
@@ -196,8 +200,23 @@ export const MarkdownTable = Table.extend({
     };
   },
   addCommands() {
+    const parent = this.parent?.();
     return {
-      ...this.parent?.(),
+      ...parent,
+      // A table can't nest inside a cell (paragraph-only cells), so inserting from
+      // within one would split the host table in two around the new table. Refuse
+      // instead; the picker is a no-op while the caret is in a table.
+      //
+      // selectionTouches rather than isInTable, which reads `$head` alone: a selection dragged
+      // *out* of a table upwards leaves the head outside and so passed the check, and insertTable
+      // then replaced the range — the existing table was swapped for a fresh empty one, its
+      // contents gone. The scan is direction-agnostic (selection.from/to are normalized) and still
+      // covers the plain caret-in-a-cell case.
+      insertTable:
+        (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
+          if (selectionTouches(props.state, 'table')) return false;
+          return parent?.insertTable?.(options)(props) ?? false;
+        },
       setColumnAlign:
         (align: CellAlign) =>
         ({ state, tr, dispatch }) => {
@@ -218,6 +237,15 @@ export const MarkdownTable = Table.extend({
           if (dispatch) dispatch(tr);
           return true;
         },
+    };
+  },
+  addKeyboardShortcuts() {
+    // Merge with the parent's Tab/Shift-Tab/Backspace/Delete shortcuts — returning
+    // a fresh object here would replace them outright, not just add to them.
+    return {
+      ...(this.parent?.() ?? {}),
+      ArrowDown: () => tableVerticalArrow(1, this.editor),
+      ArrowUp: () => tableVerticalArrow(-1, this.editor),
     };
   },
   addProseMirrorPlugins() {

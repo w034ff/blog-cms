@@ -98,12 +98,13 @@ async function seedTableAndSelectSource(page: Page): Promise<{ editor: Locator; 
   await expect(editor).toBeVisible();
   await editor.click();
 
-  // A draggable source paragraph above a 3×3 table (the toolbar inserts
-  // rows:3/cols:3). Enter first, so insertTable lands in the empty paragraph and
+  // A draggable source paragraph above a 3×3 table (picked from the toolbar's
+  // size grid). Enter first, so insertTable lands in the empty paragraph and
   // leaves "DRAGME" as its own block above the table.
   await page.keyboard.type('DRAGME');
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: '表', exact: true }).click();
+  await page.getByRole('button', { name: '3行3列の表を挿入' }).click();
   await expect(editor.locator('table')).toBeVisible();
   await expect(editor.locator('table').getByText('DRAGME')).toHaveCount(0);
 

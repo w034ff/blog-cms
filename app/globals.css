@@ -26,12 +26,32 @@ body {
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
-/* rehype-pretty-code: shiki tokens use inline styles via CSS vars */
-[data-rehype-pretty-code-figure] pre {
-  background: #0d1117;
-  color: #e6edf3;
-  padding: 1rem;
+/* rehype-pretty-code: shiki tokens use inline styles via CSS vars. The figure is the card —
+   a border + rounded, clipped container so the block reads as a distinct panel even in dark
+   mode, where the code bg (#161b22) sits close to the page bg (#0a0a0a) and would otherwise
+   blend in. Inner margins are zeroed (prose adds them to figure/figcaption/pre) so the title
+   bar and code sit flush; the figure keeps prose's outer margin for spacing. */
+[data-rehype-pretty-code-figure] {
+  position: relative; /* anchors the injected copy button (components/CodeCopyButtons.tsx) */
+  border: 1px solid #30363d;
   border-radius: 0.5rem;
+  overflow: hidden;
+  /* The card's background lives on the rounded element itself; pre/title are transparent.
+     A child with its own background would bleed 1px past the rounded corners (a known
+     overflow:hidden + border-radius artifact) — this avoids that entirely. */
+  background: #161b22;
+  color: #e6edf3;
+}
+[data-rehype-pretty-code-figure] pre {
+  margin: 0;
+  background: transparent;
+  /* Inherit the figure's foreground instead of Tailwind Typography's grey `--tw-prose-pre-code`.
+     Highlighted code overrides this per-token via `--shiki-*`, but a plaintext block (a
+     language-less ``` fence, given `defaultLang: plaintext`) emits no color var, so its text would
+     otherwise fall back through `var(--shiki-light, inherit)` to that grey — making "no language"
+     blocks look washed out next to highlighted ones. */
+  color: inherit;
+  padding: 1rem;
   overflow-x: auto;
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.875rem;
@@ -48,8 +68,19 @@ body {
   padding: 0 0.25rem;
 }
 
+/* ```diff fences: shiki's diff grammar only sets a token *foreground* color for +/- lines
+   (see lib/shiki-diff-line-transformer.ts), so paint the full row here to read as a real
+   diff. Colors match GitHub's diff view; the transformer excludes +++/--- header lines. */
+[data-rehype-pretty-code-figure] [data-line].diff-line-add {
+  background: rgba(46, 160, 67, 0.15);
+}
+[data-rehype-pretty-code-figure] [data-line].diff-line-remove {
+  background: rgba(248, 81, 73, 0.15);
+}
+
 @media (prefers-color-scheme: light) {
-  [data-rehype-pretty-code-figure] pre {
+  [data-rehype-pretty-code-figure] {
+    border-color: #d0d7de;
     background: #f6f8fa;
     color: #24292f;
   }
@@ -81,12 +112,642 @@ body {
   content: none;
 }
 
+/* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
+   each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
+.ProseMirror {
+  position: relative;
+}
+
+/* Editor-only chrome: a hover-revealed grip in the left gutter of blockquotes, callouts, images,
+   tables, and code blocks (components/editor/block-drag-handle.ts) — click-drag the whole block
+   to reorder it. Each handle is a widget decoration placed immediately before its target, so it's
+   a real DOM sibling; `top` is set in JS to match the target's own `offsetTop` (see
+   block-drag-handle.ts), but the horizontal offset is this fixed left value, since every target
+   type sits at the same left edge as a top-level doc child. `:has(+ :hover)` reveals it when the
+   block right after it is hovered — :hover on a block already holds true while the pointer is
+   over any of its descendants, so this covers hovering deep inside e.g. a table cell too.
+   `left: -0.2rem` keeps the handle inside `.ProseMirror`'s own left edge, inside its bordered frame
+   (PostEditor.tsx's wrapping `<div className='rounded border ...'>` has no left padding of its
+   own, so anything past `-1rem` — the `px-4` gutter width — floats outside that visible frame
+   entirely, which read as a stray mark once the icon was made dark enough to notice). This used to
+   matter for a different reason too: prosemirror-view's native drag handlers only fired while
+   `event.target` stayed a DOM descendant of `view.dom`, so a negative `left` risked the no-drop
+   cursor. Dragging is now DragController's own mousemove/mouseup (not native HTML5 drag), so that
+   constraint is gone — position is a purely cosmetic choice again. */
+.prose .block-drag-handle {
+  position: absolute;
+  top: 0;
+  left: -0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.15rem;
+  border-radius: 0.25rem;
+  color: rgba(
+    63,
+    63,
+    70,
+    0.9
+  ); /* zinc-700-ish; same shade at rest as on hover, just no background */
+  cursor: grab;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    background-color 0.12s ease;
+}
+@media (prefers-color-scheme: dark) {
+  .prose .block-drag-handle {
+    color: rgba(228, 228, 231, 0.9); /* zinc-200-ish; same shade at rest as on hover */
+  }
+}
+.prose .block-drag-handle svg {
+  width: 1rem;
+  height: 1rem;
+}
+/* :not(.block-dragging) guards the plain-hover reveal: during an active drag the pointer sweeps
+   over other blocks on its way to the drop target, and without this guard their handles would pop
+   up too via the same live `:hover`/`:has(+ :hover)` tracking discussed above — only the block
+   actually being dragged (`.is-dragging`, set unconditionally) should stay visible mid-drag. */
+body:not(.block-dragging) .prose .block-drag-handle:has(+ :hover),
+body:not(.block-dragging) .prose .block-drag-handle:hover,
+.prose .block-drag-handle.is-dragging {
+  opacity: 1;
+}
+body:not(.block-dragging) .prose .block-drag-handle:hover,
+.prose .block-drag-handle.is-dragging {
+  background: rgba(113, 113, 122, 0.15);
+}
+@media (prefers-color-scheme: dark) {
+  body:not(.block-dragging) .prose .block-drag-handle:hover,
+  .prose .block-drag-handle.is-dragging {
+    background: rgba(212, 212, 216, 0.15);
+  }
+}
+/* Opacity alone doesn't stop a still-invisible handle from being the hovered element: `cursor` is
+   set directly on `.block-drag-handle` (`cursor: grab`, below), and a rule that targets an element
+   directly always wins over `body.block-dragging`'s inherited `cursor: grabbing` — `!important` on
+   the body rule only out-prioritizes other rules targeting `body`, not a child's own declaration.
+   Dropping pointer-events instead means there's no longer any element there to be "the hovered
+   element" in the first place, so the body-level grabbing cursor shows through undisturbed. */
+body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
+  pointer-events: none;
+}
+
+/* Editor-only chrome: the drop-indicator line DragController (block-drag-handle.ts) shows while a
+   block drag is in progress. Appended to <body> as `position: fixed` — not a decoration, since it's
+   repositioned on every mousemove and going through a transaction/decoration update for that would
+   pollute undo history and force needless layout recomputation — so its own coordinates are
+   viewport-relative to match. `pointer-events: none` keeps it from ever becoming its own hit target
+   (irrelevant here since dragging isn't native-DnD/hit-test-based anymore, but cheap insurance). */
+.block-drag-indicator {
+  position: fixed;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(63, 63, 70, 0.9);
+  pointer-events: none;
+  z-index: 40;
+}
+@media (prefers-color-scheme: dark) {
+  .block-drag-indicator {
+    background: rgba(228, 228, 231, 0.9);
+  }
+}
+
+/* Editor-only chrome: a cursor-following clone of the block DragController (block-drag-handle.ts)
+   is dragging — positive visual continuity, since the source block itself stays put (no
+   collapse/reflow) while dragging. `position: fixed` + `pointer-events: none` for the same
+   reasons as `.block-drag-indicator` above. `max-width`/`max-height` + `overflow: hidden` cap a
+   large table or long code block so the ghost stays a reasonably sized card instead of a
+   full-size floating copy. `background: var(--background)` (themed on `:root`) keeps it opaque
+   rather than a see-through smear over the editor content behind it. */
+.block-drag-preview {
+  position: fixed;
+  z-index: 41;
+  display: none;
+  pointer-events: none;
+  max-width: min(90vw, 480px);
+  max-height: 300px;
+  overflow: hidden;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--background);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  opacity: 0.95;
+}
+
+/* Editor-only chrome: while DragController (block-drag-handle.ts) has an active drag, it toggles
+   this on <body> rather than `.ProseMirror` — the pointer roams outside the editor during a drag,
+   and both the grabbing cursor and the text-selection suppression need to hold everywhere, not just
+   inside the editor's own box. */
+body.block-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* Editor-only chrome: hides the table toolbar (components/editor/TableToolbar.tsx, a TipTap
+   BubbleMenu) while a block drag is in progress. Dragging a table sets a NodeSelection over it
+   (block-drag-handle.ts), which is enough for the bubble menu's own `shouldShow` to keep it
+   visible — but nothing dispatches another editor transaction until drop, so the menu never
+   re-checks position or visibility for the whole drag; left alone it just sits at the table's
+   original spot, stale, next to the cursor-following drag preview. A CSS override is simplest
+   here: the bubble menu plugin only re-evaluates on a transaction with a selection or doc change,
+   and forcing one purely to hide this would be more machinery than the problem is worth. */
+body.block-dragging .table-toolbar {
+  display: none !important;
+}
+
+/* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
+   (block-drag-handle.ts) — useful (Delete then removes it) but invisible on its own. ProseMirror
+   tags the selected node's DOM with `.ProseMirror-selectednode`; this rings it so the selection —
+   and therefore what a subsequent Delete will remove — is obvious. The class lands on whichever
+   element represents the node (a bare <blockquote>/<img>, a NodeView's outer <div> for callout and
+   code blocks, the table wrapper for a table), so key it on the class alone, element-agnostic.
+   `outline` rather than `box-shadow`: an overflow:auto table wrapper would clip an inset shadow but
+   never an outline, and outline follows the block's own border-radius in modern browsers. Blue
+   matches the cross-cell selection overlay above. Editor-only: the class never appears on the
+   published page (no ProseMirror there). */
+.prose .ProseMirror-selectednode {
+  outline: 2px solid rgba(51, 144, 255, 0.8);
+  outline-offset: 2px;
+}
+
+/* Editor-only chrome: the code block NodeView (components/editor/code-block-extension.ts)
+   renders a persistent header bar — filename field + language <select> — above the code,
+   mirroring the public figcaption, which is likewise always shown. The `.code-block` wrapper
+   exists only in the editor; it's styled to match [data-rehype-pretty-code-figure] on the public
+   page (same card + header-tab colors) so the editor previews the published look. These rules
+   never reach a published post. Base colors are dark; the light media query below overrides. */
+.prose .code-block {
+  margin: 1.25rem 0;
+  border: 1px solid #30363d;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #161b22;
+  color: #e6edf3;
+}
+.prose .code-block-header {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background: #1c2128;
+  border-bottom: 1px solid #30363d;
+}
+/* Override Tailwind Typography's dark, rounded, margined <pre>: the card now owns the border,
+   radius, and outer margin, so the code area sits flush and transparent inside it. */
+.prose .code-block > pre {
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+}
+/* Filename and language <select> share the same quiet caption type + states (font, hover/focus
+   tint, focus ring). They differ in resting background: the filename reads as the code's title
+   and stays fully transparent — when empty, its placeholder copy ("ファイル名を追加", set in the
+   NodeView), not a background, signals it's editable. The <select> is an operable control, so it
+   keeps a static tint + hairline border even at rest (set below) so it reads as "clickable"
+   instead of blending into the header. */
+.prose .code-block-header .code-block-filename,
+.prose .code-block-header .code-block-lang {
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: #adbac7;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  padding: 0.125rem 0.375rem;
+  line-height: 1.5;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+/* Filename fills the bar as the title; language sits at the right. */
+.prose .code-block-header .code-block-filename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.prose .code-block-header .code-block-lang {
+  flex: 0 0 auto;
+  cursor: pointer;
+  /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
+     language is content you want to read at a glance — fixed to the same bright color used
+     elsewhere on hover/focus, rather than fading in only on interaction. Also unlike the
+     filename: a hairline border plus its own static tint mark it as "clickable" at rest,
+     instead of blending into the header's own background — a plain hairline border alone
+     read as too subtle. Hover/focus below still step the background tint up further. */
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(160, 160, 160, 0.25);
+}
+.prose .code-block-header .code-block-filename:hover,
+.prose .code-block-header .code-block-lang:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6edf3;
+}
+.prose .code-block-header .code-block-filename:focus,
+.prose .code-block-header .code-block-lang:focus {
+  outline: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6edf3;
+  box-shadow: inset 0 0 0 1px rgba(140, 140, 140, 0.4);
+}
+.prose .code-block-header .code-block-filename::placeholder {
+  color: rgba(173, 184, 199, 0.55);
+}
+
+/* Diff-display toggle (components/editor/code-block-extension.ts's NodeView): a compact pill
+   switch appended after the language <select>, grouped with it as the header's right-aligned
+   controls (the filename fills the bar as a title on the left; both the <select> and this
+   toggle are right-aligned controls). No permanent text label — `.code-block-diff-toggle-tip`
+   is a hover-only tooltip, shown the same way ToolbarButton.tsx's tooltip is (a CSS opacity
+   transition, not the native `title` attribute, which renders near the cursor with a
+   browser-controlled delay). The "on" track is a plain blue accent, kept distinct from the
+   diff-add/-remove green/red below it so the switch itself doesn't read as "add". Base colors
+   are dark; the light media query below overrides. */
+.prose .code-block-header .code-block-diff-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  padding: 0.125rem;
+  cursor: pointer;
+}
+.prose .code-block-header .code-block-diff-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 2rem;
+  height: 1.125rem;
+  border-radius: 9999px;
+  background: rgba(160, 160, 160, 0.35);
+  transition: background-color 0.12s ease;
+}
+.prose .code-block-header .code-block-diff-toggle-thumb {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-left: 0.125rem;
+  border-radius: 50%;
+  background: #adbac7;
+  transform: translateX(0);
+  transition:
+    transform 0.12s ease,
+    background-color 0.12s ease;
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']
+  .code-block-diff-toggle-track {
+  background: #1f6feb;
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']
+  .code-block-diff-toggle-thumb {
+  background: #e6edf3;
+  transform: translateX(0.875rem);
+}
+.prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-track {
+  background: rgba(255, 255, 255, 0.25);
+}
+.prose
+  .code-block-header
+  .code-block-diff-toggle[aria-checked='true']:hover
+  .code-block-diff-toggle-track {
+  background: #388bfd;
+}
+.prose .code-block-header .code-block-diff-toggle:focus-visible {
+  outline: none;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+.prose .code-block-header .code-block-diff-toggle-tip {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  z-index: 1;
+  margin-top: 0.375rem;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 0.25rem;
+  /* Matches ToolbarButton.tsx's tooltip chip (Tailwind zinc-700/zinc-900): a fixed dark
+     bubble with white text regardless of the surrounding theme, not the header's own
+     background — reusing the header's bg here (as a first pass) made the tip blend in and
+     become unreadable, since a floating tooltip needs to read as distinct from what's behind
+     it. Dark-mode value here; the light query below overrides to the lighter-theme pairing. */
+  background: #3f3f46;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+.prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-tip,
+.prose .code-block-header .code-block-diff-toggle:focus-visible .code-block-diff-toggle-tip {
+  opacity: 1;
+  transition-delay: 0.3s;
+}
+
+/* Editor-only mirror of the public diff line rules (components/editor/code-block-extension.ts
+   adds these classes via a ProseMirror decoration, since a code block's lines are just \n
+   characters in one text node — not the [data-line] elements Shiki emits on the public page).
+   diff-line-add/-remove match the row background from the diffLineHighlight transformer above;
+   diff-text-add/-remove match Shiki's own github-dark/github-light token colors for the diff
+   grammar's markup.inserted/deleted scopes (dark values here, light override below — same
+   dark-first pattern as the rest of this card). */
+.prose .code-block .diff-line-add {
+  background: rgba(46, 160, 67, 0.15);
+}
+.prose .code-block .diff-line-remove {
+  background: rgba(248, 81, 73, 0.15);
+}
+.prose .code-block .diff-text-add {
+  color: #85e89d;
+}
+.prose .code-block .diff-text-remove {
+  color: #fdaeb7;
+}
+
+@media (prefers-color-scheme: light) {
+  .prose .code-block {
+    border-color: #d0d7de;
+    background: #f6f8fa;
+    color: #24292f;
+  }
+  .prose .code-block-header {
+    background: #eaeef2;
+    border-bottom-color: #d0d7de;
+  }
+  .prose .code-block-header .code-block-filename {
+    color: #57606a;
+  }
+  .prose .code-block-header .code-block-filename:hover,
+  .prose .code-block-header .code-block-lang:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #24292f;
+  }
+  .prose .code-block-header .code-block-filename:focus,
+  .prose .code-block-header .code-block-lang:focus {
+    background: rgba(0, 0, 0, 0.07);
+    color: #24292f;
+    box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  }
+  .prose .code-block .diff-text-add {
+    color: #22863a;
+  }
+  .prose .code-block .diff-text-remove {
+    color: #b31d28;
+  }
+  .prose .code-block-header .code-block-filename::placeholder {
+    color: rgba(87, 96, 106, 0.6);
+  }
+  .prose .code-block-header .code-block-lang {
+    /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
+       language is content you want to read at a glance — fixed to the same near-black used
+       elsewhere on hover/focus, rather than fading in only on interaction. */
+    color: #24292f;
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(127, 127, 127, 0.3);
+  }
+  .prose .code-block-header .code-block-diff-toggle-track {
+    background: rgba(0, 0, 0, 0.15);
+  }
+  .prose .code-block-header .code-block-diff-toggle-thumb {
+    background: #57606a;
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']
+    .code-block-diff-toggle-track {
+    background: #0969da;
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']
+    .code-block-diff-toggle-thumb {
+    background: #ffffff;
+  }
+  .prose .code-block-header .code-block-diff-toggle:hover .code-block-diff-toggle-track {
+    background: rgba(0, 0, 0, 0.22);
+  }
+  .prose
+    .code-block-header
+    .code-block-diff-toggle[aria-checked='true']:hover
+    .code-block-diff-toggle-track {
+    /* #1f6feb (the dark base "on" color, reused as light's hover per the dark-first pairing
+       pattern elsewhere in this file) read too close to #0969da to notice on hover, but the
+       dark mode's own hover blue (#388bfd) read too bright — this is the midpoint of the two. */
+    background: #2c7df4;
+  }
+  .prose .code-block-header .code-block-diff-toggle-tip {
+    background: #18181b;
+    color: #ffffff;
+  }
+}
+
+/* Public page: rehype-pretty-code renders a code block's filename (from the ```lang:filename
+   fence, split by lib/rehype-code-filename.ts) as this figcaption above the <pre>. It's a header
+   tab at the top of the card — a shade off the code area, with a divider below. Its top corners
+   are rounded to the card's INNER radius (outer 0.5rem − 1px border) so its own background can't
+   bleed past the figure's rounded corners (the artifact we avoid by keeping pre transparent). */
+[data-rehype-pretty-code-title] {
+  margin: 0;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8rem;
+  padding: 0.4rem 1rem;
+  border-radius: calc(0.5rem - 1px) calc(0.5rem - 1px) 0 0;
+  background: #eaeef2;
+  border-bottom: 1px solid #d0d7de;
+}
+@media (prefers-color-scheme: dark) {
+  [data-rehype-pretty-code-title] {
+    background: #1c2128;
+    border-bottom-color: #30363d;
+  }
+}
+
+/* Copy button injected into each code block by components/CodeCopyButtons.tsx. Always visible
+   but subtle; a keyboard focus ring is kept for a11y. Pinned to the figure's top-right so it
+   stays put while the code scrolls horizontally. On a successful copy, "Copied!" text appears to
+   the left of the icon (GitHub-style). Base colors are dark; the light media query below
+   overrides them. */
+.code-copy-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.3rem;
+  border: 0;
+  border-radius: 0.25rem;
+  /* No border and an OPAQUE background that matches the code area, so the button reads as part
+     of the block (masking any code underneath) instead of a bordered chip floating on top. */
+  background: #161b22;
+  color: #8b949e;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+/* Enlarge the tap target without growing the visible box: an invisible halo extends the
+   clickable (and hover-trigger) area a few px past every edge, so the seamless background and
+   hover box stay exactly as sized while the button is easier to press — notably on touch. */
+.code-copy-btn::before {
+  content: '';
+  position: absolute;
+  inset: -0.25rem;
+}
+.code-copy-btn:focus-visible {
+  outline: 2px solid #4493f8;
+  outline-offset: 1px;
+}
+.code-copy-icon {
+  display: inline-flex;
+}
+.code-copy-icon svg {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+}
+/* Empty until a copy; hide it so the flex gap doesn't pad the icon's left. */
+.code-copy-label:empty {
+  display: none;
+}
+.code-copy-btn.is-copied {
+  color: #3fb950;
+}
+/* When the block has a filename bar the button overlaps it, so match the bar's shade there
+   instead of the code area's — otherwise a faint patch shows. Result: seamless in both cases.
+   Wrapped in :where() so this stays specificity (0,1,0) — otherwise :has() would outrank the
+   .code-copy-btn:hover rule below and the hover background would never apply over a filename. */
+:where([data-rehype-pretty-code-figure]:has([data-rehype-pretty-code-title])) .code-copy-btn {
+  background: #1c2128;
+}
+/* Hover changes just the background (leaving the copied-state green text intact) with clear
+   contrast: brighter in dark mode, a darker gray in light mode (see the light block below).
+   Placed after the :has() rule so it wins the specificity tie over both bg cases. */
+.code-copy-btn:hover {
+  background: #30363d;
+}
+@media (prefers-color-scheme: light) {
+  .code-copy-btn {
+    background: #f6f8fa;
+    color: #6e7781;
+  }
+  .code-copy-btn.is-copied {
+    color: #1a7f37;
+  }
+  :where([data-rehype-pretty-code-figure]:has([data-rehype-pretty-code-title])) .code-copy-btn {
+    background: #eaeef2;
+  }
+  .code-copy-btn:hover {
+    background: #dfe3e8;
+  }
+}
+
+/* Blockquote: a tinted box with one decorative quote mark in its top-left corner,
+   in place of Typography's default left border. Dropping the bar here leaves that
+   motif to h3 alone (see .prose h3 below), so a quote and a subheading no longer
+   share one shape. `border-inline-start-width: 0` is load-bearing — the plugin's
+   border does not go away just because a background is added. These rules are
+   unlayered, so they outrank the plugin's (layered) defaults with no !important,
+   same as `.prose p` below. The tint is deliberately achromatic: hued tints are the
+   callout's language (--alert-bg) and #cf222e the heading/accent language, so a
+   colored quote would read as a callout. A mid-grey at low alpha also needs no dark
+   counterpart — it lightens a dark surface and darkens a light one — the same trick
+   `.prose th` below uses. Applies to both surfaces (editor and post both use
+   .prose). */
+.prose blockquote {
+  position: relative;
+  border-inline-start-width: 0;
+  padding-block: 0.6em;
+  padding-inline: 2.4em 1em;
+  border-radius: 0.25rem;
+  background: rgba(127, 127, 127, 0.08);
+  /* Typography sets quotes in italic at weight 500. Both are dropped: Japanese fonts
+     ship no italic face (the browser synthesizes a slanted one that reads poorly in
+     和文) and a 500 face is often missing too, so the weight resolves to 400 or a
+     synthetic bold depending on the stack. The tint and the glyph already mark the
+     block as quoted, and .markdown-alert below normalizes to the same 400 — the two
+     tinted-block types should read at one weight. */
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* The corner glyph (U+201C, a left double quotation mark). Absolutely positioned
+   rather than injected into the text flow, so it can't be selected, copied, or
+   reached by the caret in the editor; the blockquote's own inline-start padding
+   above reserves the space it occupies, which is also what keeps a freshly-created
+   empty quote's caret clear of it. Note `top`/`left` resolve against this
+   pseudo-element's own (2.5em) font-size, not the blockquote's. */
+.prose blockquote::before {
+  content: '\201C';
+  position: absolute;
+  top: 0.02em;
+  left: 0.18em;
+  font-size: 2.5em;
+  line-height: 1;
+  color: rgba(127, 127, 127, 0.5);
+  user-select: none;
+}
+
+/* Typography separately wraps the quoted paragraph itself in curly quotes via
+   `blockquote p:first-of-type::before {content:open-quote}` (and the closing
+   ::after). Those stay suppressed — same call as the inline-code backticks above —
+   since the corner glyph is the one quote mark this design uses and a second pair
+   hugging the text would double up. e2e/editor-blockquote-quotes.spec.ts guards
+   this. The reach stays a descendant selector, not `>`: Typography's own rule is a
+   descendant one too, so a paragraph nested deeper (inside a list, or inside a
+   callout's content column) picks up the injected quote just the same and needs the
+   same suppression.
+
+   `:not(.markdown-alert-title)` is the one exception, and it is load-bearing. An
+   alert nested inside a blockquote is still a <div>, but its title is a <p> — the
+   first (and only) <p> child of that div — so `p:first-of-type` matches it, and this
+   rule outweighs `.markdown-alert-title::before` below (same class count, more
+   element selectors). Without the exclusion, `content: none` deletes the pseudo
+   element the alert's icon is drawn on and a callout written inside a quote loses
+   its icon entirely. */
+.prose blockquote p:first-of-type:not(.markdown-alert-title)::before,
+.prose blockquote p:last-of-type:not(.markdown-alert-title)::after {
+  content: none;
+}
+
+/* A quote nested in a quote: no second glyph, and the inline-start padding drops
+   back to normal since there's none left to clear. The tint is allowed to compound
+   — two stacked 8% greys land near 15%, which reads as one step deeper rather than
+   a new color, and is the only cue left that the quote is nested. */
+.prose blockquote blockquote::before {
+  content: none;
+}
+.prose blockquote blockquote {
+  padding-inline-start: 1em;
+}
+
 /* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
    little so paragraphs read tighter. Headings, <pre>, and lead text set their own
    line-height and are unaffected — this only reaches paragraphs and list items,
    which inherit it. Applies to both surfaces (editor and post both use .prose). */
 .prose {
   line-height: 1.6;
+}
+
+/* A long unbroken token (a heading with no spaces, a bare URL, ...) has no
+   whitespace to wrap at, so normal word-wrap leaves it overflowing the column
+   instead of breaking. break-word wraps mid-token only as a last resort, once
+   the whole word doesn't fit — normal text still wraps at spaces first. `pre`
+   is excluded (scrolls horizontally instead, see [data-rehype-pretty-code-figure]
+   pre above) since breaking code mid-token would corrupt it. Applies to both
+   surfaces (editor and post both use .prose). */
+.prose :not(pre) {
+  overflow-wrap: break-word;
 }
 
 /* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
@@ -103,6 +764,71 @@ body {
 }
 .prose > :last-child {
   margin-bottom: 0;
+}
+
+/* Body italics: Geist carries no Japanese glyphs, so JP text falls back to a system
+   gothic with no italic face — and browsers won't reliably synthesize a slant for
+   CJK, leaving `font-style: italic`/`oblique` upright for Japanese. Force a geometric
+   slant with skewX so BOTH scripts lean the same amount, independent of the font.
+   transform is a no-op on non-replaced inline boxes, so the <em> is made
+   inline-block for the skew to take. font-style is reset to normal so Latin isn't
+   double-slanted (its italic glyph plus the skew). `i` covers raw-HTML italics
+   (Markdown itself emits <em>). Applies to both surfaces (editor and post use .prose). */
+.prose em,
+.prose i {
+  display: inline-block;
+  font-style: normal;
+  transform: skewX(-24deg);
+}
+
+/* List marker colors. prose-zinc ships very light bullets (zinc-300) and mid-gray
+   counters (zinc-500), which read as washed-out. Match both the bullets and the
+   ordered-list numbers to the body text color so markers carry the same weight as
+   the content. Dark overrides live in the bottom prefers-color-scheme block, keyed
+   to prose-invert's body color. These vars are unlayered, so they outrank both the
+   plugin's base assignment and its layered `dark:prose-invert` re-assignment.
+   Applies to both surfaces (editor and post). */
+.prose {
+  --tw-prose-bullets: #3f3f46; /* zinc-700 — matches prose-zinc body */
+  --tw-prose-counters: #3f3f46; /* zinc-700 — matches prose-zinc body */
+}
+
+/* Underline the major heading (h2) so section breaks are scannable at a glance.
+   Plain border-bottom (not text-decoration): it draws exactly once, below the
+   whole box, regardless of how many lines a long heading wraps into — a
+   text-hugging underline would instead draw once per wrapped line, leaving a
+   short first line and a long last line. Same red accent as h3's left rule
+   below, so both heading tiers share one color language — the underline vs.
+   left-bar shape still keeps h2 and h3 visually distinct from each other.
+   Dark counterpart lives in the bottom prefers-color-scheme block. Applies to
+   both surfaces (editor and post both use .prose). */
+.prose h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 2px solid #cf222e; /* same red as h3 / markdown-alert-warning */
+}
+
+/* A red left rule on h3, so a subheading reads as its own tier rather than a
+   quieter h2. Color reuses the GitHub-alert warning red already in the palette
+   (see .markdown-alert-warning below) instead of introducing a new hue. This is
+   now the only left bar in the design: the warning callout's border-left was
+   dropped (see .markdown-alert above) and blockquote's was replaced by a tint +
+   corner glyph (see .prose blockquote above), so nothing else shares the motif.
+   Padding is kept tight since this sits on a heading, not a quoted block. Dark
+   counterpart lives in the bottom prefers-color-scheme block. Applies to both
+   surfaces (editor and post both use .prose). */
+.prose h3 {
+  padding-left: 0.5em;
+  border-left: 0.25rem solid #cf222e; /* same red as markdown-alert-warning */
+}
+
+/* The "強調" inline mark (accent-emphasis-extension.ts): bold + the same red accent as
+   h2/h3 above, as a single toggle. Deliberately NOT scoped under `.prose` (unlike the rest
+   of this file) — the identical rule also colors the toolbar button's "A" preview glyph,
+   which sits outside `.prose` entirely. Dark counterpart lives in the bottom
+   prefers-color-scheme block. */
+.accent-emphasis {
+  font-weight: 700;
+  color: #cf222e;
 }
 
 /* Full-grid tables: the typography plugin draws only horizontal rules, which
@@ -200,9 +926,148 @@ body {
   background: transparent;
 }
 
+/* GitHub-style alert callouts. Both surfaces render the same markup: on the public
+   page lib/remark-github-alerts.ts rewrites a `> [!NOTE]`-style blockquote into
+   `<div class="markdown-alert markdown-alert-<type>">` with a `.markdown-alert-title`
+   label, and in the editor the Callout node's NodeView builds the identical DOM
+   (components/editor/callout-extension.ts) — so these rules style the live preview and
+   the published page alike. They paint an accent tint per type (icon color + faint
+   same-hue background), dark variants in the prefers-color-scheme block below. No
+   left border — that bar motif is reserved for h3 elsewhere in this file, and the
+   icon + tint already carry the per-type accent on their own. What separates a
+   callout from a plain blockquote (also a tinted box now — see .prose blockquote
+   above) is the hue: callouts are the only tinted blocks with a colored tint. */
+.prose .markdown-alert {
+  margin: 1em 0;
+  padding: 0.6em 1em;
+  border-radius: 0.25rem;
+  background: var(--alert-bg);
+  /* Guard against any inherited emphasis (e.g. a blockquote in the body) tilting the
+     callout — keep it upright and regular-weight like the published page. */
+  font-style: normal;
+  font-weight: 400;
+}
+.prose .markdown-alert > :first-child {
+  margin-top: 0;
+}
+.prose .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+/* Lay the callout out as two columns — icon | content — like Zenn/Qiita. Scoped to the
+   `<div>` form both surfaces now emit (the public transform and the editor NodeView),
+   so a stray plain blockquote is never caught by it. */
+.prose div.markdown-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6em;
+}
+.prose .markdown-alert-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.prose .markdown-alert-content > :first-child {
+  margin-top: 0;
+}
+.prose .markdown-alert-content > :last-child {
+  margin-bottom: 0;
+}
+/* Icon column: a fixed-width cell holding just the ::before icon, sized to one line
+   of body text so the icon lines up with the first line of the content column. */
+.prose .markdown-alert-title {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 1lh; /* one line tall, so the icon lines up with the content's first line */
+  margin: 0; /* the title is a <p>; drop Typography's paragraph margin (esp. the
+                bottom one, which is not reset by the > :first-child rule and would
+                inflate a short callout's height). */
+  color: var(--alert-accent);
+}
+/* Per-type icon, drawn from a monochrome SVG (Octicons) masked and tinted to the
+   accent color — kept in CSS (not inline <svg>) so the sanitize allowlist and the
+   rendered HTML stay untouched. `--alert-icon` is set per type below. */
+.prose .markdown-alert-title::before {
+  content: '';
+  flex: none;
+  width: 1.1em;
+  height: 1.1em;
+  background-color: var(--alert-accent);
+  -webkit-mask: var(--alert-icon) center / contain no-repeat;
+  mask: var(--alert-icon) center / contain no-repeat;
+}
+/* The type word (警告 / 注意 / …) is exposed to screen readers only: sighted
+   users see just the ::before icon beside the text — the icon-only look of
+   Zenn/Qiita — while assistive tech still announces which kind of callout it is. */
+.prose .markdown-alert-title-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.prose .markdown-alert-note {
+  --alert-accent: #0969da;
+  --alert-bg: rgba(9, 105, 218, 0.06);
+  --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
+}
+.prose .markdown-alert-warning {
+  --alert-accent: #cf222e;
+  --alert-bg: rgba(207, 34, 46, 0.06);
+  --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
+}
+.prose .markdown-alert-caution {
+  --alert-accent: #9a6700;
+  --alert-bg: rgba(154, 103, 0, 0.06);
+  --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.141.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */
+  }
+
+  /* Dark counterpart of the light list-marker overrides above: bullets and
+     numbers both match prose-invert's body color. */
+  .prose {
+    --tw-prose-bullets: #d4d4d8; /* zinc-300 — matches prose-invert body */
+    --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
+  }
+
+  /* Dark counterpart of the h2 underline above — matches
+     .markdown-alert-warning's dark accent below. */
+  .prose h2 {
+    border-bottom-color: #f85149;
+  }
+
+  /* Dark counterpart of the h3 left rule above — matches
+     .markdown-alert-warning's dark accent below. */
+  .prose h3 {
+    border-left-color: #f85149;
+  }
+
+  /* Dark counterpart of the accent-emphasis color above (also unscoped — see there). */
+  .accent-emphasis {
+    color: #f85149;
+  }
+
+  /* Brighter accents + faint tint for the dark surface (the light hues above go
+     muddy on a dark background). */
+  .prose .markdown-alert-note {
+    --alert-accent: #4493f8;
+    --alert-bg: rgba(68, 147, 248, 0.1);
+  }
+  .prose .markdown-alert-warning {
+    --alert-accent: #f85149;
+    --alert-bg: rgba(248, 81, 73, 0.1);
+  }
+  .prose .markdown-alert-caution {
+    --alert-accent: #d29922;
+    --alert-bg: rgba(210, 153, 34, 0.1);
   }
 }

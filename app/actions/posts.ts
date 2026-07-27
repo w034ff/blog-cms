@@ -3,8 +3,9 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { DEFAULT_CATEGORY, parseTags } from '@/lib/content';
 import { getOptionalSession, verifySession } from '@/lib/dal';
-import { commitPost, createPost, deletePost, postExists } from '@/lib/posts-write';
+import { commitPost, createPost, deletePost } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
 import { getPostForEdit } from '@/lib/posts';
 import type { DraftContent } from '@/lib/types';
@@ -48,15 +49,11 @@ function parseId(formData: FormData): number | null {
 }
 
 function parseContent(formData: FormData): DraftContent | null {
-  const tags = field(formData, 'tags')
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
     description: field(formData, 'description'),
-    category: field(formData, 'category') || 'uncategorized',
-    tags,
+    category: field(formData, 'category') || DEFAULT_CATEGORY,
+    tags: parseTags(field(formData, 'tags')),
     body: field(formData, 'body'),
   });
   return parsed.success ? parsed.data : null;
@@ -113,14 +110,17 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
     return { error: '入力が不正です。タイトルは必須です。' };
   }
   const id = parseId(formData);
-  if (id === null || !postExists(id)) {
+  if (id === null) {
     return { error: '記事が見つかりません。' };
   }
   const existing = await getPostForEdit(id);
+  if (!existing) {
+    return { error: '記事が見つかりません。' };
+  }
   // Keep the first-publish date so re-publishing later reuses it.
-  commitPost(id, content, true, existing?.date ?? '');
+  commitPost(id, content, true, existing.date);
   revalidateBlog();
-  return { saved: { id, slug: existing?.slug ?? null, published: false, at: Date.now() } };
+  return { saved: { id, slug: existing.slug, published: false, at: Date.now() } };
 }
 
 export async function submitPostAction(

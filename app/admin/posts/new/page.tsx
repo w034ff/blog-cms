@@ -1,12 +1,13 @@
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
+import { DEFAULT_CATEGORY } from '@/lib/content';
 
 const emptyInitial: PostEditorInitial = {
   id: null,
   slug: '',
   title: '',
   description: '',
-  category: 'uncategorized',
+  category: DEFAULT_CATEGORY,
   tags: [],
   body: '',
 };

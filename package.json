@@ -15,15 +15,18 @@
     "db:seed": "node scripts/seed.mts",
     "db:migrate-content": "node scripts/migrate-content.mts",
     "gc:uploads": "node scripts/gc-uploads.mts",
+    "fix:glued-images": "node scripts/fix-glued-image-markdown.mts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
-    "@tiptap/extension-image": "3.27.1",
-    "@tiptap/extension-table": "3.27.1",
-    "@tiptap/pm": "3.27.1",
-    "@tiptap/react": "3.27.1",
-    "@tiptap/starter-kit": "3.27.1",
+    "@tiptap/extension-code-block": "3.28.0",
+    "@tiptap/extension-image": "3.28.0",
+    "@tiptap/extension-table": "3.28.0",
+    "@tiptap/pm": "3.28.0",
+    "@tiptap/react": "3.28.0",
+    "@tiptap/starter-kit": "3.28.0",
+    "@tiptap/suggestion": "3.28.0",
     "bcryptjs": "3.0.3",
     "better-sqlite3": "12.11.1",
     "drizzle-orm": "0.45.2",
@@ -59,5 +62,8 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "4.1.9"
+  },
+  "overrides": {
+    "postcss": "^8.5.15"
   }
 }

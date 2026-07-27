@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { DEFAULT_CATEGORY } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
   const newId = createPost({
     slug: generateUniqueSlug(),
     ...content,
-    category: content.category || 'uncategorized',
+    category: content.category || DEFAULT_CATEGORY,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,
