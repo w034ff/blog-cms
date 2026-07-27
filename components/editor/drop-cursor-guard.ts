@@ -1,12 +1,12 @@
 import { Extension } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { dragMoves, resolveDropTarget } from './drop-target';
-import { carriesHalfSelectedCallout, wouldNestCallout } from './callout-extension';
+import { carriesHalfSelectedCallout, wouldNestCallout } from './callout-slice-guard';
 import { isDisallowedTableDrop } from './table-extensions';
 
 // prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop indicator), for
 // every drop this editor refuses. Both refusals live with the node they protect — tableDropGuard in
-// table-extensions.ts, calloutSliceGuard in callout-extension.ts — but the *indicator* has to be one
+// table-extensions.ts, calloutSliceGuard in callout-slice-guard.ts — but the *indicator* has to be one
 // hook: `extendNodeSchema` merges each extension's contribution into the node spec by key, so two
 // extensions each setting `disableDropCursor` on `paragraph` would leave only the last one standing
 // and quietly disarm the other. Asking both predicates here is what keeps them both live.

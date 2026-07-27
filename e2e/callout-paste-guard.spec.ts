@@ -8,7 +8,7 @@ import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 // nested callout when the caret was inside one, a brand new one when it wasn't.
 //
 // The drop refuses that slice; the paste repairs it (unwrapHalfSelectedCallouts in
-// components/editor/callout-extension.ts). The difference is the source: a move deletes the dragged
+// components/editor/callout-slice-guard.ts). The difference is the source: a move deletes the dragged
 // range first and that deletion joins the callout to the block below it, so a drop has damage a
 // clean slice can't undo, while a paste touches nothing but the caret.
 //

@@ -9,7 +9,7 @@ import { loadMarkdown } from './editor-authoring';
 // in a callout, a shape nothing else in the editor can author), dropped anywhere outside one it
 // materialised a *new* box around the moved text, and either way the move's own source deletion
 // joined the callout to the paragraph below it. So carriesHalfSelectedCallout
-// (components/editor/callout-extension.ts) refuses the gesture wherever it is aimed.
+// (components/editor/callout-slice-guard.ts) refuses the gesture wherever it is aimed.
 //
 // Which is why the destinations below are a loop asserting one identical thing: the document is
 // untouched. They are kept apart anyway because they failed differently before the rule existed —
