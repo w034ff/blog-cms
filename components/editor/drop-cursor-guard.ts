@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
-import { resolveDropTarget } from './drop-target';
+import { dragMoves, resolveDropTarget } from './drop-target';
 import { carriesHalfSelectedCallout, wouldNestCallout } from './callout-extension';
 import { isDisallowedTableDrop } from './table-extensions';
 
@@ -21,14 +21,17 @@ import { isDisallowedTableDrop } from './table-extensions';
 // over text is the textblock holding it — and a callout's `block+` body can hold a heading, a list
 // or a code block just as well as a paragraph, so any such list is a list that will be wrong later.
 // Outside a table or a callout both predicates are false, so drops elsewhere are unaffected.
-function disableDropCursor(view: EditorView, pos: { pos: number }): boolean {
+// prosemirror-dropcursor hands the dragover event to this hook, which is what lets the move-vs-copy
+// question be answered for the drag as it stands right now — `view.dragging.move` was fixed at
+// dragstart and goes stale as soon as the copy modifier is pressed or released (see dragMoves).
+function disableDropCursor(view: EditorView, pos: { pos: number }, event: DragEvent): boolean {
   const slice = view.dragging?.slice;
   if (!slice) return false;
   // Refused wherever it is aimed, so it is answered before any position is resolved — and the
   // indicator then stays hidden for the whole drag, which is the only signal the gesture gives that
   // it will not land.
   if (carriesHalfSelectedCallout(slice)) return true;
-  const $target = resolveDropTarget(view, pos.pos, slice);
+  const $target = resolveDropTarget(view, pos.pos, slice, dragMoves(view, event));
   return isDisallowedTableDrop($target) || wouldNestCallout($target, slice);
 }
 

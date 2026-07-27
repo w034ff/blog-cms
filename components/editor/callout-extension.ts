@@ -372,7 +372,7 @@ function calloutSliceGuard(): Plugin {
         );
         return true;
       },
-      handleDrop(view, event, slice) {
+      handleDrop(view, event, slice, moved) {
         // Asked first, and without looking at where the pointer is: a half-selected callout is
         // refused at every destination (see carriesHalfSelectedCallout).
         if (carriesHalfSelectedCallout(slice)) {
@@ -384,7 +384,10 @@ function calloutSliceGuard(): Plugin {
         // resolveDropTarget, not the raw position: a move deletes the dragged range first, and for
         // a selection running out of a callout that deletion joins the callout to what follows —
         // which is how a drop that looked like it landed *outside* still nested (see drop-target.ts).
-        if (!wouldNestCallout(resolveDropTarget(view, coords.pos, slice), slice)) return false;
+        // `moved` is prosemirror-view's own move-vs-copy verdict for *this* event, which is why it
+        // is threaded through rather than re-read from view.dragging (stale since dragstart).
+        if (!wouldNestCallout(resolveDropTarget(view, coords.pos, slice, moved), slice))
+          return false;
         // Returning true makes ProseMirror preventDefault and skip the drop entirely, so the
         // dragged text stays where it was instead of being deleted from its source.
         event.preventDefault();
