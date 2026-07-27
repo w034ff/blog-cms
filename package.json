@@ -15,6 +15,7 @@
     "db:seed": "node scripts/seed.mts",
     "db:migrate-content": "node scripts/migrate-content.mts",
     "gc:uploads": "node scripts/gc-uploads.mts",
+    "fix:glued-images": "node scripts/fix-glued-image-markdown.mts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
