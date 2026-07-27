@@ -652,15 +652,83 @@ body.block-dragging .table-toolbar {
   }
 }
 
-/* Tailwind Typography wraps blockquotes in decorative curly quotes via
+/* Blockquote: a tinted box with one decorative quote mark in its top-left corner,
+   in place of Typography's default left border. Dropping the bar here leaves that
+   motif to h3 alone (see .prose h3 below), so a quote and a subheading no longer
+   share one shape. `border-inline-start-width: 0` is load-bearing — the plugin's
+   border does not go away just because a background is added. These rules are
+   unlayered, so they outrank the plugin's (layered) defaults with no !important,
+   same as `.prose p` below. The tint is deliberately achromatic: hued tints are the
+   callout's language (--alert-bg) and #cf222e the heading/accent language, so a
+   colored quote would read as a callout. A mid-grey at low alpha also needs no dark
+   counterpart — it lightens a dark surface and darkens a light one — the same trick
+   `.prose th` below uses. Applies to both surfaces (editor and post both use
+   .prose). */
+.prose blockquote {
+  position: relative;
+  border-inline-start-width: 0;
+  padding-block: 0.6em;
+  padding-inline: 2.4em 1em;
+  border-radius: 0.25rem;
+  background: rgba(127, 127, 127, 0.08);
+  /* Typography sets quotes in italic at weight 500. Both are dropped: Japanese fonts
+     ship no italic face (the browser synthesizes a slanted one that reads poorly in
+     和文) and a 500 face is often missing too, so the weight resolves to 400 or a
+     synthetic bold depending on the stack. The tint and the glyph already mark the
+     block as quoted, and .markdown-alert below normalizes to the same 400 — the two
+     tinted-block types should read at one weight. */
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* The corner glyph (U+201C, a left double quotation mark). Absolutely positioned
+   rather than injected into the text flow, so it can't be selected, copied, or
+   reached by the caret in the editor; the blockquote's own inline-start padding
+   above reserves the space it occupies, which is also what keeps a freshly-created
+   empty quote's caret clear of it. Note `top`/`left` resolve against this
+   pseudo-element's own (2.5em) font-size, not the blockquote's. */
+.prose blockquote::before {
+  content: '\201C';
+  position: absolute;
+  top: 0.02em;
+  left: 0.18em;
+  font-size: 2.5em;
+  line-height: 1;
+  color: rgba(127, 127, 127, 0.5);
+  user-select: none;
+}
+
+/* Typography separately wraps the quoted paragraph itself in curly quotes via
    `blockquote p:first-of-type::before {content:open-quote}` (and the closing
-   ::after). Drop them — same call as the inline-code backticks above — so a
-   quote reads as an indented, bordered block without the injected "…" glyphs.
-   Applies to both surfaces (editor and post use .prose). Alerts are unaffected:
-   the GitHub-alert transform emits <div>, not <blockquote>. */
-.prose blockquote p:first-of-type::before,
-.prose blockquote p:last-of-type::after {
+   ::after). Those stay suppressed — same call as the inline-code backticks above —
+   since the corner glyph is the one quote mark this design uses and a second pair
+   hugging the text would double up. e2e/editor-blockquote-quotes.spec.ts guards
+   this. The reach stays a descendant selector, not `>`: Typography's own rule is a
+   descendant one too, so a paragraph nested deeper (inside a list, or inside a
+   callout's content column) picks up the injected quote just the same and needs the
+   same suppression.
+
+   `:not(.markdown-alert-title)` is the one exception, and it is load-bearing. An
+   alert nested inside a blockquote is still a <div>, but its title is a <p> — the
+   first (and only) <p> child of that div — so `p:first-of-type` matches it, and this
+   rule outweighs `.markdown-alert-title::before` below (same class count, more
+   element selectors). Without the exclusion, `content: none` deletes the pseudo
+   element the alert's icon is drawn on and a callout written inside a quote loses
+   its icon entirely. */
+.prose blockquote p:first-of-type:not(.markdown-alert-title)::before,
+.prose blockquote p:last-of-type:not(.markdown-alert-title)::after {
   content: none;
+}
+
+/* A quote nested in a quote: no second glyph, and the inline-start padding drops
+   back to normal since there's none left to clear. The tint is allowed to compound
+   — two stacked 8% greys land near 15%, which reads as one step deeper rather than
+   a new color, and is the only cue left that the quote is nested. */
+.prose blockquote blockquote::before {
+  content: none;
+}
+.prose blockquote blockquote {
+  padding-inline-start: 1em;
 }
 
 /* The typography plugin gives body text a roomy 1.75 line-height; ease it down a
@@ -739,15 +807,15 @@ body.block-dragging .table-toolbar {
   border-bottom: 2px solid #cf222e; /* same red as h3 / markdown-alert-warning */
 }
 
-/* Give h3 the same left rule as blockquote (border-inline-start), but in a red
-   accent so a subheading reads as its own tier rather than a quieter h2. Color
-   reuses the GitHub-alert warning red already in the palette (see
-   .markdown-alert-warning below) instead of introducing a new hue — the
-   warning callout's border-left was dropped (see .markdown-alert above) so
-   the two no longer share the same bar-shaped motif. Padding is kept tight
-   since this sits on a heading, not a quoted block. Dark counterpart lives in
-   the bottom prefers-color-scheme block. Applies to both surfaces (editor and
-   post both use .prose). */
+/* A red left rule on h3, so a subheading reads as its own tier rather than a
+   quieter h2. Color reuses the GitHub-alert warning red already in the palette
+   (see .markdown-alert-warning below) instead of introducing a new hue. This is
+   now the only left bar in the design: the warning callout's border-left was
+   dropped (see .markdown-alert above) and blockquote's was replaced by a tint +
+   corner glyph (see .prose blockquote above), so nothing else shares the motif.
+   Padding is kept tight since this sits on a heading, not a quoted block. Dark
+   counterpart lives in the bottom prefers-color-scheme block. Applies to both
+   surfaces (editor and post both use .prose). */
 .prose h3 {
   padding-left: 0.5em;
   border-left: 0.25rem solid #cf222e; /* same red as markdown-alert-warning */
@@ -865,8 +933,10 @@ body.block-dragging .table-toolbar {
    (components/editor/callout-extension.ts) — so these rules style the live preview and
    the published page alike. They paint an accent tint per type (icon color + faint
    same-hue background), dark variants in the prefers-color-scheme block below. No
-   left border — that bar motif is reserved for blockquote/h3 elsewhere in this
-   file, and the icon + tint already carry the per-type accent on their own. */
+   left border — that bar motif is reserved for h3 elsewhere in this file, and the
+   icon + tint already carry the per-type accent on their own. What separates a
+   callout from a plain blockquote (also a tinted box now — see .prose blockquote
+   above) is the hue: callouts are the only tinted blocks with a colored tint. */
 .prose .markdown-alert {
   margin: 1em 0;
   padding: 0.6em 1em;

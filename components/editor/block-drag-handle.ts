@@ -298,10 +298,13 @@ function handleToDOM(view: EditorView, getPos: () => number | undefined): HTMLEl
 
 // Each handle is `position: absolute` (globals.css) so it never displaces the block it belongs
 // to, anchored against `.ProseMirror`'s own `position: relative`. Both the handle and its target
-// sibling then share the same offsetParent (`.ProseMirror` — neither the handle's target sibling
-// nor anything between them is itself positioned), so the target's plain `offsetTop` *is* the
-// correct `top` for the handle: no getBoundingClientRect/scroll-position math needed, just the
-// browser's own layout of the two boxes. Horizontal placement is a fixed CSS offset (every
+// sibling then share the same offsetParent (`.ProseMirror`), so the target's plain `offsetTop`
+// *is* the correct `top` for the handle: no getBoundingClientRect/scroll-position math needed,
+// just the browser's own layout of the two boxes. A target that is itself positioned is fine —
+// blockquote carries `position: relative` for its corner quote glyph (globals.css) — since an
+// element's own positioning never changes its *own* offsetParent, and handles only ever exist as
+// direct children of `.ProseMirror` (see the top-level-only note above), so no handle can end up
+// anchored to a target instead. Horizontal placement is a fixed CSS offset (every
 // target type sits at the same left edge as a top-level doc child), so only `top` needs JS at all.
 function alignHandles(view: EditorView): void {
   view.dom.querySelectorAll<HTMLElement>(':scope > .block-drag-handle').forEach((handle) => {
