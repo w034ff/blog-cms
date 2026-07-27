@@ -19,6 +19,15 @@ async function caretAtLineStart(page: Page): Promise<void> {
 // the debounce window acts on ProseMirror's stale selection and corrupts the doc. The natural gap
 // between the End keypress and Delete usually clears the debounce on its own, but not reliably —
 // this makes it deterministic rather than leaning on incidental timing margin.
+//
+// It is needed *before* a native arrow too, not only after one. An arrow pressed inside the
+// window that follows an Enter is simply swallowed: ProseMirror re-asserts its own (pre-arrow)
+// selection onto the DOM when the sync flushes, so the caret never moves and the browser's DOM
+// selection reads identical before and after the keypress. Measured on the head-of-callout case
+// below — no wait moved the caret in 1 run out of 3, a 70ms wait in 3 out of 3. Polling docString
+// in between is not enough: that settles the *document*, which the Enter already changed, while
+// the selection sync is still pending. Note the failure is invisible to a `caretAtLineStart`
+// check, since a swallowed arrow leaves the caret at offset 0 of the line it started on.
 async function caretSettled(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 70)));
 }
@@ -95,6 +104,7 @@ test('Backspace on an empty line after a callout deletes that line', async ({ pa
   await page.keyboard.press('Home');
   await caretAtLineStart(page);
   await page.keyboard.press('Enter');
+  await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
   await page.keyboard.press('ArrowLeft'); // into the empty line above
   await caretAtLineStart(page); // same native-selection-sync race as Home, above
 
@@ -352,6 +362,7 @@ test('Enter on an empty line between two callout blocks splits in place, not exi
   // Land the caret inside that blank (ArrowLeft crosses the boundary). `@0` = an empty line at
   // offset 0 (a non-empty "後の行@0" would read differently), so this confirms we're about to press
   // Enter on the empty middle line — the exact state the guard governs.
+  await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
   await page.keyboard.press('ArrowLeft');
   await expect.poll(() => caret(page)).toBe('@0');
 
@@ -402,6 +413,7 @@ test('Enter on an empty line at the head of a callout splits in place, not exits
 
   // Land the caret inside that leading blank (ArrowLeft crosses the boundary). `@0` on an empty
   // line confirms the state the guard governs.
+  await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
   await page.keyboard.press('ArrowLeft');
   await expect.poll(() => caret(page)).toBe('@0');
 

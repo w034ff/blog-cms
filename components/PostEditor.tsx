@@ -6,24 +6,22 @@ import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
-import ImageExtension from '@tiptap/extension-image';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
-import {
-  MarkdownTable,
-  ParagraphTableCell,
-  ParagraphTableHeader,
-  TableDropCursorGuard,
-} from './editor/table-extensions';
+import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
+import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { Blockquote } from './editor/blockquote-extension';
+import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
 import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
+import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
 import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { DropOverlay } from './editor/DropOverlay';
+import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import type { PostFormState } from '@/app/actions/posts';
@@ -138,7 +136,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       onSessionExpired: setSessionExpired,
     });
 
-  const { uploading, dragging, uploadImages, handleImageChange } = useImageUpload(editorRef);
+  const { uploading, dragging, blockedMessage, uploadImages, handleImageChange } =
+    useImageUpload(editorRef);
 
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.
@@ -173,9 +172,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     immediatelyRender: false, // required under Next SSR
     shouldRerenderOnTransaction: true, // keep toolbar active states in sync
     extensions: [
-      // Body headings are limited to the two levels the toolbar exposes (大見出し
-      // = H2, 小見出し = H3). The post title is the page's only H1, so restricting
-      // here stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
+      // heading/bulletList/orderedList are replaced by the guarded versions below (same
+      // nodes, but they refuse to convert a code block into prose — see
+      // guarded-block-toggles.ts), so disable StarterKit's own to avoid a double
+      // registration. Heading keeps its level restriction there rather than here.
       // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
       // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
       // blockquote is likewise replaced by our Blockquote (StarterKit's copy bundles a
@@ -188,7 +188,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // but toggling one that's excluded by accentEmphasis is a true no-op — see
       // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
       StarterKit.configure({
-        heading: { levels: [2, 3] },
+        heading: false,
+        bulletList: false,
+        orderedList: false,
         codeBlock: false,
         blockquote: false,
         bold: false,
@@ -211,8 +213,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       MarkdownTable.configure({ allowTableNodeSelection: true }),
       ParagraphTableCell,
       ParagraphTableHeader,
-      TableDropCursorGuard,
-      ImageExtension,
+      DropCursorGuard,
+      // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
+      // the block, so a quote/fence right after an image isn't glued onto the image's line —
+      // see image-extension.ts.
+      Image,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
@@ -240,6 +245,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       Bold,
       Italic,
       Strike,
+      // Guarded replacements for StarterKit's heading/bulletList/orderedList (disabled above):
+      // same nodes, but each refuses inside a code block instead of shredding it into prose —
+      // see guarded-block-toggles.ts. Body headings stay limited to the two levels the toolbar
+      // exposes (大見出し = H2, 小見出し = H3): the post title is the page's only H1, so this
+      // also stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
+      Heading.configure({ levels: [2, 3] }),
+      BulletList,
+      OrderedList,
       // Turn off the browser's native spellcheck for inline `code` marks — code tokens aren't
       // dictionary words, so it paints them with red squiggles (the code block's <code> is
       // likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
@@ -379,6 +392,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             // open over the content.
             <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
               <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
+              {/* Refusal notices hang off the sticky header (which is a containing block for them),
+                  so they stay in view over the content — see EditorToast. */}
+              {blockedMessage && <EditorToast message={blockedMessage} />}
             </div>
           )}
           {editor ? (

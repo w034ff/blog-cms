@@ -1,11 +1,11 @@
-import { Extension, getHTMLFromFragment, type Editor } from '@tiptap/core';
+import { getHTMLFromFragment, type Editor } from '@tiptap/core';
 import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { isInTable, nextCell, selectedRect, selectionCell } from '@tiptap/pm/tables';
 import { Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import { dropPoint } from '@tiptap/pm/transform';
-import type { EditorView } from '@tiptap/pm/view';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { selectionTouches } from './selection-scan';
 
 // A column's text alignment. `null` is GFM's default (`---`, renders left) and is
 // what an untouched column carries; the three explicit values map to `:--`/`:-:`/`--:`.
@@ -70,7 +70,7 @@ function alignDelimiter(align: CellAlign): string {
 //     alignment on the public page, where sanitize strips the inline style).
 // A drop inside a cell's textblock (merges inline) or entirely outside any table is
 // fine and left to ProseMirror.
-function isDisallowedTableDrop($pos: ResolvedPos): boolean {
+export function isDisallowedTableDrop($pos: ResolvedPos): boolean {
   let inTable = false;
   let inCell = false;
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
@@ -109,36 +109,6 @@ function tableDropGuard(): Plugin {
     },
   });
 }
-
-// prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop
-// indicator). It evaluates this on the node under the pointer but *draws* the cursor
-// at dropPoint's target, so those two can disagree near a cell's top edge. We
-// recompute that same target and reuse isDisallowedTableDrop, making the indicator
-// appear exactly when tableDropGuard would accept the drop and hide when it would
-// reject it. Flagged on paragraphs too (below), since a pointer over cell text
-// resolves to the paragraph; outside a table isDisallowedTableDrop is false, so
-// drops elsewhere are unaffected.
-function disableTableDropCursor(view: EditorView, pos: { pos: number }): boolean {
-  const slice = view.dragging?.slice;
-  const target = slice ? (dropPoint(view.state.doc, pos.pos, slice) ?? pos.pos) : pos.pos;
-  return isDisallowedTableDrop(view.state.doc.resolve(target));
-}
-
-const tableDropCursorNodeNames = new Set([
-  'paragraph',
-  'table',
-  'tableRow',
-  'tableHeader',
-  'tableCell',
-]);
-export const TableDropCursorGuard = Extension.create({
-  name: 'tableDropCursorGuard',
-  extendNodeSchema(extension) {
-    return tableDropCursorNodeNames.has(extension.name)
-      ? { disableDropCursor: disableTableDropCursor }
-      : {};
-  },
-});
 
 // Markdown can't hold block structure in a table cell: the GFM pipe form is one line
 // of inline content, and even the raw-HTML fallback (spans / multi-paragraph, see
@@ -231,9 +201,15 @@ export const MarkdownTable = Table.extend({
       // A table can't nest inside a cell (paragraph-only cells), so inserting from
       // within one would split the host table in two around the new table. Refuse
       // instead; the picker is a no-op while the caret is in a table.
+      //
+      // selectionTouches rather than isInTable, which reads `$head` alone: a selection dragged
+      // *out* of a table upwards leaves the head outside and so passed the check, and insertTable
+      // then replaced the range — the existing table was swapped for a fresh empty one, its
+      // contents gone. The scan is direction-agnostic (selection.from/to are normalized) and still
+      // covers the plain caret-in-a-cell case.
       insertTable:
         (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
-          if (isInTable(props.state)) return false;
+          if (selectionTouches(props.state, 'table')) return false;
           return parent?.insertTable?.(options)(props) ?? false;
         },
       setColumnAlign:

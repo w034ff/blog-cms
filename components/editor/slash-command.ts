@@ -1,4 +1,4 @@
-import { Extension } from '@tiptap/core';
+import { Extension, type Editor } from '@tiptap/core';
 import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import Suggestion, { exitSuggestion, type SuggestionProps } from '@tiptap/suggestion';
@@ -22,26 +22,51 @@ const CALLOUT_KEYWORDS: Record<CalloutType, string[]> = {
 //    line is empty); its NodeView's language <select>/filename field take over from there.
 // Callout rows prefix the tool name so the menu makes clear what gets inserted (the bare
 // 情報/注意/警告 alone don't say "which tool"): 囲み枠（情報 / 注意 / 警告）.
-const ITEMS: SlashItem[] = [
-  ...CALLOUT_TYPES.map<SlashItem>((type) => ({
+// `available` hides a row where its command would refuse to run, so the menu never offers a
+// no-op. Kept local to this file rather than on SlashItem: which rows exist is a menu-population
+// concern, and SlashList only renders whatever it is handed. Asking the command itself via
+// `can()` — instead of re-testing the context here — means the menu can't drift from the rules
+// in the extension: setCallout refuses inside a table and inside a blockquote (a quote is
+// someone else's words, a callout the author's own aside), and still accepts inside an existing
+// callout, where it switches that callout's type in place. The code block asks the same way and
+// drops out inside a table cell, which is paragraph-only (table-extensions.ts: markdown's pipe
+// form holds one line of inline content). A row with no predicate would always be offered.
+type SlashEntry = SlashItem & { available?: (editor: Editor) => boolean };
+
+const ITEMS: SlashEntry[] = [
+  ...CALLOUT_TYPES.map<SlashEntry>((type) => ({
     id: `callout-${type}`,
     title: `囲み枠（${CALLOUT_TITLES[type]}）`,
     keywords: CALLOUT_KEYWORDS[type],
     run: (chain) => chain.setCallout(type),
+    available: (editor) => editor.can().setCallout(type),
   })),
   {
     id: 'code-block',
     title: 'コードブロック',
     keywords: ['code', 'codeblock', 'code block', 'コード'],
     run: (chain) => chain.setCodeBlock(),
+    available: (editor) => editor.can().setCodeBlock(),
   },
 ];
 
-// Match the query against the (Japanese) title or any keyword (both lower-cased).
-function filterItems(query: string): SlashItem[] {
+// Whether the menu has anything at all to offer at the caret. Drives the trigger below, so a
+// context where every row is unavailable — a table cell, where neither a callout nor a code
+// block fits — leaves `/` an ordinary character instead of opening an empty popup. Phrased as
+// "is any row available" rather than naming the contexts, so a row added later is covered by
+// its own predicate without touching the trigger.
+function hasAnyItem(editor: Editor): boolean {
+  return ITEMS.some((item) => item.available?.(editor) ?? true);
+}
+
+// Match the query against the (Japanese) title or any keyword (both lower-cased), and drop rows
+// whose command can't run where the caret currently is.
+function filterItems(query: string, editor: Editor): SlashItem[] {
   const q = query.toLowerCase();
   return ITEMS.filter(
-    (item) => item.title.includes(query) || item.keywords.some((k) => k.toLowerCase().includes(q)),
+    (item) =>
+      (item.available?.(editor) ?? true) &&
+      (item.title.includes(query) || item.keywords.some((k) => k.toLowerCase().includes(q))),
   );
 }
 
@@ -61,9 +86,23 @@ export const SlashCommand = Extension.create({
         pluginKey: slashPluginKey,
         char: '/',
         startOfLine: true,
+        // Two separate reasons the trigger stays inert, so `/` is an ordinary keystroke rather
+        // than a popup with nothing behind it.
+        //
+        // Code block: `/` is just a character there, and `startOfLine` puts the trigger exactly
+        // where `// comment`, `</div>` and a leading path all begin, so the popup would fire on
+        // ordinary code. This matches how the block markdown shortcuts already behave inside a
+        // `code` textblock, where ProseMirror disables input rules and `# `, `- `, `> ` stay
+        // literal. It needs naming explicitly because setCallout still *accepts* there (it
+        // lands the callout after the block), so the emptiness test below wouldn't catch it.
+        //
+        // Nothing on offer: every row's command refuses at the caret — a table cell, where
+        // neither a callout nor a code block fits. Opening a menu just to show an empty list
+        // is worse than not opening.
+        allow: ({ editor }) => !editor.isActive('codeBlock') && hasAnyItem(editor),
         placement: 'bottom-start',
         dismissOnOutsideClick: true,
-        items: ({ query }) => filterItems(query),
+        items: ({ query, editor }) => filterItems(query, editor),
         command: ({ editor, range, props }) => {
           props.run(editor.chain().focus().deleteRange(range)).run();
         },

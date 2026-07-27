@@ -10,6 +10,8 @@ export interface MarkdownSerializerState {
   // Emits text with markdown escaping unless `escape` is false (code content).
   text(text: string, escape?: boolean): void;
   ensureNewLine(): void;
+  // Backslash-escapes markdown syntax characters in plain text.
+  esc(str: string, startOfLine?: boolean): string;
   closeBlock(node: PMNode): void;
   wrapBlock(delim: string, firstDelim: string | null, node: PMNode, f: () => void): void;
   renderInline(node: PMNode): void;

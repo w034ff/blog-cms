@@ -16,6 +16,14 @@ import {
 // trigger highlights while inside a callout and the panel marks the current type.
 export function CalloutMenu({ editor }: { editor: Editor }) {
   const inCallout = editor.isActive('callout');
+  // setCallout refuses where a callout doesn't belong — inside a table, and inside a quote
+  // (someone else's words; a callout is the author's own aside). Ask the command rather than
+  // re-testing those contexts here, so this can't drift from the extension's rules, and grey
+  // the trigger out instead of letting a pick silently no-op. Same `can()` check backs the
+  // `/` menu's row filtering (slash-command.ts). Every type shares one guard, so `some` is
+  // just "would any row do something" — it stays true inside a callout, where they switch
+  // the type in place.
+  const canInsert = CALLOUT_TYPES.some((type) => editor.can().setCallout(type));
   const currentType: CalloutType | null = inCallout
     ? toCalloutType(editor.getAttributes('callout').type)
     : null;
@@ -26,7 +34,11 @@ export function CalloutMenu({ editor }: { editor: Editor }) {
   };
 
   return (
-    <ToolbarDropdown trigger={<CalloutIcon />} title='囲み枠' active={inCallout}>
+    <ToolbarDropdown
+      trigger={<CalloutIcon />}
+      title='囲み枠'
+      active={inCallout}
+      disabled={!canInsert}>
       {(close) =>
         CALLOUT_TYPES.map((type) => (
           <DropdownItem

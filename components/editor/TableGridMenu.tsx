@@ -142,6 +142,16 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
     setHover(null);
   };
 
+  // insertTable refuses where a table can't go — anywhere the selection touches an existing table,
+  // since a cell is paragraph-only and inserting would have replaced or split the host
+  // (table-extensions.ts). Ask the command rather than re-testing the context here, and grey the
+  // trigger out instead of opening a picker whose every cell silently does nothing; the panel is
+  // gated on the same flag, so the "行数・列数を入力…" dialog behind it is unreachable too. This is
+  // the insert control only — row/column editing lives in the floating TableToolbar, which appears
+  // precisely when this one greys out, so nothing is taken away. Size arguments are irrelevant to
+  // the refusal, so the dry run is asked without them.
+  const canInsert = editor.can().insertTable();
+
   return (
     <>
       <ToolbarDropdown
@@ -151,6 +161,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
           </>
         }
         title='表'
+        disabled={!canInsert}
         panelClass='flex-col gap-2 p-2'>
         {(close) => (
           <>

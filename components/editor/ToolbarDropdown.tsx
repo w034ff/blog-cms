@@ -14,6 +14,7 @@ export function ToolbarDropdown({
   trigger,
   title,
   active,
+  disabled,
   panelClass = 'min-w-max flex-col overflow-hidden px-1 py-0.5',
   children,
 }: {
@@ -23,6 +24,10 @@ export function ToolbarDropdown({
   // Trigger highlight. Menus with a document-derived active state (the list menu)
   // pass theirs; insert-only menus omit it and highlight while open.
   active?: boolean;
+  // Greys out the trigger where none of the panel's items would do anything, matching
+  // how the plain toolbar buttons use `editor.can()`. The panel is gated on it too, so a
+  // disabled trigger can never show its items.
+  disabled?: boolean;
   // Interior layout of the panel; the default suits a plain column of items.
   panelClass?: string;
   children: (close: () => void) => ReactNode;
@@ -30,11 +35,30 @@ export function ToolbarDropdown({
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
 
+  // Gating the panel on `!disabled` below hides it, but `open` outlives the trigger going disabled,
+  // so the panel came back — with nobody clicking — as soon as the control was enabled again. The
+  // dismiss hook doesn't cover it: it listens for mousedown and Escape, and the selection can move
+  // without either (a command, a keyboard-driven change). So drop `open` on the transition into
+  // disabled.
+  //
+  // Adjusted during render rather than in an effect. React's "You Might Not Need an Effect" names
+  // resetting state on a prop change as the anti-pattern this replaces: the effect version runs
+  // after the commit, so it costs an extra render pass and paints the stale state first. React
+  // re-runs this component immediately instead, before children render or the DOM is touched. The
+  // two effects in this codebase (useDismiss, useImageUpload) stay what they are — subscriptions to
+  // document/window, which is what effects are for.
+  const [prevDisabled, setPrevDisabled] = useState(disabled);
+  if (disabled !== prevDisabled) {
+    setPrevDisabled(disabled);
+    if (disabled) setOpen(false);
+  }
+
   return (
     <div ref={ref} className='relative flex'>
       <ToolbarButton
         onClick={() => setOpen((prev) => !prev)}
         active={active ?? open}
+        disabled={disabled}
         title={title}
         tooltipHidden={open}>
         <span className='flex items-center gap-1'>
@@ -42,7 +66,7 @@ export function ToolbarDropdown({
           <ChevronIcon open={open} />
         </span>
       </ToolbarButton>
-      {open && (
+      {open && !disabled && (
         <div
           className={`absolute left-1/2 top-full z-50 mt-1 flex -translate-x-1/2 rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
           {children(() => setOpen(false))}
