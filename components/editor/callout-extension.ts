@@ -296,7 +296,7 @@ export function carriesHalfSelectedCallout(slice: Slice): boolean {
 // Each half-selected edge is replaced by that callout's own children, which drops exactly the one
 // level of depth the box occupied. Everything halfSelectedEdges leaves alone is left alone: a whole
 // callout in the middle of the slice, or one cut on both sides, still pastes as it did.
-export function unwrapHalfSelectedCallouts(slice: Slice): Slice {
+function unwrapHalfSelectedCallouts(slice: Slice): Slice {
   const { start, end } = halfSelectedEdges(slice);
   if (!start && !end) return slice;
   const lastIndex = slice.content.childCount - 1;

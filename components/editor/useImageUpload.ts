@@ -40,9 +40,9 @@ function altTextFromFilename(name: string): string {
 // merely reaches into one the caret is not inside it, so "inside" would be quietly wrong in exactly
 // the case above. Neither host can hold a block node — a cell is paragraph-only, a code block is a
 // `code` textblock (see the guard below).
-export const IMAGE_BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
-export const IMAGE_BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
-export const IMAGE_BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
+const IMAGE_BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
+const IMAGE_BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
+const IMAGE_BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
 
 // How long the notice stays up. Long enough to read one short line, short enough that it doesn't
 // linger over the text being edited.
