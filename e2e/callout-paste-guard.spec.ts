@@ -136,3 +136,67 @@ test('pasting a whole callout inside a blockquote keeps the text, not the box', 
   await expect(editor.locator('blockquote .markdown-alert')).toHaveCount(0);
   await expect(editor.locator('.markdown-alert')).toHaveCount(1);
 });
+
+// A callout one level *below* the slice's top — the case a shallow repair missed. wouldNestCallout
+// looks at every descendant, so it reported "this needs fixing" and flattenClosedCallouts, which
+// only ever looked at direct children, handed the slice back untouched: the paste nested the box
+// after all, while the identical slice *dropped* was refused. The two gestures disagreed.
+//
+// `> > [!NOTE]` can no longer be authored (setCallout refuses inside a quote) but still loads from
+// stored markdown, which is how a real post arrives carrying blockquote(callout(…)).
+const NESTED_MD = '前の段落です\n\n> > [!NOTE]\n> >\n> > 囲みの中身です\n\n> 引用の中身です\n';
+
+test('pasting a quote that holds a callout does not carry the box into a quote', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, NESTED_MD);
+  expect(await docString(page)).toBe(
+    'doc(paragraph("前の段落です"), blockquote(callout(paragraph("囲みの中身です"))), blockquote(paragraph("引用の中身です")), paragraph)',
+  );
+
+  // 7 = end of 「前の段落です」, 21 = the boundary after the first quote, so that quote (and the
+  // callout inside it) is covered whole and closed; 30 = end of 「引用の中身です」, inside the
+  // second quote.
+  await copyThenCaret(page, 7, 21, 30);
+  await page.keyboard.press('Control+v');
+
+  // The quote wrapper comes over — nested quotes are native markdown and stay allowed — but the
+  // callout inside it is flattened to its contents, so the document still holds exactly the one
+  // callout it started with.
+  await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+  expect(await docString(page)).toBe(
+    'doc(paragraph("前の段落です"), blockquote(callout(paragraph("囲みの中身です"))), blockquote(paragraph("引用の中身です"), blockquote(paragraph("囲みの中身です"))), paragraph)',
+  );
+});
+
+// The same nesting, but reached through a slice whose first child is cut *open*. This is the case
+// that decides the shape of the repair: openStart/openEnd count levels down the slice's first and
+// last child, so a node on either path has to keep its depth or ProseMirror throws on the
+// mismatch — while anything beside those paths can be flattened however deep it sits. Here the
+// quote is open (the selection starts inside its first paragraph) and the callout beside that
+// paragraph is closed, so the quote stays and the callout goes.
+const OPEN_EDGE_MD =
+  '前の段落です\n\n> 引用の先頭\n>\n> > [!NOTE]\n> >\n> > 囲みの中身です\n\n後の段落です\n\n> 貼り付け先です\n';
+
+test('a callout beside an open edge is flattened, the edge keeps its depth', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, OPEN_EDGE_MD);
+
+  // 12 = inside 「引用の先頭」, so the quote is cut open two levels down; 32 = inside 「後の段落
+  // です」, past the quote entirely, which is what keeps the callout off the closing path too.
+  // 45 = end of 「貼り付け先です」, inside the second quote.
+  await copyThenCaret(page, 12, 32, 45);
+  await page.keyboard.press('Control+v');
+
+  await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+  expect(await docString(page)).toBe(
+    'doc(paragraph("前の段落です"), blockquote(paragraph("引用の先頭"), callout(paragraph("囲みの中身です"))), paragraph("後の段落です"), blockquote(paragraph("貼り付け先ですの先頭"), paragraph("囲みの中身です")), paragraph("後の段"), paragraph)',
+  );
+});

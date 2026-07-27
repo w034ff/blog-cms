@@ -321,25 +321,58 @@ export function unwrapHalfSelectedCallouts(slice: Slice): Slice {
 // and its contents kept, which is the paste-shaped answer: nothing was deleted to get here, so
 // nothing is lost by letting the text land where the caret is.
 //
-// Only callouts sitting *closed* in the slice. One at a cut edge either was already dealt with by
-// unwrapHalfSelectedCallouts or is the cut-on-both-sides case it deliberately leaves alone, which
-// carries no box into the document anyway — and taking a level off it here would leave openStart /
-// openEnd deeper than the content they describe.
-function flattenClosedCallouts(slice: Slice): Slice {
-  const { content, openStart, openEnd } = slice;
-  const lastIndex = content.childCount - 1;
+// Every depth, not just the slice's top level. A callout can sit one or more levels down — copy a
+// quote that holds one (`> > [!NOTE]`, which loads from stored markdown even though it can no
+// longer be authored) and the slice is blockquote(callout(…)). wouldNestCallout looks at every
+// descendant, so a shallow repair reported "this needs fixing" and then returned the slice
+// untouched, and the paste nested the box after all — while the same slice dropped was refused.
+//
+// The one thing that must not move is a node on an open edge. openStart/openEnd count levels down
+// the slice's first and last child, and removing a node on either path would leave those depths
+// describing content that is no longer there — ProseMirror throws on the mismatch. So the rule is:
+// a callout is removable only where both open counts have run out. `startOpen`/`endOpen` follow
+// the two paths down (a single child can be on both, which is the cut-on-both-sides case), and
+// anything off them is fair game however deep it is.
+//
+// Restructuring off-path subtrees is safe because `child.copy(inner)` keeps the node itself, so no
+// path ever gets shorter. Splicing a callout's `block+` children into its parent stays
+// schema-valid throughout: blockquote and callout are both `block+`, listItem is `paragraph block*`
+// so a callout can only ever sit at index ≥ 1 there, and cells are paragraph-only so none lives in
+// one. Text nodes end the recursion on their own — an empty content fragment comes back unchanged.
+//
+// Returns the same Fragment when nothing changed, which is what lets the caller keep its identity
+// check and skip dispatching a redundant transaction.
+function flattenCallouts(fragment: Fragment, openStart: number, openEnd: number): Fragment {
+  const lastIndex = fragment.childCount - 1;
   const children: PMNode[] = [];
   let changed = false;
-  content.forEach((child, _offset, index) => {
-    const cut = (index === 0 && openStart > 0) || (index === lastIndex && openEnd > 0);
-    if (cut || child.type.name !== CALLOUT_NAME) {
+  fragment.forEach((child, _offset, index) => {
+    const startOpen = index === 0 ? openStart : 0;
+    const endOpen = index === lastIndex ? openEnd : 0;
+    if (startOpen === 0 && endOpen === 0 && child.type.name === CALLOUT_NAME) {
+      changed = true;
+      flattenCallouts(child.content, 0, 0).forEach((grandChild) => children.push(grandChild));
+      return;
+    }
+    const inner = flattenCallouts(
+      child.content,
+      Math.max(startOpen - 1, 0),
+      Math.max(endOpen - 1, 0),
+    );
+    if (inner === child.content) {
       children.push(child);
       return;
     }
     changed = true;
-    child.content.forEach((grandChild) => children.push(grandChild));
+    children.push(child.copy(inner));
   });
-  return changed ? new Slice(Fragment.fromArray(children), openStart, openEnd) : slice;
+  return changed ? Fragment.fromArray(children) : fragment;
+}
+
+function flattenClosedCallouts(slice: Slice): Slice {
+  const { content, openStart, openEnd } = slice;
+  const flattened = flattenCallouts(content, openStart, openEnd);
+  return flattened === content ? slice : new Slice(flattened, openStart, openEnd);
 }
 
 const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
