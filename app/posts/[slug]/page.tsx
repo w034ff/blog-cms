@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { getPostBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
+import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 
 type Params = { slug: string };
 
@@ -53,9 +54,13 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
         )}
       </header>
       <div
+        id='post-body'
         className='prose prose-zinc dark:prose-invert max-w-none'
         dangerouslySetInnerHTML={{ __html: html }}
       />
+      {/* Client enhancer: injects a copy button into each code block after mount. The body
+          above stays server-rendered; this only adds the interactive control. */}
+      <CodeCopyButtons targetId='post-body' />
     </article>
   );
 }
