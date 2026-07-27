@@ -3,8 +3,8 @@ import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
 import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { isInTable, nextCell, selectedRect, selectionCell } from '@tiptap/pm/tables';
 import { Plugin, PluginKey, Selection } from '@tiptap/pm/state';
-import { dropPoint } from '@tiptap/pm/transform';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { resolveDropTarget } from './drop-target';
 import { selectionTouches } from './selection-scan';
 
 // A column's text alignment. `null` is GFM's default (`---`, renders left) and is
@@ -95,12 +95,17 @@ function tableDropGuard(): Plugin {
   return new Plugin({
     key: tableDropGuardKey,
     props: {
-      handleDrop(view, event, slice) {
+      handleDrop(view, event, slice, moved) {
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
-        // Mirror ProseMirror's own drop math so we test its real insertion point.
-        const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
-        if (!isDisallowedTableDrop(view.state.doc.resolve(insertPos))) return false;
+        // resolveDropTarget rather than a local dropPoint call, so this and the drop *indicator*
+        // (drop-cursor-guard.ts) compute the same target. They used to differ: this side resolved
+        // against the document on screen, the indicator against the one the move's own deletion
+        // leaves behind. The two agree except where that deletion joins two nodes — which changes
+        // the depth the mapped position resolves at, and is exactly the case resolveDropTarget
+        // exists for — so the indicator could promise a drop this then refused, or hide on one it
+        // would have taken. Both silent.
+        if (!isDisallowedTableDrop(resolveDropTarget(view, coords.pos, slice, moved))) return false;
         // Returning true makes ProseMirror preventDefault and skip the whole drop,
         // so the dragged text stays put rather than being deleted from its source.
         event.preventDefault();
