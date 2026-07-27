@@ -15,7 +15,7 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 // preserving the pre-existing behaviour. The dropdown also covers ids the ` ```lang ` typing
 // rule can't produce — it only captures `[a-z]+`, so `cpp` (C++) and `csharp` (C#) are
 // reachable only here.
-export const CODE_LANGUAGES: readonly { id: string; label: string }[] = [
+const CODE_LANGUAGES: readonly { id: string; label: string }[] = [
   { id: '', label: 'Plain Text' },
   { id: 'bash', label: 'Bash' },
   { id: 'shell', label: 'Shell' },
