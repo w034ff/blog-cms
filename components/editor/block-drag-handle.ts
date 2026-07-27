@@ -73,165 +73,60 @@ function findBoundary(view: EditorView, clientY: number, excludeFrom: number): B
   return { pos: view.state.doc.content.size, y: last.bottom, left: last.left, width: last.width };
 }
 
-// Drives one drag session end-to-end via plain mouse tracking instead of native HTML5
-// drag-and-drop. Native drag was dropped because its no-drop cursor is governed by DOM
-// containment (prosemirror-view's dragover/drop handlers only fire while `event.target` stays a
-// descendant of `view.dom`), which made the handle's own on-screen position load-bearing for
-// something that has nothing to do with it. A plain `mousemove`/`mouseup` pair has no such
-// constraint — the pointer can go anywhere.
-class DragController {
-  private session: DragSession | null = null;
-  private indicator: HTMLElement | null = null;
-  private preview: HTMLElement | null = null;
-  private readonly onMouseMove = (event: MouseEvent) => this.handleMouseMove(event);
-  private readonly onMouseUp = () => this.handleMouseUp();
-
-  constructor(private readonly view: EditorView) {}
-
-  // True from mousedown-on-handle until the session ends (drop, Escape, or an aborting doc change) —
-  // covers the pre-DRAG_THRESHOLD "picked up but not yet moving" window too. The plugin's
-  // handleKeyDown reads this to run the drag modally (swallow edit keys while it holds).
-  isDragging(): boolean {
-    return this.session != null;
-  }
-
+// What the plugin (and the handle's mousedown) can ask of a live drag session.
+interface DragController {
+  // True from mousedown-on-handle until the session ends (drop, Escape, or an aborting doc
+  // change) — covers the pre-DRAG_THRESHOLD "picked up but not yet moving" window too. The
+  // plugin's handleKeyDown reads this to run the drag modally (swallow edit keys while it holds).
+  isDragging: () => boolean;
   // Cancel an in-flight drag without applying any move — used by both Escape and the doc-changed
-  // backstop. endSession() already tears down listeners, the body class, and the indicator.
-  abort(): void {
-    this.endSession();
-  }
-
-  start(
+  // backstop. It tears down listeners, the body class, and the indicator.
+  abort: () => void;
+  start: (
     node: ProseMirrorNode,
     from: number,
     to: number,
     handleEl: HTMLElement,
     clientX: number,
     clientY: number,
-  ): void {
-    this.session = {
-      node,
-      from,
-      to,
-      handleEl,
-      startX: clientX,
-      startY: clientY,
-      dragging: false,
-      target: null,
-    };
-    window.addEventListener('mousemove', this.onMouseMove);
-    window.addEventListener('mouseup', this.onMouseUp);
-  }
+  ) => void;
+  destroy: () => void;
+}
 
-  destroy(): void {
-    this.endSession();
-    this.indicator?.remove();
-    this.indicator = null;
-    this.preview?.remove();
-    this.preview = null;
-  }
+// Drives one drag session end-to-end via plain mouse tracking instead of native HTML5
+// drag-and-drop. Native drag was dropped because its no-drop cursor is governed by DOM
+// containment (prosemirror-view's dragover/drop handlers only fire while `event.target` stays a
+// descendant of `view.dom`), which made the handle's own on-screen position load-bearing for
+// something that has nothing to do with it. A plain `mousemove`/`mouseup` pair has no such
+// constraint — the pointer can go anywhere.
+function createDragController(view: EditorView): DragController {
+  let session: DragSession | null = null;
+  let indicator: HTMLElement | null = null;
+  let preview: HTMLElement | null = null;
 
-  private handleMouseMove(event: MouseEvent): void {
-    const session = this.session;
-    if (!session) return;
-    if (!session.dragging) {
-      if (
-        Math.hypot(event.clientX - session.startX, event.clientY - session.startY) < DRAG_THRESHOLD
-      ) {
-        return;
-      }
-      session.dragging = true;
-      document.body.classList.add('block-dragging');
-      // CSS `:hover`/`:has(+ :hover)` (globals.css) stop tracking the real cursor once a native
-      // HTML5 drag starts (a well-known browser quirk — hover freezes at the drag-start position
-      // until drop), which is what kept the source handle visible throughout the old native-drag
-      // implementation. Plain `mousemove` has no such freeze, so once the pointer leaves the
-      // dragged block, `:hover` correctly stops matching and the handle would otherwise vanish
-      // mid-drag. This class forces it to stay visible for the session's duration instead.
-      session.handleEl.classList.add('is-dragging');
-      // A cursor-following clone of what's being dragged — the source block itself stays exactly
-      // where it is (no collapse/reflow, see applyMove()'s comment for why), so this is the
-      // drag's only positive "here's what you're carrying" signal.
-      const dom = this.view.nodeDOM(session.from);
-      if (dom instanceof HTMLElement) {
-        const preview = this.ensurePreview();
-        preview.replaceChildren(dom.cloneNode(true) as Node);
-        const cloneRoot = preview.firstElementChild;
-        if (cloneRoot instanceof HTMLElement) {
-          cloneRoot.classList.remove('ProseMirror-selectednode');
-          cloneRoot.setAttribute('contenteditable', 'false');
-        }
-        preview.style.display = 'block';
-      }
-    }
-    const { pos, y, left, width } = findBoundary(this.view, event.clientY, session.from);
-    // `to` (the gap right after the dragged node's own original position) is always a no-op per
-    // applyMove()'s guard — suppress the indicator for it rather than showing a target that would
-    // just put the block back where it started. This is the resolved candidate for the whole zone
-    // from the dragged node's own top down through the next sibling's midpoint — including right
-    // at drag start, when the pointer is barely past the handle and still visually over the
-    // (unmoving — see applyMove()'s comment) source block itself, where showing a "real-looking"
-    // indicator elsewhere would read as reacting before you've gone anywhere.
-    if (pos === session.to) {
-      session.target = null;
-      if (this.indicator) this.indicator.style.display = 'none';
-    } else {
-      session.target = pos;
-      const el = this.ensureIndicator();
-      el.style.display = 'block';
-      el.style.top = `${y}px`;
-      el.style.left = `${left}px`;
-      el.style.width = `${width}px`;
-    }
-    if (this.preview) {
-      this.preview.style.left = `${event.clientX}px`;
-      this.preview.style.top = `${event.clientY}px`;
-    }
-  }
-
-  private handleMouseUp(): void {
-    const session = this.session;
-    this.endSession();
-    if (!session || !session.dragging || session.target == null) return;
-    this.applyMove(session.node, session.from, session.to, session.target);
-  }
-
-  private endSession(): void {
-    window.removeEventListener('mousemove', this.onMouseMove);
-    window.removeEventListener('mouseup', this.onMouseUp);
-    document.body.classList.remove('block-dragging');
-    this.session?.handleEl.classList.remove('is-dragging');
-    if (this.indicator) this.indicator.style.display = 'none';
-    if (this.preview) {
-      this.preview.style.display = 'none';
-      this.preview.replaceChildren();
-    }
-    this.session = null;
-  }
-
-  private ensureIndicator(): HTMLElement {
-    if (!this.indicator) {
+  function ensureIndicator(): HTMLElement {
+    if (!indicator) {
       const el = document.createElement('div');
       el.className = 'block-drag-indicator';
       el.style.display = 'none';
       document.body.appendChild(el);
-      this.indicator = el;
+      indicator = el;
     }
-    return this.indicator;
+    return indicator;
   }
 
   // The `prose prose-zinc dark:prose-invert` classes are the same ones PostEditor.tsx puts on
   // `.ProseMirror` itself, so a cloned blockquote/table/code-block keeps its normal typographic
   // styling even outside that container.
-  private ensurePreview(): HTMLElement {
-    if (!this.preview) {
+  function ensurePreview(): HTMLElement {
+    if (!preview) {
       const el = document.createElement('div');
       el.className = 'block-drag-preview prose prose-zinc dark:prose-invert';
       el.style.display = 'none';
       document.body.appendChild(el);
-      this.preview = el;
+      preview = el;
     }
-    return this.preview;
+    return preview;
   }
 
   // `to` (put it back right after itself) means "put it back where it came from" — skip the
@@ -255,15 +150,120 @@ class DragController {
   // and handleMouseMove()'s own `pos === session.to` check suppresses the indicator entirely for
   // that no-op candidate — so the only thing the indicator can ever show is a real target, never
   // the jump-to-a-no-op-gap that originally read as broken.
-  private applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
+  function applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
     if (target === from || target === to) return;
-    const tr = this.view.state.tr.delete(from, to);
+    const tr = view.state.tr.delete(from, to);
     const pos = tr.mapping.map(target);
     tr.insert(pos, node);
     tr.setSelection(NodeSelection.create(tr.doc, pos));
-    this.view.dispatch(tr);
-    this.view.focus();
+    view.dispatch(tr);
+    view.focus();
   }
+
+  function endSession(): void {
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+    document.body.classList.remove('block-dragging');
+    session?.handleEl.classList.remove('is-dragging');
+    if (indicator) indicator.style.display = 'none';
+    if (preview) {
+      preview.style.display = 'none';
+      preview.replaceChildren();
+    }
+    session = null;
+  }
+
+  function handleMouseMove(event: MouseEvent): void {
+    const current = session;
+    if (!current) return;
+    if (!current.dragging) {
+      if (
+        Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < DRAG_THRESHOLD
+      ) {
+        return;
+      }
+      current.dragging = true;
+      document.body.classList.add('block-dragging');
+      // CSS `:hover`/`:has(+ :hover)` (globals.css) stop tracking the real cursor once a native
+      // HTML5 drag starts (a well-known browser quirk — hover freezes at the drag-start position
+      // until drop), which is what kept the source handle visible throughout the old native-drag
+      // implementation. Plain `mousemove` has no such freeze, so once the pointer leaves the
+      // dragged block, `:hover` correctly stops matching and the handle would otherwise vanish
+      // mid-drag. This class forces it to stay visible for the session's duration instead.
+      current.handleEl.classList.add('is-dragging');
+      // A cursor-following clone of what's being dragged — the source block itself stays exactly
+      // where it is (no collapse/reflow, see applyMove()'s comment for why), so this is the
+      // drag's only positive "here's what you're carrying" signal.
+      const dom = view.nodeDOM(current.from);
+      if (dom instanceof HTMLElement) {
+        const el = ensurePreview();
+        el.replaceChildren(dom.cloneNode(true) as Node);
+        const cloneRoot = el.firstElementChild;
+        if (cloneRoot instanceof HTMLElement) {
+          cloneRoot.classList.remove('ProseMirror-selectednode');
+          cloneRoot.setAttribute('contenteditable', 'false');
+        }
+        el.style.display = 'block';
+      }
+    }
+    const { pos, y, left, width } = findBoundary(view, event.clientY, current.from);
+    // `to` (the gap right after the dragged node's own original position) is always a no-op per
+    // applyMove()'s guard — suppress the indicator for it rather than showing a target that would
+    // just put the block back where it started. This is the resolved candidate for the whole zone
+    // from the dragged node's own top down through the next sibling's midpoint — including right
+    // at drag start, when the pointer is barely past the handle and still visually over the
+    // (unmoving — see applyMove()'s comment) source block itself, where showing a "real-looking"
+    // indicator elsewhere would read as reacting before you've gone anywhere.
+    if (pos === current.to) {
+      current.target = null;
+      if (indicator) indicator.style.display = 'none';
+    } else {
+      current.target = pos;
+      const el = ensureIndicator();
+      el.style.display = 'block';
+      el.style.top = `${y}px`;
+      el.style.left = `${left}px`;
+      el.style.width = `${width}px`;
+    }
+    if (preview) {
+      preview.style.left = `${event.clientX}px`;
+      preview.style.top = `${event.clientY}px`;
+    }
+  }
+
+  // endSession() clears `session`, so the finished one is captured before it runs.
+  function handleMouseUp(): void {
+    const finished = session;
+    endSession();
+    if (!finished || !finished.dragging || finished.target == null) return;
+    applyMove(finished.node, finished.from, finished.to, finished.target);
+  }
+
+  return {
+    isDragging: () => session != null,
+    abort: endSession,
+    start: (node, from, to, handleEl, clientX, clientY) => {
+      session = {
+        node,
+        from,
+        to,
+        handleEl,
+        startX: clientX,
+        startY: clientY,
+        dragging: false,
+        target: null,
+      };
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    },
+    destroy: () => {
+      endSession();
+      indicator?.remove();
+      indicator = null;
+      preview?.remove();
+      preview = null;
+    },
+  };
 }
 
 const controllers = new WeakMap<EditorView, DragController>();
@@ -354,7 +354,7 @@ export const BlockDragHandle = Extension.create({
           },
         },
         view(editorView) {
-          const controller = new DragController(editorView);
+          const controller = createDragController(editorView);
           controllers.set(editorView, controller);
           // A newly (re)created handle starts at `top: 0` (globals.css) until aligned. Two
           // realignment triggers, each firing only on a real layout change:
