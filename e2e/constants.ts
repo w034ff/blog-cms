@@ -1,7 +1,12 @@
 import path from 'node:path';
 
-// A dedicated port so the harness never collides with `npm run dev` (3001).
-export const E2E_PORT = 3100;
+// A dedicated port so the harness never collides with `npm run dev` (3001). Overridable because the
+// port is the one piece of this harness that is machine-global: `.next-e2e`, the seeded DB copy and
+// the saved session are all cwd-relative and so already private to a git worktree, but two runs at
+// once want the same socket — and `reuseExistingServer: false` makes the second one fail outright
+// rather than quietly test the other worktree's server. `E2E_PORT=3101 npx playwright test` (or the
+// same in that worktree's .claude/settings.local.json) is what lets two branches be worked at once.
+export const E2E_PORT = Number(process.env.E2E_PORT ?? 3100);
 export const BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 
 // Throwaway, seeded copy of data/blog.db. The isolated test server runs against
