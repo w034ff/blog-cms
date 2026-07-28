@@ -12,11 +12,14 @@ import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 //
 // tableCellPasteGuard refuses those and raises the editor's refusal notice.
 //
-// The predicate is the *slice*, not the position — which is why this is a separate rule from
-// isDisallowedTableDrop rather than the same one reused. A caret always sits inside a cell's
-// paragraph, so the position test the drop guard uses reports "allowed" for every paste into a cell
-// and would guard nothing. The ordinary-paste tests at the bottom are what hold that line: they are
-// the cases a position-based guard would have broken.
+// The predicate is the *slice*, not the position — which is why the drop guard's position rule was
+// never enough on its own. A caret always sits inside a cell's paragraph, so a position test reports
+// "allowed" for every paste into a cell and would guard nothing. The ordinary-paste tests at the
+// bottom are what hold that line: they are the cases a position-based guard would have broken. The
+// drop path now asks this same slice question (see table-drop-guard.spec.ts) — one rule, two
+// gestures — with one difference stated where it lives (table-cell-rules.ts): a table-carrying
+// *paste* belongs to prosemirror-tables' own handlePaste, and a table-carrying *drop* to nobody, so
+// only the drop refuses it.
 
 const MD = [
   '| 見出しA | 見出しB |',
@@ -43,7 +46,8 @@ const MD = [
   '',
 ].join('\n');
 
-const NOTICE = '表のセルにはこの要素を貼り付けられません';
+// Worded for both gestures: the drop guard raises the same one for the same slice.
+const NOTICE = '表のセルにはこの要素を入れられません';
 
 async function openEditor(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');

@@ -73,6 +73,28 @@ function cellCaret(
   );
 }
 
+// A caret `chars` characters into the paragraph reading `text` — the outside-a-table control for
+// the Enter binding, which must decline everywhere this one goes.
+function posInParagraph(page: Page, text: string, chars: number): Promise<number> {
+  return page.evaluate(
+    ({ line, offset }) => {
+      const el = document.querySelector('.ProseMirror') as Element & {
+        editor?: { state: { doc: { descendants(f: (n: unknown, pos: number) => void): void } } };
+      };
+      if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+      let found: number | null = null;
+      el.editor.state.doc.descendants((node, pos) => {
+        const n = node as { type: { name: string }; textContent: string };
+        if (found === null && n.type.name === 'paragraph' && n.textContent === line)
+          found = pos + 1;
+      });
+      if (found === null) throw new Error(`no paragraph reading ${line}`);
+      return found + offset;
+    },
+    { line: text, offset: chars },
+  );
+}
+
 // Route A: copy the two trailing paragraphs (a selection across a blank line — Shift+Enter would
 // stay one paragraph and never reach this) and paste them into a cell.
 async function pasteTwoParagraphsIntoCell(
@@ -153,10 +175,10 @@ test('a whole table pasted into a cell keeps the table in its pipe form', async 
   );
 });
 
-// The same slice, dropped instead of pasted. isDisallowedTableDrop does not cover this: it refuses a
-// drop at a cell's *block* edge on the grounds that one inside the cell's text merges inline, which
-// holds for a one-paragraph slice but not for this one — a drop into the text still lands as two
-// paragraphs. So the repair listens for `drop` as well as `paste`.
+// The same slice, dropped instead of pasted, and the case that shows where the drop guard stops and
+// the repair starts: two *paragraphs* are content a cell may hold, so the guard lets them in (it
+// refuses blocks, and positions at a cell's block edge) and the repair joins them with a hard break
+// afterwards. So the repair listens for `drop` as well as `paste`.
 //
 // The endpoints come from a real drag-select and so depend on font metrics; what is asserted is the
 // shape, not which characters ended up either side of the break.
@@ -225,15 +247,13 @@ test('a hard break in a cell round-trips through the pipe form', async ({ page }
   expect(await markdown(page)).toBe('| A | B |\n| --- | --- |\n| x<br>y | z |\n');
 });
 
-// ---------------------------------------------------------------------------
-// Must not repair
-// ---------------------------------------------------------------------------
-
-// The repair is scoped to pastes, and this is why. A cell is `paragraph+`, so Enter inside one
-// legitimately opens a second paragraph; an unconditional join would undo every one of them the
-// instant it was typed. The cost is that Enter still puts the table into the HTML fallback — a
-// knowingly preserved case, which is what this spec records.
-test('Enter inside a cell still opens a second paragraph', async ({ page }) => {
+// The fourth route into a cell, and the last one to agree with the other three. Enter used to open
+// a second paragraph here — legal for a `paragraph+` cell, and the table still looked right, but it
+// has no pipe form, so from that keystroke on the whole table saved as raw HTML. The repair above
+// deliberately did not touch it: an unconditional join would undo every Enter the instant it was
+// typed, which is the right call *after* the fact and the wrong one for the gesture itself. So the
+// gesture changed instead (MarkdownTable's Enter binding) and this spec records the new answer.
+test('Enter inside a cell makes a hard break, not a second paragraph', async ({ page }) => {
   await openEditor(page, ALIGNED);
 
   await setRange(page, await cellCaret(page, 'end'));
@@ -241,10 +261,27 @@ test('Enter inside a cell still opens a second paragraph', async ({ page }) => {
   await page.keyboard.type('二行目');
 
   expect(await docString(page)).toContain(
-    'tableCell(paragraph("セルの中身"), paragraph("二行目"))',
+    'tableCell(paragraph("セルの中身", hardBreak, "二行目"))',
   );
-  expect(await markdown(page)).toContain('<table');
+  const md = await markdown(page);
+  expect(md).not.toContain('<table');
+  expect(md).toContain('| セルの中身<br>二行目 | 二つ目 |');
 });
+
+// The binding is document-wide, so the half that says it is a *cell* rule rather than an Enter rule
+// has to be pinned too: outside a table, Enter still splits the block.
+test('Enter outside a table still splits the paragraph', async ({ page }) => {
+  await openEditor(page, ALIGNED);
+
+  await setRange(page, await posInParagraph(page, '一つ目の段落です', 3));
+  await page.keyboard.press('Enter');
+
+  expect(await docString(page)).toContain('paragraph("一つ目"), paragraph("の段落です")');
+});
+
+// ---------------------------------------------------------------------------
+// Must not repair
+// ---------------------------------------------------------------------------
 
 // The same shapes arrive from setContent when a post already stored in the HTML fallback is opened.
 // Repairing there would rewrite stored content on open and hand the autosave an edit the author

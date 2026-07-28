@@ -3,6 +3,7 @@ import type { CommandProps, Editor } from '@tiptap/core';
 import type { Node as PMNode, NodeType, ResolvedPos, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { isInTable } from '@tiptap/pm/tables';
+import { tableDropRefusal } from './table-cell-rules';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
@@ -353,9 +354,18 @@ function handleDropClamped(
   if (!coords) return false;
 
   const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
-  event.preventDefault();
   const before = deletion.doc;
   const pos = deletion.mapping.map(insertPos);
+  // Performing the drop here takes it away from every handleDrop below this plugin, and one of them
+  // refuses drops into a table. So ask its question before claiming the gesture and hand the event
+  // back when the answer is yes: tableDropGuard is next and refuses it properly, notice included.
+  // `deletion.doc.resolve(pos)` is what resolveDropTarget would compute — dropPoint's target mapped
+  // through this same clamped deletion — so both plugins judge the one document the drop leaves
+  // behind. Without this the guard was reachable only for drags that crossed no isolating edge,
+  // which is to say a code block or a callout could be dragged into a cell and split the table
+  // while the identical paste was refused.
+  if (tableDropRefusal(deletion.doc.resolve(pos), slice)) return false;
+  event.preventDefault();
   deletion.replaceRange(pos, pos, slice);
   // Nothing could be fitted at the destination. Dispatching nothing discards the source deletion
   // along with it, which is what leaves the document untouched — prosemirror-view bails the same way.
