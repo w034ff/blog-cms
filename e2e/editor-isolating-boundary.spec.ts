@@ -686,3 +686,59 @@ test('typing over a multi-cell selection still clears the cells', async ({ page 
       'doc(table(tableRow(tableHeader(paragraph), tableHeader(paragraph)), tableRow(tableCell(paragraph), tableCell(paragraph("X")))), paragraph)',
     );
 });
+
+// The issue's reproduction, made the way it is written: a mouse drag-select, not a range set
+// through the editor. The two are not interchangeable here. A native selection reaches ProseMirror
+// only through `selectionchange`, on a 20ms flushSoon debounce, and a keystroke inside that window
+// bypasses every keymap — the internal selection still sits at the old spot, so no handler matches
+// and the browser's own edit mutates the DOM instead (see editor-callout-boundary.spec.ts, where
+// exactly that re-parsed mutation nested the following block inside the callout). This whole fix
+// lives in the handler layer those keystrokes would miss, so the literal gesture is pinned here
+// rather than inferred from the ones that state their endpoints outright.
+test('the reported gesture — drag across the edge, press Backspace — clamps', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
+  const below = await editor.getByText('後の段落です').boundingBox();
+  if (!inside || !below) throw new Error('missing boxes');
+  await dragSelect(
+    page,
+    { x: inside.x + 30, y: inside.y + inside.height / 2 },
+    { x: below.x + 40, y: below.y + below.height / 2 },
+  );
+
+  await page.keyboard.press('Backspace');
+
+  // The endpoints land by font metrics rather than by count, so the tail here is 「落です」 where
+  // the stated-endpoint tests above leave 「段落です」 — same clamp, one character further along.
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("落です"))');
+});
+
+// Enter is the one gesture whose clamp has to hand the caret back to somebody else's key binding,
+// and a list item is where that stops being baseKeymap's business: ListItem binds Enter to
+// splitListItem on top of the default chain. A selection running out of a list item into a callout
+// clamps with the caret back in that item, and finishing with a plain splitBlock opened a second
+// paragraph inside the same bullet instead of a new bullet — so splitListItem leads the chain.
+test('Enter from a list item across a callout edge still makes a new bullet', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, '- 一つ目\n- 二つ目\n\n> [!NOTE]\n>\n> 囲みの中身です');
+  await page.locator('.ProseMirror').click();
+  await setRange(
+    page,
+    await posInText(page, '二つ目', 1),
+    await posInText(page, '囲みの中身です', 2),
+  );
+
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(bulletList(listItem(paragraph("一つ目")), listItem(paragraph("二")), listItem(paragraph)), callout(paragraph("の中身です")), paragraph)',
+    );
+});

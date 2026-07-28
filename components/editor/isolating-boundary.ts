@@ -390,6 +390,11 @@ export const IsolatingBoundary = Extension.create({
         .chain()
         .command(deleteClampedSelection)
         .first(({ commands }) => [
+          // ListItem's own Enter, ahead of baseKeymap's chain rather than in it: a selection
+          // running from inside a list item into a box clamps with the caret back in that item, and
+          // splitBlock there opens a second paragraph inside the same bullet instead of a new one.
+          // Measured; the rest of the chain is baseKeymap's Enter verbatim.
+          () => commands.splitListItem('listItem'),
           () => commands.newlineInCode(),
           () => commands.createParagraphNear(),
           () => commands.liftEmptyBlock(),
