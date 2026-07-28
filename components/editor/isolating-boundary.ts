@@ -217,7 +217,15 @@ const isolatingBoundaryKey = new PluginKey('isolatingBoundary');
 // Typing over a boundary-spanning selection. `handleTextInput` is handed the range the input is
 // about to replace, which for a plain keystroke is the selection — so the same clamp applies, with
 // the character landing at the range's start (inside whichever box the selection began in).
+//
+// The TextSelection gate is the one clampedSelectionRanges applies for every other gesture, asked
+// here directly because this hook is given a range rather than reading the selection itself. Both
+// kinds it excludes were measured to be right without it — an AllSelection's endpoints sit at depth
+// 0, where there are no ancestors to be isolating, and a CellSelection never brings a spanning range
+// this far — but "correct because of where ProseMirror happens to put the endpoints" is a thinner
+// guarantee than the other five entry points have, for no saving.
 function handleTextInputClamped(view: EditorView, from: number, to: number, text: string): boolean {
+  if (!(view.state.selection instanceof TextSelection)) return false;
   const ranges = clampedDeleteRanges(view.state.doc, from, to);
   if (!ranges) return false;
   const tr = deleteClamped(view.state.tr, ranges);
@@ -261,6 +269,14 @@ function handleCutClamped(view: EditorView, event: Event): boolean {
 // caret — which is what the gesture meant anyway, since a composition always replaces the selection
 // it began over. Returning false deliberately: prosemirror-view's own compositionstart handler must
 // still run, and it now runs against the collapsed selection.
+//
+// The one place this is not as tidy as the rest: it is a transaction of its own, with the
+// composition's read-back arriving as a second one, where every other gesture here builds a single
+// transaction and is therefore a single undo step. prosemirror-history joins the two while they
+// fall within newGroupDelay, so a composition the author lingered over undoes in two steps rather
+// than one. Both steps are on the stack and undo still converges — the boundary spec asserts that
+// rather than a step count — but there is no hook between compositionstart and the read-back to
+// fold them into one.
 function handleCompositionStartClamped(view: EditorView): boolean {
   const tr = clampedSelectionDeletion(view.state);
   if (tr) view.dispatch(tr);

@@ -84,9 +84,29 @@ async function dropPointFor(page: Page, spot: Spot): Promise<Point> {
   }
 }
 
-// Where the text ends up depends on font metrics — these drops land by pointer position — so what
-// is asserted is what must hold at every one of them, not one exact tree per destination. The
-// characters of the document, sorted: a move moves, so it may not lose or duplicate a single one.
+// One exact tree per destination, not a shared invariant. Every wrong outcome this rule exists to
+// stop leaves the callout count at one, nothing nested, the document changed and not a character
+// lost — a box that swallowed the paragraph below satisfies all four — so the whole document is
+// what tells them apart. The trees are measured, and every one of them shows the same two things:
+// the moved text arrived as plain blocks, and the callout kept exactly the 「囲み」 the selection
+// didn't cover with the rest still outside it.
+const LANDED: Record<Spot, string> = {
+  text: 'doc(paragraph("前の段落です"), callout(paragraph("囲の中身です"), paragraph("後の段み")), paragraph("落です"))',
+  topPadding:
+    'doc(paragraph("前の段落です"), callout(paragraph("の中身です"), paragraph("後の段"), paragraph("囲み")), paragraph("落です"))',
+  bottomPadding:
+    'doc(paragraph("前の段落です"), callout(paragraph("囲み"), paragraph("の中身です"), paragraph("後の段")), paragraph("落です"))',
+  // The reported bug. `above` sits *before* the dragged range, so the source deletion never maps the
+  // insertion point back inside the callout and the old position-by-position guard waved it straight
+  // through — the moved text arrived wrapped in a brand new box.
+  above:
+    'doc(paragraph("前の中身です"), paragraph("後の段の段落です"), callout(paragraph("囲み")), paragraph("落です"))',
+  below:
+    'doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("の中身です"), paragraph("後の段落です"))',
+};
+
+// A move moves: it may not lose or duplicate a character. Kept alongside the exact trees because it
+// is the one assertion that stays meaningful if the drop lands a pixel elsewhere.
 async function documentCharacters(page: Page): Promise<string> {
   const text = await page.locator('.ProseMirror').innerText();
   // The callout's label chip (情報) is non-editable chrome rendered by the NodeView, not document
@@ -109,33 +129,11 @@ for (const spot of ['text', 'topPadding', 'bottomPadding', 'above', 'below'] as 
       if (spot === 'above') await expect(page.locator(DROP_CURSOR)).toHaveCount(1);
     });
 
-    // The four things every destination must have in common:
-    // 1. exactly one callout — no new box materialised around the moved text at the destination;
     await expect(editor.locator('.markdown-alert')).toHaveCount(1);
-    // 2. none of them nested inside another;
-    await expect(editor.locator('.markdown-alert .markdown-alert')).toHaveCount(0);
-    // 3. the drop really happened (the refusal would leave the document identical);
-    const after = await docString(page);
-    expect(after, after).not.toBe(DOC);
-    // 4. and nothing was lost or duplicated on the way.
+    expect(await docString(page)).toBe(LANDED[spot]);
     expect(await documentCharacters(page)).toBe(before);
   });
 }
-
-// The one destination worth pinning exactly, because it is the reported bug: `above` sits *before*
-// the dragged range, so the source deletion never maps the insertion point back inside the callout
-// and the old position-by-position guard waved it straight through — the moved text arrived wrapped
-// in a brand new box. It now lands as plain paragraphs, and the callout it came out of is still
-// standing with the text the selection didn't cover.
-test('dropped above the callout, the moved text arrives as plain paragraphs', async ({ page }) => {
-  await openEditor(page);
-  const dragFrom = await selectAcrossCalloutEdge(page);
-  await cdpNativeDrag(page, dragFrom, await dropPointFor(page, 'above'));
-
-  expect(await docString(page)).toBe(
-    'doc(paragraph("前の中身です"), paragraph("後の段の段落です"), callout(paragraph("囲み")), paragraph("落です"))',
-  );
-});
 
 // The gesture a blanket "the slice mentions a callout" refusal would have broken. A selection made
 // wholly inside a callout carries the callout too (`Slice(callout(paragraph(…)), 2, 2)`) — but cut

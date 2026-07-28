@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { caret, docString } from './editor-probe';
+import { caret, docString, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 import { cdpNativeDrag, dragSelect } from './native-drag';
 
@@ -17,7 +17,10 @@ import { cdpNativeDrag, dragSelect } from './native-drag';
 // components/editor/isolating-boundary.ts clamps the replacement to the boundary instead: the
 // pieces inside and outside the box are deleted separately and the boundary is left standing. Every
 // gesture that replaces a range goes through that one rule, which is what these specs pin — the
-// keys, the chords, typing, Enter, and cut all reach the same deletion by different routes.
+// keys, the chords, typing, Enter, cut, paste, an IME commit and a move-drag's own source deletion
+// all reach the same deletion by different routes. Alongside them are the cases that must *not*
+// clamp: a selection wholly inside one box, one spanning a whole box, select-all, and a
+// multi-cell table selection.
 //
 // Browser-only: this is live-editor edit behaviour, invisible to tsc and vitest.
 
@@ -522,6 +525,11 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     await posInText(page, '後の段落です', 2),
   );
 
+  // prosemirror-history groups edits made within newGroupDelay (500ms) of each other, and the
+  // setContent above is itself an edit — wait it out so the undo below can only be undoing the
+  // composition.
+  await page.waitForTimeout(600);
+
   // Playwright's keyboard cannot compose, so the IME is driven over CDP directly: set a
   // composition, then commit it.
   const cdp = await page.context().newCDPSession(page);
@@ -531,6 +539,21 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲みあ")), paragraph("段落です"))');
+
+  // This is the one gesture whose clamp is a transaction of its own: the deletion is dispatched at
+  // compositionstart and the composition's own read-back arrives as a second one, where every other
+  // entry point here builds a single transaction and is therefore a single undo step. Whether
+  // prosemirror-history groups these two depends on how long the composition took — within
+  // newGroupDelay (500ms) it is one step, and a composition the author lingered over is two — so
+  // what is asserted is what actually holds either way: undo converges on the original document,
+  // and never leaves it half-deleted.
+  const original =
+    'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))';
+  for (let press = 0; press < 3 && (await docString(page)) !== original; press += 1) {
+    await page.keyboard.press('Control+z');
+    await settle(page);
+  }
+  expect(await docString(page)).toBe(original);
 });
 
 // The control for the above: composing at a plain caret, and over a selection that crosses nothing,
@@ -600,4 +623,66 @@ test('dragging a selection out of a code block leaves the fence standing', async
   await expect(page.locator('.code-block-filename').last()).toHaveValue('a.ts');
   await expect(page.locator('.code-block-lang').first()).toHaveValue('ts');
   await expect(page.locator('.code-block-lang').last()).toHaveValue('ts');
+});
+
+// The over-correction guard for the selection *kinds*, which is what the clamp gates on rather than
+// the range: Ctrl+A then a keystroke means "replace the document", boxes included, and it must not
+// come back as a callout the deletion tiptoed around. An AllSelection's endpoints sit at depth 0,
+// where there are no ancestors to be isolating, so the clamp declines it structurally — and the
+// TextSelection gate in handleTextInput says so outright.
+test('select-all then typing still replaces the whole document', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  await page.locator('.ProseMirror').click();
+
+  await page.keyboard.press('Control+a');
+  await page.keyboard.type('X');
+  await expect.poll(() => docString(page)).toBe('doc(paragraph("X"))');
+
+  await loadMarkdown(page, CALLOUT);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => docString(page)).toBe('doc(paragraph)');
+});
+
+// The other excluded kind, and the one with a real chance of colliding: table cells are `isolating`
+// too, so every multi-cell selection spans isolating edges. Typing over one must stay
+// prosemirror-tables' own behaviour — clear the selected cells, then insert at the caret — not a
+// clamped deletion that tiptoes around each cell wall.
+test('typing over a multi-cell selection still clears the cells', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, '| a | b |\n| --- | --- |\n| c | d |');
+  await page.locator('.ProseMirror').click();
+
+  // A CellSelection is set through the editor rather than dragged: the drag that produces one is
+  // pointer-timing-sensitive (see table-selection.spec.ts), and what this test needs is the
+  // selection *kind*, stated outright.
+  await page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & {
+          editor?: {
+            commands: {
+              setCellSelection(range: { anchorCell: number; headCell: number }): boolean;
+            };
+            state: {
+              doc: { descendants(f: (n: { type: { name: string } }, pos: number) => void): void };
+            };
+          };
+        })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const cells: number[] = [];
+    el.editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'tableHeader' || node.type.name === 'tableCell') cells.push(pos);
+    });
+    el.editor.commands.setCellSelection({ anchorCell: cells[0], headCell: cells[3] });
+  });
+
+  await page.keyboard.type('X');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(table(tableRow(tableHeader(paragraph), tableHeader(paragraph)), tableRow(tableCell(paragraph), tableCell(paragraph("X")))), paragraph)',
+    );
 });
