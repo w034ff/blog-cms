@@ -10,6 +10,7 @@ import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
 import { DropCursorGuard } from './editor/drop-cursor-guard';
+import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
@@ -226,6 +227,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       ParagraphTableCell,
       ParagraphTableHeader,
       DropCursorGuard,
+      // Keeps a ranged edit (Backspace/Delete over a selection, or typing over one) from closing
+      // over a callout's or code block's edge — `isolating` only guards where a slice may be
+      // *placed*, not what a replacement joins. See isolating-boundary.ts.
+      IsolatingBoundary,
       // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
       // the block, so a quote/fence right after an image isn't glued onto the image's line —
       // see image-extension.ts.
