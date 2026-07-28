@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { caret, docString } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
+import { cdpNativeDrag, dragSelect } from './native-drag';
 
 // `isolating` blocks placement, not ranged replacement. prosemirror-transform's isolating checks
 // guard where a slice may be *placed*; they say nothing about the frontier a ranged replacement
@@ -563,4 +564,40 @@ test('composing at a caret and over an ordinary selection is unaffected', async 
     .toBe(
       'doc(paragraph("前かです"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))',
     );
+});
+
+// The drop path's own source deletion, which nothing above could reach: prosemirror-view deletes a
+// move-drag's source with a bare `tr.deleteSelection()` — no keymap, no DOM handler — so the drop
+// is performed by isolating-boundary.ts itself, mirroring upstream with the clamped deletion in its
+// place. The code block is the node where getting that wrong costs the most: the fence goes with it.
+test('dragging a selection out of a code block leaves the fence standing', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CODE);
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  // Drag-select the paragraph below *upwards* into the code — the same cross-edge range, made the
+  // direction that actually produces one here. Dragging downwards out of a `<pre>` collapses the
+  // native selection to a caret in Chrome, which leaves no range to pick up and no drag at all.
+  const code = await editor.locator('pre code').boundingBox();
+  const below = await editor.getByText('後の段落です').boundingBox();
+  const above = await editor.getByText('前の段落です').boundingBox();
+  if (!code || !below || !above) throw new Error('missing boxes');
+  const dragFrom = await dragSelect(
+    page,
+    { x: below.x + 40, y: below.y + below.height / 2 },
+    { x: code.x + 30, y: code.y + code.height / 2 },
+  );
+
+  await cdpNativeDrag(page, dragFrom, { x: above.x + 10, y: above.y + above.height / 2 });
+
+  // Two fences: the one the selection came out of, still standing where it was, and the one the
+  // slice carried to the destination. Before the fix the drag's own deletion destroyed the source
+  // block — the code became a paragraph and the fence's language and filename went with it, which
+  // would leave exactly one here.
+  await expect(editor.locator('pre code')).toHaveCount(2);
+  await expect(page.locator('.code-block-filename').first()).toHaveValue('a.ts');
+  await expect(page.locator('.code-block-filename').last()).toHaveValue('a.ts');
+  await expect(page.locator('.code-block-lang').first()).toHaveValue('ts');
+  await expect(page.locator('.code-block-lang').last()).toHaveValue('ts');
 });

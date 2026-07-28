@@ -3,6 +3,7 @@ import type { CommandProps, Editor } from '@tiptap/core';
 import type { Node as PMNode, NodeType, ResolvedPos, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
+import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
 
 // A command body (call it from inside a single `editor.commands.command(...)`) for an `isolating`
@@ -195,6 +196,13 @@ function clampedSelectionDeletion(state: EditorState): Transaction | null {
   return tr.setSelection(TextSelection.near(tr.doc.resolve(state.selection.from)));
 }
 
+// Delete the current selection, clamped to any isolating edge it spans — and left to ProseMirror
+// when it spans none. The unconditional form, for callers that are deleting the selection either
+// way and only need it done correctly; `deleteSelection` on its own is what corrupts the document.
+export function deleteSelectionClamped(state: EditorState): Transaction {
+  return clampedSelectionDeletion(state) ?? state.tr.deleteSelection();
+}
+
 // Put `slice` where the current selection is, clamped to any isolating edge that selection spans.
 // Exported because the paste path has two claimants: the callout guard repairs the *slice* (see
 // callout-slice-guard.ts) and then needs this to place it, while the plugin below catches every
@@ -275,6 +283,61 @@ function handlePasteClamped(view: EditorView, _event: ClipboardEvent, slice: Sli
   return true;
 }
 
+// The last gesture, and the one that had been answered by refusing it outright. A *move* drag
+// deletes its source range before inserting, and prosemirror-view does that with a bare
+// `tr.deleteSelection()` — no keymap, no DOM handler, so nothing above sees it. That deletion is
+// what made a drag out of a callout unanswerable: even a perfectly repaired slice landed in a
+// document where the box had already swallowed the paragraph below it, which is why
+// callout-slice-guard.ts refused the gesture at every destination rather than repairing it.
+//
+// So the drop is performed here instead, mirroring prosemirror-view's own drop handler with the
+// clamped deletion in place of the bare one. Only when there is something to clamp: an ordinary
+// drag returns false on the first two checks and takes the normal path untouched.
+//
+// prosemirror-view's single-closed-node branch (`replaceRangeWith` when the slice is one node cut
+// open at neither end) is deliberately not reproduced. That shape comes from a NodeSelection — the
+// block drag handle's — and a NodeSelection never reaches here, because a selection spanning an
+// isolating edge is a TextSelection with at least one endpoint inside a textblock.
+function handleDropClamped(
+  view: EditorView,
+  event: DragEvent,
+  slice: Slice,
+  moved: boolean,
+): boolean {
+  // A copy-drag deletes nothing at the source, so there is no join to walk into.
+  if (!moved) return false;
+  const deletion = clampedSelectionDeletion(view.state);
+  if (!deletion) return false;
+  const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (!coords) return false;
+
+  const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
+  event.preventDefault();
+  const before = deletion.doc;
+  const pos = deletion.mapping.map(insertPos);
+  deletion.replaceRange(pos, pos, slice);
+  // Nothing could be fitted at the destination. Dispatching nothing discards the source deletion
+  // along with it, which is what leaves the document untouched — prosemirror-view bails the same way.
+  if (deletion.doc.eq(before)) return true;
+
+  // The inserted range's far end: the last step's map knows where its own content ended up.
+  let end = deletion.mapping.map(insertPos);
+  deletion.mapping.maps[deletion.mapping.maps.length - 1].forEach((_from, _to, _newFrom, newTo) => {
+    end = newTo;
+  });
+  const $pos = deletion.doc.resolve(pos);
+  const $end = deletion.doc.resolve(end);
+  // `createSelectionBetween` is asked the way upstream asks it, so prosemirror-tables still gets to
+  // turn a drop landing across cells into its own CellSelection rather than a plain text range.
+  const selection =
+    view.someProp('createSelectionBetween', (f) => f(view, $pos, $end)) ??
+    TextSelection.between($pos, $end);
+  deletion.setSelection(selection);
+  view.focus();
+  view.dispatch(deletion.setMeta('uiEvent', 'drop'));
+  return true;
+}
+
 // The deletion rule, shared by every gesture that replaces a range. Registered once for the whole
 // editor rather than per node: it reads `isolating` off the schema, so it covers the callout and
 // the code block — the two nodes that claim the boundary — without either having to ask for it.
@@ -338,6 +401,7 @@ export const IsolatingBoundary = Extension.create({
         props: {
           handleTextInput: handleTextInputClamped,
           handlePaste: handlePasteClamped,
+          handleDrop: handleDropClamped,
           handleDOMEvents: {
             cut: handleCutClamped,
             compositionstart: handleCompositionStartClamped,
