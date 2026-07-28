@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
+import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 
 // A selection crossing a callout's edge drags a slice that *contains the callout node*: select from
 // inside one down into the paragraph below and ProseMirror hands the drag
@@ -17,50 +18,12 @@ import { loadMarkdown } from './editor-authoring';
 // insertion point back inside the callout and the old position-by-position guard waved it straight
 // through. That is the reported bug.
 //
-// Same machinery as e2e/table-drop-guard.spec.ts — see that file's header for why a native HTML5
+// The native-drag machinery lives in e2e/native-drag.ts — see that file for why a native HTML5
 // drag has to be driven through the Chrome DevTools Protocol rather than page.mouse.
-
-interface DragData {
-  items: { mimeType: string; data: string }[];
-  dragOperationsMask: number;
-}
-type Point = { x: number; y: number };
 
 // prosemirror-dropcursor's indicator, under either of the two classes it toggles between (block for
 // a drop between blocks, inline for one into text).
 const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
-
-async function cdpNativeDrag(
-  page: Page,
-  from: Point,
-  to: Point,
-  whileOver?: () => Promise<void>,
-): Promise<void> {
-  const client = await page.context().newCDPSession(page);
-  try {
-    await client.send('Input.setInterceptDrags', { enabled: true });
-    // A real mouse-driven dragstart, so ProseMirror populates view.dragging (the slice that gets
-    // inserted, and the move flag) exactly as it would for a user.
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.mouse.move(from.x + 8, from.y + 8, { steps: 6 });
-    const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
-    const data: DragData = {
-      items: [{ mimeType: 'text/plain', data: selectedText }],
-      dragOperationsMask: 16, // Move
-    };
-    await page.mouse.move(to.x, to.y, { steps: 6 });
-    await client.send('Input.dispatchDragEvent', { type: 'dragEnter', x: to.x, y: to.y, data });
-    await client.send('Input.dispatchDragEvent', { type: 'dragOver', x: to.x, y: to.y, data });
-    // Hovering, before anything is committed — the only moment the drop indicator is observable.
-    if (whileOver) await whileOver();
-    await client.send('Input.dispatchDragEvent', { type: 'drop', x: to.x, y: to.y, data });
-    await page.mouse.up();
-  } finally {
-    await client.send('Input.setInterceptDrags', { enabled: false });
-    await client.detach();
-  }
-}
 
 const MD = '前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n後の段落です\n';
 const DOC =
@@ -72,16 +35,6 @@ async function openEditor(page: Page, markdown = MD, doc = DOC): Promise<void> {
   await editor.click();
   await loadMarkdown(page, markdown);
   expect(await docString(page)).toBe(doc);
-}
-
-// Drag-select between two points and leave the selection in place — dragstart only fires on a
-// mousedown inside a live selection, so these tests cannot use setTextSelection.
-async function dragSelect(page: Page, start: Point, end: Point): Promise<Point> {
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 8 });
-  await page.mouse.up();
-  return end;
 }
 
 // From inside the callout down into the paragraph below it. This shape is what puts the callout node

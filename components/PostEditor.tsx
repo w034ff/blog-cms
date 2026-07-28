@@ -24,6 +24,7 @@ import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
+import { useDragContainment } from './editor/useDragContainment';
 import type { PostFormState } from '@/app/actions/posts';
 
 // tiptap-markdown adds a `markdown` storage exposing getMarkdown(), but ships no
@@ -138,6 +139,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
 
   const { uploading, dragging, blockedMessage, uploadImages, handleImageChange } =
     useImageUpload(editorRef);
+
+  // Keep a drag that started in the editor from landing on the fields beside it (see the hook —
+  // the browser's own move deletes the dragged range out of the document).
+  useDragContainment(editorRef);
 
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.

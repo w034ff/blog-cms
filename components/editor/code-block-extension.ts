@@ -51,6 +51,26 @@ function stringAttr(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
+// The filename ends up in the ```lang:filename fence's info string, and only `[^\s`]+` survives
+// a round trip through it — the same class the input rules above capture, but the NodeView's text
+// field enforced nothing, so both failures were reachable by typing:
+//   - whitespace truncated the name at the next *load*, not at the edit. markdown-it folds only
+//     the info string's first token into the language class (```ts:a b arrives as
+//     `language-ts:a`), so updateCodeBlockDOM read the filename back as `a` and " b" was gone.
+//   - a backtick is illegal in a backtick fence's info string, so the fence stopped parsing as a
+//     fence at all: the code spilled out as literal paragraph text and an empty block was left
+//     behind.
+// Both looked correct until the post was reopened, which is what made them worth closing at the
+// field rather than at the serializer.
+//
+// Dropping those characters rather than truncating at the first one keeps the part that carries
+// the meaning — `my file.ts` becomes `myfile.ts`, not `my`. Callers write the result back into
+// the field so the correction is visible: a silent repair here would be the same
+// looks-right-until-reload shape as the bug.
+function sanitizeFilename(value: string): string {
+  return value.replace(/[\s`]+/g, '');
+}
+
 // A form id that intentionally matches no <form> element, used to orphan the NodeView's
 // header controls from PostEditor's form (see the NodeView for why).
 const DETACHED_FORM_ID = 'code-block-detached-controls';
@@ -368,7 +388,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       // serializeCodeBlock's `:filename` suffix).
       filename: {
         default: null,
-        parseHTML: (element) => element.getAttribute('data-title'),
+        // Sanitized here too, not just at the field: markdown-parsed HTML can't carry a bad
+        // filename (updateCodeBlockDOM splits it out of a class the fence already tokenized),
+        // but *pasted* HTML reaches this hook directly, and an external `<pre data-title="a b">`
+        // would otherwise store a name that breaks on the next save.
+        parseHTML: (element) => {
+          const filename = sanitizeFilename(stringAttr(element.getAttribute('data-title')));
+          return filename === '' ? null : filename;
+        },
         renderHTML: (attributes: { filename?: string | null }) => {
           const filename = stringAttr(attributes.filename);
           return filename === '' ? {} : { 'data-title': filename };
@@ -550,11 +577,15 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       });
 
       // Commit on `change` (blur/Enter), not per keystroke, so filename edits are one
-      // transaction. Whitespace breaks the ```lang:filename fence (markdown-it splits the
-      // info string on it), so trim to a single token — same limitation Zenn/Qiita have.
+      // transaction. The typed value is normalized to what the fence can actually carry (see
+      // sanitizeFilename — the same limitation Zenn/Qiita have) and written back into the field:
+      // `sync()` below only mirrors the model while the input is *unfocused*, and Enter fires
+      // `change` with focus still here, so without this the field would go on showing a name the
+      // document no longer holds.
       filenameInput.addEventListener('change', () => {
-        const trimmed = filenameInput.value.trim();
-        setAttr({ filename: trimmed === '' ? null : trimmed });
+        const filename = sanitizeFilename(filenameInput.value);
+        if (filenameInput.value !== filename) filenameInput.value = filename;
+        setAttr({ filename: filename === '' ? null : filename });
       });
 
       // Unlike the <select> (one commit per pick, so it hands focus back to the editor), a
@@ -563,6 +594,34 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       diffToggle.addEventListener('click', () => {
         setAttr({ diff: !currentNode.attrs.diff });
       });
+
+      // Content dragged out of this document must not land in the header's controls. The filename
+      // <input> is a natively droppable text control, and `stopEvent` below keeps ProseMirror out
+      // of every event over the header — so `eventBelongsToView` stops short of the view and a
+      // drop here misses ProseMirror's own drop path entirely: no `handleDrop` prop is consulted
+      // (the callout and table guards among them), the dragged range is never removed by a
+      // transaction, and Chrome is left to run its default action — which, for a move out of a
+      // contenteditable, deletes the source nodes behind ProseMirror's back. A selection spanning
+      // the code body and the prose around it meets all of that at once.
+      //
+      // Cancelling dragover takes the drop away from the input's native handling, `dropEffect =
+      // 'none'` marks it refused (which is what shows the no-drop cursor — the only feedback the
+      // gesture gets, the same role hiding the drop indicator plays for the callout guard), and
+      // `drop` is cancelled as well. All three together; the refusal was verified end to end rather
+      // than attributed to one of them.
+      //
+      // Gated on `view.dragging`, which prosemirror-view sets only while content from this
+      // document is being dragged. A file dragged in from the OS (useImageUpload's overlay), text
+      // from another application, and a drag within the field itself all leave it null and go on
+      // working normally.
+      const refuseEditorDrag = (event: DragEvent) => {
+        if (!editor.view.dragging) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+      };
+      header.addEventListener('dragenter', refuseEditorDrag);
+      header.addEventListener('dragover', refuseEditorDrag);
+      header.addEventListener('drop', refuseEditorDrag);
 
       header.appendChild(filenameInput);
       header.appendChild(select);
