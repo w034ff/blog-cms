@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { caret, docString, settle } from './editor-probe';
+import { caret, docString, markdown, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 import { cdpNativeDrag, dragSelect } from './native-drag';
 
@@ -32,6 +32,28 @@ const CALLOUT = `前の段落です
 > 囲みの中身です
 
 後の段落です`;
+
+// The same shape again with a table in the middle — the boundary the callout fix did not reach. A
+// table is the one node here with *two* isolating levels: @tiptap/extension-table marks the `table`
+// as well as each cell. The clamp took the outermost, so it ran the deletion to the table's own
+// content edge — which starts at the first row — and a Backspace from the paragraph above into a
+// body cell took the header row with it. A headerless table has no GFM pipe form, so the post then
+// saved as raw HTML. The cell is the box the endpoint is in; the table is only the frame.
+const TABLE = `前の段落です
+
+| 元A | 元B |
+| --- | --- |
+| 元セル | 元二 |
+
+後の段落です`;
+
+// The whole table as it must come back out of the serializer: a header row, a delimiter row, and
+// one body row. What the defect actually cost was this — a headerless table has no GFM pipe form,
+// so the serializer falls back to raw HTML (`<table style="min-width: 50px;">…`), losing the
+// column alignment on the public page, `<thead>`, and any chance of hand-editing the markdown.
+function pipeTable(bodyRow: string): string {
+  return `| 元A | 元B |\n| --- | --- |\n${bodyRow}`;
+}
 
 // The same shape with a fenced block in the callout's place. The fence carries a language *and* a
 // filename precisely so the upper-edge test can show they survive — `doc.toString()` prints no
@@ -717,6 +739,200 @@ test('the reported gesture — drag across the edge, press Backspace — clamps'
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("落です"))');
+});
+
+// ---------------------------------------------------------------------------
+// A table's edges
+// ---------------------------------------------------------------------------
+
+// The issue's headline gesture: select from the paragraph above into a body cell, press Backspace.
+// The header row used to go with the deletion — `table(tableRow(tableCell("ル"), tableCell("元二")))`,
+// the surviving cells demoted to `td` — and a headerless table has no pipe form, so the post saved
+// as raw HTML. Both the shape and the saved markdown are asserted: the document is the mechanism,
+// the markdown is what the defect was about.
+test('Backspace from above a table into a cell keeps the header row', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(page, TABLE, { line: '前の段落です', at: 1 }, { line: '元セル', at: 2 });
+
+  await page.keyboard.press('Backspace');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("ル")), tableCell(paragraph("元二")))), paragraph("後の段落です"))',
+    );
+  expect(await markdown(page)).toContain(pipeTable('| ル | 元二 |'));
+});
+
+// Typing reaches the same replacement through `handleTextInput`, with no key handler involved —
+// which is why this could never have been fixed by guarding a single key. The character lands at
+// the range's start, above the table.
+test('typing over a table upper edge keeps the header row too', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(page, TABLE, { line: '前の段落です', at: 1 }, { line: '元セル', at: 2 });
+
+  await page.keyboard.type('X');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前X"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("ル")), tableCell(paragraph("元二")))), paragraph("後の段落です"))',
+    );
+  expect(await markdown(page)).toContain(pipeTable('| ル | 元二 |'));
+});
+
+// The mirror, and the half the issue reported as already correct — but only because it measured the
+// *last* cell of the last row, where the old clamp's stopping point happened to sit just inside the
+// row's closing token with nothing left to swallow. Starting in the first cell instead, the middle
+// range ran from inside the row across 元二, the row's close and the table's close: the frame the
+// upper edge lost, lost from the other side. It is the same rule, so it is pinned the same way.
+test('Backspace out of a non-last cell leaves the table whole', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(page, TABLE, { line: '元セル', at: 2 }, { line: '後の段落です', at: 2 });
+
+  await page.keyboard.press('Backspace');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("元セ")), tableCell(paragraph("元二")))), paragraph("段落です"))',
+    );
+  expect(await markdown(page)).toContain(pipeTable('| 元セ | 元二 |'));
+});
+
+// The seam the clamp opens rather than closes: a selection running *out* of a cell clamps with the
+// caret back inside that cell, and finishing with baseKeymap's splitBlock opened a second paragraph
+// there — a shape a cell can hold (`paragraph+`) but the pipe form cannot, so the table would save
+// as raw HTML by a different route than the one above. A hard break instead: the same thing
+// Shift+Enter makes in a cell by hand, serialized as `<br>`, which is valid GFM and reloads as the
+// same node.
+test('Enter out of a cell makes a hard break, not a second paragraph', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(page, TABLE, { line: '元セル', at: 2 }, { line: '後の段落です', at: 2 });
+
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("元セ", hardBreak)), tableCell(paragraph("元二")))), paragraph("段落です"))',
+    );
+  // Still a pipe table, which is the whole point. The break itself writes nothing *while it is
+  // trailing* — prosemirror-markdown's hard_break serializer skips one with no content after it, the
+  // same as a Shift+Enter typed at the end of a cell — so the markdown is asserted here and again
+  // once the new line has been typed into.
+  expect(await markdown(page)).toContain(pipeTable('| 元セ | 元二 |'));
+
+  await page.keyboard.type('X');
+  expect(await docString(page)).toContain('tableCell(paragraph("元セ", hardBreak, "X"))');
+  expect(await markdown(page)).toContain(pipeTable('| 元セ<br>X | 元二 |'));
+});
+
+// The clamp stops at the depth where the endpoints are siblings — *not* at the outermost wrapper it
+// can find. A table nested in a callout says which of the two rules is running: both endpoints are
+// inside the callout, so the callout is not a boundary here (the existing "wholly inside one box"
+// specs above pin that), and the frame the range must stop outside of is the table it half-covers.
+test('a table nested in a callout clamps to the table, not the callout', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(
+    page,
+    `> [!NOTE]\n>\n> 囲みの中身です\n>\n> | 元A | 元B |\n> | --- | --- |\n> | 元セル | 元二 |`,
+    { line: '囲みの中身です', at: 2 },
+    { line: '元セル', at: 2 },
+  );
+
+  await page.keyboard.press('Backspace');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(callout(paragraph("囲み"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("ル")), tableCell(paragraph("元二"))))), paragraph)',
+    );
+});
+
+// The same defect with no table in it, and the one that says which half of the fix is doing the
+// work here: two isolating boxes on one branch, the outer one crossed by the range. The clamp used
+// to take the outermost — the callout — so the deletion ran from the *callout's* content start,
+// straight through its paragraph and the fence's own opening: the code became prose and the
+// language and filename went with it, which is the header row's fate spelled with different nodes.
+// The innermost box is the one the endpoint is actually in.
+test('a range into a code block inside a callout keeps the callout body and the fence', async ({
+  page,
+}) => {
+  await openEditor(page);
+  await selectAcross(
+    page,
+    `前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n>\n> \`\`\`ts:a.ts\n> const x = 1;\n> \`\`\``,
+    { line: '前の段落です', at: 2 },
+    { line: 'const x = 1;\n', at: 2 },
+  );
+
+  await page.keyboard.press('Backspace');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の"), callout(paragraph("囲みの中身です"), codeBlock("nst x = 1;\\n")), paragraph)',
+    );
+  await expect(page.locator('.code-block-filename')).toHaveValue('a.ts');
+  await expect(page.locator('.code-block-lang')).toHaveValue('ts');
+});
+
+// The third reproduction in the report, and the one no keymap or DOM handler sees: a *move* drag
+// deletes its source range itself, so dragging this selection anywhere left the same wreckage
+// behind at the source regardless of where it landed — which is why the gesture "looked broken at
+// the destination" when the destination was never the problem. It goes through the same clamped
+// deletion as the keys above; what is pinned here is that it reaches it at all.
+test('dragging a selection out of a table leaves the header row standing', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, TABLE);
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  const above = await editor.getByText('前の段落です').boundingBox();
+  const cell = await editor.getByText('元セル').boundingBox();
+  const below = await editor.getByText('後の段落です').boundingBox();
+  if (!above || !cell || !below) throw new Error('missing boxes');
+  const dragFrom = await dragSelect(
+    page,
+    { x: above.x + 10, y: above.y + above.height / 2 },
+    { x: cell.x + 30, y: cell.y + cell.height / 2 },
+  );
+
+  await cdpNativeDrag(page, dragFrom, { x: below.x + 40, y: below.y + below.height / 2 });
+
+  // The endpoints land by font metrics, so what the surviving cell reads is not asserted. The
+  // *source* table is, and it has to be addressed as the first one in the document: the slice
+  // carries a copy of the table to the destination, so a docString match on "a table with a header
+  // row" would find that copy and pass while the source lay in ruins. Before the fix the source's
+  // header row was gone and its cells demoted to `td` — no `th` left in it at all.
+  await expect(editor.locator('table').first().locator('th')).toHaveCount(2);
+  // And the pipe form with it: a headerless table has none, so the serializer would write that one
+  // out as raw `<table style="min-width: 50px;">…` HTML. Neither table does.
+  expect(await markdown(page)).not.toContain('<table');
+});
+
+// The same defect with no table in it, which is what says the widening is a rule rather than a
+// table patch: a code block inside a list item is isolating two levels down, so the old clamp
+// stopped inside the `listItem` and the middle range closed over the list's own open token. The
+// bullet and its text survive now, and so does the fence's language and filename.
+test('a range from above a list into a code block inside it keeps the list', async ({ page }) => {
+  await openEditor(page);
+  await selectAcross(
+    page,
+    `前の段落です\n\n- 一つ目\n\n  \`\`\`ts:a.ts\n  const x = 1;\n  \`\`\``,
+    { line: '前の段落です', at: 2 },
+    { line: 'const x = 1;\n', at: 2 },
+  );
+
+  await page.keyboard.press('Backspace');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の"), bulletList(listItem(paragraph("一つ目"), codeBlock("nst x = 1;\\n"))), paragraph)',
+    );
+  await expect(page.locator('.code-block-filename')).toHaveValue('a.ts');
 });
 
 // Enter is the one gesture whose clamp has to hand the caret back to somebody else's key binding,

@@ -2,6 +2,7 @@ import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { resolveDropTarget } from './drop-target';
 import { replaceSelectionClamped } from './isolating-boundary';
+import { dropOpenWrappers } from './slice-placement';
 
 // The rules for what a *slice* carrying a callout may do — the one repair and the one refusal —
 // kept apart from the node definition in callout-extension.ts.
@@ -34,7 +35,9 @@ const CALLOUT_HOSTILE_ANCESTORS = new Set([CALLOUT_NAME, 'blockquote']);
 //
 // This is the *whole*-callout half of the problem only. A selection that merely crosses a callout's
 // edge also arrives carrying a box the user never meant to move; that one is settled separately, by
-// halfSelectedEdges below.
+// halfSelectedEdges below. A selection made *wholly inside* a callout carries the box too, and is
+// settled before this is ever asked — dropOpenWrappers takes it off on the way in (see
+// slice-placement.ts), so by here every callout in the slice is one that would really be placed.
 //
 // Guarding the gesture rather than the schema is deliberate. The node's `content: 'block+'` is what
 // lets a nested callout *load*: `> [!NOTE]` inside another quote level is legal markdown that an
@@ -67,8 +70,8 @@ export function wouldNestCallout($pos: ResolvedPos, slice: Slice): boolean {
 // so a callout at the first (or last) child position with a non-zero depth on that side was entered
 // mid-way by the selection. What makes it *materialise* is being cut on one side only: the other
 // side is a real node boundary, so ProseMirror has to keep the box to close it. A callout open on
-// both sides — the whole slice for a selection made wholly inside one — has no closed edge to
-// preserve, fits in as plain text wherever it lands, and is deliberately left alone. So is a callout
+// both sides — the whole slice for a selection made wholly inside one — is not this rule's business:
+// dropOpenWrappers has already taken that wrapper off by the time this runs. Neither is a callout
 // the selection covers end-to-end, including the block drag handle's NodeSelection (openStart =
 // openEnd = 0, see block-drag-handle.ts): that one really is a box being moved, and it is
 // wouldNestCallout above that decides where it may go.
@@ -99,6 +102,16 @@ function halfSelectedEdges(slice: Slice): { start: boolean; end: boolean } {
 // Each half-selected edge is replaced by that callout's own children, which drops exactly the one
 // level of depth the box occupied. Everything halfSelectedEdges leaves alone is left alone: a whole
 // callout in the middle of the slice, or one cut on both sides, still lands as it did.
+// Everything a slice needs before anybody judges *where* it may go: the half-selected box taken
+// off, then the wrappers that were never being moved at all (slice-placement.ts). Composed here
+// rather than registered as a second `transformPasted` prop — prosemirror-view runs every one of
+// them, so both would happen either way, but the order would then follow plugin order, and these
+// two are not commutative: unwrapping can leave a second child, which is exactly the shape
+// dropOpenWrappers must not step into.
+export function repairIncomingSlice(slice: Slice): Slice {
+  return dropOpenWrappers(unwrapHalfSelectedCallouts(slice));
+}
+
 export function unwrapHalfSelectedCallouts(slice: Slice): Slice {
   const { start, end } = halfSelectedEdges(slice);
   if (!start && !end) return slice;
@@ -180,6 +193,11 @@ function flattenClosedCallouts(slice: Slice): Slice {
 
 const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
 
+// Why the drop below was refused. Named for the destination first, like the table cell's refusal
+// and the image ones — the author needs to know *where* the content may not go, since the content
+// is the thing they were holding.
+const CALLOUT_NESTING_BLOCKED = 'コールアウトは引用やコールアウトの中に入れられません';
+
 // Two rules, and each now sits on the hook that matches its shape.
 //
 // The half-selected repair is position-independent — half a box is not a box wherever it lands — so
@@ -192,11 +210,18 @@ const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
 // The nesting rule *is* about position — it asks where the slice is going — so it stays split
 // across the two handlers, which reach the destination differently and answer differently: a paste
 // keeps the text at the caret, a drop is simply refused.
-export function calloutSliceGuard(): Plugin {
+//
+// Which is also the rule for the notice, and why only one of the two raises it: a refused gesture
+// leaves the document *and* the clipboard exactly as they were, so without a message the author is
+// told nothing at all. The paste is not refused — the box is dropped and its contents land where
+// they were asked for — so it needs no explanation beyond what is on screen. Same principle as the
+// table cell's two refusals, where the position one stays silent because the drop indicator has
+// already hidden itself by the time the mouse comes up.
+export function calloutSliceGuard(notify: (message: string) => void): Plugin {
   return new Plugin({
     key: calloutSliceGuardKey,
     props: {
-      transformPasted: unwrapHalfSelectedCallouts,
+      transformPasted: repairIncomingSlice,
       handlePaste(view, _event, slice) {
         const { $from } = view.state.selection;
         // A whole box in the slice can't go into a callout or a quote — the same shape a drop is
@@ -227,6 +252,7 @@ export function calloutSliceGuard(): Plugin {
         // re-read from view.dragging (stale since dragstart).
         if (!wouldNestCallout(resolveDropTarget(view, coords.pos, slice, moved), slice))
           return false;
+        notify(CALLOUT_NESTING_BLOCKED);
         // Returning true makes ProseMirror preventDefault and skip the drop entirely, so the
         // dragged text stays where it was instead of being deleted from its source.
         event.preventDefault();

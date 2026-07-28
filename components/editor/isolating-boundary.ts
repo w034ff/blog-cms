@@ -2,6 +2,8 @@ import { Extension } from '@tiptap/core';
 import type { CommandProps, Editor } from '@tiptap/core';
 import type { Node as PMNode, NodeType, ResolvedPos, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { isInTable } from '@tiptap/pm/tables';
+import { tableDropRefusal } from './table-cell-rules';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
@@ -95,22 +97,30 @@ export function stepIntoNextIsolating(
 
 type ClampedRange = { from: number; to: number };
 
-// The outermost ancestor of `$pos` that is isolating and does *not* also contain `other` — the
-// edge a replacement from `$pos` to `other` would otherwise close over. Null when there is none,
-// which is the common case and the one that must stay on ProseMirror's own path.
+// The *innermost* ancestor of `$pos` that is isolating and does not also contain `other` — the box
+// the endpoint really sits in, and so the one whose content edge a deletion may run to. Null when
+// there is none, which is the common case and the one that must stay on ProseMirror's own path.
 //
-// Shallowest-first, and `continue` rather than stop on an isolating ancestor that *does* contain
-// `other`: a selection made wholly inside one callout has that callout as an ancestor of both
-// endpoints and needs no clamping at all, but a code block nested inside it still does if only one
-// endpoint is in the code block. Skipping past the containing box and carrying on inward is what
-// finds that inner edge.
+// `continue` rather than stop on an isolating ancestor that *does* contain `other`: a selection made
+// wholly inside one callout has that callout as an ancestor of both endpoints and needs no clamping
+// at all, but a code block nested inside it still does if only one endpoint is in the code block.
+// Skipping past the containing box and carrying on inward is what finds that inner edge.
+//
+// Innermost rather than outermost, which is where the table bug was. A callout and a code block are
+// each the only isolating node on their branch, so the distinction never showed; a table has two —
+// @tiptap/extension-table marks `table` isolating as well as the cells — and taking the outer one
+// made the deletion run to the *table's* content edge, i.e. from the first row. Selecting from the
+// paragraph above into a body cell and pressing Backspace therefore deleted the header row, and a
+// headerless table has no GFM pipe form, so the post saved as raw HTML (issue #7). The cell is the
+// box that endpoint is in; the table is only the frame around it, which piece 2 below stops outside.
 function isolatingCutDepth($pos: ResolvedPos, other: number): number | null {
+  let found: number | null = null;
   for (let depth = 1; depth <= $pos.depth; depth += 1) {
     if (!$pos.node(depth).type.spec.isolating) continue;
     if (other >= $pos.start(depth) && other <= $pos.end(depth)) continue;
-    return depth;
+    found = depth;
   }
-  return null;
+  return found;
 }
 
 // Split [from, to] into the ranges a replacement may delete without joining across an isolating
@@ -118,9 +128,10 @@ function isolatingCutDepth($pos: ResolvedPos, other: number): number | null {
 // then leave the gesture to ProseMirror, which already does the right thing).
 //
 // Up to three pieces, and which of them exist depends on where the edges are:
-//   1. inside the isolating node the range *starts* in, from `from` down to that node's content end;
+//   1. inside the innermost isolating node the range *starts* in, from `from` down to that node's
+//      content end;
 //   2. everything between the two boxes, whole nodes only;
-//   3. inside the isolating node the range *ends* in, from its content start up to `to`.
+//   3. inside the innermost isolating node the range *ends* in, from its content start up to `to`.
 // Each piece is handed to `tr.delete` unchanged, so ProseMirror's own fitting still decides what
 // happens *within* a piece — only the frontier between them is taken away from it.
 //
@@ -129,6 +140,14 @@ function isolatingCutDepth($pos: ResolvedPos, other: number): number | null {
 // other), which is the shape that could plausibly have re-opened the box to absorb the leftover
 // text and reproduced the very bug. It does not — the fitter closes the surviving textblock in
 // place. Both directions are covered by the boundary specs.
+//
+// "Whole nodes only" is a claim about piece 2's *ends*, and it is what frameDepth below states: the
+// depth at which the two endpoints are siblings, so both ends are boundaries between one node's
+// children rather than positions part-way inside one. For a top-level box (callout, code block,
+// table) that is the box's own edge and the innermost cut depth would have said the same thing. It
+// stops saying the same thing as soon as a box is wrapped in something that is *not* isolating — a
+// code block inside a list item is the case in the specs — where cutting at the box left piece 2's
+// far end inside the `listItem`, and the deletion closed over the list's own open token.
 export function clampedDeleteRanges(doc: PMNode, from: number, to: number): ClampedRange[] | null {
   const $from = doc.resolve(from);
   const $to = doc.resolve(to);
@@ -136,9 +155,16 @@ export function clampedDeleteRanges(doc: PMNode, from: number, to: number): Clam
   const endDepth = isolatingCutDepth($to, from);
   if (startDepth === null && endDepth === null) return null;
 
+  // One below the deepest ancestor the two endpoints share, so a position taken here is a boundary
+  // *between* that ancestor's children. Never deeper than either cut depth, and so never inside a
+  // box the clamp is protecting: isolatingCutDepth skips every ancestor that contains the other
+  // endpoint, which is the same containment test sharedDepth answers. (Pieces 1 and 3 run to the
+  // *innermost* box's content edge instead — the two depths are what keep a table's frame standing
+  // while still deleting inside the one cell the range reached.)
+  const frameDepth = $from.sharedDepth(to) + 1;
   const ranges: ClampedRange[] = [];
-  const middleFrom = startDepth === null ? from : $from.after(startDepth);
-  const middleTo = endDepth === null ? to : $to.before(endDepth);
+  const middleFrom = startDepth === null ? from : $from.after(frameDepth);
+  const middleTo = endDepth === null ? to : $to.before(frameDepth);
   if (startDepth !== null) ranges.push({ from, to: $from.end(startDepth) });
   // Empty whenever the two boxes are adjacent, or the range only ever crossed one edge and
   // nothing outside it was selected.
@@ -328,9 +354,18 @@ function handleDropClamped(
   if (!coords) return false;
 
   const insertPos = dropPoint(view.state.doc, coords.pos, slice) ?? coords.pos;
-  event.preventDefault();
   const before = deletion.doc;
   const pos = deletion.mapping.map(insertPos);
+  // Performing the drop here takes it away from every handleDrop below this plugin, and one of them
+  // refuses drops into a table. So ask its question before claiming the gesture and hand the event
+  // back when the answer is yes: tableDropGuard is next and refuses it properly, notice included.
+  // `deletion.doc.resolve(pos)` is what resolveDropTarget would compute — dropPoint's target mapped
+  // through this same clamped deletion — so both plugins judge the one document the drop leaves
+  // behind. Without this the guard was reachable only for drags that crossed no isolating edge,
+  // which is to say a code block or a callout could be dragged into a cell and split the table
+  // while the identical paste was refused.
+  if (tableDropRefusal(deletion.doc.resolve(pos), slice)) return false;
+  event.preventDefault();
   deletion.replaceRange(pos, pos, slice);
   // Nothing could be fitted at the destination. Dispatching nothing discards the source deletion
   // along with it, which is what leaves the document untouched — prosemirror-view bails the same way.
@@ -389,7 +424,16 @@ export const IsolatingBoundary = Extension.create({
       return editor
         .chain()
         .command(deleteClampedSelection)
-        .first(({ commands }) => [
+        .first(({ commands, state }) => [
+          // A table cell is `paragraph+`, but a *second* paragraph in one has no GFM pipe form, so
+          // splitting there costs the whole table its pipe form and it saves as raw HTML — the
+          // structure survives and the storage format doesn't. A selection running out of a cell
+          // clamps with the caret back inside it, which is the one Enter that lands there. A hard
+          // break is what Shift+Enter already makes in a cell and what the pipe-form repair turns a
+          // pasted second paragraph into (see table-extensions.ts), so the three agree. A plain
+          // Enter at a caret in a cell never reaches this chain — the clamp declines an empty
+          // selection — and still splits.
+          () => isInTable(state) && commands.setHardBreak(),
           // ListItem's own Enter, ahead of baseKeymap's chain rather than in it: a selection
           // running from inside a list item into a box clamps with the caret back in that item, and
           // splitBlock there opens a second paragraph inside the same bullet instead of a new one.

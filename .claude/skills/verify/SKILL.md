@@ -22,13 +22,18 @@ Under the hood (`playwright.config.ts`):
 
 1. `e2e/prepare-db.mts` copies `data/blog.db` → `e2e/.tmp/blog.e2e.db` (WAL-safe
    `better-sqlite3` backup) and upserts a test admin. **The real DB is never touched.**
-2. A second `next dev` boots on **port 3100** in an isolated build dir
-   (`NEXT_DIST_DIR=.next-e2e`) so it doesn't collide with the dev server's
-   `<distDir>/dev/lock`, with a test `SESSION_SECRET` and `BLOG_DB_PATH`.
+2. A second `next dev` boots on **port 3100** (override with `E2E_PORT`) in an
+   isolated build dir (`NEXT_DIST_DIR=.next-e2e`) so it doesn't collide with the
+   dev server's `<distDir>/dev/lock`, with a test `SESSION_SECRET` and `BLOG_DB_PATH`.
 3. The `setup` project logs in via the real `/login` form once and saves the
    session to `e2e/.auth/admin.json`; the spec projects reuse it.
 
 Prerequisite: `data/blog.db` must exist (run `npm run db:seed` on a fresh clone).
+
+Working in a git worktree: everything above is cwd-relative and so already private
+to it — except the port. Set `E2E_PORT` (e.g. 3101) in that worktree's
+`.claude/settings.local.json` before running, or the second run fails to bind
+(`reuseExistingServer: false`, so it never silently tests the other tree's server).
 
 ## What it covers (`e2e/*.spec.ts`)
 

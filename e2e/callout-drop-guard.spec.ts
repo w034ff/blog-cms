@@ -32,6 +32,11 @@ import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 // a drop between blocks, inline for one into text).
 const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
 
+// A refused drop leaves the document and the clipboard exactly as they were, so the notice is the
+// whole of the feedback — the same reason the table cell's refusal raises one, and the reason the
+// *repaired* drops below must raise none: those land, and the screen says so.
+const NOTICE = 'コールアウトは引用やコールアウトの中に入れられません';
+
 const MD = '前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n後の段落です\n';
 const DOC =
   'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))';
@@ -132,6 +137,9 @@ for (const spot of ['text', 'topPadding', 'bottomPadding', 'above', 'below'] as 
     await expect(editor.locator('.markdown-alert')).toHaveCount(1);
     expect(await docString(page)).toBe(LANDED[spot]);
     expect(await documentCharacters(page)).toBe(before);
+    // Repaired, not refused: the text landed, so there is nothing to explain. The notice belongs to
+    // the two refusals below and must not leak onto the gestures that succeed.
+    await expect(page.getByRole('status')).toHaveCount(0);
   });
 }
 
@@ -159,6 +167,84 @@ test('text dragged from inside a callout out to a paragraph stays text', async (
   expect(after, after).not.toBe(DOC);
   expect(after, after).not.toContain('callout(callout');
 });
+
+// The same slice, aimed at the one destination the rule *does* police. It carries a callout node —
+// so a guard reading the slice's raw content refuses it — but opened on both sides, which means
+// ProseMirror places the text and never the box. Refusing it was backwards in the most visible way:
+// the selection that crosses the callout's edge, which really does carry a box, lands here fine
+// (the repair flattens it first), while this harmless one was turned away. placedContent is what
+// tells the two apart — see components/editor/slice-placement.ts.
+test('text dragged from inside a callout into a quote still lands', async ({ page }) => {
+  await openEditor(page, QUOTE_MD, QUOTE_DOC);
+  const editor = page.locator('.ProseMirror');
+
+  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
+  const quote = await editor.locator('blockquote:not(.markdown-alert) p').first().boundingBox();
+  if (!inside || !quote) throw new Error('missing boxes');
+  const dragFrom = await dragSelect(
+    page,
+    { x: inside.x + 4, y: inside.y + inside.height / 2 },
+    { x: inside.x + 40, y: inside.y + inside.height / 2 },
+  );
+
+  await cdpNativeDrag(
+    page,
+    dragFrom,
+    { x: quote.x + 20, y: quote.y + quote.height / 2 },
+    async () => expect(page.locator(DROP_CURSOR)).toHaveCount(1),
+  );
+
+  const after = await docString(page);
+  expect(after, after).not.toBe(QUOTE_DOC);
+  // Text, not a box: no callout inside the quote, and the one it came from is still the only one.
+  await expect(editor.locator('blockquote .markdown-alert')).toHaveCount(0);
+  await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+// The same two slices again, aimed at a *block* position — the horizontal drop indicator, between
+// blocks rather than into text. This is where "a box opened on both sides never materialises" stops
+// being true: ProseMirror has to close what is open, so the wrapper came back as a real node and the
+// moved text arrived inside a box nobody asked to move. Dropped into a quote it was a callout nested
+// in a quote — the shape wouldNestCallout exists to prevent, reached from underneath it.
+//
+// Both directions are here because the fix is one rule and neither node is special: the wrapper
+// levels that were open at both ends are taken off as the slice enters (slice-placement.ts), so what
+// lands is a paragraph, at a block position or in text alike.
+for (const [name, source, target, hostLocator] of [
+  ['a callout', '.markdown-alert p', 'blockquote:not(.markdown-alert)', 'blockquote'],
+  ['a quote', 'blockquote:not(.markdown-alert) p', '.markdown-alert', '.markdown-alert'],
+] as const) {
+  test(`text dragged out of ${name} onto a block edge lands as a paragraph`, async ({ page }) => {
+    await openEditor(page, QUOTE_MD, QUOTE_DOC);
+    const editor = page.locator('.ProseMirror');
+
+    const from = await editor.locator(source).last().boundingBox();
+    const host = await editor.locator(target).first().boundingBox();
+    if (!from || !host) throw new Error('missing boxes');
+    const dragFrom = await dragSelect(
+      page,
+      { x: from.x + 4, y: from.y + from.height / 2 },
+      { x: from.x + 50, y: from.y + from.height / 2 },
+    );
+
+    // The host's own top padding: inside it, above its first block — a block position, which the
+    // indicator confirms by drawing its horizontal form rather than the inline caret.
+    await cdpNativeDrag(page, dragFrom, { x: host.x + host.width / 2, y: host.y + 2 }, async () =>
+      expect(page.locator('.prosemirror-dropcursor-block')).toHaveCount(1),
+    );
+
+    // One callout and one quote, still: no box came along, and none was nested in the other.
+    await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+    await expect(editor.locator('blockquote:not(.markdown-alert)')).toHaveCount(1);
+    await expect(editor.locator(`${hostLocator} .markdown-alert`)).toHaveCount(0);
+    await expect(editor.locator(`${hostLocator} blockquote`)).toHaveCount(0);
+    // It landed, as a paragraph of its own inside the host.
+    const after = await docString(page);
+    expect(after, after).not.toBe(QUOTE_DOC);
+    await expect(page.getByRole('status')).toHaveCount(0);
+  });
+}
 
 // The guard must not swallow ordinary drops. Dragging plain text (a slice with no callout in it at
 // all) into a callout is a normal edit and still lands.
@@ -221,6 +307,7 @@ test('a whole callout carried in the slice is still refused inside a callout', a
 
   await expect(editor.locator('.markdown-alert .markdown-alert')).toHaveCount(0);
   expect(await docString(page)).toBe(TWO_DOC);
+  await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
 // The second container a callout may not be placed in, and the same refusal. `> > [!NOTE]` stores
@@ -254,4 +341,5 @@ test('a whole callout carried in the slice is refused inside a blockquote', asyn
 
   await expect(editor.locator('blockquote .markdown-alert')).toHaveCount(0);
   expect(await docString(page)).toBe(QUOTE_DOC);
+  await expect(page.getByRole('status')).toHaveText(NOTICE);
 });

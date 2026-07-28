@@ -245,8 +245,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
-      // and the public render pipeline are unchanged.
-      Callout,
+      // and the public render pipeline are unchanged. `onBlocked` is the same reporter the table
+      // guards use: a drop carrying a callout into a quote or another callout is refused, and a
+      // refused gesture changes nothing, so the notice is the whole of the feedback.
+      Callout.configure({ onBlocked: showNotice }),
       // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
       // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
       Blockquote,

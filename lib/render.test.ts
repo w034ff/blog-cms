@@ -77,3 +77,23 @@ describe('renderMdxToHtml — code block filename', () => {
     expect(html).not.toContain('data-rehype-pretty-code-title');
   });
 });
+
+// A GFM pipe table is what the editor stores whenever it can (components/editor/table-extensions.ts);
+// the raw-HTML fallback it drops to otherwise loses column alignment on this path, because sanitize
+// strips the inline `text-align` the fallback carries. Both halves are pinned here: the alignment a
+// pipe table keeps, and the `<br>` a cell needs to hold two lines — the shape tablePasteRepair
+// produces when a multi-paragraph paste lands in a cell, and the one Shift+Enter makes by hand.
+describe('renderMdxToHtml — GFM pipe tables', () => {
+  it('keeps a column alignment as an align attribute', async () => {
+    const html = await renderMdxToHtml('| A | B |\n| :-: | --- |\n| x | y |\n');
+    expect(html).toContain('<th align="center">A</th>');
+    expect(html).toContain('<td align="center">x</td>');
+    // The semantics the fallback has no way to express.
+    expect(html).toContain('<thead>');
+  });
+
+  it('keeps a <br> inside a cell', async () => {
+    const html = await renderMdxToHtml('| A | B |\n| --- | --- |\n| x<br>y | z |\n');
+    expect(html).toMatch(/<td>x<br\s*\/?>y<\/td>/);
+  });
+});
