@@ -180,6 +180,11 @@ function flattenClosedCallouts(slice: Slice): Slice {
 
 const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
 
+// Why the drop below was refused. Named for the destination first, like the table cell's refusal
+// and the image ones — the author needs to know *where* the content may not go, since the content
+// is the thing they were holding.
+const CALLOUT_NESTING_BLOCKED = 'コールアウトは引用やコールアウトの中に入れられません';
+
 // Two rules, and each now sits on the hook that matches its shape.
 //
 // The half-selected repair is position-independent — half a box is not a box wherever it lands — so
@@ -192,7 +197,14 @@ const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
 // The nesting rule *is* about position — it asks where the slice is going — so it stays split
 // across the two handlers, which reach the destination differently and answer differently: a paste
 // keeps the text at the caret, a drop is simply refused.
-export function calloutSliceGuard(): Plugin {
+//
+// Which is also the rule for the notice, and why only one of the two raises it: a refused gesture
+// leaves the document *and* the clipboard exactly as they were, so without a message the author is
+// told nothing at all. The paste is not refused — the box is dropped and its contents land where
+// they were asked for — so it needs no explanation beyond what is on screen. Same principle as the
+// table cell's two refusals, where the position one stays silent because the drop indicator has
+// already hidden itself by the time the mouse comes up.
+export function calloutSliceGuard(notify: (message: string) => void): Plugin {
   return new Plugin({
     key: calloutSliceGuardKey,
     props: {
@@ -227,6 +239,7 @@ export function calloutSliceGuard(): Plugin {
         // re-read from view.dragging (stale since dragstart).
         if (!wouldNestCallout(resolveDropTarget(view, coords.pos, slice, moved), slice))
           return false;
+        notify(CALLOUT_NESTING_BLOCKED);
         // Returning true makes ProseMirror preventDefault and skip the drop entirely, so the
         // dragged text stays where it was instead of being deleted from its source.
         event.preventDefault();

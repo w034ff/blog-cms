@@ -194,7 +194,14 @@ function exitCalloutOnEmptyEnter(
   return true;
 }
 
-export const Callout = TiptapNode.create({
+// The refusal reporter the slice guard needs, declared as a type (rather than left inferred) so
+// `Callout.configure({ onBlocked })` typechecks at the call site in PostEditor — the same shape
+// MarkdownTable takes, and the same single notice they both write to (useEditorNotice).
+export type CalloutOptions = {
+  onBlocked: (message: string) => void;
+};
+
+export const Callout = TiptapNode.create<CalloutOptions>({
   name: CALLOUT_NAME,
   group: 'block',
   content: 'block+',
@@ -290,10 +297,16 @@ export const Callout = TiptapNode.create({
     };
   },
 
+  addOptions(): CalloutOptions {
+    // Defaults to a no-op so the extension stays usable — and testable — without the host wiring
+    // one up; PostEditor supplies the real reporter.
+    return { onBlocked: () => {} };
+  },
+
   // Keep dropped and pasted slices from carrying a callout into a callout, or building one where
   // nobody asked for it (see callout-slice-guard.ts).
   addProseMirrorPlugins() {
-    return [calloutSliceGuard()];
+    return [calloutSliceGuard(this.options.onBlocked)];
   },
 
   addCommands() {

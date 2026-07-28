@@ -32,6 +32,11 @@ import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 // a drop between blocks, inline for one into text).
 const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
 
+// A refused drop leaves the document and the clipboard exactly as they were, so the notice is the
+// whole of the feedback — the same reason the table cell's refusal raises one, and the reason the
+// *repaired* drops below must raise none: those land, and the screen says so.
+const NOTICE = 'コールアウトは引用やコールアウトの中に入れられません';
+
 const MD = '前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n後の段落です\n';
 const DOC =
   'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))';
@@ -132,6 +137,9 @@ for (const spot of ['text', 'topPadding', 'bottomPadding', 'above', 'below'] as 
     await expect(editor.locator('.markdown-alert')).toHaveCount(1);
     expect(await docString(page)).toBe(LANDED[spot]);
     expect(await documentCharacters(page)).toBe(before);
+    // Repaired, not refused: the text landed, so there is nothing to explain. The notice belongs to
+    // the two refusals below and must not leak onto the gestures that succeed.
+    await expect(page.getByRole('status')).toHaveCount(0);
   });
 }
 
@@ -221,6 +229,7 @@ test('a whole callout carried in the slice is still refused inside a callout', a
 
   await expect(editor.locator('.markdown-alert .markdown-alert')).toHaveCount(0);
   expect(await docString(page)).toBe(TWO_DOC);
+  await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
 // The second container a callout may not be placed in, and the same refusal. `> > [!NOTE]` stores
@@ -254,4 +263,5 @@ test('a whole callout carried in the slice is refused inside a blockquote', asyn
 
   await expect(editor.locator('blockquote .markdown-alert')).toHaveCount(0);
   expect(await docString(page)).toBe(QUOTE_DOC);
+  await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
