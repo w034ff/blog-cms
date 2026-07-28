@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { docString } from './editor-probe';
 
 // Drives the real editor: the "強調" toolbar button / Mod-Shift-E shortcut toggle the
 // accentEmphasis mark (bold + red accent as one), and it round-trips as raw
@@ -75,3 +76,55 @@ for (const [command, mark] of [
     expect(body).toBe('xxxxx<span class="accent-emphasis">aaaaaaaaaaaa</span>yyyyy');
   });
 }
+
+// Mod-Shift-B (the shortcut the 引用 toolbar button advertises) used to apply *bold* instead:
+// @tiptap/extension-bold registers `Mod-b` and `Mod-B`, and prosemirror-keymap's second lookup
+// retries the pressed name with Shift stripped — so `Ctrl-B` matched bold before blockquote's own
+// keymap was ever asked (bold sits later in PostEditor's extensions array, which ExtensionManager
+// reverses). guarded-toggle-marks.ts drops `Mod-B`; the reasoning lives there. These three pin the
+// keymap routes that reasoning depends on — the bold ones because dropping a bold binding must not
+// cost bold anything, the blockquote one because it is the behaviour being bought.
+test('Mod-B is free for blockquote without costing bold its own shortcut', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+
+  // 1. Plain Ctrl+B still bolds. It matches `Ctrl-b` at the first lookup and never reaches the
+  //    keyCode fallback the other two routes below depend on.
+  await page.keyboard.type('太字にする');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Control+b');
+  expect(await docString(page)).toContain('bold("太字にする")');
+  await page.keyboard.press('Control+b');
+  expect(await docString(page)).not.toContain('bold(');
+
+  // 2. Ctrl+B with Caps Lock on — `key: "B"` with shiftKey *false*, the shape that made `Mod-B`
+  //    look load-bearing. No Playwright keyboard call produces it (an uppercase key always sets
+  //    shiftKey), so drive CDP directly; modifiers 2 = Ctrl alone. Bold survives here through the
+  //    keyCode fallback: base[66] is "b", which differs from "B", so the lookup retries as `Ctrl-b`.
+  const cdp = await page.context().newCDPSession(page);
+  for (const type of ['keyDown', 'keyUp'] as const) {
+    await cdp.send('Input.dispatchKeyEvent', {
+      type,
+      key: 'B',
+      code: 'KeyB',
+      windowsVirtualKeyCode: 66,
+      nativeVirtualKeyCode: 66,
+      modifiers: 2,
+    });
+  }
+  expect(await docString(page)).toContain('bold("太字にする")');
+  await page.keyboard.press('Control+b');
+
+  // 3. And what the removal buys: Ctrl+Shift+B reaches blockquote instead of applying bold.
+  //
+  //    The chord is spelled with an uppercase B on purpose. Playwright sends `Control+Shift+b`
+  //    with `key: "b"` and shiftKey true — a combination a physical keyboard never produces, and
+  //    one that still lands on bold, because stripping Shift from "b" gives `Ctrl-b` outright.
+  //    Only the uppercase spelling produces the real `key: "B"`.
+  await page.keyboard.press('Control+Shift+B');
+  const after = await docString(page);
+  expect(after).toContain('blockquote(');
+  expect(after).not.toContain('bold(');
+});
