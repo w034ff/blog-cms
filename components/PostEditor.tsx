@@ -227,9 +227,15 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       ParagraphTableCell,
       ParagraphTableHeader,
       DropCursorGuard,
-      // Keeps a ranged edit (Backspace/Delete over a selection, or typing over one) from closing
-      // over a callout's or code block's edge — `isolating` only guards where a slice may be
-      // *placed*, not what a replacement joins. See isolating-boundary.ts.
+      // Keeps a ranged edit (Backspace/Delete over a selection, typing or pasting over one) from
+      // closing over a callout's or code block's edge — `isolating` only guards where a slice may
+      // be *placed*, not what a replacement joins. See isolating-boundary.ts.
+      //
+      // Its position here is load-bearing, in both directions. ExtensionManager reverses this array
+      // before gathering plugins, so a later entry is asked first: it must stay *above* Callout, so
+      // that guard's handlePaste still gets a callout-carrying slice first (handlePaste is
+      // first-wins), and it must stay in this array at all, so its keys beat the core Keymap
+      // extension's baseKeymap deleteSelection.
       IsolatingBoundary,
       // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
       // the block, so a quote/fence right after an image isn't glued onto the image's line —

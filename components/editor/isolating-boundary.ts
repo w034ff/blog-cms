@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import type { CommandProps, Editor } from '@tiptap/core';
-import type { Node as PMNode, NodeType, ResolvedPos } from '@tiptap/pm/model';
+import type { Node as PMNode, NodeType, ResolvedPos, Slice } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
@@ -185,6 +185,25 @@ export function deleteClampedSelection({ state, tr, dispatch }: CommandProps): b
   return true;
 }
 
+// The same deletion as a standalone transaction, for the gestures that reach it from a DOM event
+// rather than a command — null when the selection crosses no isolating edge. The caret is left
+// where the selection started, so callers that go on to insert something can do so at `from`.
+function clampedSelectionDeletion(state: EditorState): Transaction | null {
+  const ranges = clampedSelectionRanges(state);
+  if (!ranges) return null;
+  const tr = deleteClamped(state.tr, ranges);
+  return tr.setSelection(TextSelection.near(tr.doc.resolve(state.selection.from)));
+}
+
+// Put `slice` where the current selection is, clamped to any isolating edge that selection spans.
+// Exported because the paste path has two claimants: the callout guard repairs the *slice* (see
+// callout-slice-guard.ts) and then needs this to place it, while the plugin below catches every
+// paste the callout guard passed on. Both end at the same deletion rule, which is the point.
+export function replaceSelectionClamped(state: EditorState, slice: Slice): Transaction {
+  const tr = clampedSelectionDeletion(state);
+  return (tr ?? state.tr).replaceSelection(slice);
+}
+
 const isolatingBoundaryKey = new PluginKey('isolatingBoundary');
 
 // Typing over a boundary-spanning selection. `handleTextInput` is handed the range the input is
@@ -213,22 +232,63 @@ function handleCutClamped(view: EditorView, event: Event): boolean {
   const { clipboardData } = event as ClipboardEvent;
   if (!clipboardData) return false;
   const { selection } = view.state;
-  const ranges = clampedSelectionRanges(view.state);
-  if (!ranges) return false;
+  const tr = clampedSelectionDeletion(view.state);
+  if (!tr) return false;
   const { dom, text } = view.serializeForClipboard(selection.content());
   event.preventDefault();
   clipboardData.clearData();
   clipboardData.setData('text/html', dom.innerHTML);
   clipboardData.setData('text/plain', text);
-  const tr = deleteClamped(view.state.tr, ranges);
-  tr.setSelection(TextSelection.near(tr.doc.resolve(selection.from)));
   view.dispatch(tr.scrollIntoView().setMeta('uiEvent', 'cut'));
+  return true;
+}
+
+// IME, which is the typing path on a Japanese-language site rather than an exotic one. A
+// composition never reaches `handleTextInput`: the browser edits the DOM itself and ProseMirror
+// reads the result back at composition end, so a commit over a boundary-spanning selection
+// reproduced the corruption with the clamp above never consulted.
+//
+// The one place to intervene is before the browser removes the selected text. `compositionstart`
+// fires first, so the clamped deletion happens there and the composition then starts on a collapsed
+// caret — which is what the gesture meant anyway, since a composition always replaces the selection
+// it began over. Returning false deliberately: prosemirror-view's own compositionstart handler must
+// still run, and it now runs against the collapsed selection.
+function handleCompositionStartClamped(view: EditorView): boolean {
+  const tr = clampedSelectionDeletion(view.state);
+  if (tr) view.dispatch(tr);
+  return false;
+}
+
+// Paste replaces the selected range like everything else here, and Ctrl+V reached the corruption as
+// easily as Backspace did. This catches the pastes callout-slice-guard.ts passed on (a code block's
+// edge, or any slice needing no callout repair); the ones it handles go through the same clamp from
+// its own handler, since `someProp` stops at the first plugin to return true and only one of the two
+// can run. See the ordering note on this extension's `priority`.
+function handlePasteClamped(view: EditorView, _event: ClipboardEvent, slice: Slice): boolean {
+  if (!clampedSelectionRanges(view.state)) return false;
+  view.dispatch(
+    replaceSelectionClamped(view.state, slice)
+      .scrollIntoView()
+      .setMeta('paste', true)
+      .setMeta('uiEvent', 'paste'),
+  );
   return true;
 }
 
 // The deletion rule, shared by every gesture that replaces a range. Registered once for the whole
 // editor rather than per node: it reads `isolating` off the schema, so it covers the callout and
 // the code block — the two nodes that claim the boundary — without either having to ask for it.
+//
+// Left at the default priority. Both orderings it depends on come from where it sits in
+// PostEditor's extensions array (ExtensionManager reverses that array before gathering plugins, so
+// a *later* entry is asked *first*), and both are pinned by specs:
+//   • its keys must beat the core Keymap extension's baseKeymap, or `deleteSelection` handles the
+//     Backspace first and the clamp never runs. Core extensions are registered ahead of everything
+//     in the array, so any entry in it wins — but a lowered `priority` would sort this back behind
+//     them, which is measurably the unfixed behaviour.
+//   • the callout guard's `handlePaste` must be asked first, so a slice carrying a half-selected
+//     callout is still repaired before it is placed (`someProp` stops at the first handler to
+//     return true). That holds because `Callout` is registered *after* this extension.
 export const IsolatingBoundary = Extension.create({
   name: 'isolatingBoundary',
 
@@ -277,7 +337,11 @@ export const IsolatingBoundary = Extension.create({
         key: isolatingBoundaryKey,
         props: {
           handleTextInput: handleTextInputClamped,
-          handleDOMEvents: { cut: handleCutClamped },
+          handlePaste: handlePasteClamped,
+          handleDOMEvents: {
+            cut: handleCutClamped,
+            compositionstart: handleCompositionStartClamped,
+          },
         },
       }),
     ];

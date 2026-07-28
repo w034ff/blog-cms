@@ -1,6 +1,7 @@
 import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { resolveDropTarget } from './drop-target';
+import { replaceSelectionClamped } from './isolating-boundary';
 
 // The rules for what a *slice* carrying a callout may do — the drop refusals and the paste
 // repairs — kept apart from the node definition in callout-extension.ts.
@@ -208,11 +209,13 @@ export function calloutSliceGuard(): Plugin {
           ? flattenClosedCallouts(unwrapped)
           : unwrapped;
         if (repaired === slice) return false;
-        // What ProseMirror's own paste does with the slice, metas included — the only difference is
-        // which slice it gets.
+        // What ProseMirror's own paste does with the slice, metas included — the only differences
+        // are which slice it gets, and that the selection it replaces is clamped to any isolating
+        // edge it spans (see isolating-boundary.ts). That clamp has to be applied here rather than
+        // left to the plugin that owns it: `someProp` stops at the first handlePaste to return
+        // true, so a paste this one answers never reaches the other.
         view.dispatch(
-          view.state.tr
-            .replaceSelection(repaired)
+          replaceSelectionClamped(view.state, repaired)
             .scrollIntoView()
             .setMeta('paste', true)
             .setMeta('uiEvent', 'paste'),

@@ -414,3 +414,153 @@ test('one undo restores a clamped deletion', async ({ page }) => {
       'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))',
     );
 });
+
+// Paste replaces the selected range too, so Ctrl+V reached the same corruption as Backspace. This
+// is the branch callout-slice-guard.ts passes on — a slice with no callout to repair — which the
+// isolating plugin's own `handlePaste` picks up.
+test('pasting over a callout edge lands inside the box', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  await page.locator('.ProseMirror').click();
+
+  // Copy 「前の段落です」 whole, then paste it over a selection crossing the callout's lower edge.
+  await setRange(
+    page,
+    await posInText(page, '前の段落です', 0),
+    await posInText(page, '前の段落です', 6),
+  );
+  await page.keyboard.press('Control+c');
+  await setRange(
+    page,
+    await posInText(page, '囲みの中身です', 2),
+    await posInText(page, '後の段落です', 2),
+  );
+  await page.keyboard.press('Control+v');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), callout(paragraph("囲み前の段落です")), paragraph("段落です"))',
+    );
+});
+
+// The other paste branch, and the one that pins the plugin order: a slice carrying a half-selected
+// callout needs the callout guard's repair *and* this clamp. `someProp` stops at the first
+// handlePaste to return true, so only one of the two plugins ever runs for a given paste — which is
+// why the callout guard applies the clamp itself and this extension sits below it in priority. If
+// that ordering inverted, the box would come back into the document here.
+test('pasting a half-callout slice over a callout edge is both repaired and clamped', async ({
+  page,
+}) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  await page.locator('.ProseMirror').click();
+
+  // Copy across the callout's lower edge: the slice is `<callout(paragraph("中身です")),
+  // paragraph("後の")>`, the shape that forces the box to be kept (see callout-paste-guard.spec.ts).
+  await setRange(
+    page,
+    await posInText(page, '囲みの中身です', 3),
+    await posInText(page, '後の段落です', 2),
+  );
+  await page.keyboard.press('Control+c');
+  await setRange(
+    page,
+    await posInText(page, '囲みの中身です', 2),
+    await posInText(page, '後の段落です', 2),
+  );
+  await page.keyboard.press('Control+v');
+
+  // No second box anywhere, and the paragraph below the callout is still outside it.
+  await expect(page.locator('.ProseMirror .markdown-alert')).toHaveCount(1);
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), callout(paragraph("囲み中身です"), paragraph("後の")), paragraph("段落です"))',
+    );
+});
+
+// Pasting across the code block's edge, where the loss is the fence itself.
+test('pasting over a code block edge keeps the fence and its attributes', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CODE);
+  await page.locator('.ProseMirror').click();
+
+  await setRange(
+    page,
+    await posInText(page, '前の段落です', 0),
+    await posInText(page, '前の段落です', 2),
+  );
+  await page.keyboard.press('Control+c');
+  await setRange(
+    page,
+    await posInText(page, 'const x = 1;\n', 2),
+    await posInText(page, '後の段落です', 2),
+  );
+  await page.keyboard.press('Control+v');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(paragraph("前の段落です"), codeBlock("co前の"), paragraph("段落です"))');
+  await expect(page.locator('.code-block-filename')).toHaveValue('a.ts');
+  await expect(page.locator('.code-block-lang')).toHaveValue('ts');
+});
+
+// IME is the typing path on a Japanese site, not an edge case — and a composition never reaches
+// `handleTextInput`: the browser edits the DOM itself and ProseMirror reads the result back at
+// composition end, so a commit over a spanning selection reproduced the corruption
+// (`callout(paragraph("囲みあ段落です")), paragraph`) with the clamp never consulted. The deletion
+// is done at `compositionstart` instead, before the browser removes the selected text.
+test('an IME commit over a callout edge lands inside the box', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  await page.locator('.ProseMirror').click();
+  await setRange(
+    page,
+    await posInText(page, '囲みの中身です', 2),
+    await posInText(page, '後の段落です', 2),
+  );
+
+  // Playwright's keyboard cannot compose, so the IME is driven over CDP directly: set a
+  // composition, then commit it.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', { text: 'あ', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'あ' });
+
+  await expect
+    .poll(() => docString(page))
+    .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲みあ")), paragraph("段落です"))');
+});
+
+// The control for the above: composing at a plain caret, and over a selection that crosses nothing,
+// must be completely untouched — the clamp dispatches nothing in either case, so composition keeps
+// ProseMirror's own path.
+test('composing at a caret and over an ordinary selection is unaffected', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, CALLOUT);
+  await page.locator('.ProseMirror').click();
+  const cdp = await page.context().newCDPSession(page);
+
+  await setRange(page, await posInText(page, '囲みの中身です', 2));
+  await cdp.send('Input.imeSetComposition', { text: 'き', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'きた' });
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), callout(paragraph("囲みきたの中身です")), paragraph("後の段落です"))',
+    );
+
+  await loadMarkdown(page, CALLOUT);
+  await setRange(
+    page,
+    await posInText(page, '前の段落です', 1),
+    await posInText(page, '前の段落です', 4),
+  );
+  await cdp.send('Input.imeSetComposition', { text: 'か', selectionStart: 1, selectionEnd: 1 });
+  await cdp.send('Input.insertText', { text: 'か' });
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前かです"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))',
+    );
+});
