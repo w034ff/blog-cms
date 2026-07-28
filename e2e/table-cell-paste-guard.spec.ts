@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { docString } from './editor-probe';
+import { caret, docString } from './editor-probe';
 import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 
 // A cell is `paragraph+` (ParagraphTableCell in components/editor/table-extensions.ts), so pasting
@@ -167,11 +167,35 @@ test('pasting a whole paragraph into a cell still works', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 
+// Wait for a *click* to land in the editor's state, for the one test below that moves the caret by
+// clicking rather than by setRange — which is what made it flaky (issue #6). A click moves the
+// browser's DOM selection; ProseMirror reads that back through DOMObserver's 20ms selectionchange
+// debounce, so for a moment `state.selection` is still whatever it was before. A Ctrl+V landing in
+// that window is not dropped: with the pre-click CellSelection still current, prosemirror-tables'
+// handlePaste takes its `sel instanceof CellSelection` branch and writes the copied cells back over
+// themselves, leaving the document byte-identical and the intended target cells untouched — which
+// reads as "the paste didn't happen". Measured: 2 of 6 runs of the unpolled gesture failed (the
+// report's own count was 3 in 12), every one of them with `CellSelection from=21 to=25` at paste
+// time, and with text/html present on the clipboard in all 12 runs of that session — so it was
+// never the clipboard-readiness race the report first guessed at.
+//
+// Poll the *state* caret, not the DOM one: that waits for the readback itself rather than for the
+// DOM event that triggers it, so no trailing sleep is needed — unlike caretAtLineStart in
+// e2e/editor-callout-boundary.spec.ts, which polls window.getSelection() and must then let
+// ProseMirror catch up. caret() names the cell as well as the selection kind, so a caret settled in
+// the *wrong* cell doesn't satisfy it. Measured convergence: 6–112ms — that outlier is why a flat
+// wait past the 20ms debounce would not have been enough either.
+function caretInBodyCell(page: Page, text: string): Promise<void> {
+  return expect.poll(() => caret(page)).toMatch(new RegExp(`^${text}@`));
+}
+
 // Table content is exempt from this guard, and both halves of that need pinning.
 //
 // The half that must keep working: prosemirror-tables' own handlePaste owns cell-to-cell paste,
 // which rewrites the target cells in place and stays a clean pipe table. A guard that refused every
 // non-paragraph block would have caught this too, because a CellSelection copies as a `table` slice.
+//
+// The click here stays deliberately — it is the file's only pointer-then-paste-in-a-table coverage.
 test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -190,6 +214,7 @@ test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   await page.mouse.up();
   await page.keyboard.press('Control+c');
   await page.mouse.click(d1.x + 5, d1.y + d1.height / 2);
+  await caretInBodyCell(page, 'd1');
   await page.keyboard.press('Control+v');
 
   await expect(page.getByRole('status')).toHaveCount(0);
