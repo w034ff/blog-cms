@@ -8,6 +8,32 @@ import type { EditorState } from '@tiptap/pm/state';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    codeBlockInsert: {
+      // Put a code block at the caret: convert the current paragraph where that is legal, or add
+      // one as the next block of its parent where it is not (a list item). See its comment.
+      insertCodeBlock: () => ReturnType;
+    };
+  }
+}
+
+// Whether an empty code block may be added as the caret's textblock's *next sibling* — the
+// question `setCodeBlock` never asks, because converting is all it does.
+//
+// A list item is the case this exists for: `listItem` is `paragraph block*`, so a code block is
+// legal there but only from the second child on, and converting the first paragraph would leave
+// the item headless. A table cell answers false and must keep doing so — ParagraphTableCell is
+// `paragraph+`, and a code block in a cell has no GFM pipe form (table-extensions.ts).
+function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
+  const { $from, empty } = state.selection;
+  // Only for a caret: with a range, "after the textblock" is not where the author is pointing.
+  if (!empty || $from.depth < 1) return false;
+  const parent = $from.node($from.depth - 1);
+  const index = $from.index($from.depth - 1);
+  return parent.canReplaceWith(index + 1, index + 1, type);
+}
+
 // Curated language menu for the in-editor code block. The ids are Shiki language ids
 // (the public render pipeline highlights via rehype-pretty-code → Shiki, lib/render.ts),
 // so what you pick here is exactly what gets highlighted on the published page. The empty
@@ -292,6 +318,40 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   // stepIntoNextIsolating, which only acts when the following top-level block is empty (deletes
   // it) — a non-empty one is already a safe no-op via `isolating` (see that function's comment),
   // so nothing else is needed here.
+  // One entry point for "give me a code block here", because the two that existed disagreed. The
+  // `/` menu asks `can().setCodeBlock()` and so offered nothing inside a list item, while the
+  // inherited Mod-Alt-c ran `toggleCodeBlock` ungated: it lifted the item out of the list and made
+  // its text the code. Neither was a decision about lists — `setCodeBlock` converts the caret's
+  // paragraph, and a list item's first child must stay a paragraph, so every route that could only
+  // convert was refused there by the schema. Nothing forbade the block itself: `listItem` is
+  // `paragraph block*`, and `- 項目\n\n  ```ts …` already loads and round-trips.
+  //
+  // So convert where converting is legal, and otherwise place the block as the item's next child —
+  // which is what the callout and table buttons have always done there. Where the caret sits inside
+  // the item decides which branch runs: on its first paragraph there is nothing to convert, so the
+  // block is added after it; on a second paragraph `setCodeBlock` converts in place, as anywhere
+  // else. The ` ```lang ` input rule is untouched and still only converts, so it stays inert on a
+  // first paragraph.
+  addCommands() {
+    return {
+      ...this.parent?.(),
+      insertCodeBlock:
+        () =>
+        ({ can, chain, commands, state }: CommandProps) => {
+          if (can().setCodeBlock()) return commands.setCodeBlock();
+          if (!canPlaceAfterCaret(state, this.type)) return false;
+          const at = state.selection.$from.after(state.selection.$from.depth);
+          // insertContentAt rather than insertContent: the latter inserts *at the selection*, which
+          // splits the paragraph when the caret is mid-text. `at` is past the whole textblock, so
+          // the item keeps one paragraph and gains one block after it.
+          return chain()
+            .insertContentAt(at, { type: this.name })
+            .setTextSelection(at + 1)
+            .run();
+        },
+    };
+  },
+
   addKeyboardShortcuts() {
     const parentShortcuts = this.parent?.();
     const codeType = this.type;
@@ -301,6 +361,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         editor.commands.command((props) => deleteSoleCodeChar(codeType, dir, props));
     return {
       ...parentShortcuts,
+      // The inherited binding is `toggleCodeBlock`, and inside a fence that is the only keyboard
+      // way back out to a paragraph — so keep it for that case and only route the *creating*
+      // direction through insertCodeBlock. The `/` menu needs no such split: it is already gated on
+      // `!editor.isActive('codeBlock')`.
+      'Mod-Alt-c': ({ editor }) =>
+        editor.isActive(this.name)
+          ? (parentShortcuts?.['Mod-Alt-c']?.({ editor }) ?? false)
+          : editor.commands.insertCodeBlock(),
       Backspace: ({ editor }) =>
         editor.commands.undoInputRule() ||
         editor.commands.command((props) => undoFenceTyping(codeType, props)) ||
