@@ -23,6 +23,20 @@ export function docString(page: Page): Promise<string> {
   });
 }
 
+// The markdown the editor would save — `editor.storage.markdown.getMarkdown()`, which is what
+// PostEditor mirrors into its hidden `body` input. docString says what the document *is*; this says
+// what gets stored, and the two can disagree (a table with no GFM pipe form still looks like a
+// table on screen while saving as raw HTML).
+export function markdown(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { storage: { markdown: { getMarkdown(): string } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    return el.editor.storage.markdown.getMarkdown();
+  });
+}
+
 // The runtime class name of the current selection. A canonical selection reads `TextSelection`;
 // a duplicate prosemirror-state copy shows the bundler-renamed `_TextSelection` (or `TextSelection2`
 // …) — the signature of an `instanceof`-breaking module duplication.

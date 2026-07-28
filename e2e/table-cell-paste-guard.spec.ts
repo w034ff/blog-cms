@@ -196,10 +196,12 @@ test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   );
 });
 
-// The half that is knowingly left: a whole table pasted into a cell puts the copied header row into
-// the body, and a body row of `th` has no pipe form, so the table degrades to raw HTML on save. The
-// table itself survives — no split — which is why it sits with the two-paragraph case below rather
-// than with the refusals above. Pinned so the exemption stays a decision, not an oversight.
+// The two pastes this guard deliberately does not refuse. Both keep the table whole — no split —
+// and both used to cost it its GFM pipe form on save, which is a milder and separate defect; they
+// are repaired after the fact instead, by tablePasteRepair. Here that means only "no notice, and the
+// table is still one table": what the repair makes of them, and every case it must not touch, is
+// e2e/table-pipe-form.spec.ts. Pinned in both places because they are two rules, not one — the
+// exemption is what lets the repair be the thing that answers them.
 test('a whole table pasted into a cell is not refused by this guard', async ({ page }) => {
   await openEditor(page);
   const editor = page.locator('.ProseMirror');
@@ -208,17 +210,14 @@ test('a whole table pasted into a cell is not refused by this guard', async ({ p
 
   await expect(editor.locator('table')).toHaveCount(1);
   await expect(page.getByRole('status')).toHaveCount(0);
-  // The extra row is all header cells — the shape isPipeTable rejects.
+  // The copied header row landed in the body and was demoted there, so the table keeps exactly one
+  // header row — the shape isPipeTable accepts.
   expect(await docString(page)).toContain(
     'tableRow(tableHeader(paragraph("見出しA")), tableHeader(paragraph("見出しB"))), ' +
-      'tableRow(tableHeader(paragraph("見出しA")), tableHeader(paragraph("見出しB")))',
+      'tableRow(tableCell(paragraph("見出しA")), tableCell(paragraph("見出しB")))',
   );
 });
 
-// Deliberately still allowed. Two paragraphs keep the table whole but leave the cell holding two
-// blocks, which costs the table its GFM pipe form on save — a real but much milder defect, and a
-// separate decision from this one. Pinned so that whichever way it is settled later, it is settled
-// on purpose rather than drifting in as a side effect of this guard.
 test('a two-paragraph paste is not refused by this guard', async ({ page }) => {
   await openEditor(page);
   const editor = page.locator('.ProseMirror');
@@ -230,7 +229,8 @@ test('a two-paragraph paste is not refused by this guard', async ({ page }) => {
 
   await expect(editor.locator('table')).toHaveCount(1);
   await expect(page.getByRole('status')).toHaveCount(0);
+  // One paragraph, the two joined by the hard break Shift+Enter would have made by hand.
   expect(await docString(page)).toContain(
-    'tableCell(paragraph("セル一つ目の段落です"), paragraph("二つ目の段落ですの中身"))',
+    'tableCell(paragraph("セル一つ目の段落です", hardBreak, "二つ目の段落ですの中身"))',
   );
 });
