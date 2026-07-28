@@ -69,8 +69,8 @@ const TABLE_CELL_BLOCK_BLOCKED = '表のセルにはこの要素を入れられ�
 const tableDropGuardKey = new PluginKey('tableDropGuard');
 const tableCellPasteGuardKey = new PluginKey('tableCellPasteGuard');
 
-// Refuse a paste that would put a non-paragraph block inside a cell (see the two predicates
-// above). Refusing rather than repairing, unlike the callout paste guard: there is no one repair
+// Refuse a paste that would put a non-paragraph block inside a cell (pasteIntoCellRefused, in
+// table-cell-rules.ts). Refusing rather than repairing, unlike the callout paste guard: there is no one repair
 // that fits every offender. A callout or a quote could be unwrapped to its text, but a code block
 // would lose its fence, and an image or a nested table has no text to keep at all — so a repair
 // would be a different rule per node type with a refusal underneath it anyway. One refusal, and
