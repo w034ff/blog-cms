@@ -10,6 +10,7 @@ import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
 import { DropCursorGuard } from './editor/drop-cursor-guard';
+import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
@@ -24,6 +25,8 @@ import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
+import { useEditorNotice } from './editor/useEditorNotice';
+import { useDragContainment } from './editor/useDragContainment';
 import type { PostFormState } from '@/app/actions/posts';
 
 // tiptap-markdown adds a `markdown` storage exposing getMarkdown(), but ships no
@@ -136,8 +139,18 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       onSessionExpired: setSessionExpired,
     });
 
-  const { uploading, dragging, blockedMessage, uploadImages, handleImageChange } =
-    useImageUpload(editorRef);
+  // One refusal notice for the whole editor, written to by the image guards and by the table cell
+  // paste guard. Owned here rather than in either of them so two refusals can't raise two toasts.
+  const { notice, showNotice } = useEditorNotice();
+
+  const { uploading, dragging, uploadImages, handleImageChange } = useImageUpload(
+    editorRef,
+    showNotice,
+  );
+
+  // Keep a drag that started in the editor from landing on the fields beside it (see the hook —
+  // the browser's own move deletes the dragged range out of the document).
+  useDragContainment(editorRef);
 
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.
@@ -210,10 +223,20 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // wouldn't break the move — but without this flag the table's "picked up" highlight would
       // flicker from a clean NodeSelection into a CellSelection the instant you grab its handle.
       // Purely cosmetic now; kept for that visual consistency.
-      MarkdownTable.configure({ allowTableNodeSelection: true }),
+      MarkdownTable.configure({ allowTableNodeSelection: true, onBlocked: showNotice }),
       ParagraphTableCell,
       ParagraphTableHeader,
       DropCursorGuard,
+      // Keeps a ranged edit (Backspace/Delete over a selection, typing or pasting over one) from
+      // closing over a callout's or code block's edge — `isolating` only guards where a slice may
+      // be *placed*, not what a replacement joins. See isolating-boundary.ts.
+      //
+      // Its position here is load-bearing, in both directions. ExtensionManager reverses this array
+      // before gathering plugins, so a later entry is asked first: it must stay *above* Callout, so
+      // that guard's handlePaste still gets a callout-carrying slice first (handlePaste is
+      // first-wins), and it must stay in this array at all, so its keys beat the core Keymap
+      // extension's baseKeymap deleteSelection.
+      IsolatingBoundary,
       // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
       // the block, so a quote/fence right after an image isn't glued onto the image's line —
       // see image-extension.ts.
@@ -394,7 +417,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
               {/* Refusal notices hang off the sticky header (which is a containing block for them),
                   so they stay in view over the content — see EditorToast. */}
-              {blockedMessage && <EditorToast message={blockedMessage} />}
+              {notice && <EditorToast message={notice} />}
             </div>
           )}
           {editor ? (

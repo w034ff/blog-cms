@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ChangeEvent, RefObject } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Selection } from '@tiptap/pm/state';
@@ -40,13 +40,9 @@ function altTextFromFilename(name: string): string {
 // merely reaches into one the caret is not inside it, so "inside" would be quietly wrong in exactly
 // the case above. Neither host can hold a block node — a cell is paragraph-only, a code block is a
 // `code` textblock (see the guard below).
-export const IMAGE_BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
-export const IMAGE_BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
-export const IMAGE_BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
-
-// How long the notice stays up. Long enough to read one short line, short enough that it doesn't
-// linger over the text being edited.
-const BLOCKED_NOTICE_MS = 3000;
+const IMAGE_BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
+const IMAGE_BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
+const IMAGE_BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
 
 // The editor's image-upload concern: send files to /api/uploads and insert each
 // as an image node at the cursor, from any of the three entry points — the
@@ -54,34 +50,18 @@ const BLOCKED_NOTICE_MS = 3000;
 // window-wide drag-and-drop (handled here, surfaced as `dragging` for the drop
 // overlay). The editor arrives through a ref so every returned callback keeps a
 // stable identity and can be closed over by editor handlers created once.
-export function useImageUpload(editorRef: RefObject<Editor | null>) {
+//
+// `showBlocked` is passed in rather than owned here (useEditorNotice). The notice used to live in
+// this hook because a refused image was the only thing that raised one; the table cell paste guard
+// now raises it too, so PostEditor holds the single instance and hands it to both.
+export function useImageUpload(
+  editorRef: RefObject<Editor | null>,
+  showBlocked: (message: string) => void,
+) {
   const [uploading, setUploading] = useState(false);
   // True while a file is being dragged over the window, so a drop overlay
   // appears on the editor container as a target.
   const [dragging, setDragging] = useState(false);
-  // The refusal notice, or null when there is nothing to say. The toolbar's picker greys itself out
-  // where an insert can't land, but paste and drag-and-drop have no control to grey — they just
-  // did nothing, with no way to tell why. This is what the editor shows them instead.
-  const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
-  const blockedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Raise the notice and start its countdown, restarting the clock if one is already up (a second
-  // refused paste should get its own full three seconds, not the tail of the first).
-  const showBlocked = useCallback((message: string): void => {
-    setBlockedMessage(message);
-    if (blockedTimer.current !== null) clearTimeout(blockedTimer.current);
-    blockedTimer.current = setTimeout(() => {
-      blockedTimer.current = null;
-      setBlockedMessage(null);
-    }, BLOCKED_NOTICE_MS);
-  }, []);
-
-  // A pending timer would fire into an unmounted component when the editor is torn down.
-  useEffect(() => {
-    return () => {
-      if (blockedTimer.current !== null) clearTimeout(blockedTimer.current);
-    };
-  }, []);
 
   const uploadFile = useCallback(async (file: File): Promise<string | null> => {
     const formData = new FormData();
@@ -231,5 +211,5 @@ export function useImageUpload(editorRef: RefObject<Editor | null>) {
     [uploadImages],
   );
 
-  return { uploading, dragging, blockedMessage, uploadImages, handleImageChange };
+  return { uploading, dragging, uploadImages, handleImageChange };
 }

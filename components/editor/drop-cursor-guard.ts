@@ -1,12 +1,12 @@
 import { Extension } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { dragMoves, resolveDropTarget } from './drop-target';
-import { carriesHalfSelectedCallout, wouldNestCallout } from './callout-extension';
+import { unwrapHalfSelectedCallouts, wouldNestCallout } from './callout-slice-guard';
 import { isDisallowedTableDrop } from './table-extensions';
 
 // prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop indicator), for
 // every drop this editor refuses. Both refusals live with the node they protect — tableDropGuard in
-// table-extensions.ts, calloutSliceGuard in callout-extension.ts — but the *indicator* has to be one
+// table-extensions.ts, calloutSliceGuard in callout-slice-guard.ts — but the *indicator* has to be one
 // hook: `extendNodeSchema` merges each extension's contribution into the node spec by key, so two
 // extensions each setting `disableDropCursor` on `paragraph` would leave only the last one standing
 // and quietly disarm the other. Asking both predicates here is what keeps them both live.
@@ -24,13 +24,16 @@ import { isDisallowedTableDrop } from './table-extensions';
 // prosemirror-dropcursor hands the dragover event to this hook, which is what lets the move-vs-copy
 // question be answered for the drag as it stands right now — `view.dragging.move` was fixed at
 // dragstart and goes stale as soon as the copy modifier is pressed or released (see dragMoves).
+//
+// The slice is repaired first, because the drop will be judged on the repaired one and the two
+// disagree. prosemirror-view applies `transformPasted` to a *local copy* of the drag slice on the
+// way into handleDrop — `view.dragging.slice` itself keeps the raw shape — so a drag carrying a
+// half-selected callout still reads as "contains a callout" here while the drop that follows sees
+// the unwrapped blocks. Left unrepaired, the indicator hid for exactly the drags that now land.
 function disableDropCursor(view: EditorView, pos: { pos: number }, event: DragEvent): boolean {
-  const slice = view.dragging?.slice;
-  if (!slice) return false;
-  // Refused wherever it is aimed, so it is answered before any position is resolved — and the
-  // indicator then stays hidden for the whole drag, which is the only signal the gesture gives that
-  // it will not land.
-  if (carriesHalfSelectedCallout(slice)) return true;
+  const dragged = view.dragging?.slice;
+  if (!dragged) return false;
+  const slice = unwrapHalfSelectedCallouts(dragged);
   const $target = resolveDropTarget(view, pos.pos, slice, dragMoves(view, event));
   return isDisallowedTableDrop($target) || wouldNestCallout($target, slice);
 }

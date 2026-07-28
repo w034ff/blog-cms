@@ -70,26 +70,30 @@ export async function getPostsByCategory(category: string): Promise<Post[]> {
   return rows.map(toPost);
 }
 
-export async function getAllTags(): Promise<TagCount[]> {
-  const all = await getAllPosts();
+// Tally one facet of the published posts, most frequent first with ties broken by name.
+// The tag and category listings differ only in what each post contributes — a tag array
+// versus its single category — and in what their result rows are called, so `valuesOf`
+// covers the first and the caller's own `map` the second. The ordering is the part worth
+// keeping in one place: it was written out twice, so a change to the tiebreak could land
+// on one listing and not the other.
+function countFacet(list: Post[], valuesOf: (post: Post) => readonly string[]): [string, number][] {
   const counts = new Map<string, number>();
-  for (const post of all) {
-    for (const tag of post.tags) {
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  for (const post of list) {
+    for (const value of valuesOf(post)) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     }
   }
-  return Array.from(counts.entries())
-    .map(([tag, count]) => ({ tag, count }))
-    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  return Array.from(counts.entries()).sort(
+    ([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName),
+  );
+}
+
+export async function getAllTags(): Promise<TagCount[]> {
+  const counted = countFacet(await getAllPosts(), (post) => post.tags);
+  return counted.map(([tag, count]) => ({ tag, count }));
 }
 
 export async function getAllCategories(): Promise<CategoryCount[]> {
-  const all = await getAllPosts();
-  const counts = new Map<string, number>();
-  for (const post of all) {
-    counts.set(post.category, (counts.get(post.category) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([category, count]) => ({ category, count }))
-    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+  const counted = countFacet(await getAllPosts(), (post) => [post.category]);
+  return counted.map(([category, count]) => ({ category, count }));
 }

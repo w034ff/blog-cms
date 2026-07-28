@@ -155,6 +155,71 @@ test('the filename survives a save + reload (```lang:filename round-trip)', asyn
   await expect(page.locator('.ProseMirror .code-block code')).toContainText('const x = 1;');
 });
 
+// The filename field's normalization (sanitizeFilename in code-block-extension.ts). Only
+// `[^\s`]+` survives the ```lang:filename fence, and the field used to accept anything —
+// so both cases below looked correct right up until the post was reopened. That delay is why
+// they are asserted across a reload rather than at the edit: the pre-fix field passed every
+// in-editor check.
+test('a filename typed with whitespace is normalized in place and survives a reload', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  await page.getByLabel('タイトル').fill('E2E code block filename 空白');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const x = 1;');
+
+  const block = editor.locator('.code-block');
+  await block.hover();
+  const filename = block.locator('.code-block-filename');
+  await filename.fill('my file.ts');
+  await filename.blur();
+
+  // Corrected where the author can see it. Repairing only the stored attr would reproduce the
+  // shape of the bug — a field showing a name the document doesn't hold.
+  await expect(filename).toHaveValue('myfile.ts');
+
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await page.reload();
+
+  // The regression: ```ts:my file.ts re-parses as `language-ts:my` (markdown-it keeps only the
+  // info string's first token), so the filename came back as `my` — extension and all, gone.
+  await expect(page.locator('.ProseMirror .code-block-filename')).toHaveValue('myfile.ts');
+  await expect(page.locator('.ProseMirror .code-block-lang')).toHaveValue('ts');
+  await expect(page.locator('.ProseMirror .code-block code')).toContainText('const x = 1;');
+});
+
+test('a filename typed with a backtick is normalized and the fence still parses', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  await page.getByLabel('タイトル').fill('E2E code block filename バッククォート');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+
+  await page.keyboard.type('```ts ');
+  await page.keyboard.type('const x = 1;');
+
+  const block = editor.locator('.code-block');
+  await block.hover();
+  const filename = block.locator('.code-block-filename');
+  await filename.fill('a`b.ts');
+  await filename.blur();
+  await expect(filename).toHaveValue('ab.ts');
+
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await page.reload();
+
+  // Worse than truncation before the fix: a backtick is illegal in a backtick fence's info
+  // string, so ```ts:a`b.ts stopped being a fence at all — the code came back as literal
+  // paragraph text with an empty code block below it. Hence the count, not just the value.
+  await expect(page.locator('.ProseMirror .code-block')).toHaveCount(1);
+  await expect(page.locator('.ProseMirror .code-block-filename')).toHaveValue('ab.ts');
+  await expect(page.locator('.ProseMirror .code-block code')).toContainText('const x = 1;');
+});
+
 test('the header controls keep their values across a form-action save (投稿/更新)', async ({
   page,
 }) => {

@@ -1,6 +1,6 @@
 import { getHTMLFromFragment, type Editor } from '@tiptap/core';
-import { Table, TableCell, TableHeader } from '@tiptap/extension-table';
-import { Fragment, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
+import { Table, TableCell, TableHeader, type TableOptions } from '@tiptap/extension-table';
+import { Fragment, type Node as PMNode, type ResolvedPos, type Slice } from '@tiptap/pm/model';
 import { isInTable, nextCell, selectedRect, selectionCell } from '@tiptap/pm/tables';
 import { Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
@@ -85,7 +85,86 @@ export function isDisallowedTableDrop($pos: ResolvedPos): boolean {
   return !$pos.parent.isTextblock;
 }
 
+// Is the caret (or either end of the selection) inside a table cell? The paste guard's half of
+// isDisallowedTableDrop's question — and deliberately not the same half. That predicate reads the
+// *position*, which works for a drop because a drop can land at block level between paragraphs. A
+// caret cannot: it always sits inside a cell's paragraph, so the position test answers "allowed"
+// for every paste there and would guard nothing. What decides a paste is the slice.
+function isInTableCell($pos: ResolvedPos): boolean {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const role: string | undefined = $pos.node(depth).type.spec.tableRole;
+    if (role === 'cell' || role === 'header_cell') return true;
+  }
+  return false;
+}
+
+// Does the slice carry a block a cell cannot hold? Cells are `paragraph+` (see
+// ParagraphTableCell below), so a paragraph fits and any other block does not — a callout,
+// blockquote, code block, image, list or nested table. Pasting one splits the table in two around
+// it: ProseMirror satisfies the schema by closing the table before the block and opening a fresh
+// one after, and the second table has no header row. Measured on a two-column table, pasting a
+// callout into the body cell 「セルの中身」:
+//
+//   before  table(row(th, th), row(td("セルの中身"), td("二つ目")))
+//   after   table(row(th, th), row(td("セル"), td)), callout(…), table(row(td("の中身"), td("二つ目")))
+//
+// Every caret position inside a body cell does this — start, middle and end alike — so there is no
+// safe spot to allow. (The very first header cell is the one exception, and it fails differently:
+// the block lands above the table instead.)
+//
+// Only the slice's own top level is examined. A paragraph containing an inline image, or a cell's
+// worth of marked-up text, is fine and stays fine; what cannot go in is a block *beside* the
+// paragraphs. Inline content and paragraph-only slices — an ordinary Ctrl+V — never reach the
+// refusal, which is the property that matters most here.
+//
+// Table content is exempt, and deliberately so. A CellSelection copies as a `table` slice, so the
+// bare "not a paragraph" test would catch cell-to-cell paste — which prosemirror-tables handles
+// well and which stays a clean pipe table (copying two cells over two others rewrites just those
+// cells). Its own handlePaste owns that whole family; this guard would only be racing it, and the
+// exemption says so rather than leaving the outcome to plugin order.
+//
+// That does leave one case unguarded: pasting a *whole* table into a cell inserts the copied
+// header row into the body, and a body row of `th` has no pipe form, so the table degrades to raw
+// HTML on save. Real, but it is the milder "the table survives and loses its pipe form" defect —
+// the same bucket as a two-paragraph paste — not the split this guard exists for.
+function carriesNonParagraphBlock(slice: Slice): boolean {
+  let found = false;
+  slice.content.forEach((child) => {
+    if (child.type.spec.tableRole !== undefined) return;
+    if (child.isBlock && child.type.name !== 'paragraph') found = true;
+  });
+  return found;
+}
+
+const TABLE_CELL_BLOCK_BLOCKED = '表のセルにはこの要素を貼り付けられません';
+
 const tableDropGuardKey = new PluginKey('tableDropGuard');
+const tableCellPasteGuardKey = new PluginKey('tableCellPasteGuard');
+
+// Refuse a paste that would put a non-paragraph block inside a cell (see the two predicates
+// above). Refusing rather than repairing, unlike the callout paste guard: there is no one repair
+// that fits every offender. A callout or a quote could be unwrapped to its text, but a code block
+// would lose its fence, and an image or a nested table has no text to keep at all — so a repair
+// would be a different rule per node type with a refusal underneath it anyway. One refusal, and
+// the same verdict the drop guard already gives the same content, is the smaller and more
+// consistent answer.
+//
+// A refused paste is silent by nature — the clipboard is unchanged and the document is unchanged —
+// so the notice is the whole of the feedback, the same reason a refused image raises one.
+function tableCellPasteGuard(notify: (message: string) => void): Plugin {
+  return new Plugin({
+    key: tableCellPasteGuardKey,
+    props: {
+      handlePaste(view, _event, slice) {
+        const { $from } = view.state.selection;
+        if (!isInTableCell($from) || !carriesNonParagraphBlock(slice)) return false;
+        notify(TABLE_CELL_BLOCK_BLOCKED);
+        // True stops prosemirror-view before it inserts anything, leaving the document untouched.
+        return true;
+      },
+    },
+  });
+}
 
 // Suppress table drops that ProseMirror would turn into structure rather than a
 // plain text move (see isDisallowedTableDrop). Drops into a cell's text, or outside
@@ -161,7 +240,14 @@ function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
 // delimiter, and add a command to set a whole column's `align`. Everything else —
 // cell parsing/display and the public render (remark emits `<td align>`, honored
 // by globals.css) — already round-trips.
-export const MarkdownTable = Table.extend({
+// Table's own options plus the refusal reporter the cell paste guard needs. Declared as a type
+// (rather than left inferred) so `MarkdownTable.configure({ onBlocked })` typechecks at the call
+// site in PostEditor.
+export type MarkdownTableOptions = TableOptions & {
+  onBlocked: (message: string) => void;
+};
+
+export const MarkdownTable = Table.extend<MarkdownTableOptions>({
   addStorage() {
     return {
       ...this.parent?.(),
@@ -248,8 +334,21 @@ export const MarkdownTable = Table.extend({
       ArrowUp: () => tableVerticalArrow(-1, this.editor),
     };
   },
+  addOptions(): MarkdownTableOptions {
+    return {
+      ...(this.parent?.() as TableOptions),
+      // How the paste guard tells the author why nothing happened. Supplied by PostEditor, which
+      // owns the one notice both this and the image refusals write to (useEditorNotice). Defaults
+      // to a no-op so the extension stays usable — and testable — without the host wiring it up.
+      onBlocked: () => {},
+    };
+  },
   addProseMirrorPlugins() {
-    // Keep the base table plugins (tableEditing, etc.) and add the drop guard.
-    return [...(this.parent?.() ?? []), tableDropGuard()];
+    // Keep the base table plugins (tableEditing, etc.) and add the two guards.
+    return [
+      ...(this.parent?.() ?? []),
+      tableDropGuard(),
+      tableCellPasteGuard(this.options.onBlocked),
+    ];
   },
 });

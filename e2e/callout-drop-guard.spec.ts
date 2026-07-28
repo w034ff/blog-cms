@@ -1,66 +1,36 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
+import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 
 // A selection crossing a callout's edge drags a slice that *contains the callout node*: select from
 // inside one down into the paragraph below and ProseMirror hands the drag
-// `<callout(paragraph(…)), paragraph(…)>`. Nobody asked to move that box, and no destination does
-// anything sensible with it — dropped inside another callout it went in as a child (a callout nested
-// in a callout, a shape nothing else in the editor can author), dropped anywhere outside one it
-// materialised a *new* box around the moved text, and either way the move's own source deletion
-// joined the callout to the paragraph below it. So carriesHalfSelectedCallout
-// (components/editor/callout-extension.ts) refuses the gesture wherever it is aimed.
+// `<callout(paragraph(…)), paragraph(…)>`. Nobody asked to move that box — dropped inside another
+// callout it went in as a child (a callout nested in a callout, a shape nothing else in the editor
+// can author), and dropped anywhere outside one it materialised a *new* box around the moved text.
 //
-// Which is why the destinations below are a loop asserting one identical thing: the document is
-// untouched. They are kept apart anyway because they failed differently before the rule existed —
-// `above` in particular sits *before* the dragged range, so the source deletion never mapped the
-// insertion point back inside the callout and the old position-by-position guard waved it straight
-// through. That is the reported bug.
+// The slice is repaired rather than the gesture refused: unwrapHalfSelectedCallouts
+// (components/editor/callout-slice-guard.ts) drops the half-covered box and keeps its contents, on
+// `transformPasted`, which prosemirror-view runs over the drag slice as well as the clipboard one.
+// So drop and paste answer the same slice the same way.
 //
-// Same machinery as e2e/table-drop-guard.spec.ts — see that file's header for why a native HTML5
+// That was not possible while the drag's own source deletion joined the callout to the block below
+// it — a repaired slice still landed in a document the drop had already broken, which is why this
+// used to be a blanket refusal. The deletion is now clamped to the edge for every gesture, drops
+// included (components/editor/isolating-boundary.ts), so this is the whole rule that remains.
+//
+// The destinations below are a loop over the four properties every one of them must have. They are
+// kept apart because they failed differently before the rule existed — `above` in particular sits
+// *before* the dragged range, so the source deletion never mapped the insertion point back inside
+// the callout and the old position-by-position guard waved it straight through. That is the
+// reported bug.
+//
+// The native-drag machinery lives in e2e/native-drag.ts — see that file for why a native HTML5
 // drag has to be driven through the Chrome DevTools Protocol rather than page.mouse.
-
-interface DragData {
-  items: { mimeType: string; data: string }[];
-  dragOperationsMask: number;
-}
-type Point = { x: number; y: number };
 
 // prosemirror-dropcursor's indicator, under either of the two classes it toggles between (block for
 // a drop between blocks, inline for one into text).
 const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
-
-async function cdpNativeDrag(
-  page: Page,
-  from: Point,
-  to: Point,
-  whileOver?: () => Promise<void>,
-): Promise<void> {
-  const client = await page.context().newCDPSession(page);
-  try {
-    await client.send('Input.setInterceptDrags', { enabled: true });
-    // A real mouse-driven dragstart, so ProseMirror populates view.dragging (the slice that gets
-    // inserted, and the move flag) exactly as it would for a user.
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.mouse.move(from.x + 8, from.y + 8, { steps: 6 });
-    const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
-    const data: DragData = {
-      items: [{ mimeType: 'text/plain', data: selectedText }],
-      dragOperationsMask: 16, // Move
-    };
-    await page.mouse.move(to.x, to.y, { steps: 6 });
-    await client.send('Input.dispatchDragEvent', { type: 'dragEnter', x: to.x, y: to.y, data });
-    await client.send('Input.dispatchDragEvent', { type: 'dragOver', x: to.x, y: to.y, data });
-    // Hovering, before anything is committed — the only moment the drop indicator is observable.
-    if (whileOver) await whileOver();
-    await client.send('Input.dispatchDragEvent', { type: 'drop', x: to.x, y: to.y, data });
-    await page.mouse.up();
-  } finally {
-    await client.send('Input.setInterceptDrags', { enabled: false });
-    await client.detach();
-  }
-}
 
 const MD = '前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n後の段落です\n';
 const DOC =
@@ -72,16 +42,6 @@ async function openEditor(page: Page, markdown = MD, doc = DOC): Promise<void> {
   await editor.click();
   await loadMarkdown(page, markdown);
   expect(await docString(page)).toBe(doc);
-}
-
-// Drag-select between two points and leave the selection in place — dragstart only fires on a
-// mousedown inside a live selection, so these tests cannot use setTextSelection.
-async function dragSelect(page: Page, start: Point, end: Point): Promise<Point> {
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps: 8 });
-  await page.mouse.up();
-  return end;
 }
 
 // From inside the callout down into the paragraph below it. This shape is what puts the callout node
@@ -124,26 +84,54 @@ async function dropPointFor(page: Page, spot: Spot): Promise<Point> {
   }
 }
 
+// One exact tree per destination, not a shared invariant. Every wrong outcome this rule exists to
+// stop leaves the callout count at one, nothing nested, the document changed and not a character
+// lost — a box that swallowed the paragraph below satisfies all four — so the whole document is
+// what tells them apart. The trees are measured, and every one of them shows the same two things:
+// the moved text arrived as plain blocks, and the callout kept exactly the 「囲み」 the selection
+// didn't cover with the rest still outside it.
+const LANDED: Record<Spot, string> = {
+  text: 'doc(paragraph("前の段落です"), callout(paragraph("囲の中身です"), paragraph("後の段み")), paragraph("落です"))',
+  topPadding:
+    'doc(paragraph("前の段落です"), callout(paragraph("の中身です"), paragraph("後の段"), paragraph("囲み")), paragraph("落です"))',
+  bottomPadding:
+    'doc(paragraph("前の段落です"), callout(paragraph("囲み"), paragraph("の中身です"), paragraph("後の段")), paragraph("落です"))',
+  // The reported bug. `above` sits *before* the dragged range, so the source deletion never maps the
+  // insertion point back inside the callout and the old position-by-position guard waved it straight
+  // through — the moved text arrived wrapped in a brand new box.
+  above:
+    'doc(paragraph("前の中身です"), paragraph("後の段の段落です"), callout(paragraph("囲み")), paragraph("落です"))',
+  below:
+    'doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("の中身です"), paragraph("後の段落です"))',
+};
+
+// A move moves: it may not lose or duplicate a character. Kept alongside the exact trees because it
+// is the one assertion that stays meaningful if the drop lands a pixel elsewhere.
+async function documentCharacters(page: Page): Promise<string> {
+  const text = await page.locator('.ProseMirror').innerText();
+  // The callout's label chip (情報) is non-editable chrome rendered by the NodeView, not document
+  // content — it would count as text that appeared from nowhere.
+  return [...text.replace(/情報/g, '').replace(/\s/g, '')].sort().join('');
+}
+
 for (const spot of ['text', 'topPadding', 'bottomPadding', 'above', 'below'] as const) {
-  test(`dragging a callout-crossing selection onto ${spot} is refused outright`, async ({
+  test(`dragging a callout-crossing selection onto ${spot} moves the text, not the box`, async ({
     page,
   }) => {
     await openEditor(page);
     const editor = page.locator('.ProseMirror');
+    const before = await documentCharacters(page);
     const dragFrom = await selectAcrossCalloutEdge(page);
 
-    // A refused drop is a silent one, so the drop indicator hiding is the whole of the feedback the
-    // gesture gives. Checked while hovering, on one destination — the rule that hides it never looks
-    // at position, and asserting it five times would only re-test that.
+    // The indicator is drawn: this drop is accepted now, where it used to be refused silently.
+    // Checked on one destination — the repair that makes it acceptable never looks at position.
     await cdpNativeDrag(page, dragFrom, await dropPointFor(page, spot), async () => {
-      if (spot === 'above') await expect(page.locator(DROP_CURSOR)).toHaveCount(0);
+      if (spot === 'above') await expect(page.locator(DROP_CURSOR)).toHaveCount(1);
     });
 
-    // Exact, not "no nesting appeared": every wrong outcome this rule exists to stop — the new box
-    // at the destination, the callout swallowing the paragraph below — keeps the callout count at
-    // one and every character in place. Only the whole document tells them apart.
     await expect(editor.locator('.markdown-alert')).toHaveCount(1);
-    expect(await docString(page)).toBe(DOC);
+    expect(await docString(page)).toBe(LANDED[spot]);
+    expect(await documentCharacters(page)).toBe(before);
   });
 }
 

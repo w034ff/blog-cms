@@ -1,6 +1,7 @@
 import type { ResolvedPos, Slice } from '@tiptap/pm/model';
 import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
+import { deleteSelectionClamped } from './isolating-boundary';
 
 // Which modifier turns a drag into a copy — ⌥ on macOS, Ctrl elsewhere, the same rule
 // prosemirror-view applies. Read at call time rather than at module scope so an SSR pass can't
@@ -43,6 +44,10 @@ export function dragMoves(view: EditorView, event: DragEvent): boolean {
 // *inside* the callout — so the guard waved it through and the slice's own callout node went in as
 // a child. The transaction here is a dry run: it is built to be measured and never dispatched.
 //
+// That source deletion is now clamped to the isolating edge rather than closing over it (see
+// isolating-boundary.ts), and this has to model the same deletion the drop will really perform — a
+// dry run of the old `deleteSelection` would describe a document that no longer happens.
+//
 // `move` is a parameter rather than something read off `view.dragging`, because that flag is stale
 // by the time the drop happens (see dragMoves above). handleDrop is handed the live value as its
 // fourth argument; the drop-cursor hook derives it from the dragover event it is given.
@@ -58,7 +63,6 @@ export function resolveDropTarget(
   move: boolean,
 ): ResolvedPos {
   const insertPos = dropPoint(view.state.doc, pos, slice) ?? pos;
-  const tr = view.state.tr;
-  if (move) tr.deleteSelection();
+  const tr = move ? deleteSelectionClamped(view.state) : view.state.tr;
   return tr.doc.resolve(tr.mapping.map(insertPos));
 }

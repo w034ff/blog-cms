@@ -239,6 +239,10 @@ test('pasting an image inserts it when the selection allows it', async ({ page }
 // as role=status, and clears itself after three seconds. It names the host in the way rather than
 // reciting both rules, and says 「には」 not 「の中には」 — the guard fires on a selection *touching* a
 // host, and a range that merely reaches into one leaves the caret outside it.
+//
+// Spelled out here rather than imported from useImageUpload. This is user-visible copy, so the test
+// should pin it independently: importing the constant would let the wording change with every test
+// still green, and noticing that change is the whole point of asserting on it.
 const BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
 const BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
 const BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';

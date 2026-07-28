@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { cdpNativeDrag, type Point } from './native-drag';
 
 // PROTOTYPE (試作): a regression guard for 43f9917 "keep table drag-and-drop from
 // growing the table", the case the E2E harness deliberately left for later because
@@ -14,66 +15,9 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 //      paragraph is added to the cell, which forces the table out of the clean GFM
 //      pipe form into an HTML fallback.
 //
-// handleDrop fires on the *native* `drop` DOM event — but page.mouse.down()/move()/
-// up() only dispatch trusted mouse events and never complete a native drag (the OS
-// drag loop is never driven), so ProseMirror's `dragstart` runs yet the matching
-// `drop` never does. The guard is therefore untestable through the normal mouse API.
-//
-// The way in is the Chrome DevTools Protocol. A real mouse-driven `dragstart` still
-// fires (so ProseMirror sets view.dragging — the source of the dropped slice and the
-// move flag), and Input.setInterceptDrags suppresses the OS drag loop that would
-// otherwise stall it. Headless Chromium never emits Input.dragIntercepted for a
-// text-selection drag, so rather than wait for it we synthesize the DragData and
-// replay dragEnter/dragOver/drop at the target via Input.dispatchDragEvent — a
-// deterministic native `drop` that reaches the guard's handleDrop. (The dropped
-// slice still comes from view.dragging, so this stays faithful to a real text move.)
-
-// Shape of the Input.DragData we hand to Input.dispatchDragEvent. The CDPSession
-// command types already carry the full Protocol shape; this is the narrow subset we
-// build, kept explicit to avoid leaning on the internal Protocol namespace.
-interface DragData {
-  items: { mimeType: string; data: string }[];
-  files?: string[];
-  dragOperationsMask: number;
-}
-
-type Point = { x: number; y: number };
-
-// A native HTML5 drag from `from` to `to`, driven at the CDP level (see file header).
-async function cdpNativeDrag(page: Page, from: Point, to: Point): Promise<void> {
-  const client = await page.context().newCDPSession(page);
-  try {
-    // Suppress the real OS drag loop so it can't race the CDP-driven drop below.
-    await client.send('Input.setInterceptDrags', { enabled: true });
-
-    // Begin a real drag from inside the current selection. Crossing the drag
-    // threshold fires the DOM `dragstart` (ProseMirror sets view.dragging, which is
-    // the source of the slice + the move flag its drop handler acts on). Headless
-    // Chromium fires dragstart but never emits Input.dragIntercepted for a
-    // text-selection drag, so we don't wait for it — we synthesize the DragData and
-    // drive the drop ourselves; the slice comes from view.dragging regardless.
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.mouse.move(from.x + 8, from.y + 8, { steps: 6 });
-
-    const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '');
-    const data: DragData = {
-      items: [{ mimeType: 'text/plain', data: selectedText }],
-      dragOperationsMask: 16, // Move
-    };
-
-    // Replay the movement and the drop at the target as native drag events. The
-    // `drop` is the DOM event tableDropGuard's handleDrop listens for.
-    await page.mouse.move(to.x, to.y, { steps: 6 });
-    await client.send('Input.dispatchDragEvent', { type: 'dragEnter', x: to.x, y: to.y, data });
-    await client.send('Input.dispatchDragEvent', { type: 'dragOver', x: to.x, y: to.y, data });
-    await client.send('Input.dispatchDragEvent', { type: 'drop', x: to.x, y: to.y, data });
-    await page.mouse.up();
-  } finally {
-    await client.send('Input.setInterceptDrags', { enabled: false });
-    await client.detach();
-  }
-}
+// handleDrop fires on the *native* `drop` DOM event, which the normal mouse API can
+// never produce — see e2e/native-drag.ts for why, and for the CDP machinery
+// cdpNativeDrag uses to get one.
 
 // Structural fingerprint of the first table in the editor. 43f9917's two failure
 // modes both show up here: a stray column/row grows columns/rows/cells; a cell's
