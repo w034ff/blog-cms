@@ -24,6 +24,7 @@ import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
+import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
 import type { PostFormState } from '@/app/actions/posts';
 
@@ -137,8 +138,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       onSessionExpired: setSessionExpired,
     });
 
-  const { uploading, dragging, blockedMessage, uploadImages, handleImageChange } =
-    useImageUpload(editorRef);
+  // One refusal notice for the whole editor, written to by the image guards and by the table cell
+  // paste guard. Owned here rather than in either of them so two refusals can't raise two toasts.
+  const { notice, showNotice } = useEditorNotice();
+
+  const { uploading, dragging, uploadImages, handleImageChange } = useImageUpload(
+    editorRef,
+    showNotice,
+  );
 
   // Keep a drag that started in the editor from landing on the fields beside it (see the hook —
   // the browser's own move deletes the dragged range out of the document).
@@ -215,7 +222,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // wouldn't break the move — but without this flag the table's "picked up" highlight would
       // flicker from a clean NodeSelection into a CellSelection the instant you grab its handle.
       // Purely cosmetic now; kept for that visual consistency.
-      MarkdownTable.configure({ allowTableNodeSelection: true }),
+      MarkdownTable.configure({ allowTableNodeSelection: true, onBlocked: showNotice }),
       ParagraphTableCell,
       ParagraphTableHeader,
       DropCursorGuard,
@@ -399,7 +406,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
               {/* Refusal notices hang off the sticky header (which is a containing block for them),
                   so they stay in view over the content — see EditorToast. */}
-              {blockedMessage && <EditorToast message={blockedMessage} />}
+              {notice && <EditorToast message={notice} />}
             </div>
           )}
           {editor ? (
