@@ -178,6 +178,72 @@ test('dropping a whole table into a cell is refused', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
+// A callout above the table with a paragraph after it, so a selection can be made either *inside*
+// the box or right past it — the two slices that both "contain a callout" and must be answered
+// differently.
+const CALLOUT_MD = `前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n間の段落です\n\n${TABLE_MD}`;
+
+// Opened on both sides, the callout in this slice is never placed — only the text is (see
+// components/editor/slice-placement.ts). A guard reading the slice's raw content refused this,
+// which had the rule exactly backwards: the harmless slice was turned away while the edge-crossing
+// one, which really does carry a box, was let in because the callout repair had already flattened
+// it to paragraphs.
+test('text dragged from inside a callout into a cell still lands', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, CALLOUT_MD);
+  const before = await docString(page);
+
+  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
+  if (!inside) throw new Error('missing box');
+  const dragFrom = await dragSelect(
+    page,
+    { x: inside.x + 4, y: inside.y + inside.height / 2 },
+    { x: inside.x + 40, y: inside.y + inside.height / 2 },
+  );
+
+  await cdpNativeDrag(page, dragFrom, await bodyCellText(editor), async () =>
+    expect(page.locator(DROP_CURSOR)).toHaveCount(1),
+  );
+
+  const after = await docString(page);
+  expect(after, after).not.toBe(before);
+  // Text, not a box: still one callout, one table of four cells, and still a pipe table.
+  await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+  await expect(editor.locator('table')).toHaveCount(1);
+  await expect(editor.locator('th,td')).toHaveCount(4);
+  expect(await markdown(page)).not.toContain('<table');
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+// The other side of that distinction, and what stops the fix above from being a hole: a selection
+// running from before the callout to after it covers the box end-to-end, so it sits *closed* in the
+// slice and would really be placed. A cell cannot hold one, so this stays refused.
+test('a whole callout dragged into a cell is refused', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, CALLOUT_MD);
+  const before = await docString(page);
+
+  const above = await editor.getByText('前の段落です').boundingBox();
+  const between = await editor.getByText('間の段落です').boundingBox();
+  if (!above || !between) throw new Error('missing boxes');
+  const dragFrom = await dragSelect(
+    page,
+    { x: above.x + 10, y: above.y + above.height / 2 },
+    { x: between.x + 40, y: between.y + between.height / 2 },
+  );
+
+  await cdpNativeDrag(page, dragFrom, await bodyCellText(editor));
+
+  expect(await docString(page)).toBe(before);
+  await expect(page.getByRole('status')).toHaveText(NOTICE);
+});
+
 // The other half of the rule, and the one that would break if the guard refused by position or by
 // "the slice mentions a block": ordinary text dragged into a cell is a normal edit. It lands, the
 // indicator says so beforehand, and the table keeps its pipe form.

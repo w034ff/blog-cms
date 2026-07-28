@@ -168,6 +168,40 @@ test('text dragged from inside a callout out to a paragraph stays text', async (
   expect(after, after).not.toContain('callout(callout');
 });
 
+// The same slice, aimed at the one destination the rule *does* police. It carries a callout node —
+// so a guard reading the slice's raw content refuses it — but opened on both sides, which means
+// ProseMirror places the text and never the box. Refusing it was backwards in the most visible way:
+// the selection that crosses the callout's edge, which really does carry a box, lands here fine
+// (the repair flattens it first), while this harmless one was turned away. placedContent is what
+// tells the two apart — see components/editor/slice-placement.ts.
+test('text dragged from inside a callout into a quote still lands', async ({ page }) => {
+  await openEditor(page, QUOTE_MD, QUOTE_DOC);
+  const editor = page.locator('.ProseMirror');
+
+  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
+  const quote = await editor.locator('blockquote:not(.markdown-alert) p').first().boundingBox();
+  if (!inside || !quote) throw new Error('missing boxes');
+  const dragFrom = await dragSelect(
+    page,
+    { x: inside.x + 4, y: inside.y + inside.height / 2 },
+    { x: inside.x + 40, y: inside.y + inside.height / 2 },
+  );
+
+  await cdpNativeDrag(
+    page,
+    dragFrom,
+    { x: quote.x + 20, y: quote.y + quote.height / 2 },
+    async () => expect(page.locator(DROP_CURSOR)).toHaveCount(1),
+  );
+
+  const after = await docString(page);
+  expect(after, after).not.toBe(QUOTE_DOC);
+  // Text, not a box: no callout inside the quote, and the one it came from is still the only one.
+  await expect(editor.locator('blockquote .markdown-alert')).toHaveCount(0);
+  await expect(editor.locator('.markdown-alert')).toHaveCount(1);
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
 // The guard must not swallow ordinary drops. Dragging plain text (a slice with no callout in it at
 // all) into a callout is a normal edit and still lands.
 test('plain text can still be dragged into a callout', async ({ page }) => {

@@ -1,4 +1,5 @@
 import type { ResolvedPos, Slice } from '@tiptap/pm/model';
+import { placedContent } from './slice-placement';
 
 // What a table cell may receive, and where a drop into a table may land — the two questions every
 // gesture that puts content into a table has to answer, kept in one module because four callers ask
@@ -30,10 +31,13 @@ function isInTableCell($pos: ResolvedPos): boolean {
 // safe spot to allow. (The very first header cell is the one exception, and it fails differently:
 // the block lands above the table instead.)
 //
-// Only the slice's own top level is examined. A paragraph containing an inline image, or a cell's
-// worth of marked-up text, is fine and stays fine; what cannot go in is a block *beside* the
-// paragraphs. Inline content and paragraph-only slices — an ordinary Ctrl+V — never reach the
-// refusal, which is the property that matters most here.
+// Only the top level is examined, and only of what the slice actually *places* (see
+// placedContent). A paragraph containing an inline image, or a cell's worth of marked-up text, is
+// fine and stays fine; what cannot go in is a block *beside* the paragraphs. Inline content and
+// paragraph-only slices — an ordinary Ctrl+V — never reach the refusal, which is the property that
+// matters most here. Nor does text taken from inside a callout or a quote: that slice carries the
+// box as an artefact of where the cut was made, and asking the raw content refused it for a node
+// nothing would have placed.
 //
 // `allowTable` is the one difference between the two gestures, and it is not a matter of taste.
 // prosemirror-tables' own `handlePaste` claims every table-carrying paste and merges it cell-wise —
@@ -47,7 +51,7 @@ function isInTableCell($pos: ResolvedPos): boolean {
 // nothing at all today. So the drop path asks the strict question.
 function carriesNonParagraphBlock(slice: Slice, { allowTable = false } = {}): boolean {
   let found = false;
-  slice.content.forEach((child) => {
+  placedContent(slice).forEach((child) => {
     if (allowTable && child.type.spec.tableRole !== undefined) return;
     if (child.isBlock && child.type.name !== 'paragraph') found = true;
   });

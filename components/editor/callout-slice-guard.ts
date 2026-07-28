@@ -2,6 +2,7 @@ import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { resolveDropTarget } from './drop-target';
 import { replaceSelectionClamped } from './isolating-boundary';
+import { placedContent } from './slice-placement';
 
 // The rules for what a *slice* carrying a callout may do — the one repair and the one refusal —
 // kept apart from the node definition in callout-extension.ts.
@@ -36,6 +37,12 @@ const CALLOUT_HOSTILE_ANCESTORS = new Set([CALLOUT_NAME, 'blockquote']);
 // edge also arrives carrying a box the user never meant to move; that one is settled separately, by
 // halfSelectedEdges below.
 //
+// And a selection made *wholly inside* a callout is neither, though it carries the box too: opened
+// on both sides, it is inline content wherever it lands (placedContent). Asking `slice.content`
+// directly refused it — text dragged out of a callout could not be dropped into a quote, while the
+// edge-crossing selection could, since the repair had already flattened that one to paragraphs.
+// The safe case was the refused one, which is the tell that the question was about the wrong thing.
+//
 // Guarding the gesture rather than the schema is deliberate. The node's `content: 'block+'` is what
 // lets a nested callout *load*: `> [!NOTE]` inside another quote level is legal markdown that an
 // imported post can carry, and lib/remark-github-alerts.ts renders it. Forbidding the shape in the
@@ -43,7 +50,7 @@ const CALLOUT_HOSTILE_ANCESTORS = new Set([CALLOUT_NAME, 'blockquote']);
 // alone. Same reasoning, and the same shape, as tableDropGuard in table-extensions.ts.
 export function wouldNestCallout($pos: ResolvedPos, slice: Slice): boolean {
   let carriesCallout = false;
-  slice.content.descendants((node) => {
+  placedContent(slice).descendants((node) => {
     if (node.type.name === CALLOUT_NAME) carriesCallout = true;
   });
   if (!carriesCallout) return false;
