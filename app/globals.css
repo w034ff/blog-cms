@@ -681,20 +681,26 @@ body.block-dragging .table-toolbar {
   font-weight: 400;
 }
 
-/* The corner glyph (U+201C, a left double quotation mark). Absolutely positioned
-   rather than injected into the text flow, so it can't be selected, copied, or
-   reached by the caret in the editor; the blockquote's own inline-start padding
-   above reserves the space it occupies, which is also what keeps a freshly-created
-   empty quote's caret clear of it. Note `top`/`left` resolve against this
-   pseudo-element's own (2.5em) font-size, not the blockquote's. */
+/* The corner glyph, matching the toolbar's QuoteIcon (components/editor/svg/QuoteIcon.tsx)
+   rather than the typographic U+201C: same path, painted via mask-image so
+   background-color still drives its tint. Absolutely positioned rather than injected
+   into the text flow, so it can't be selected, copied, or reached by the caret in the
+   editor; the blockquote's own inline-start padding above reserves the space it
+   occupies, which is also what keeps a freshly-created empty quote's caret clear of it. */
 .prose blockquote::before {
-  content: '\201C';
+  content: '';
   position: absolute;
-  top: 0.02em;
-  left: 0.18em;
-  font-size: 2.5em;
-  line-height: 1;
-  color: rgba(127, 127, 127, 0.5);
+  top: 0.5em;
+  left: 0.5em;
+  width: 1.5em;
+  height: 1.5em;
+  background-color: rgba(127, 127, 127, 0.65);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 17h3l2-4V7H4v6h3zm10 0h3l2-4V7h-6v6h3z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 17h3l2-4V7H4v6h3zm10 0h3l2-4V7h-6v6h3z'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
   user-select: none;
 }
 
