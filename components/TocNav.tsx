@@ -78,10 +78,25 @@ function TocList({ toc, activeId }: { toc: TocEntry[]; activeId: string | null }
     <ol className='space-y-1.5 text-sm'>
       {toc.map((entry) => (
         <li key={entry.id} className={entry.level === 3 ? 'pl-4' : undefined}>
+          {/* Two clamped lines, not `truncate`. The rail is at its narrowest right at the `toc:`
+              breakpoint — ~168px — and an h3 entry spends another 32px on the nav's p-4 and 16px
+              on its own pl-4, leaving ~120px: about 8 Japanese characters before the ellipsis,
+              which is not enough to tell two headings apart. Two lines fit nearly all of them
+              whole. The extra height is safe because TocNavDesktop already caps itself at
+              `max-h-[calc(100vh-2rem)] overflow-y-auto`, so a taller list can only scroll inside
+              the rail it was already able to scroll in — the sticky column can't outgrow it.
+
+              No `block`: the line-clamp utility declares `display:-webkit-box` itself (current
+              Chrome computes that to `flow-root` once a clamp applies), and either way it is a
+              block-level box filling the li just as `block` did — the whole entry stays
+              clickable, and a `block` left in place would only fight it. `break-words` covers the
+              case wrapping alone can't: Japanese breaks between almost any two characters, but a
+              long unbroken Latin token (an API name in a heading) offers no break opportunity and
+              would be clipped by the clamp's overflow instead of wrapping. */}
           <a
             href={`#${entry.id}`}
             aria-current={entry.id === activeId ? 'location' : undefined}
-            className={`toc-link block truncate text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 ${entry.id === activeId ? 'is-active' : ''}`}>
+            className={`toc-link line-clamp-2 break-words text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 ${entry.id === activeId ? 'is-active' : ''}`}>
             {entry.text}
           </a>
         </li>
