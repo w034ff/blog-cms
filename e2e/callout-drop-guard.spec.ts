@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
-import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
+import { caretPoint, cdpNativeDrag, dragSelect, type Point } from './native-drag';
 
 // A selection crossing a callout's edge drags a slice that *contains the callout node*: select from
 // inside one down into the paragraph below and ProseMirror hands the drag
@@ -51,16 +51,24 @@ async function openEditor(page: Page, markdown = MD, doc = DOC): Promise<void> {
 
 // From inside the callout down into the paragraph below it. This shape is what puts the callout node
 // in the slice, half-covered.
+//
+// Both endpoints are caret boundaries measured on the rendered text (caretPoint, e2e/native-drag.ts)
+// rather than pixel offsets into the boxes: LANDED below states one exact tree per destination, so
+// which characters the gesture covers is the whole test rather than an incidental of it.
 async function selectAcrossCalloutEdge(page: Page): Promise<Point> {
   const editor = page.locator('.ProseMirror');
-  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
-  const below = await editor.getByText('後の段落です').boundingBox();
-  if (!inside || !below) throw new Error('missing boxes');
-  return dragSelect(
+  const from = await dragSelect(
     page,
-    { x: inside.x + 30, y: inside.y + inside.height / 2 },
-    { x: below.x + 40, y: below.y + below.height / 2 },
+    await caretPoint(editor.locator('.markdown-alert p').last(), 2),
+    await caretPoint(editor.getByText('後の段落です'), 3),
   );
+  // Guard the guard: a selection that came up short would fail the trees below as a baffling
+  // one-character mismatch rather than as the wrong gesture. Both ends are named because both
+  // endpoints decide a tree.
+  const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(selected).toContain('の中身です');
+  expect(selected).toContain('後の段');
+  return from;
 }
 
 // Where each destination is. `text`/`topPadding`/`bottomPadding` are inside the callout — over its

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
-import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
+import { caretPoint, cdpNativeDrag, dragSelect, type Point } from './native-drag';
 
 // Content dragged out of the editor may not be dropped on the form fields beside it
 // (useDragContainment in components/editor/useDragContainment.ts).
@@ -35,19 +35,19 @@ async function openEditor(page: Page): Promise<void> {
   expect(await docString(page)).toBe(DOC);
 }
 
-// From inside the code body down into the paragraph below it. `code.y + 8` is the first line, not
-// the box's midpoint: the fence renders a trailing "\n", so the <code> box is two lines tall and
-// its middle lands on the empty second one, where a mousedown selects nothing — which would make
-// every assertion below pass vacuously (no selection, no dragstart, no drag to refuse).
+// From inside the code body down into the paragraph below it. Both endpoints are caret boundaries
+// measured on the rendered text (caretPoint, e2e/native-drag.ts) rather than pixel offsets into the
+// boxes, so the gesture reaches the same characters every run. Measuring also settles the vertical
+// question: the fence renders a trailing "\n", so the <code> box is two lines tall and its middle
+// lands on the empty second line, where a mousedown selects nothing — which would make every
+// assertion below pass vacuously (no selection, no dragstart, no drag to refuse). A caret measured
+// at the first character is on the first line by construction.
 async function selectAcrossCodeEdge(page: Page): Promise<Point> {
   const editor = page.locator('.ProseMirror');
-  const code = await editor.locator('.code-block code').boundingBox();
-  const below = await editor.getByText('後の段落です').boundingBox();
-  if (!code || !below) throw new Error('missing boxes');
   const from = await dragSelect(
     page,
-    { x: code.x + 10, y: code.y + 8 },
-    { x: below.x + 40, y: below.y + below.height / 2 },
+    await caretPoint(editor.locator('.code-block code'), 1),
+    await caretPoint(editor.getByText('後の段落です'), 3),
   );
   const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
   expect(selected).toContain('後の段');

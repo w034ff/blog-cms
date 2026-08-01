@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
-import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
+import { caretPoint, cdpNativeDrag, dragSelect, type Point } from './native-drag';
 
 // The code block header's controls are not a drop target for content dragged out of this document
 // (refuseEditorDrag in components/editor/code-block-extension.ts).
@@ -42,19 +42,18 @@ async function openEditor(page: Page): Promise<void> {
 // From inside the code body down into the paragraph below it: the slice carries the code block and
 // the text/plain carries a newline, which is the shape the report describes.
 //
-// `code.y + 8` — the first line, deliberately, not the box's vertical middle. The fence renders a
-// trailing "\n", so the <code> box is two lines tall and its midpoint lands on the empty second
-// one; a mousedown there and a drag downward selects nothing at all, which makes the whole test
-// pass vacuously (dragstart never fires, so there is no drag to refuse).
+// Both endpoints are caret boundaries measured on the rendered text (caretPoint, e2e/native-drag.ts)
+// rather than pixel offsets into the boxes: the assertions below count characters, so the gesture
+// has to reach the same ones every run. Measuring also settles the vertical question the box could
+// not — the fence renders a trailing "\n", so the <code> box is two lines tall and its midpoint
+// lands on the empty second line, where a mousedown selects nothing and the whole test passes
+// vacuously. A caret measured at the first character is on the first line by construction.
 async function selectAcrossCodeEdge(page: Page): Promise<Point> {
   const editor = page.locator('.ProseMirror');
-  const code = await editor.locator('.code-block code').boundingBox();
-  const below = await editor.getByText('後の段落です').boundingBox();
-  if (!code || !below) throw new Error('missing boxes');
   const from = await dragSelect(
     page,
-    { x: code.x + 10, y: code.y + 8 },
-    { x: below.x + 40, y: below.y + below.height / 2 },
+    await caretPoint(editor.locator('.code-block code'), 1),
+    await caretPoint(editor.getByText('後の段落です'), 3),
   );
   // Guard the guard: assert the selection actually spans the boundary before dragging it.
   const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
