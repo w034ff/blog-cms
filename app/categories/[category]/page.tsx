@@ -18,7 +18,7 @@ export default async function CategoryPage({ params }: { params: Promise<Params>
   const posts = await getPostsByCategory(decoded);
   if (posts.length === 0) notFound();
   return (
-    <section>
+    <section className='mx-auto w-full max-w-site'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>
         {decoded} <span className='text-zinc-500 dark:text-zinc-400 text-xl'>({posts.length})</span>
       </h1>

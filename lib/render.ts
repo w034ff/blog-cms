@@ -5,11 +5,15 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
+import rehypeSlug from 'rehype-slug';
 import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 import { rehypeCodeFilename } from './rehype-code-filename';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
+import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
+
+export type { TocEntry };
 
 // defaultSchema (GitHub's allowlist) minus className, so the alert transform's
 // container/title/content classes survive sanitization. The nested `['className', …]`
@@ -70,7 +74,16 @@ const processor = unified()
   .use(remarkGithubAlerts)
   .use(remarkRehype, { allowDangerousHtml: true })
   .use(rehypeRaw)
+  // Assigns each h2/h3 an id. Runs before sanitize (not after) so an author's own hand-written
+  // `id` on a raw-HTML heading — which rehypeSlug leaves untouched — still goes through the
+  // schema's `clobberPrefix` below like any other id, instead of bypassing that defense.
+  .use(rehypeSlug)
   .use(rehypeSanitize, schema)
+  // Reads ids back off the tree AFTER sanitize: the schema's `clobberPrefix` (GitHub's
+  // DOM-clobbering defense) rewrites every id to `user-content-<id>`, so collecting any earlier
+  // would hand the post page's table of contents a set of ids that don't match what actually
+  // renders.
+  .use(rehypeCollectToc)
   // Split a Zenn-style ```lang:filename fence (the whole info string survives sanitize as
   // the `language-…` class) into a real language + a title="…" meta for pretty-code. MUST sit
   // after sanitize (which would otherwise strip the meta) and before pretty-code, which reads
@@ -88,7 +101,7 @@ const processor = unified()
   })
   .use(rehypeStringify);
 
-export async function renderMdxToHtml(source: string): Promise<string> {
+export async function renderMdxToHtml(source: string): Promise<{ html: string; toc: TocEntry[] }> {
   const file = await processor.process(source);
-  return String(file);
+  return { html: String(file), toc: file.data.toc ?? [] };
 }
