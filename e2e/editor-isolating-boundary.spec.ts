@@ -624,16 +624,19 @@ test('dragging a selection out of a code block leaves the fence standing', async
   // Drag-select the paragraph below *upwards* into the code — the same cross-edge range, made the
   // direction that actually produces one here. Dragging downwards out of a `<pre>` collapses the
   // native selection to a caret in Chrome, which leaves no range to pick up and no drag at all.
-  const code = await editor.locator('pre code').boundingBox();
   const above = await editor.getByText('前の段落です').boundingBox();
-  if (!code || !above) throw new Error('missing boxes');
+  if (!above) throw new Error('missing box');
+  // Both ends are measured caret boundaries (caretPoint, e2e/native-drag.ts). The paragraph end
+  // decides how much of it crosses the edge, which is what the clamp is being asked about. The code
+  // end has to be in the code's *text*: the fence renders a trailing "\n", so the <code> box is two
+  // lines tall and `code.y + height / 2` — what this used to aim at — lands on the empty second
+  // line. Chrome 143 still swept the line above into the selection on the way there; Chrome 151
+  // anchors it at that empty line instead, so the range covered no code at all and the slice
+  // carried no fence to the destination.
   const dragFrom = await dragSelect(
     page,
-    // The paragraph end is a measured caret boundary (caretPoint, e2e/native-drag.ts): it decides
-    // how much of the paragraph crosses the edge, which is what the clamp is being asked about.
-    // The code end only has to be inside the fence, so the box still says it well enough.
     await caretPoint(editor.getByText('後の段落です'), 3),
-    { x: code.x + 30, y: code.y + code.height / 2 },
+    await caretPoint(editor.locator('pre code'), 8),
   );
 
   await cdpNativeDrag(page, dragFrom, { x: above.x + 10, y: above.y + above.height / 2 });
