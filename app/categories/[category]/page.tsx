@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getPostsByCategory } from '@/lib/posts';
 import { PostCard } from '@/components/PostCard';
+import { sharedOpenGraph } from '@/app/shared-metadata';
 
 type Params = { category: string };
 
@@ -9,7 +10,10 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { category } = await params;
-  return { title: decodeURIComponent(category) };
+  const title = decodeURIComponent(category);
+  // See the note in app/tags/[tag]/page.tsx: openGraph is replaced, not merged,
+  // so leaving it unset here would label this page with the site's own title.
+  return { title, openGraph: { ...sharedOpenGraph, title, url: `/categories/${category}` } };
 }
 
 export default async function CategoryPage({ params }: { params: Promise<Params> }) {
