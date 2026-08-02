@@ -1,9 +1,8 @@
-import path from 'node:path';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { resolveDbPath } from './db-path.mts';
 
-const ROOT = process.cwd();
-const DB_PATH = path.join(ROOT, 'data', 'blog.db');
+const DB_PATH = resolveDbPath();
 
 function main(): void {
   try {

@@ -1,5 +1,5 @@
-import path from 'node:path';
 import Database from 'better-sqlite3';
+import { resolveDbPath } from './db-path.mts';
 
 // One-off repair for markdown written before components/editor/image-extension.ts existed.
 //
@@ -26,7 +26,7 @@ import Database from 'better-sqlite3';
 // Deliberately NOT done by opening the post in the editor and re-saving: an affected post loads
 // with the stray `>` as literal paragraph text, which re-serializes to the HTML entity `&gt;`.
 
-const DB_PATH = path.join(process.cwd(), 'data', 'blog.db');
+const DB_PATH = resolveDbPath();
 
 // An image immediately followed by a non-space character. The space matters: `![a](b) text` is a
 // legitimately inline image with content after it, while the corruption always butts the next

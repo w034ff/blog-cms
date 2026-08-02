@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { resolveDbPath } from './db-path.mts';
 
 // Point-in-time snapshot of the SQLite DB.
 //
@@ -20,11 +21,8 @@ import Database from 'better-sqlite3';
 // Old snapshots are never pruned — deleting backups is not something a backup
 // tool should do on its own.
 const ROOT = process.cwd();
-// Mirrors lib/db/index.ts: a deployment can point the app at a DB outside the
-// repo, and a backup that silently snapshots the wrong file is worse than none.
-const DB_PATH = process.env.BLOG_DB_PATH
-  ? path.resolve(process.env.BLOG_DB_PATH)
-  : path.join(ROOT, 'data', 'blog.db');
+// A backup that silently snapshots the wrong file is worse than none.
+const DB_PATH = resolveDbPath();
 const BACKUP_DIR = path.join(ROOT, 'data', 'backups');
 
 // 2026-08-02T13:45:12.345Z → 20260802-134512Z, sorts chronologically as a filename.

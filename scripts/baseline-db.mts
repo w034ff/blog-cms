@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { resolveDbPath } from './db-path.mts';
 
 // Marks an EXISTING database as already carrying the migrations in drizzle/,
 // without running them.
@@ -21,9 +22,7 @@ import Database from 'better-sqlite3';
 //
 // Dry-run by default; --apply writes the ledger.
 const ROOT = process.cwd();
-const DB_PATH = process.env.BLOG_DB_PATH
-  ? path.resolve(process.env.BLOG_DB_PATH)
-  : path.join(ROOT, 'data', 'blog.db');
+const DB_PATH = resolveDbPath();
 const MIGRATIONS_DIR = path.join(ROOT, 'drizzle');
 
 // Same shape drizzle-orm's migrator creates (sqlite-core/dialect.cjs), so a

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { resolveDbPath } from './db-path.mts';
 
 // Grace-period garbage collector for public/uploads. Uploads are written the
 // moment an image is pasted/dropped — before the post is saved — so a file can
@@ -13,7 +14,9 @@ import Database from 'better-sqlite3';
 const ROOT = process.cwd();
 const UPLOAD_DIR = path.join(ROOT, 'public', 'uploads');
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
-const DB_PATH = path.join(ROOT, 'data', 'blog.db');
+// Uploads live next to the app, but the DB may not — see scripts/db-path.mts.
+// Getting this wrong here means sweeping against an empty reference set.
+const DB_PATH = resolveDbPath();
 
 const UPLOAD_REF = /\/uploads\/([A-Za-z0-9._-]+)/g;
 

@@ -2,6 +2,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { resolveDbPath } from './db-path.mts';
 
 // Applies every not-yet-applied migration in drizzle/ to the DB.
 //
@@ -24,11 +25,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 // (meta/_journal.json) — not by hashing. The pre-existing local DB was marked
 // as already at 0000 by scripts/baseline-db.mts rather than having it applied.
 const ROOT = process.cwd();
-// Mirrors lib/db/index.ts so a deployment pointing elsewhere migrates the DB it
-// actually serves.
-const DB_PATH = process.env.BLOG_DB_PATH
-  ? path.resolve(process.env.BLOG_DB_PATH)
-  : path.join(ROOT, 'data', 'blog.db');
+// So a deployment pointing elsewhere migrates the DB it actually serves.
+const DB_PATH = resolveDbPath();
 const MIGRATIONS_DIR = path.join(ROOT, 'drizzle');
 
 type LedgerRow = { hash: string; created_at: number };
