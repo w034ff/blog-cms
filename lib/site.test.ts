@@ -9,8 +9,16 @@ async function loadSiteOrigin(value?: string): Promise<URL> {
   return (await import('@/lib/site')).siteOrigin;
 }
 
+async function loadSiteIndexable(value?: string): Promise<boolean> {
+  vi.resetModules();
+  if (value === undefined) delete process.env.SITE_INDEXABLE;
+  else process.env.SITE_INDEXABLE = value;
+  return (await import('@/lib/site')).siteIndexable;
+}
+
 afterEach(() => {
   delete process.env.SITE_ORIGIN;
+  delete process.env.SITE_INDEXABLE;
 });
 
 describe('siteOrigin', () => {
@@ -49,5 +57,22 @@ describe('siteOrigin', () => {
 
   it('throws on a non-http scheme', async () => {
     await expect(loadSiteOrigin('ftp://example.com')).rejects.toThrow('must be http(s)');
+  });
+});
+
+// The default matters more than the flag: an environment nobody thought about —
+// a LAN host, the Funnel address standing in for the real domain — has to stay
+// out of the index without anyone remembering to say so.
+describe('siteIndexable', () => {
+  it('is off when unset', async () => {
+    expect(await loadSiteIndexable()).toBe(false);
+  });
+
+  it('is on only for exactly "true"', async () => {
+    expect(await loadSiteIndexable('true')).toBe(true);
+    expect(await loadSiteIndexable('TRUE')).toBe(false);
+    expect(await loadSiteIndexable('1')).toBe(false);
+    expect(await loadSiteIndexable('yes')).toBe(false);
+    expect(await loadSiteIndexable('')).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
-import { siteOrigin } from '@/lib/site';
+import { siteIndexable, siteOrigin } from '@/lib/site';
 import './globals.css';
 
 const geistSans = Geist({
@@ -22,6 +22,10 @@ export const metadata: Metadata = {
   // instead of being written into the source. Without it, Next fails the build on
   // the first relative metadata URL rather than guessing.
   metadataBase: siteOrigin,
+  // Off unless the environment says this is the published address (lib/site.ts).
+  // app/robots.ts refuses crawlers on the same signal; this covers the page a
+  // crawler reaches anyway, having found the URL somewhere other than robots.txt.
+  ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
   title: {
     default: 'Tech Blog',
     template: '%s | Tech Blog',

@@ -31,3 +31,13 @@ function resolveSiteOrigin(): URL {
 }
 
 export const siteOrigin = resolveSiteOrigin();
+
+// Whether search engines are welcome. Opt-in, so every environment that isn't
+// explicitly the published one — a LAN host, the Tailscale Funnel address this
+// site is reachable at while the real domain is decided — stays out of the index
+// by default rather than by remembering to opt out.
+//
+// The cost of getting it wrong is asymmetric and slow to undo: a `*.ts.net` URL
+// that gets indexed keeps sending people to a host that will not exist once the
+// site moves, and removing it is a request to a third party rather than a deploy.
+export const siteIndexable = process.env.SITE_INDEXABLE === 'true';

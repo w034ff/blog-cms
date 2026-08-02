@@ -31,7 +31,10 @@ npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts
 | `SESSION_SECRET`                  | セッション Cookie（JWT）の署名鍵。十分に長いランダム文字列                                               |
 | `SESSION_COOKIE_SECURE`           | HTTPS が前に立つ環境では `true`、LAN/HTTP では `false`                                                   |
 | `SITE_ORIGIN`                     | 公開オリジン（例 `https://blog.example.ts.net`）。省略時は `http://localhost:3001`。**公開環境では必須** |
+| `SITE_INDEXABLE`                  | `true` のときだけ検索エンジンに開放する。省略時は **noindex**                                            |
 | `BLOG_DB_PATH`                    | DB ファイルの場所を上書きする。省略時は `data/blog.db`                                                   |
+
+`SITE_INDEXABLE` が既定で off なのは、暫定のホスト（LAN、Tailscale Funnel の `*.ts.net`）が索引されると、本番ドメインへ移った後もそこへ人を送り続けるためで、取り消しは第三者への申請になる。恒久的な URL が決まってから `true` にする。切り替えにはビルドと再起動が必要。
 
 `SITE_ORIGIN` は絶対 URL を要求し、不正な値ならサーバー起動時に落ちる（localhost に暗黙で退行すると、共有カードの URL が読者自身の PC を指したまま気づけないため）。`https` を指定して `SESSION_COOKIE_SECURE` が `true` でない場合は警告が出る。
 
