@@ -33,6 +33,19 @@ export const posts = sqliteTable('posts', {
   draftContent: text('draft_content', { mode: 'json' }).$type<DraftContent>(),
 });
 
+// Failed-login bookkeeping, so a public `/login` can't be tried at the speed the
+// server answers. Keyed by the submitted username, whether or not it exists —
+// tracking only real accounts would make "does this name get throttled?" an
+// existence oracle. Rows are transient: cleared on a successful login and pruned
+// once they age past the decay window (lib/login-throttle.ts).
+export const loginAttempts = sqliteTable('login_attempts', {
+  username: text('username').primaryKey(),
+  failures: integer('failures').notNull().default(0),
+  // Epoch milliseconds, not the ISO text used for post dates: this column is only
+  // ever compared and subtracted, never displayed.
+  lastFailureAt: integer('last_failure_at').notNull(),
+});
+
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
+import { siteIndexable, siteOrigin } from '@/lib/site';
+import { SITE_DESCRIPTION, SITE_NAME, sharedOpenGraph } from './shared-metadata';
 import './globals.css';
 
 const geistSans = Geist({
@@ -15,11 +17,34 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // The base every relative metadata URL resolves against (og:image, canonical).
+  // Nothing sets one of those yet, so this changes no output today — it is here so
+  // that when they land, the host they point at comes from SITE_ORIGIN (lib/site.ts)
+  // instead of being written into the source. Without it, Next fails the build on
+  // the first relative metadata URL rather than guessing.
+  // The base every relative metadata URL resolves against — og:url below is
+  // written as a path and becomes absolute through this, so moving the site is a
+  // change of SITE_ORIGIN (lib/site.ts) and nothing else.
+  metadataBase: siteOrigin,
+  // Off unless the environment says this is the published address (lib/site.ts).
+  // app/robots.ts refuses crawlers on the same signal; this covers the page a
+  // crawler reaches anyway, having found the URL somewhere other than robots.txt.
+  ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
   title: {
-    default: 'Tech Blog',
-    template: '%s | Tech Blog',
+    default: SITE_NAME,
+    template: `%s | ${SITE_NAME}`,
   },
-  description: '個人技術ブログ',
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    ...sharedOpenGraph,
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+    url: '/',
+  },
+  // The wide card, now that there is an image to fill it. Inherited by every page
+  // that doesn't set `twitter` itself, and Twitter/X falls back to the og: tags
+  // for the title, description and image.
+  twitter: { card: 'summary_large_image' },
 };
 
 export default function RootLayout({

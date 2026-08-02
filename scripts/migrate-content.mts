@@ -2,10 +2,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import matter from 'gray-matter';
+import { resolveDbPath } from './db-path.mts';
 
 const ROOT = process.cwd();
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
-const DB_PATH = path.join(ROOT, 'data', 'blog.db');
+const DB_PATH = resolveDbPath();
 
 type Frontmatter = {
   title?: string;

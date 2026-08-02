@@ -9,6 +9,8 @@ build/
 # Lockfiles & generated files
 package-lock.json
 next-env.d.ts
+# drizzle-kit rewrites these on every `db:generate`; formatting them only churns
+drizzle/meta/
 
 # Runtime state (also gitignored)
 data/

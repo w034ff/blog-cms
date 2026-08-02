@@ -6,6 +6,7 @@ import { renderMdxToHtml } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
+import { sharedOpenGraph } from '@/app/shared-metadata';
 
 type Params = { slug: string };
 
@@ -22,6 +23,21 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   return {
     title: post.title,
     description: post.description,
+    openGraph: {
+      // Spread, not replaced: setting `openGraph` here overrides the layout's
+      // object wholesale, so siteName and locale have to come along or this one
+      // page quietly loses them (see app/shared-metadata.ts).
+      ...sharedOpenGraph,
+      type: 'article',
+      title: post.title,
+      description: post.description,
+      // Relative, resolved against metadataBase — the canonical address of the
+      // post, so a share from a proxied or query-decorated URL still points here.
+      url: `/posts/${slug}`,
+      // The publish date, which is immutable once set (lib/posts-write.ts). Stored
+      // UTC; the tag wants ISO 8601 and a bare YYYY-MM-DD is valid as one.
+      publishedTime: post.date,
+    },
   };
 }
 

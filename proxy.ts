@@ -20,6 +20,10 @@ export default async function proxy(req: NextRequest) {
     const refreshed = await encryptSession(session);
     res.cookies.set(SESSION_COOKIE, refreshed, {
       httpOnly: true,
+      // Same rule as lib/session.ts's cookieSecure, read directly rather than
+      // imported: that module is server-only and pulls in next/headers, neither of
+      // which belongs in the proxy. The two must stay in step — this is the
+      // refresh of the cookie that one issues.
       secure: process.env.SESSION_COOKIE_SECURE === 'true',
       sameSite: 'lax',
       maxAge: SESSION_MAX_AGE_SECONDS,
