@@ -14,6 +14,7 @@ import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
+import { FootnoteLiteral } from './editor/footnote-literal-extension';
 import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
@@ -242,6 +243,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // see image-extension.ts.
       Image,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
+      // Stops a footnote definition line from being parsed as a link reference definition,
+      // which silently deleted the note's text — see footnote-literal-extension.ts. It patches
+      // the markdown-it instance the extension above owns; kept next to it for that reason
+      // (tiptap-markdown collects every extension's parse.setup, so the position is only
+      // documentation).
+      FootnoteLiteral,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
