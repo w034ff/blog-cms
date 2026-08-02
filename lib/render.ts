@@ -5,11 +5,16 @@ import remarkGfm from 'remark-gfm';
 import remarkRehype from 'remark-rehype';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
+import rehypeSlug from 'rehype-slug';
 import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 import { rehypeCodeFilename } from './rehype-code-filename';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
+import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
+import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
+
+export type { TocEntry };
 
 // defaultSchema (GitHub's allowlist) minus className, so the alert transform's
 // container/title/content classes survive sanitization. The nested `['className', …]`
@@ -52,6 +57,12 @@ const schema: SanitizeSchema = {
   },
 };
 
+// What sanitize will actually rename an `id` to, read back off the schema rather than
+// restated, so the fragment-link rewrite below can't drift out of step with it. Mirrors
+// hast-util-sanitize's own condition: a schema that blanks the prefix or drops `id` from
+// `clobber` renames nothing, and then neither should the links.
+const idClobberPrefix = schema.clobber?.includes('id') ? (schema.clobberPrefix ?? '') : '';
+
 // Shared pipeline used by both the public post page and the editor preview,
 // so what an author previews matches exactly what gets published.
 // Mirrors the rehype-pretty-code options that used to live in next.config.ts.
@@ -68,9 +79,25 @@ const processor = unified()
   .use(remarkGfm)
   // GitHub alerts (`> [!NOTE]` …) run on the mdast, before it becomes hast.
   .use(remarkGithubAlerts)
-  .use(remarkRehype, { allowDangerousHtml: true })
+  // `clobberPrefix: ''` leaves GFM footnote ids/hrefs bare (`fn-1`), so sanitize below is the
+  // only step that prefixes them — exactly like every other id. With to-hast's own
+  // `user-content-` left on, sanitize would prefix the id a second time and the href not at
+  // all, which pointed both the reference and the ↩ backref at names that don't exist.
+  .use(remarkRehype, { allowDangerousHtml: true, clobberPrefix: '' })
   .use(rehypeRaw)
+  // Assigns each h2/h3 an id. Runs before sanitize (not after) so an author's own hand-written
+  // `id` on a raw-HTML heading — which rehypeSlug leaves untouched — still goes through the
+  // schema's `clobberPrefix` below like any other id, instead of bypassing that defense.
+  .use(rehypeSlug)
   .use(rehypeSanitize, schema)
+  // Re-points every in-page link at the id sanitize just renamed (headings, footnotes). Must
+  // run after sanitize for the same reason the toc collection below does.
+  .use(rehypeClobberFragmentLinks, { prefix: idClobberPrefix })
+  // Reads ids back off the tree AFTER sanitize: the schema's `clobberPrefix` (GitHub's
+  // DOM-clobbering defense) rewrites every id to `user-content-<id>`, so collecting any earlier
+  // would hand the post page's table of contents a set of ids that don't match what actually
+  // renders.
+  .use(rehypeCollectToc)
   // Split a Zenn-style ```lang:filename fence (the whole info string survives sanitize as
   // the `language-…` class) into a real language + a title="…" meta for pretty-code. MUST sit
   // after sanitize (which would otherwise strip the meta) and before pretty-code, which reads
@@ -88,7 +115,7 @@ const processor = unified()
   })
   .use(rehypeStringify);
 
-export async function renderMdxToHtml(source: string): Promise<string> {
+export async function renderMdxToHtml(source: string): Promise<{ html: string; toc: TocEntry[] }> {
   const file = await processor.process(source);
-  return String(file);
+  return { html: String(file), toc: file.data.toc ?? [] };
 }

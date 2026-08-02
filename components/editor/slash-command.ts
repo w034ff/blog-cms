@@ -45,8 +45,11 @@ const ITEMS: SlashEntry[] = [
     id: 'code-block',
     title: 'コードブロック',
     keywords: ['code', 'codeblock', 'code block', 'コード'],
-    run: (chain) => chain.setCodeBlock(),
-    available: (editor) => editor.can().setCodeBlock(),
+    // insertCodeBlock, not setCodeBlock: inside a list item the latter is invalid (converting the
+    // item's first paragraph would leave it headless) and dropped this row, while the block itself
+    // is legal there — see code-block-extension.ts.
+    run: (chain) => chain.insertCodeBlock(),
+    available: (editor) => editor.can().insertCodeBlock(),
   },
 ];
 

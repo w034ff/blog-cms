@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { caret, docString, markdown, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
-import { cdpNativeDrag, dragSelect } from './native-drag';
+import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
 // `isolating` blocks placement, not ranged replacement. prosemirror-transform's isolating checks
 // guard where a slice may be *placed*; they say nothing about the frontier a ranged replacement
@@ -624,14 +624,19 @@ test('dragging a selection out of a code block leaves the fence standing', async
   // Drag-select the paragraph below *upwards* into the code — the same cross-edge range, made the
   // direction that actually produces one here. Dragging downwards out of a `<pre>` collapses the
   // native selection to a caret in Chrome, which leaves no range to pick up and no drag at all.
-  const code = await editor.locator('pre code').boundingBox();
-  const below = await editor.getByText('後の段落です').boundingBox();
   const above = await editor.getByText('前の段落です').boundingBox();
-  if (!code || !below || !above) throw new Error('missing boxes');
+  if (!above) throw new Error('missing box');
+  // Both ends are measured caret boundaries (caretPoint, e2e/native-drag.ts). The paragraph end
+  // decides how much of it crosses the edge, which is what the clamp is being asked about. The code
+  // end has to be in the code's *text*: the fence renders a trailing "\n", so the <code> box is two
+  // lines tall and `code.y + height / 2` — what this used to aim at — lands on the empty second
+  // line. Chrome 143 still swept the line above into the selection on the way there; Chrome 151
+  // anchors it at that empty line instead, so the range covered no code at all and the slice
+  // carried no fence to the destination.
   const dragFrom = await dragSelect(
     page,
-    { x: below.x + 40, y: below.y + below.height / 2 },
-    { x: code.x + 30, y: code.y + code.height / 2 },
+    await caretPoint(editor.getByText('後の段落です'), 3),
+    await caretPoint(editor.locator('pre code'), 8),
   );
 
   await cdpNativeDrag(page, dragFrom, { x: above.x + 10, y: above.y + above.height / 2 });
@@ -723,19 +728,18 @@ test('the reported gesture — drag across the edge, press Backspace — clamps'
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  const inside = await editor.locator('.markdown-alert p').last().boundingBox();
-  const below = await editor.getByText('後の段落です').boundingBox();
-  if (!inside || !below) throw new Error('missing boxes');
   await dragSelect(
     page,
-    { x: inside.x + 30, y: inside.y + inside.height / 2 },
-    { x: below.x + 40, y: below.y + below.height / 2 },
+    await caretPoint(editor.locator('.markdown-alert p').last(), 2),
+    await caretPoint(editor.getByText('後の段落です'), 3),
   );
 
   await page.keyboard.press('Backspace');
 
-  // The endpoints land by font metrics rather than by count, so the tail here is 「落です」 where
-  // the stated-endpoint tests above leave 「段落です」 — same clamp, one character further along.
+  // The gesture reaches one character further than the stated-endpoint tests above, so the tail here
+  // is 「落です」 where they leave 「段落です」 — same clamp, a longer range. Its endpoints are caret
+  // boundaries measured on the rendered text (caretPoint, e2e/native-drag.ts), so that is a property
+  // of the range this test states, not of the font it happened to be run against.
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("落です"))');

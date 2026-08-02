@@ -1,6 +1,36 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 
+/* Without this, a page tall enough to need a vertical scrollbar has less horizontal layout
+   width than a short one (on any browser/OS using a space-consuming, non-overlay scrollbar) —
+   the whole centered layout, SiteHeader included, shifts sideways by the scrollbar's width.
+   Reserving the gutter unconditionally keeps that width constant across every page regardless
+   of its own content length or scroll state. */
+html {
+  scrollbar-gutter: stable;
+}
+
+/* Smooth scrolling for the table-of-contents links, scoped to the public post page.
+
+   It has to be declared on the scrolling element — <html> — which app/layout.tsx renders for
+   every route, so `:has(#post-body)` (an id only app/posts/[slug]/page.tsx sets) is what keeps it
+   off the rest of the site. Declaring it on <html> unconditionally is what must NOT happen: per
+   CSSOM View, assigning `element.scrollTop` scrolls with behavior `auto`, which resolves to the
+   element's computed scroll-behavior — and prosemirror-view keeps the caret on screen by writing
+   `scrollTop` on the scroll parent directly (`scrollRectIntoView` in domcoords.ts), as does its
+   store/reset of scroll position across DOM updates. The editor has no inner scroll container of
+   its own (components/PostEditor.tsx's frame is deliberately not overflow-hidden, so its sticky
+   toolbar works), which makes <html> its scroll parent — so a global `smooth` turns every
+   caret-keeping scroll into an animation that the caret outruns while typing.
+
+   `motion-safe` equivalent: honours a reduced-motion preference the same way the Tailwind class
+   this replaces did. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(#post-body) {
+    scroll-behavior: smooth;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -11,6 +41,25 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* The site's one content column. Every page root caps at it (`max-w-site`), SiteHeader and
+     SiteFooter's inner box match it, and the post page's TOC grid uses it as the content track
+     via `var(--container-site)`. These must stay one value: the grid's left gutter is
+     `(100% - column) / 2`, which only lands on the same left edge as a plain `mx-auto` box of
+     the same cap while both read this. Widen here and the whole site widens together. */
+  --container-site: 50rem;
+  /* Below this, the table-of-contents rail (app/posts/[slug]/page.tsx's 3-track grid) would be
+     too narrow to be worth showing; the post falls back to the collapsible mobile <details>
+     (components/TocNav.tsx) instead. This is a readability choice, not a correctness one — the
+     grid's rail track is `1fr` (fluid, capped by max-w-60), so it can never overflow regardless
+     of where this line is drawn. Referenced as the `toc:` variant in three places (the grid
+     itself, TocNavMobile's hide, TocNavDesktop's show) — move all three together.
+
+     Why 77rem and not a rounder 75: the rail gets `(container − --container-site) / 2` minus
+     TocNavDesktop's `ml-6`, so widening the column narrows the rail at a fixed breakpoint. 77rem
+     restores the ~168px the rail had back when the column was 48rem and this was 75rem — enough
+     that a typical Japanese heading isn't immediately `truncate`d. Raise the column again and
+     this needs raising too, or the rail silently shrinks. */
+  --breakpoint-toc: 77rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -681,20 +730,26 @@ body.block-dragging .table-toolbar {
   font-weight: 400;
 }
 
-/* The corner glyph (U+201C, a left double quotation mark). Absolutely positioned
-   rather than injected into the text flow, so it can't be selected, copied, or
-   reached by the caret in the editor; the blockquote's own inline-start padding
-   above reserves the space it occupies, which is also what keeps a freshly-created
-   empty quote's caret clear of it. Note `top`/`left` resolve against this
-   pseudo-element's own (2.5em) font-size, not the blockquote's. */
+/* The corner glyph, matching the toolbar's QuoteIcon (components/editor/svg/QuoteIcon.tsx)
+   rather than the typographic U+201C: same path, painted via mask-image so
+   background-color still drives its tint. Absolutely positioned rather than injected
+   into the text flow, so it can't be selected, copied, or reached by the caret in the
+   editor; the blockquote's own inline-start padding above reserves the space it
+   occupies, which is also what keeps a freshly-created empty quote's caret clear of it. */
 .prose blockquote::before {
-  content: '\201C';
+  content: '';
   position: absolute;
-  top: 0.02em;
-  left: 0.18em;
-  font-size: 2.5em;
-  line-height: 1;
-  color: rgba(127, 127, 127, 0.5);
+  top: 0.5em;
+  left: 0.5em;
+  width: 1.5em;
+  height: 1.5em;
+  background-color: rgba(127, 127, 127, 0.65);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 17h3l2-4V7H4v6h3zm10 0h3l2-4V7h-6v6h3z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 17h3l2-4V7H4v6h3zm10 0h3l2-4V7h-6v6h3z'/%3E%3C/svg%3E");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
   user-select: none;
 }
 
@@ -829,6 +884,20 @@ body.block-dragging .table-toolbar {
 .accent-emphasis {
   font-weight: 700;
   color: #cf222e;
+}
+
+/* Table of contents (components/TocNav.tsx), post page only — not `.prose`-scoped since it
+   sits outside the article body. `scroll-mt` gives a jumped-to heading a little breathing room
+   from the viewport edge; there's no fixed site header to clear, so a small value is enough.
+   Dark counterparts for both live in the bottom prefers-color-scheme block. */
+#post-body h2,
+#post-body h3 {
+  scroll-margin-top: 1rem;
+}
+
+.toc-link.is-active {
+  color: #cf222e; /* same red accent as h2/h3/accent-emphasis above */
+  font-weight: 600;
 }
 
 /* Full-grid tables: the typography plugin draws only horizontal rules, which
@@ -1053,6 +1122,11 @@ body.block-dragging .table-toolbar {
 
   /* Dark counterpart of the accent-emphasis color above (also unscoped — see there). */
   .accent-emphasis {
+    color: #f85149;
+  }
+
+  /* Dark counterpart of the TOC active-link color above. */
+  .toc-link.is-active {
     color: #f85149;
   }
 

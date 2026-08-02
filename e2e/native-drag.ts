@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 // Driving a native HTML5 drag to completion, for the drop guards.
 //
@@ -62,12 +62,65 @@ export async function cdpNativeDrag(
   }
 }
 
+// The caret boundary after `index` characters of `target`'s text, as a point to aim a drag-select
+// endpoint at. Measured from the rendered character rects rather than guessed as a pixel offset
+// from the box's left edge.
+//
+// Why measured: a drag-select resolves its endpoint to a character boundary, and Chrome does not
+// snap to the *nearest* one. On the 16px CJK glyphs these specs use, a point 53% through a
+// character still ends the selection before it while 78% ends it after — so a hard-coded
+// `box.x + 40` sits at whatever fraction of whichever character it happens to reach, and anything
+// that moves the font metrics slides it across that threshold. Thirteen specs went red together
+// that way. Aimed at the boundary itself the same glyph gives ±6px of margin either side, and it
+// says which character it means.
+export async function caretPoint(target: Locator, index: number): Promise<Point> {
+  return target.evaluate((el, i) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let seen = 0;
+    let node = walker.nextNode() as Text | null;
+    while (node && seen + node.length < i) {
+      seen += node.length;
+      node = walker.nextNode() as Text | null;
+    }
+    if (!node) {
+      throw new Error(`caretPoint: no character ${i} in ${JSON.stringify(el.textContent)}`);
+    }
+    const range = document.createRange();
+    range.setStart(node, i - seen);
+    range.collapse(true);
+    const rect = range.getBoundingClientRect();
+    return { x: rect.x, y: rect.y + rect.height / 2 };
+  }, index);
+}
+
 // Drag-select between two points and leave the selection in place — dragstart only fires on a
 // mousedown inside a live selection, so the drop-guard specs cannot use setTextSelection.
+//
+// The point returned is the drag origin the callers hand to cdpNativeDrag, and it is taken from the
+// selection *as realized* rather than echoing `end`. `end` is the selection's own edge: fine while
+// it sat mid-character, but once it is aimed at a caret boundary (caretPoint above) a mousedown
+// there is as likely to fall outside the selection as in — and outside, dragstart never fires and
+// the drop under test never happens. The rect nearest `end` keeps the origin where the caller
+// meant it, pulled far enough inside to be unambiguous.
 export async function dragSelect(page: Page, start: Point, end: Point): Promise<Point> {
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move(end.x, end.y, { steps: 8 });
   await page.mouse.up();
-  return end;
+  return page.evaluate((to) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return to;
+    // Zero-width and hairline rects are line ends and empty blocks the range happens to span;
+    // neither leaves room to sit inside.
+    const rects = [...selection.getRangeAt(0).getClientRects()].filter((r) => r.width >= 8);
+    if (rects.length === 0) return to;
+    const mid = (r: DOMRect) => r.y + r.height / 2;
+    const nearest = rects.reduce((best, r) =>
+      Math.abs(mid(r) - to.y) < Math.abs(mid(best) - to.y) ? r : best,
+    );
+    return {
+      x: Math.min(Math.max(to.x, nearest.x + 3), nearest.right - 3),
+      y: mid(nearest),
+    };
+  }, end);
 }

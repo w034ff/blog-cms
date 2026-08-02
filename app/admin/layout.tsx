@@ -6,7 +6,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const session = await verifySession();
 
   return (
-    <div>
+    <div className='mx-auto w-full max-w-site'>
       <div className='mb-8 flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800'>
         <nav className='flex items-center gap-4'>
           <Link href='/admin' className='font-bold tracking-tight'>
