@@ -35,7 +35,7 @@ npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts
 ### 3. データベース
 
 ```bash
-npm run db:push            # 空の DB にテーブルを作成
+npm run db:migrate         # drizzle/ のマイグレーションを流してテーブルを作成
 npm run db:seed            # 管理者ユーザーを作成（ADMIN_USERNAME / ADMIN_PASSWORD）
 npm run db:migrate-content # content/posts/*.mdx を DB に取り込む
 ```
@@ -60,7 +60,10 @@ http://localhost:3001 で起動する（3001 なのは、3000 を別のローカ
 | `npm run format`             | Prettier で書き換え（`format:check` は確認のみ）                                                   |
 | `npm test` / `test:run`      | vitest（watch / 1回）。`e2e/` は対象外                                                             |
 | `npm run test:e2e`           | Playwright E2E                                                                                     |
-| `npm run db:push`            | drizzle-kit push（スキーマ反映）                                                                   |
+| `npm run db:generate`        | `lib/db/schema.ts` の変更から `drizzle/NNNN_*.sql` を生成                                          |
+| `npm run db:migrate`         | 未適用のマイグレーションを DB に適用                                                               |
+| `npm run db:baseline`        | 既存 DB を「適用済み」として台帳に記録（初回のみ。既定はドライラン）                               |
+| `npm run db:backup`          | `VACUUM INTO` でスナップショットを取得（`data/backups/`）                                          |
 | `npm run db:seed`            | 管理者ユーザーの作成                                                                               |
 | `npm run db:migrate-content` | `content/posts/*.mdx` の取り込み                                                                   |
 | `npm run gc:uploads`         | 未参照の `public/uploads` を掃除（既定はドライラン。`-- --delete` で実削除）                       |
@@ -71,6 +74,21 @@ http://localhost:3001 で起動する（3001 なのは、3000 を別のローカ
 - **ユニット/結合**: `npm run test:run`。vitest（Node 環境）で、レンダリングパイプラインや DB 書き込みまわりを対象にする。
 - **E2E**: `npm run test:e2e`。エディタはブラウザ上でしか挙動を確認できないので、Playwright で実物を操作する。専用ポート・専用ビルドディレクトリ（`.next-e2e`）・シードした DB のコピーを使うので、`npm run dev` を動かしたままでも並行して実行できる。
 
+## スキーマを変更するとき
+
+`lib/db/schema.ts` を編集したら、生成したマイグレーションを適用する。**`drizzle-kit push` は使わない**（後述）。
+
+```bash
+npm run db:generate   # drizzle/NNNN_*.sql を生成
+                      # 生成された SQL を必ず読む — これがそのまま実行される
+npm run db:backup     # 適用前のスナップショット
+npm run db:migrate    # 適用
+```
+
+適用済みかどうかは DB 内の `__drizzle_migrations` で管理される。判定は「記録済みの最新の `created_at` と各マイグレーションの `when`（`drizzle/meta/_journal.json`）の比較」で、SQL のハッシュ照合ではない。
+
+`drizzle/0000_*.sql` は既存の DB を作り直すためのものではなく、その DB の**現状を写したベースライン**。手元の DB には `db:baseline` を**一度だけ実行済み**で（台帳に行があると再実行は拒否される）、そのため `db:migrate` は何もしない。空の DB では 0000 から順に流れて同じ構造になる（この一致は実際に突き合わせて確認済み）。`db:baseline` の出番は、マイグレーション導入前に作られた別の DB を後から取り込むときだけ。
+
 ## リポジトリの約束
 
 - **`content/posts/*.mdx` を消さない。** `data/` は gitignore なので、この MDX がバージョン管理された唯一の本文であり、`db:migrate-content` の入力でもある。消すと DB の中だけに本文が取り残される。
@@ -80,5 +98,5 @@ http://localhost:3001 で起動する（3001 なのは、3000 を別のローカ
 
 ## 補足
 
-- 既存の `posts` テーブルに対する `db:push` は drizzle-kit 側の不具合で失敗するため、稼働中の DB へのスキーマ変更は手書きの `ALTER TABLE` で行っている。空の DB に対する push は動くので、上のセットアップ手順には影響しない。
+- **`drizzle-kit push` は意図的に廃止した**（`db:push` スクリプトも削除済み）。push は稼働中の DB と `schema.ts` を突き合わせ、SQLite がその場で `ALTER` できない変更ではテーブルを作り直す（新規作成 → コピー → DROP → リネーム）。`posts` に対してはユニークインデックスを二重に発行して途中で abort するため、中身の入った DB では危険な操作になる。push と migrate の併用自体が事故のもとなので、経路は `db:migrate` に一本化している。
 - まだデプロイしていない。当面は LAN 内での運用を想定していて、リバースプロキシや systemd の設定はリポジトリに含まれていない。
