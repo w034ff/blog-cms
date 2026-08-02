@@ -16,4 +16,11 @@ export const sharedOpenGraph = {
   siteName: SITE_NAME,
   locale: 'ja_JP',
   type: 'website',
+  // One card image for the whole site, not one per post. A per-post image would
+  // have to draw the title, which is Japanese, and the only ways to give Satori
+  // CJK glyphs are a ~10MB vendored font or a fetch to a third party while
+  // rendering — too much standing cost for the decoration on a share card.
+  // Regenerate with `node scripts/make-og-image.mts`; the dimensions are declared
+  // so consumers can lay out the card before the image arrives.
+  images: [{ url: '/og.png', width: 1200, height: 630, alt: `${SITE_NAME} — ${SITE_DESCRIPTION}` }],
 } satisfies Metadata['openGraph'];

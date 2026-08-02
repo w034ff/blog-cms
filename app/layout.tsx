@@ -41,11 +41,10 @@ export const metadata: Metadata = {
     description: SITE_DESCRIPTION,
     url: '/',
   },
-  // No image yet, so `summary` rather than `summary_large_image`: the wide card
-  // reserves space for a picture and looks broken without one. Inherited by every
-  // page that doesn't set `twitter` itself, and Twitter/X falls back to the og:
-  // tags for the title and description.
-  twitter: { card: 'summary' },
+  // The wide card, now that there is an image to fill it. Inherited by every page
+  // that doesn't set `twitter` itself, and Twitter/X falls back to the og: tags
+  // for the title, description and image.
+  twitter: { card: 'summary_large_image' },
 };
 
 export default function RootLayout({
