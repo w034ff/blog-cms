@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'nod
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
+import { formatBytes } from './format-bytes.mts';
 
 // Grace-period garbage collector for public/uploads. Uploads are written the
 // moment an image is pasted/dropped — before the post is saved — so a file can
@@ -59,12 +60,6 @@ function collectReferenced(): { refs: Set<string>; dbPresent: boolean } {
   }
 
   return { refs, dbPresent };
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function main(): void {

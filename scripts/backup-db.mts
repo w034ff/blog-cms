@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
+import { formatBytes } from './format-bytes.mts';
 
 // Point-in-time snapshot of the SQLite DB.
 //
@@ -37,12 +38,6 @@ function parseOut(args: string[]): string {
   const flag = args.find((a) => a.startsWith('--out='));
   if (flag) return path.resolve(flag.slice('--out='.length));
   return path.join(BACKUP_DIR, `blog-${timestamp()}.db`);
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function main(): void {

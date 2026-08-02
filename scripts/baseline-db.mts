@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
-import path from 'node:path';
+import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
+import { readMigrations, type Migration } from './migrations.mts';
 
 // Marks an EXISTING database as already carrying the migrations in drizzle/,
 // without running them.
@@ -21,9 +20,7 @@ import { resolveDbPath } from './db-path.mts';
 // mismatch means this DB is NOT at that revision and must not be marked.
 //
 // Dry-run by default; --apply writes the ledger.
-const ROOT = process.cwd();
 const DB_PATH = resolveDbPath();
-const MIGRATIONS_DIR = path.join(ROOT, 'drizzle');
 
 // Same shape drizzle-orm's migrator creates (sqlite-core/dialect.cjs), so a
 // later `db:migrate` finds the ledger it expects instead of making its own.
@@ -32,29 +29,6 @@ const LEDGER_DDL = `CREATE TABLE IF NOT EXISTS \`__drizzle_migrations\` (
 	hash text NOT NULL,
 	created_at numeric
 )`;
-
-type JournalEntry = { idx: number; when: number; tag: string };
-type Migration = { tag: string; sql: string; hash: string; when: number };
-
-function readJournal(): Migration[] {
-  const journalPath = path.join(MIGRATIONS_DIR, 'meta', '_journal.json');
-  if (!existsSync(journalPath)) throw new Error(`No journal at ${journalPath}`);
-  const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: JournalEntry[] };
-  return journal.entries
-    .sort((a, b) => a.idx - b.idx)
-    .map((entry) => {
-      const sql = readFileSync(path.join(MIGRATIONS_DIR, `${entry.tag}.sql`), 'utf8');
-      return {
-        tag: entry.tag,
-        sql,
-        // Matches readMigrationFiles in drizzle-orm/migrator.cjs: sha256 of the
-        // file as-is. Only created_at drives what runs, but a ledger carrying a
-        // hash that doesn't match the file it names would be a trap later.
-        hash: createHash('sha256').update(sql).digest('hex'),
-        when: entry.when,
-      };
-    });
-}
 
 // sqlite_master keeps whatever quoting the original CREATE used — the live
 // tables came from drizzle-kit push and read `CREATE TABLE "posts"`, while the
@@ -81,10 +55,7 @@ function expectedSchema(migrations: Migration[]): string[] {
   const memory = new Database(':memory:');
   try {
     for (const migration of migrations) {
-      for (const statement of migration.sql.split('--> statement-breakpoint')) {
-        const trimmed = statement.trim();
-        if (trimmed) memory.exec(trimmed);
-      }
+      for (const statement of migration.statements) memory.exec(statement);
     }
     return schemaOf(memory);
   } finally {
@@ -101,7 +72,7 @@ function main(): void {
     return;
   }
 
-  const migrations = readJournal();
+  const migrations = readMigrations();
   const db = new Database(DB_PATH);
   try {
     const alreadyLedgered = db
