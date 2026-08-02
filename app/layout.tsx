@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
+import { siteOrigin } from '@/lib/site';
 import './globals.css';
 
 const geistSans = Geist({
@@ -15,6 +16,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // The base every relative metadata URL resolves against (og:image, canonical).
+  // Nothing sets one of those yet, so this changes no output today — it is here so
+  // that when they land, the host they point at comes from SITE_ORIGIN (lib/site.ts)
+  // instead of being written into the source. Without it, Next fails the build on
+  // the first relative metadata URL rather than guessing.
+  metadataBase: siteOrigin,
   title: {
     default: 'Tech Blog',
     template: '%s | Tech Blog',

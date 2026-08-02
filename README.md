@@ -25,12 +25,15 @@ npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts
 
 リポジトリ直下に `.env` を置く（項目は `.env.example` を参照）。
 
-| 変数                              | 用途                                                       |
-| --------------------------------- | ---------------------------------------------------------- |
-| `ADMIN_USERNAME` `ADMIN_PASSWORD` | `npm run db:seed` が作る管理者ユーザーの資格情報           |
-| `SESSION_SECRET`                  | セッション Cookie（JWT）の署名鍵。十分に長いランダム文字列 |
-| `SESSION_COOKIE_SECURE`           | HTTPS が前に立つ環境では `true`、LAN/HTTP では `false`     |
-| `BLOG_DB_PATH`                    | DB ファイルの場所を上書きする。省略時は `data/blog.db`     |
+| 変数                              | 用途                                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ADMIN_USERNAME` `ADMIN_PASSWORD` | `npm run db:seed` が作る管理者ユーザーの資格情報                                                         |
+| `SESSION_SECRET`                  | セッション Cookie（JWT）の署名鍵。十分に長いランダム文字列                                               |
+| `SESSION_COOKIE_SECURE`           | HTTPS が前に立つ環境では `true`、LAN/HTTP では `false`                                                   |
+| `SITE_ORIGIN`                     | 公開オリジン（例 `https://blog.example.ts.net`）。省略時は `http://localhost:3001`。**公開環境では必須** |
+| `BLOG_DB_PATH`                    | DB ファイルの場所を上書きする。省略時は `data/blog.db`                                                   |
+
+`SITE_ORIGIN` は絶対 URL を要求し、不正な値ならサーバー起動時に落ちる（localhost に暗黙で退行すると、共有カードの URL が読者自身の PC を指したまま気づけないため）。`https` を指定して `SESSION_COOKIE_SECURE` が `true` でない場合は警告が出る。
 
 ### 3. データベース
 
