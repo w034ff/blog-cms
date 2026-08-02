@@ -125,3 +125,46 @@ describe('renderMdxToHtml — table of contents', () => {
     expect(toc).toEqual([]);
   });
 });
+
+// Sanitize renames every id (`user-content-` clobber prefix) but never touches an href, so an
+// in-page link and its target used to drift apart and jump nowhere. rehypeClobberFragmentLinks
+// applies the same rename to fragment hrefs; these pin that the two halves still meet.
+describe('renderMdxToHtml — in-page links', () => {
+  it('points a link at a heading at the id that heading actually renders with', async () => {
+    const { html } = await renderMdxToHtml('## Intro\n\n[to intro](#intro)\n');
+    expect(html).toContain('<h2 id="user-content-intro">Intro</h2>');
+    expect(html).toContain('href="#user-content-intro"');
+  });
+
+  it('keeps a non-ASCII fragment percent-encoded while prefixing it', async () => {
+    // remark encodes the href but not the id; browsers decode a fragment before matching it,
+    // so the prefix has to go in front of the encoding rather than through it.
+    const { html } = await renderMdxToHtml('## 導入\n\n[導入へ](#導入)\n');
+    expect(html).toContain('<h2 id="user-content-導入">導入</h2>');
+    expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
+  });
+
+  it('leaves an external link and a bare `#` alone', async () => {
+    const { html } = await renderMdxToHtml('[x](https://example.com/#frag) [y](#)\n');
+    expect(html).toContain('href="https://example.com/#frag"');
+    expect(html).toContain('href="#"');
+  });
+
+  it('links a GFM footnote to its definition and back', async () => {
+    // remark-gfm gives footnotes for free; what needed fixing was that to-hast pre-prefixed
+    // them and sanitize then prefixed the id a second time, orphaning both jumps.
+    const { html } = await renderMdxToHtml('Body[^1].\n\n[^1]: The note.\n');
+    expect(html).toContain('href="#user-content-fn-1"');
+    expect(html).toContain('id="user-content-fn-1"');
+    // …and the ↩ backref, the other direction.
+    expect(html).toContain('href="#user-content-fnref-1"');
+    expect(html).toContain('id="user-content-fnref-1"');
+    expect(html).not.toContain('user-content-user-content-');
+    // The section chrome, which the schema does NOT get from the div/p/span edit above but
+    // from defaultSchema's own footnote entries — pinned so the narrow `['className', …]`
+    // value allowlists there can't quietly displace them.
+    expect(html).toContain('<section data-footnotes="" class="footnotes">');
+    expect(html).toContain('<h2 class="sr-only"');
+    expect(html).toContain('class="data-footnote-backref"');
+  });
+});
