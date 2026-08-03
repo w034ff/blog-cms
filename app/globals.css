@@ -662,8 +662,8 @@ body.block-dragging .table-toolbar {
 }
 .code-copy-icon svg {
   display: block;
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 1rem;
+  height: 1rem;
 }
 /* Empty until a copy; hide it so the flex gap doesn't pad the icon's left. */
 .code-copy-label:empty {
