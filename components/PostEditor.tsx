@@ -9,6 +9,11 @@ import { TableKit } from '@tiptap/extension-table';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
+import {
+  MarkdownDetails,
+  MarkdownDetailsContent,
+  MarkdownDetailsSummary,
+} from './editor/details-extension';
 import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
@@ -259,6 +264,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
       // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
       Blockquote,
+      // SPIKE (docs/accordion-requirements.md §4): the accordion's markdown layer only, registered
+      // to measure whether the round trip reaches a fixed point. Not the feature — no guards, no
+      // menu entry, no styling yet.
+      MarkdownDetails,
+      MarkdownDetailsSummary,
+      MarkdownDetailsContent,
       // `/` at the start of a line opens a small block-insert menu (callouts + code block);
       // choosing a row deletes the `/query` and runs that block's command.
       SlashCommand,
