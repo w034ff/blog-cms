@@ -224,6 +224,23 @@ function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps):
 // A `diff: true` block writes `diff` (or `diff_<language>`, when a language is also set) as
 // the fence's language segment instead of the bare language — the inverse of the `diff`/
 // `diff_<lang>` prefix updateCodeBlockDOM strips back out below.
+//
+// One deliberate departure from the default: the content's *trailing* newline is dropped before
+// it is written. A block loaded from markdown always has one — markdown-it's fence content is
+// terminated by a newline, so `- 項目 / ```ts / const a = 1 / ``` ` parses to the text
+// "const a = 1\n" (a block typed in the editor has no such newline). prosemirror-markdown's
+// `text()` splits on \n, so that terminator becomes a final *empty line*, and `write()` prefixes
+// every line it emits with the current delimiter — `if (this.delim && this.atBlank())`. At the
+// top level the delimiter is "" and nothing shows, which is why this went unnoticed; inside a
+// list item, a quote, or a callout it emitted a delimiter-only line ("  " / "> ") between the
+// code and the closing fence, and re-parsing read that line back as a blank line of *content*.
+// The block therefore grew one blank line per open→save cycle, indefinitely (measured across
+// list / quote / callout / nested list; only the top level was stable).
+//
+// `ensureNewLine()` below writes the terminator back, so dropping it here changes nothing about
+// the fence's shape — it only stops the empty line from being routed through `write()`. The one
+// visible consequence is that blank lines at the very *end* of a code block are trimmed over the
+// next couple of saves rather than preserved; that converges, which the growth did not.
 function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void {
   const language = stringAttr(node.attrs.language);
   const filename = stringAttr(node.attrs.filename);
@@ -232,7 +249,7 @@ function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void 
   const langSegment = node.attrs.diff ? 'diff' + (language ? `_${language}` : '') : language;
   const params = langSegment + (filename ? `:${filename}` : '');
   state.write(fence + params + '\n');
-  state.text(node.textContent, false);
+  state.text(node.textContent.replace(/\n$/, ''), false);
   state.ensureNewLine();
   state.write(fence);
   state.closeBlock(node);
