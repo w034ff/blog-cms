@@ -93,7 +93,27 @@ function selectionIsTopLevel({ state }: CommandProps): boolean {
 // nothing the author had already written is lost.
 const DIRECTIVE = /^:::details\s$/;
 
+// The toggle's glyph and label, matching the public page's ::before marker (app/globals.css).
+// The official default writes English (`"Collapse details content"`), and the site's UI is
+// Japanese — §7.3. `renderToggleButton` is called on mount and on every toggle.
+function renderToggleButton({ element, isOpen }: { element: HTMLElement; isOpen: boolean }): void {
+  element.textContent = isOpen ? '▾' : '▸';
+  element.setAttribute('aria-label', isOpen ? '折りたたみを閉じる' : '折りたたみを開く');
+}
+
 export const MarkdownDetails = Details.extend({
+  addOptions() {
+    const parent = this.parent?.();
+    return {
+      // `persist: false` is the default and is load-bearing (§5): with it, the open/closed state
+      // never reaches the document, so folding cannot mark the post dirty or fire autosave.
+      persist: parent?.persist ?? false,
+      openClassName: parent?.openClassName ?? 'is-open',
+      HTMLAttributes: parent?.HTMLAttributes ?? {},
+      renderToggleButton,
+    };
+  },
+
   addStorage() {
     return {
       markdown: {

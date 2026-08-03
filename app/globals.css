@@ -1095,10 +1095,103 @@ body.block-dragging .table-toolbar {
   --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.141.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
 }
 
+/* Accordion (docs/accordion-requirements.md §8.2). Two DOM shapes have to end up looking the
+   same: the published page holds a real `<details>`/`<summary>`, while the editor's NodeView
+   (@tiptap/extension-details) builds `div[data-type="details"]` with a separate <button> for the
+   toggle — it cannot use a real <details>, since a click on a real <summary> would fold the block
+   instead of placing the caret in the title. So the marker is a <button> glyph in the editor and
+   a ::before glyph on the public page, positioned into the same gutter, and everything else is
+   shared. Sanitize passes no class on either element (lib/render.ts), so all of this is keyed off
+   element and attribute selectors.
+
+   Card geometry deliberately matches .code-block / [data-rehype-pretty-code-figure] rather than
+   introducing a third card look. */
+.prose details,
+.prose [data-type='details'] {
+  position: relative;
+  margin: 1.25rem 0;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  /* No side padding on the card itself: the title row spans it edge to edge (so its hit area and
+     hover do too), and the body is inset by its own padding below. */
+  padding: 0;
+}
+.prose summary {
+  /* The browser's own marker is replaced, not kept alongside ours. */
+  list-style: none;
+  cursor: pointer;
+  padding: 0.5em 1em 0.5em 2.1em;
+  font-weight: 600;
+}
+.prose summary::-webkit-details-marker {
+  display: none;
+}
+/* Public marker. Scoped to a real <details> parent, which is exactly what the editor's div is
+   not — that keeps this rule off the NodeView, where the <button> below is the marker instead. */
+.prose details > summary::before {
+  content: '▸';
+  position: absolute;
+  left: 1em;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.prose details[open] > summary::before {
+  content: '▾';
+}
+/* Editor marker: same glyph, same gutter, but a real focusable control. The glyph itself is
+   written by renderToggleButton (details-extension.ts) along with its Japanese aria-label. */
+.prose [data-type='details'] > button {
+  position: absolute;
+  top: 0.5em;
+  left: 1em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+  line-height: inherit;
+}
+/* Body inset. The published page has the blocks as direct children of <details>; the editor wraps
+   them in the extension's own content div. Both get the same padding, and the first/last child
+   margins are collapsed so the card closes tightly around them. */
+.prose details > :not(summary),
+.prose [data-type='detailsContent'] {
+  padding: 0 1em;
+}
+.prose details > :not(summary):last-child,
+.prose [data-type='detailsContent'] {
+  padding-bottom: 0.5em;
+}
+.prose details > :not(summary):first-of-type > :first-child,
+.prose [data-type='detailsContent'] > :first-child {
+  margin-top: 0;
+}
+.prose details > :last-child,
+.prose [data-type='detailsContent'] > :last-child {
+  margin-bottom: 0;
+}
+/* Placeholder for an untitled accordion (§5.1: an empty title is allowed to save and publish, so
+   the only safeguard is that the author can see it while writing). ProseMirror fills an empty
+   textblock with a trailing <br>, which is why `:empty` cannot be used here. */
+.ProseMirror summary:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: 'タイトル';
+  opacity: 0.45;
+  font-weight: 400;
+  pointer-events: none;
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */
+  }
+
+  /* Dark counterpart of the accordion card border above. Same value the code block card uses on
+     a dark surface, so the two read as one family. */
+  .prose details,
+  .prose [data-type='details'] {
+    border-color: #30363d;
   }
 
   /* Dark counterpart of the light list-marker overrides above: bullets and
