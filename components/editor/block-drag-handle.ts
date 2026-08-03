@@ -8,7 +8,14 @@ import type { EditorView } from '@tiptap/pm/view';
 // no handle of its own — doc.forEach below only sees direct children of the doc, which already
 // excludes it, so no extra filtering is needed. Extend this set to broaden scope later (headings
 // need the section-range question settled first — see the design discussion — so they're not here).
-const DRAGGABLE_TYPES = new Set(['blockquote', 'callout', 'image', 'table', 'codeBlock']);
+const DRAGGABLE_TYPES = new Set([
+  'blockquote',
+  'callout',
+  'details',
+  'image',
+  'table',
+  'codeBlock',
+]);
 
 // Pointer movement (px) before a mousedown-on-handle counts as a drag rather than a plain click
 // (which just leaves the mousedown NodeSelection in place — see the "mousedown creates a

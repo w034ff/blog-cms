@@ -78,13 +78,17 @@ for (const [where, { source, node }] of Object.entries(CONTAINERS)) {
     // Click first: the selection below is set through the editor's own commands, which does not
     // give the DOM node focus, and without focus the keystrokes go nowhere.
     await editor.click();
-    // Place the caret inside the container, then open a fresh empty line there — the input rule
-    // needs the trigger at the start of a line, so without one the test would pass vacuously.
+    // Put the caret at the *start* of the container's first line: both routes need a line start
+    // (the input rule is anchored there, and the slash trigger is `startOfLine`), so anything else
+    // would let the test pass without ever asking the question. ArrowLeft collapses the selection
+    // to its beginning.
+    //
     // Programmatic rather than by keyboard: a closed accordion's body is `hidden`, so arrow keys
-    // cannot reach it at all.
+    // cannot reach it at all. Opening a fresh line with Enter would work too, but Enter inside a
+    // detailsContent can *leave* the accordion — the caret would end up exactly where an
+    // accordion is allowed, and the test would be measuring the wrong position.
     await selectInside(page, node);
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowLeft');
 
     await page.keyboard.type('/');
     const menu = page.locator('[data-slash-menu]');

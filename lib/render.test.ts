@@ -124,6 +124,19 @@ describe('renderMdxToHtml — table of contents', () => {
     const { toc } = await renderMdxToHtml('Just a paragraph.\n');
     expect(toc).toEqual([]);
   });
+
+  // docs/accordion-requirements.md §8.1: the table of contents lists what a reader can see, and an
+  // accordion's contents are folded away by the author's choice. Leaving them out also keeps the
+  // default navigation off a route whose behaviour is the browser's to decide — whether following
+  // a fragment into a closed <details> expands it is not uniform.
+  it('leaves out headings folded inside an accordion, keeping the rest', async () => {
+    const { html, toc } = await renderMdxToHtml(
+      '## 見える見出し\n\n<details>\n<summary>畳んだ節</summary>\n\n## 畳まれた見出し\n\n### 深いほう\n\n</details>\n\n## 続き\n',
+    );
+    expect(toc.map((t) => t.text)).toEqual(['見える見出し', '続き']);
+    // The id is still assigned, so an in-page or external anchor into the fold resolves.
+    expect(html).toContain('id="user-content-畳まれた見出し"');
+  });
 });
 
 // Sanitize renames every id (`user-content-` clobber prefix) but never touches an href, so an

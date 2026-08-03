@@ -264,10 +264,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
       // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
       Blockquote,
-      // SPIKE (docs/accordion-requirements.md §4): the accordion's markdown layer only, registered
-      // to measure whether the round trip reaches a fixed point. Not the feature — no guards, no
-      // menu entry, no styling yet.
-      MarkdownDetails,
+      // Zenn-style folding block, stored as raw `<details>`/`<summary>` HTML (markdown has no
+      // syntax for it — see docs/accordion-requirements.md). `onBlocked` is the shared notice: a
+      // drop carrying an accordion into a quote, list, callout or cell is refused, and a refused
+      // gesture changes nothing, so the message is the whole of the feedback.
+      MarkdownDetails.configure({ onBlocked: showNotice }),
       MarkdownDetailsSummary,
       MarkdownDetailsContent,
       // `/` at the start of a line opens a small block-insert menu (callouts + code block);

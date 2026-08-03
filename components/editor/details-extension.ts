@@ -3,14 +3,15 @@ import type { CommandProps } from '@tiptap/core';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
+import { detailsSliceGuard } from './details-slice-guard';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
-// SPIKE (docs/accordion-requirements.md §4): the markdown layer for the accordion, and nothing
-// else. No guards, no slash menu, no CSS — this exists to answer the one question the design
-// document flagged as unverified, which is whether TipTap → markdown → TipTap reaches a fixed
-// point. The official extension supplies the three nodes and every editing behaviour; it has no
-// markdown serializer that tiptap-markdown 0.9.0 can see (its `createBlockMarkdownSpec` belongs
-// to TipTap 3's own markdown layer, which this repo does not use), so that is what is added here.
+// The Zenn-style folding block (docs/accordion-requirements.md). @tiptap/extension-details
+// supplies the three nodes — `details` holding `detailsSummary detailsContent` — and every editing
+// behaviour; what it does not supply is a markdown layer this repo can use. Its
+// `createBlockMarkdownSpec` belongs to TipTap 3's own markdown module, which tiptap-markdown 0.9.0
+// never reads, so it looks wired up and is inert. Everything markdown-facing is therefore here:
+// the serializer, the parse hook, the placement rule, and the `:::details ` shortcut.
 
 // The stored form, whose two blank lines are load-bearing (§2.1):
 //
@@ -101,10 +102,18 @@ function renderToggleButton({ element, isOpen }: { element: HTMLElement; isOpen:
   element.setAttribute('aria-label', isOpen ? '折りたたみを閉じる' : '折りたたみを開く');
 }
 
-export const MarkdownDetails = Details.extend({
+// The refusal reporter the slice guard needs, declared as a type so `MarkdownDetails.configure({
+// onBlocked })` typechecks at the call site in PostEditor — the same shape Callout and
+// MarkdownTable take, writing to the same single notice (useEditorNotice).
+export type DetailsOptions = Parameters<typeof Details.configure>[0] & {
+  onBlocked: (message: string) => void;
+};
+
+export const MarkdownDetails = Details.extend<DetailsOptions>({
   addOptions() {
     const parent = this.parent?.();
     return {
+      onBlocked: () => {},
       // `persist: false` is the default and is load-bearing (§5): with it, the open/closed state
       // never reaches the document, so folding cannot mark the post dirty or fire autosave.
       persist: parent?.persist ?? false,
@@ -143,6 +152,12 @@ export const MarkdownDetails = Details.extend({
           return parent?.setDetails?.()(props) ?? false;
         },
     };
+  },
+
+  // Keeps a dropped or pasted slice from putting an accordion anywhere but the top level, and
+  // repairs a slice that only carries half of one (see details-slice-guard.ts).
+  addProseMirrorPlugins() {
+    return [...(this.parent?.() ?? []), detailsSliceGuard(this.options.onBlocked)];
   },
 
   addInputRules() {
