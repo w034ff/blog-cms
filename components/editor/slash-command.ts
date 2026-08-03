@@ -42,6 +42,18 @@ const ITEMS: SlashEntry[] = [
     available: (editor) => editor.can().setCallout(type),
   })),
   {
+    // 折りたたみ, not アコーディオン: the same choice 囲み枠 made over コールアウト, with the
+    // katakana kept as a search keyword. setDetails is top-level only (details-extension.ts), and
+    // `available` is what keeps the row out of a quote, a list item or a cell — it can only be
+    // trusted because that command is wrapped with the placement check; the official one accepts
+    // everywhere.
+    id: 'details',
+    title: '折りたたみ',
+    keywords: ['details', 'accordion', 'toggle', 'アコーディオン', 'たたむ'],
+    run: (chain) => chain.setDetails(),
+    available: (editor) => editor.can().setDetails(),
+  },
+  {
     id: 'code-block',
     title: 'コードブロック',
     keywords: ['code', 'codeblock', 'code block', 'コード'],
