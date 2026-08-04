@@ -464,6 +464,74 @@ function scanFootnotes(doc: PMNode): FootnoteScan {
   return { order, definitions };
 }
 
+// A definition no reference points at has no number to sort by. §5.4 keeps it regardless, so it
+// sinks to the end of the section and holds its place among the other unreferenced ones.
+const UNREFERENCED = Number.MAX_SAFE_INTEGER;
+
+function rankOf(definition: PMNode, order: Map<string, number>): number {
+  return order.get(definition.attrs.label as string) ?? UNREFERENCED;
+}
+
+// Where a new definition goes for the section to stay in reference order (§3): in front of the first
+// one the reader would meet later than this.
+function orderedInsertPoint(doc: PMNode, section: PMNode, label: string): number {
+  const { order } = scanFootnotes(doc);
+  const rank = order.get(label) ?? UNREFERENCED;
+  let at = doc.content.size - section.nodeSize + 1;
+  for (let index = 0; index < section.childCount; index += 1) {
+    const definition = section.child(index);
+    if (rankOf(definition, order) > rank) break;
+    at += definition.nodeSize;
+  }
+  return at;
+}
+
+// §3's other half, and the one that was never built: the definitions' order follows the references'.
+// The number is a decoration recomputed from document order on every state, so without this the
+// section carries the right numbers in the wrong sequence — measured, adding a footnote between two
+// others left the column reading [1], [3], [2]. The published page never showed it, since remark-gfm
+// rebuilds the section from reference order at render time; the editor and the saved markdown were
+// the two that disagreed with it.
+//
+// Not while the caret is inside the section. The rebuild is one replacement over all of its content,
+// and an author typing a note would have the selection mapped out from under them. Nothing reachable
+// is given up by that: a reference cannot live inside a definition (§6.2's placement guard), so no
+// edit made in there can change the order. It is cover for a route that does not exist yet rather
+// than a case deferred.
+//
+// Nothing is needed on load either. markdown-it-footnote's tail walks `env.footnotes.list`, which is
+// indexed by reference, so the parser hands definitions over in reference order whatever the file
+// said — measured, and just as well: the editor takes its content through `useEditor({ content })`,
+// not a transaction, so no appended transaction runs there to sort them.
+// Sorts in place, on a transaction already under construction rather than as one of its own, and
+// that is not tidiness. prosemirror-state gives a plugin exactly one appendTransaction per apply
+// cycle: once it appends, its `seen[i].n` is the transaction list's new length, and the next pass
+// finds nothing after it to answer. Returning a sort *after* the paste's materialize step therefore
+// never ran — measured, the pasted definition stayed at the end of the section. So each step folds
+// the sort into whatever it is already returning.
+//
+// Returns whether it changed anything, so a caller with nothing else to say can return null.
+function sortDefinitions(tr: Transaction): boolean {
+  const section = tr.doc.lastChild;
+  if (section?.type !== tr.doc.type.schema.nodes.footnoteSection) return false;
+
+  const sectionEnd = tr.doc.content.size;
+  const sectionStart = sectionEnd - section.nodeSize;
+  if (tr.selection.to > sectionStart && tr.selection.from < sectionEnd) return false;
+
+  const { order } = scanFootnotes(tr.doc);
+  const current: PMNode[] = [];
+  section.forEach((definition) => current.push(definition));
+  const sorted = current
+    .map((definition, index) => ({ definition, index }))
+    .sort((a, b) => rankOf(a.definition, order) - rankOf(b.definition, order) || a.index - b.index)
+    .map((entry) => entry.definition);
+  if (sorted.every((definition, index) => definition === current[index])) return false;
+
+  tr.replaceWith(sectionStart + 1, sectionEnd - 1, Fragment.fromArray(sorted));
+  return true;
+}
+
 // The number is a decoration, never an attribute, and that is the load-bearing choice here. Written
 // into the document it would make every reordering edit — and every load that renumbers — a change
 // the autosave has to save, which is the shape the accordion rejected when it took `persist: false`
@@ -534,7 +602,11 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
       // in hand: the carried label is reused when it is free (a move) and replaced when it is
       // already spoken for (a duplicate), which is what keeps §4's one reference = one definition.
       const materialized = materializePendingNotes(state, onBlocked);
-      if (materialized) return materialized;
+      if (materialized) {
+        // Materializing appends, so this is where a pasted note is put in its reference's place.
+        sortDefinitions(materialized);
+        return materialized;
+      }
 
       const sectionType = state.schema.nodes.footnoteSection;
       const section = state.doc.lastChild;
@@ -555,7 +627,11 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
         else doomed.push({ from: offset, to: offset + definition.nodeSize });
         offset += definition.nodeSize;
       });
-      if (doomed.length === 0) return null;
+      // Nothing to delete leaves the section's order to answer for (§3).
+      if (doomed.length === 0) {
+        const sorting = state.tr;
+        return sortDefinitions(sorting) ? sorting : null;
+      }
 
       const tr = state.tr;
       // Losing every definition means losing the section: its content is `footnoteDefinition+`, so
@@ -565,6 +641,9 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
         tr.delete(sectionStart, state.doc.content.size);
       } else {
         for (const { from, to } of doomed.reverse()) tr.delete(from, to);
+        // Deleting cannot disorder what is left, but this is the plugin's one turn — if the same
+        // edit both took a footnote away and moved another, there is no second pass to sort in.
+        sortDefinitions(tr);
       }
       return tr;
     },
@@ -877,7 +956,13 @@ function applyFootnoteInsertion(
   const definition = definitionType.create({ label });
   const last = tr.doc.lastChild;
   if (last?.type === sectionType) {
-    tr.insert(tr.doc.content.size - 1, definition);
+    // In reference order (§3), not at the end. This has to happen inside *this* transaction rather
+    // than being left to the reconciliation below, and the input rule is why: typing `[^` records an
+    // undoable input rule, and footnotePairing steps aside while that record is alive because any
+    // appended transaction clears what undoInputRule needs (§9.1, criterion 8). An appended reorder
+    // would therefore not run until the author's next keystroke — the definition would sit in the
+    // wrong place, in plain sight, until something unrelated moved it.
+    tr.insert(orderedInsertPoint(tr.doc, last, label), definition);
   } else {
     tr.insert(tr.doc.content.size, sectionType.create(null, definition));
   }

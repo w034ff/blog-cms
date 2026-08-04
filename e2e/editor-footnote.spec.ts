@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { collapseToEnd, loadMarkdown, selectInside } from './editor-authoring';
+import {
+  collapseToEnd,
+  loadMarkdown,
+  selectInside,
+  selectNode,
+  setRange,
+} from './editor-authoring';
 import { markdown, docString, caretPos, settle } from './editor-probe';
 import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
@@ -241,10 +247,116 @@ test('numbers follow document order while labels do not move', async ({ page }) 
   await loadMarkdown(page, '[^b] と [^a]\n\n[^a]: A の注\n\n[^b]: B の注\n');
 
   expect(await numbers(page)).toEqual(['1', '2']);
+  // And the definitions arrive in that order too, which is the one case in this suite where the
+  // file's order and the references' disagree. It answers whether a post saved before §3's sort
+  // existed opens looking right: markdown-it-footnote's tail walks `env.footnotes.list`, which is
+  // indexed by reference, so the parser hands over reference order whatever the file said. Nothing
+  // has to heal on load — which is as well, since the real editor takes its content through
+  // `useEditor({ content })` rather than a transaction, and no appended transaction runs there.
+  expect(await definitionNumbers(page)).toEqual(['1', '2']);
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("B の注"), footnoteDefinition("A の注"))',
+  );
   // The labels are untouched by the renumbering (§4.1).
   const saved = await markdown(page);
   expect(saved).toContain('[^b] と [^a]');
   expect(saved).toContain('[^a]: A の注');
+});
+
+// -----------------------------------------------------------------------------------------------
+// The definitions' order (§3 — "並び順は本文中の参照順で自動整列する")
+// -----------------------------------------------------------------------------------------------
+
+// The half of §3 that shipped unmeasured. None of the 21 acceptance criteria named the definitions'
+// *order* — criterion 3 asks only that the numbers are redealt — so the section was free to keep
+// them in the order they happened to be created, and did: a footnote added between two others put
+// its definition at the end, and the column read [1], [3], [2]. The published page never showed it,
+// because remark-gfm rebuilds the section from reference order when it renders; the editor and the
+// saved markdown were the two that disagreed with the reader.
+//
+// Read top to bottom, so the assertion is what the author sees rather than what the document says.
+function definitionNumbers(page: import('@playwright/test').Page): Promise<string[]> {
+  return page
+    .locator('.ProseMirror div[data-footnote-def]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-number') ?? ''));
+}
+
+test('a footnote added between two others lands between their definitions', async ({ page }) => {
+  await loadMarkdown(page, '文A[^a]と文B[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await page.locator('.ProseMirror').click();
+  await settle(page);
+  // Between the two references — after 文A[^a]と文.
+  await setRange(page, 6);
+  await page.keyboard.type('[^');
+
+  expect(await numbers(page)).toEqual(['1', '2', '3']);
+  expect(await definitionNumbers(page)).toEqual(['1', '2', '3']);
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注A"), footnoteDefinition, footnoteDefinition("注B"))',
+  );
+  // What is saved follows too, so a reopened post does not have to be re-sorted to look right.
+  const saved = await markdown(page);
+  expect(saved.indexOf('[^a]: 注A')).toBeLessThan(saved.indexOf('[^b]: 注B'));
+});
+
+test('Backspace still takes back a [^ typed between two footnotes', async ({ page }) => {
+  // Criterion 8, on the branch it never covered: the existing case types into an empty document, so
+  // it builds the section rather than inserting into one, and the ordered insert only touches the
+  // second. The reason it has to stay inside the input rule's own transaction is here — footnotePairing
+  // stands down while an input rule is undoable (any appended transaction clears the record
+  // undoInputRule needs, §9.1), so a definition sorted from an append would sit in the wrong place
+  // until the author's next keystroke, and appending anyway would cost this Backspace instead.
+  //
+  // Typed rather than loaded: setContent is a single history event, so one undo over a loaded
+  // document takes the document.
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('文A[^');
+  await page.keyboard.type('と文B[^');
+  await setRange(page, 6);
+  await page.keyboard.type('[^');
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition, footnoteDefinition, footnoteDefinition)',
+  );
+
+  await page.keyboard.press('Backspace');
+
+  // The characters are back where they were typed, and the third definition left with them.
+  expect(await docString(page)).toBe(
+    'doc(paragraph("文A", footnoteReference, "と文[^B", footnoteReference), footnoteSection(footnoteDefinition, footnoteDefinition))',
+  );
+});
+
+test('a definition materialized by a paste sorts to its reference', async ({ page }) => {
+  // The other route into the section, and the one the reconciliation has to answer: a pasted
+  // reference gets its definition back from what it carried (§6.1), appended at the end because
+  // that is where materializing puts it. Landing the reference *before* an existing one is what
+  // makes the appended definition wrong, and nothing in the insertion path is involved.
+  await loadMarkdown(page, '文A[^a]\n\n文B[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  // The click is for focus — the clipboard keys need it — and the settle keeps the caret it places
+  // from reaching state.selection after the selection made below (see selectFirstParagraph).
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await selectNode(page, 'paragraph');
+  await page.keyboard.press('Control+x');
+  await settle(page);
+  // Cutting the reference took its definition with it (§5.1), so 注B is alone now.
+  expect(await docString(page)).toBe(
+    'doc(paragraph("文B", footnoteReference), footnoteSection(footnoteDefinition("注B")))',
+  );
+
+  await setRange(page, 1);
+  await settle(page);
+  await page.keyboard.press('Control+v');
+  await settle(page);
+
+  // 文A is back in front of 文B, so its note belongs in front of 注B — even though the paste put it
+  // at the end a moment ago.
+  expect(await numbers(page)).toEqual(['1', '2']);
+  expect(await definitionNumbers(page)).toEqual(['1', '2']);
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注A"), footnoteDefinition("注B"))',
+  );
 });
 
 test('a reference with an empty definition is marked in the prose', async ({ page }) => {
