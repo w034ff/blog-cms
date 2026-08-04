@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
-import { markdown, docString } from './editor-probe';
+import { markdown, docString, caretPos } from './editor-probe';
 
-// SPIKE (docs/footnote-requirements.md §7). The markdown layer for footnotes is registered and
-// nothing else — no definition section, no guards, no insertion route. What this measures is the
-// one question design writing cannot answer: does load → serialize → load hold?
+// Footnotes (docs/footnote-requirements.md), stage 1 of §11: the markdown round trip, the
+// definitions' section and its placement, both insertion routes, numbering, and pairing.
 //
-// The direction that matters is serialization. Neither tiptap-markdown nor prosemirror-markdown
-// carries any footnote handling, so both halves are written by hand and either could lose text.
+// The round-trip half comes first because it is the half that loses an author's work. Neither
+// tiptap-markdown nor prosemirror-markdown carries any footnote handling, so both directions are
+// written by hand and either could drop text.
 //
 // This supersedes editor-footnote-literal.spec.ts, which pinned the opposite contract — that
 // `[^1]` stays literal text — and whose history belongs here. Measured 2026-08-02, fixed
@@ -143,4 +143,102 @@ test('nothing can be placed after the definition section', async ({ page }) => {
 
   // Whatever ProseMirror did with it, the section is still the document's last child.
   expect(await docString(page)).toMatch(/footnoteSection\(footnoteDefinition\("注釈"\)\)\)$/);
+});
+
+// -----------------------------------------------------------------------------------------------
+// Insertion, numbering and pairing (§4, §5.1, §9)
+// -----------------------------------------------------------------------------------------------
+
+// The numbers are decorations, not attributes (§4), so they are read off the DOM rather than the
+// document — which is exactly the property being checked: renumbering must not touch what is saved.
+function numbers(page: import('@playwright/test').Page): Promise<string[]> {
+  return page
+    .locator('.ProseMirror sup[data-footnote-ref]')
+    .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-number') ?? ''));
+}
+
+test('Mod-Shift-F inserts a reference and leaves the caret in the prose', async ({ page }) => {
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('本文');
+  await page.keyboard.press('Control+Shift+f');
+
+  // A reference in the prose and an empty definition in the section, from one gesture.
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
+  );
+  // §5.1: the caret stays where the author was writing — right after the reference.
+  expect(await caretPos(page)).toBe(4);
+  // Still typing prose, not the note.
+  await page.keyboard.type('の続き');
+  expect(await docString(page)).toContain('paragraph("本文", footnoteReference, "の続き")');
+});
+
+test('typing [^ inserts a reference', async ({ page }) => {
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('本文[^');
+
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
+  );
+});
+
+test('undo takes back a [^ typed at the end of the document', async ({ page }) => {
+  // §10's criterion 8, and Backspace is the key that means it: TipTap binds `undoInputRule` there,
+  // so this is the "put back what I typed" path, not history's. The definition section is the
+  // document's last child by design, which is exactly the shape the TrailingNode/undoInputRule trap
+  // lived in — worth pinning now that footnotes actually reach it.
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('本文[^');
+  await page.keyboard.press('Backspace');
+
+  expect(await docString(page)).toBe('doc(paragraph("本文[^"))');
+});
+
+test('deleting a reference deletes its definition, and one undo restores both', async ({
+  page,
+}) => {
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('本文');
+  await page.keyboard.press('Control+Shift+f');
+  await page.keyboard.press('Backspace');
+
+  // §5.1: the definition goes with the reference, and the empty section goes with it.
+  expect(await docString(page)).toBe('doc(paragraph("本文"))');
+
+  await page.keyboard.press('Control+z');
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
+  );
+});
+
+test('numbers follow document order while labels do not move', async ({ page }) => {
+  // §4: the number the reader sees is derived from the order of the references; the label stored in
+  // the markdown is not. Loading `[^b] と [^a]` is the case where the two disagree.
+  await loadMarkdown(page, '[^b] と [^a]\n\n[^a]: A の注\n\n[^b]: B の注\n');
+
+  expect(await numbers(page)).toEqual(['1', '2']);
+  // The labels are untouched by the renumbering (§4.1).
+  const saved = await markdown(page);
+  expect(saved).toContain('[^b] と [^a]');
+  expect(saved).toContain('[^a]: A の注');
+});
+
+test('a reference with an empty definition is marked in the prose', async ({ page }) => {
+  // §5.2's first layer: the unfinished footnote has to be visible from where the author is looking.
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await page.keyboard.type('本文');
+  await page.keyboard.press('Control+Shift+f');
+
+  const reference = page.locator('.ProseMirror sup[data-footnote-ref]');
+  await expect(reference).toHaveAttribute('data-incomplete', '');
+
+  // Filling the definition clears the mark.
+  await page.locator('.ProseMirror div[data-footnote-def]').click();
+  await page.keyboard.type('注釈');
+  await expect(reference).not.toHaveAttribute('data-incomplete', '');
 });

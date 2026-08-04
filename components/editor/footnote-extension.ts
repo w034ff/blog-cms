@@ -1,15 +1,24 @@
-import { Node, mergeAttributes } from '@tiptap/core';
+import { InputRule, Node, mergeAttributes } from '@tiptap/core';
+import { isHistoryTransaction } from '@tiptap/pm/history';
 import type { Node as PMNode } from '@tiptap/pm/model';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import type { EditorState, Transaction } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { hasUndoableInputRule } from './input-rule-undo';
 import type MarkdownIt from 'markdown-it';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
 import footnotePlugin from 'markdown-it-footnote';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
-// SPIKE — the markdown layer for footnotes and nothing else (docs/footnote-requirements.md §7).
-// No definition section (§3), no TrailingNode change (§3.1), no guards (§6), no insertion route
-// (§9), no styling. Registered so the one question no amount of design writing can answer —
-// does load → serialize → load hold — can be answered before the rest is built.
+// Footnotes (docs/footnote-requirements.md). Four nodes' worth of feature in one file: the
+// reference that sits in the prose, the definition, the section holding every definition at the end
+// of the document, and the `doc` whose content expression pins that section last.
+//
+// Stage 1 of §11 — the markdown round trip, the section and its placement, both insertion routes,
+// numbering, and reference/definition pairing. **Not yet the guards of §6** (a reference can still
+// be put in a table cell or a code block, and a paste carrying one is not answered), which §11 is
+// emphatic must not be left out of the same release.
 //
 // Neither tiptap-markdown nor prosemirror-markdown carries any footnote handling, so both
 // directions are written here. Parsing goes through HTML (§2.1): tiptap-markdown renders markdown
@@ -203,6 +212,44 @@ export const FootnoteReference = Node.create({
       },
     };
   },
+
+  addCommands() {
+    return {
+      setFootnote:
+        () =>
+        ({ state, dispatch }) => {
+          const { from, to } = state.selection;
+          const tr = state.tr;
+          if (!applyFootnoteInsertion(tr, state, from, to)) return false;
+          dispatch?.(tr);
+          return true;
+        },
+    };
+  },
+
+  addKeyboardShortcuts() {
+    // Mod-Shift-F is free: Mod-Shift-X is strike, Mod-Shift-B is the quote, Mod-Alt-C the code
+    // block. The precedent for a shortcut of our own is accent-emphasis-extension.ts's Mod-Shift-E.
+    return { 'Mod-Shift-f': () => this.editor.commands.setFootnote() };
+  },
+
+  addInputRules() {
+    // Two characters is the whole trigger (§9.1). `[^` appears in neither Japanese prose nor
+    // markdown, and waiting for a closing bracket would mean asking the author for a label — which
+    // §4 has already decided they do not get to choose.
+    return [
+      new InputRule({
+        find: /\[\^$/,
+        handler: ({ state, range }) => {
+          return applyFootnoteInsertion(state.tr, state, range.from, range.to) ? undefined : null;
+        },
+      }),
+    ];
+  },
+
+  addProseMirrorPlugins() {
+    return [footnoteNumbering(), footnotePairing()];
+  },
 });
 
 // The definition. Inline content only (§1's non-goal list), and deliberately **not** in the
@@ -294,3 +341,202 @@ export const Document = Node.create({
   topNode: true,
   content: 'block+ footnoteSection?',
 });
+
+// ---------------------------------------------------------------------------------------------
+// Numbering, insertion and pairing (§4, §5.1, §9)
+// ---------------------------------------------------------------------------------------------
+
+const footnoteNumberingKey = new PluginKey('footnoteNumbering');
+const footnotePairingKey = new PluginKey('footnotePairing');
+
+// A label is an opaque, stable id (§4). It is never shown — the number the reader sees is derived
+// from document order — so it only has to be unique within the document and survive reordering.
+function mintLabel(doc: PMNode): string {
+  const taken = new Set<string>();
+  doc.descendants((node) => {
+    if (node.type.name === 'footnoteReference' || node.type.name === 'footnoteDefinition') {
+      taken.add(node.attrs.label as string);
+    }
+  });
+  for (;;) {
+    const label = `fn-${Math.random().toString(36).slice(2, 5)}`;
+    if (!taken.has(label)) return label;
+  }
+}
+
+interface FootnoteScan {
+  order: Map<string, number>;
+  definitions: Map<string, { empty: boolean }>;
+}
+
+// One walk answering both questions the rest of this file asks: what number does each label carry
+// (document order of the *references*, §4), and which definitions exist and are still empty.
+function scanFootnotes(doc: PMNode): FootnoteScan {
+  const definitions = new Map<string, { empty: boolean }>();
+  doc.descendants((node) => {
+    if (node.type.name !== 'footnoteDefinition') return;
+    definitions.set(node.attrs.label as string, { empty: node.content.size === 0 });
+  });
+
+  const order = new Map<string, number>();
+  doc.descendants((node) => {
+    if (node.type.name !== 'footnoteReference') return;
+    const label = node.attrs.label as string;
+    if (!order.has(label)) order.set(label, order.size + 1);
+  });
+
+  return { order, definitions };
+}
+
+// The number is a decoration, never an attribute, and that is the load-bearing choice here. Written
+// into the document it would make every reordering edit — and every load that renumbers — a change
+// the autosave has to save, which is the shape the accordion rejected when it took `persist: false`
+// so that a fold could not write to the database. A decoration keeps the number out of the document
+// and out of the markdown.
+//
+// `data-incomplete` is §5.2's first layer: the author is looking at the prose, not at the
+// definitions, so an unfinished footnote has to be visible from the reference.
+function footnoteNumbering(): Plugin {
+  return new Plugin({
+    key: footnoteNumberingKey,
+    props: {
+      decorations(state) {
+        const { order, definitions } = scanFootnotes(state.doc);
+        if (order.size === 0 && definitions.size === 0) return null;
+
+        const decorations: Decoration[] = [];
+        state.doc.descendants((node, pos) => {
+          const label = node.attrs.label as string | undefined;
+          if (label === undefined) return;
+
+          if (node.type.name === 'footnoteReference') {
+            const definition = definitions.get(label);
+            decorations.push(
+              Decoration.node(pos, pos + node.nodeSize, {
+                'data-number': String(order.get(label) ?? ''),
+                ...(definition && !definition.empty ? {} : { 'data-incomplete': '' }),
+              }),
+            );
+          } else if (node.type.name === 'footnoteDefinition') {
+            const number = order.get(label);
+            decorations.push(
+              Decoration.node(pos, pos + node.nodeSize, {
+                'data-number': String(number ?? ''),
+                // No reference points at this one (§5.4). It is kept rather than deleted — the
+                // author's words are not the editor's to throw away — but it is marked.
+                ...(number === undefined ? { 'data-orphan': '' } : {}),
+              }),
+            );
+          }
+        });
+        return DecorationSet.create(state.doc, decorations);
+      },
+    },
+  });
+}
+
+// Deleting a reference deletes its definition (§5.1). This runs as an appended transaction rather
+// than inside the deleting command because a reference can go in many ways — Backspace, a ranged
+// replacement, a paste over it, select-all — and answering each one separately is how the guards in
+// this editor have grown their bugs before.
+//
+// Undo and input rules are skipped for the reasons trailing-node-extension.ts documents at length:
+// an append riding an undo cannot be taken back by the next Ctrl+Z, and any appended transaction
+// clears the record undoInputRule needs.
+function footnotePairing(): Plugin {
+  return new Plugin({
+    key: footnotePairingKey,
+    appendTransaction: (transactions, oldState, state) => {
+      if (!transactions.some((transaction) => transaction.docChanged)) return null;
+      if (transactions.some(isHistoryTransaction)) return null;
+      if (hasUndoableInputRule(state)) return null;
+      if (oldState.doc.eq(state.doc)) return null;
+
+      const sectionType = state.schema.nodes.footnoteSection;
+      const section = state.doc.lastChild;
+      if (!sectionType || section?.type !== sectionType) return null;
+
+      // Only definitions whose reference existed a moment ago and is now gone. An orphan that
+      // arrived from outside (§5.4) is left alone — it never had a reference here to lose.
+      const { order } = scanFootnotes(state.doc);
+      const previous = scanFootnotes(oldState.doc).order;
+      const sectionStart = state.doc.content.size - section.nodeSize;
+
+      const doomed: { from: number; to: number }[] = [];
+      let survivors = 0;
+      let offset = sectionStart + 1;
+      section.forEach((definition) => {
+        const label = definition.attrs.label as string;
+        if (order.has(label) || !previous.has(label)) survivors += 1;
+        else doomed.push({ from: offset, to: offset + definition.nodeSize });
+        offset += definition.nodeSize;
+      });
+      if (doomed.length === 0) return null;
+
+      const tr = state.tr;
+      // Losing every definition means losing the section: its content is `footnoteDefinition+`, so
+      // an empty one is not a document ProseMirror will build. Deleting the definitions one by one
+      // in that case simply does nothing — measured, the reference went and the definition stayed.
+      if (survivors === 0) {
+        tr.delete(sectionStart, state.doc.content.size);
+      } else {
+        for (const { from, to } of doomed.reverse()) tr.delete(from, to);
+      }
+      return tr;
+    },
+  });
+}
+
+// Both routes do the same thing (§9): put a reference where the caret is, create its empty
+// definition, and **leave the caret in the prose**. Sending it to the definition would break the
+// flow footnotes exist to protect — thinking of an aside while writing a sentence.
+//
+// One transaction, not two. Beyond the undo atomicity §5.1 asks for, it is what keeps the `[^`
+// rule's undo record alive: any second transaction in the same round clears the record
+// undoInputRule needs, which is the trap trailing-node-extension.ts was written to answer.
+// Takes the transaction rather than making one. Both callers already have the transaction their
+// caller will dispatch — the command has `state.tr`, and an input rule is handed one that already
+// carries the typed characters — and building a second against the same document produced steps
+// whose positions no longer described it once replayed (`Invalid content for node doc`, measured).
+function applyFootnoteInsertion(
+  tr: Transaction,
+  state: EditorState,
+  from: number,
+  to: number,
+): boolean {
+  const referenceType = state.schema.nodes.footnoteReference;
+  const definitionType = state.schema.nodes.footnoteDefinition;
+  const sectionType = state.schema.nodes.footnoteSection;
+  if (!referenceType || !definitionType || !sectionType) return false;
+
+  const $from = tr.doc.resolve(from);
+  if (!$from.parent.inlineContent) return false;
+  // No footnote inside a footnote (§1's non-goal list). The section is the only place definitions
+  // live, so one ancestor test covers it.
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    if ($from.node(depth).type === sectionType) return false;
+  }
+
+  const label = mintLabel(tr.doc);
+  tr.replaceWith(from, to, referenceType.create({ label }));
+
+  const definition = definitionType.create({ label });
+  const last = tr.doc.lastChild;
+  if (last?.type === sectionType) {
+    tr.insert(tr.doc.content.size - 1, definition);
+  } else {
+    tr.insert(tr.doc.content.size, sectionType.create(null, definition));
+  }
+
+  tr.setSelection(TextSelection.near(tr.doc.resolve(from + 1)));
+  tr.scrollIntoView();
+  return true;
+}
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    footnote: {
+      setFootnote: () => ReturnType;
+    };
+  }
+}
