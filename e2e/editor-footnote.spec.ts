@@ -436,6 +436,84 @@ test('Enter outside a definition still splits the block', async ({ page }) => {
   );
 });
 
+// The Enter split's mirror image (§5.1). A join keeps one label and drops the other, so the second
+// note's words are filed under the first note's label and the second reference is left empty —
+// measured, `[^a]: 注A` + `[^b]: 注B` became `[^a]: 注A注B` with `[^b]` unpublishable. Backspace at
+// the *first* definition happened not to join, but only because the section is isolating; the rule
+// was nowhere.
+test('Backspace at the start of a definition refuses instead of joining', async ({ page }) => {
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await page.locator('.ProseMirror div[data-footnote-def]').nth(1).click();
+  await settle(page);
+  await page.keyboard.press('Home');
+  await settle(page);
+  await page.keyboard.press('Backspace');
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注A"), footnoteDefinition("注B"))',
+  );
+  await expect(page.getByText(/本文中の参照を削除/)).toBeVisible();
+});
+
+test('Delete at the end of a definition does not pull the next one in', async ({ page }) => {
+  // The same join reached from the other side. Fixing only Backspace would leave the defect one key
+  // away, which is the shape §6 keeps warning about.
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Delete');
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注A"), footnoteDefinition("注B"))',
+  );
+  await expect(page.getByText(/本文中の参照を削除/)).toBeVisible();
+});
+
+test('Backspace in an emptied definition says where to go', async ({ page }) => {
+  // §5.2 keeps the emptied definition and marks its reference; the author is then standing in an
+  // empty note with a key that did nothing and said nothing. A refused gesture changes no document,
+  // so without the notice it cannot be told from a broken key.
+  //
+  // Not "delete the footnote now that it is empty": the reference is elsewhere in the prose, and
+  // Backspace repeats — clearing a note by holding the key would run straight past empty.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注A\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  expect(await docString(page)).toContain('footnoteSection(footnoteDefinition)');
+
+  await page.keyboard.press('Backspace');
+
+  // Still there, still the author's to fill in or to remove from the prose.
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
+  );
+  await expect(page.getByText(/本文中の参照を削除/)).toBeVisible();
+});
+
+test('Backspace and Delete inside a definition still edit the text', async ({ page }) => {
+  // The refusal is the two edges only. Taking the whole key would be a worse bug than the join.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注釈\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Backspace');
+  expect(await docString(page)).toContain('footnoteDefinition("注")');
+
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Delete');
+  expect(await docString(page)).toContain('footnoteSection(footnoteDefinition)');
+});
+
+test('Backspace outside a definition still joins blocks', async ({ page }) => {
+  // Document-wide bindings, so what they decline matters as much as what they take.
+  await loadMarkdown(page, '本文[^a]\n\nあとの段落\n\n[^a]: 注A\n');
+  await page.locator('.ProseMirror p').nth(1).click();
+  await settle(page);
+  await page.keyboard.press('Home');
+  await settle(page);
+  await page.keyboard.press('Backspace');
+
+  expect(await docString(page)).toContain('paragraph("本文", footnoteReference, "あとの段落")');
+});
+
 test('a reference with an empty definition is marked in the prose', async ({ page }) => {
   // §5.2's first layer: the unfinished footnote has to be visible from where the author is looking.
   const editor = page.locator('.ProseMirror');

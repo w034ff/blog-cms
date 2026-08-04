@@ -329,10 +329,14 @@ function inDefinition($pos: ResolvedPos): boolean {
 // `block` group: the document's content expression is `block+ footnoteSection?` (§3.2), and a
 // definition that stayed in the group would still be admitted anywhere at the top level, leaving
 // that expression decorative. Its only home is the section below.
-export const FootnoteDefinition = Node.create({
+export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => void }>({
   name: 'footnoteDefinition',
   content: 'inline*',
   defining: true,
+
+  addOptions() {
+    return { onBlocked: () => {} };
+  },
 
   addAttributes() {
     return {
@@ -367,12 +371,40 @@ export const FootnoteDefinition = Node.create({
   //
   // Declines outside a definition so the key falls through to baseKeymap, and `setHardBreak` reports
   // its own failure, which keeps this from swallowing an Enter it did not act on.
+  // Backspace at the start must not join, and Delete at the end must not pull the next one in — the
+  // same defect as the Enter split, arrived at from the other side. A join keeps one label and drops
+  // the other, so the second note's words end up filed under the first note's label: measured,
+  // `[^a]: 注A` and `[^b]: 注B` became `[^a]: 注A注B`, and `[^b]` was left empty and unpublishable.
+  // §5.1 already says a definition is never deleted on its own and goes only with its reference; a
+  // join is that rule broken from inside the section.
+  //
+  // Refused with the notice rather than silently, which is also what retires a dead key. Erasing a
+  // note's text leaves the definition empty and its reference marked (§5.2), and Backspace there did
+  // nothing at all and said nothing — indistinguishable from a broken key. It now says where the
+  // author has to go, the way the placement guards do.
+  //
+  // Deliberately *not* "delete the footnote once the definition is empty". The reference is
+  // somewhere else in the prose, possibly off screen, and Backspace repeats: an author clearing a
+  // note by holding the key would run past the empty state and take the reference with it. An empty
+  // definition is also a state every retyped note passes through, which is the same reason autosave
+  // refuses to overwrite a title that is briefly blank (lib/posts-write.ts).
   addKeyboardShortcuts() {
+    const refuseJoin = (atEdge: (offset: number, size: number) => boolean) => () => {
+      const { selection } = this.editor.state;
+      const { $from, empty } = selection;
+      if (!empty || $from.parent.type.name !== 'footnoteDefinition') return false;
+      if (!atEdge($from.parentOffset, $from.parent.content.size)) return false;
+      this.options.onBlocked('脚注を削除するには、本文中の参照を削除してください。');
+      return true;
+    };
+
     return {
       Enter: () => {
         if (!inDefinition(this.editor.state.selection.$from)) return false;
         return this.editor.commands.setHardBreak();
       },
+      Backspace: refuseJoin((offset) => offset === 0),
+      Delete: refuseJoin((offset, size) => offset === size),
     };
   },
 

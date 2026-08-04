@@ -277,7 +277,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // footnote_def *before* the `reference` rule it patches, so it is only ever asked about the
       // lines the plugin refused (§7.2).
       FootnoteReference.configure({ onBlocked: showNotice, onNotice: showNotice }),
-      FootnoteDefinition,
+      FootnoteDefinition.configure({ onBlocked: showNotice }),
       FootnoteSection,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
