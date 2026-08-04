@@ -17,6 +17,7 @@ import {
 import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
+import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
 import { FootnoteLiteral } from './editor/footnote-literal-extension';
@@ -206,6 +207,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // bold/italic/strike/code are replaced by the guarded versions below (same behavior,
       // but toggling one that's excluded by accentEmphasis is a true no-op — see
       // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
+      // trailingNode is replaced by ours below: same appended paragraph, but it waits while a
+      // just-fired input rule can still be undone, so Backspace after a block shortcut typed at
+      // the end of the document restores what was typed — see trailing-node-extension.ts.
       StarterKit.configure({
         heading: false,
         bulletList: false,
@@ -217,7 +221,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         strike: false,
         code: false,
         underline: false,
+        trailingNode: false,
       }),
+      TrailingNode,
       // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
       // (same node, extended to serialize column alignment) and the paragraph-only
       // cells (markdown can't store block structure inside a cell), so disable its own.

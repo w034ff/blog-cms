@@ -2,8 +2,9 @@ import { InputRule, findParentNode } from '@tiptap/core';
 import type { CommandProps, Editor } from '@tiptap/core';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { Fragment, type Node as PMNode, type NodeType, type ResolvedPos } from '@tiptap/pm/model';
-import { Plugin, TextSelection, type EditorState } from '@tiptap/pm/state';
+import { Plugin, TextSelection } from '@tiptap/pm/state';
 import { detailsSliceGuard } from './details-slice-guard';
+import { hasUndoableInputRule } from './input-rule-undo';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 // The Zenn-style folding block (docs/accordion-requirements.md). @tiptap/extension-details
@@ -218,22 +219,6 @@ function enterIntoEmptyBody(editor: Editor, openClassName: string): boolean {
 function tabIntoBody(editor: Editor, openClassName: string): boolean {
   const target = openBodyFromSummary(editor, editor.state.selection.$head, openClassName);
   return target !== null && moveCaretTo(editor, target.firstLinePos);
-}
-
-// Is an input rule still undoable? TipTap marks each input-rule plugin's spec, and the plugin holds
-// the last rule's inverse until any transaction changes the document or the selection — the same
-// thing `undoInputRule` looks for before it will do anything.
-//
-// Every one of them has to be asked, not the first: TipTap builds one such plugin *per extension*
-// that declares input rules, so this editor carries 13, and the one holding the inverse is whichever
-// extension owns the rule that just fired (measured — checking only the first found nothing, ever).
-// Core's `undoInputRule` loops for the same reason.
-function hasUndoableInputRule(state: EditorState): boolean {
-  return state.plugins.some(
-    (candidate) =>
-      (candidate.spec as { isInputRules?: boolean }).isInputRules === true &&
-      candidate.getState(state) != null,
-  );
 }
 
 // Puts the caret back where the author was typing after `:::details ` is undone by Backspace.
