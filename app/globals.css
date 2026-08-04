@@ -1401,7 +1401,7 @@ body.block-dragging .table-toolbar {
   line-height: 0;
   vertical-align: super;
   padding: 0 0.1em;
-  color: var(--link, #0969da);
+  color: #0969da;
   cursor: default;
 }
 .ProseMirror sup[data-footnote-ref]::after {
@@ -1424,7 +1424,7 @@ body.block-dragging .table-toolbar {
 .ProseMirror div[data-footnote-section] {
   margin-top: 2rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border, #d0d7de);
+  border-top: 1px solid #d0d7de;
   font-size: 0.9em;
 }
 .ProseMirror div[data-footnote-def] {
@@ -1435,13 +1435,27 @@ body.block-dragging .table-toolbar {
 .ProseMirror div[data-footnote-def]::before {
   content: '[' attr(data-number) ']';
   flex: none;
-  color: var(--muted, #656d76);
+  color: #656d76;
 }
 /* No reference points at this one (§5.4). Kept — the author's words are not the editor's to throw
    away — but it cannot carry a number, so it says why instead. */
 .ProseMirror div[data-footnote-def][data-orphan]::before {
   content: '[?]';
   color: #9a6700;
+}
+
+/* The published side. remark-gfm emits `<section data-footnotes>` with a screen-reader-only
+   `<h2>Footnotes</h2>` and an ordered list, and nothing visual between the prose and the notes —
+   measured on the real page, the notes read as one more list at the end of the body and a reader
+   has no way to tell them apart from it.
+
+   The editor draws a rule there, so leaving the page without one would put the boundary in one
+   view and not the other. The two rules are written from the same three values for that reason. */
+.prose section[data-footnotes] {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d0d7de;
+  font-size: 0.9em;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1451,5 +1465,9 @@ body.block-dragging .table-toolbar {
   .ProseMirror sup[data-footnote-ref][data-incomplete],
   .ProseMirror div[data-footnote-def][data-orphan]::before {
     color: #d29922;
+  }
+  .ProseMirror div[data-footnote-section],
+  .prose section[data-footnotes] {
+    border-top-color: #30363d;
   }
 }
