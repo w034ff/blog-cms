@@ -123,12 +123,33 @@ function rescueOrphanDefinitions(markdownit: MarkdownIt): void {
         .map((entry) => entry.label)
         .filter((entry) => entry !== undefined),
     );
+    const rescued: Token[] = [];
     for (const [label, tokens] of captured) {
       if (referenced.has(label)) continue;
       const open = new state.Token('footnote_open', '', 1);
       open.meta = { label };
-      state.tokens.push(open, ...tokens, new state.Token('footnote_close', '', -1));
+      rescued.push(open, ...tokens, new state.Token('footnote_close', '', -1));
     }
+    if (rescued.length === 0) return false;
+
+    // Inside the section, not after it. The definitions' section is the only place a definition
+    // may live (§3.2: the doc is `block+ footnoteSection?`, and footnoteDefinition is not in the
+    // `block` group), and appending past `footnote_block_close` puts the rescued ones outside it —
+    // where ProseMirror cannot place them and drops them again.
+    //
+    // Measured, and only visible with company: with no referenced footnote the tail emits no
+    // wrapper at all, ProseMirror supplies the missing section itself, and the orphan survives. Add
+    // one ordinary footnote to the same document and the wrapper exists, the orphan lands after it,
+    // and the note's words are gone — the exact loss this rescue was written to stop.
+    let closeIndex = -1;
+    for (let index = state.tokens.length - 1; index >= 0; index -= 1) {
+      if (state.tokens[index].type === 'footnote_block_close') {
+        closeIndex = index;
+        break;
+      }
+    }
+    if (closeIndex >= 0) state.tokens.splice(closeIndex, 0, ...rescued);
+    else state.tokens.push(...rescued);
     return false;
   });
 }

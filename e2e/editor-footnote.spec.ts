@@ -103,9 +103,27 @@ test('an orphan definition keeps its text', async ({ page }) => {
   // instead — the definition tokens are filtered out of the stream and never re-emitted when no
   // reference claimed them. If this fails, installing the plugin makes a real case *worse* than
   // the literal-text guard it replaces.
-  const { first } = await roundTrip(page, '本文\n\n[^x]: 消えては困る注釈\n');
+  const { first, doc } = await roundTrip(page, '本文\n\n[^x]: 消えては困る注釈\n');
 
-  expect(first).toContain('消えては困る注釈');
+  expect(doc).toBe(
+    'doc(paragraph("本文"), footnoteSection(footnoteDefinition("消えては困る注釈")))',
+  );
+  expect(first).toContain('[^x]: 消えては困る注釈');
+});
+
+test('an orphan definition survives in the company of a real one', async ({ page }) => {
+  // The case the test above cannot see, and the one that was broken: with no referenced footnote
+  // the tail emits no section wrapper, ProseMirror supplies the missing section itself, and the
+  // orphan lands inside it by luck. Add one ordinary footnote and the wrapper exists — a rescued
+  // definition appended after it is outside the only node that may hold it, and is dropped.
+  // Measured as the note's words disappearing from both the document and the saved markdown.
+  const { first, doc } = await roundTrip(page, '本文[^a]\n\n[^a]: A の注\n\n[^x]: 孤児の注\n');
+
+  expect(doc).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition("A の注"), footnoteDefinition("孤児の注")))',
+  );
+  expect(first).toContain('[^a]: A の注');
+  expect(first).toContain('[^x]: 孤児の注');
 });
 
 // §3.1 / §3.2 — the definitions' section is pinned last, and TrailingNode has to answer around it.
