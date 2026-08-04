@@ -332,6 +332,18 @@ function inDefinition($pos: ResolvedPos): boolean {
 export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => void }>({
   name: 'footnoteDefinition',
   content: 'inline*',
+  // What stops a *ranged* deletion spanning two definitions from merging them. The keymap below
+  // answers a caret at an edge, which is a different gesture and cannot reach this one: a selection
+  // drawn from one note into the next and then deleted (or typed over, cut, pasted over, or
+  // committed over by an IME) closed the frontier between the two definitions and left one node
+  // carrying both labels' worth of text. This is the same defect §6 documents for the callout and
+  // the code block, and isolating-boundary.ts already answers it at all seven entry points off the
+  // node's own `isolating` flag — so the fix is to be one of the nodes it protects, not to grow a
+  // sixth rule here.
+  //
+  // The section is isolating too, which makes this the table's two-level shape. That is already the
+  // case the clamp handles: `isolatingCutDepth` takes the *innermost* box, which is the definition.
+  isolating: true,
   defining: true,
 
   addOptions() {
@@ -398,11 +410,25 @@ export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => 
       return true;
     };
 
+    // Not `setHardBreak`. @tiptap/extension-hard-break refuses outright when the caret's parent node
+    // is isolating (dist/index.js:39), and the definition is *both* the isolating node and the
+    // textblock the caret sits in — measured, adding `isolating` above turned Enter into a silent
+    // no-op and the next characters simply ran on. A table cell escapes that only because its
+    // textblock is an ordinary paragraph nested inside the isolating cell.
+    //
+    // All three keys go through here for the reason the table states: HardBreak binds Shift+Enter
+    // and Mod+Enter straight to `setHardBreak`, so leaving them alone would leave two dead keys
+    // where the canonical line break used to be. Each declines outside a definition, so HardBreak's
+    // own bindings answer them everywhere else.
+    const breakLine = () => {
+      if (!inDefinition(this.editor.state.selection.$from)) return false;
+      return this.editor.commands.insertContent({ type: 'hardBreak' });
+    };
+
     return {
-      Enter: () => {
-        if (!inDefinition(this.editor.state.selection.$from)) return false;
-        return this.editor.commands.setHardBreak();
-      },
+      Enter: breakLine,
+      'Shift-Enter': breakLine,
+      'Mod-Enter': breakLine,
       Backspace: refuseJoin((offset) => offset === 0),
       Delete: refuseJoin((offset, size) => offset === size),
     };

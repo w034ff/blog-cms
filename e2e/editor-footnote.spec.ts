@@ -502,6 +502,87 @@ test('Backspace and Delete inside a definition still edit the text', async ({ pa
   expect(await docString(page)).toContain('footnoteSection(footnoteDefinition)');
 });
 
+// Positions inside the first and second definitions, read off the document rather than written
+// down: a range whose whole point is the edge it spans cannot afford a literal that drifts when the
+// fixture changes.
+function acrossDefinitions(
+  page: import('@playwright/test').Page,
+  fromOffset: number,
+  toOffset: number,
+): Promise<{ from: number; to: number }> {
+  return page.evaluate(
+    (offsets) => {
+      const el = document.querySelector('.ProseMirror') as unknown as {
+        editor: { state: { doc: { descendants(f: (node: unknown, pos: number) => void): void } } };
+      };
+      const starts: number[] = [];
+      el.editor.state.doc.descendants((node, pos) => {
+        if ((node as { type: { name: string } }).type.name === 'footnoteDefinition') {
+          starts.push(pos + 1);
+        }
+      });
+      return { from: starts[0] + offsets.from, to: starts[1] + offsets.to };
+    },
+    { from: fromOffset, to: toOffset },
+  );
+}
+
+// The gesture the edge keymap above cannot see. `isolating` on the definition is what answers it:
+// isolating-boundary.ts already clamps a ranged replacement at all seven entry points off that flag,
+// so the definitions become two of the nodes it protects rather than growing a rule of their own.
+// Measured before the flag: the two notes merged into `footnoteDefinition("注")` and `[^b]` lost its
+// definition node outright.
+test('a range spanning two definitions deletes inside each, not across', async ({ page }) => {
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await page.locator('.ProseMirror div[data-footnote-def]').first().click();
+  await settle(page);
+  const { from, to } = await acrossDefinitions(page, 1, 1);
+  await setRange(page, from, to);
+  await settle(page);
+  await page.keyboard.press('Backspace');
+
+  // Both notes still exist and still hold their own labels; only the selected characters went.
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注"), footnoteDefinition("B"))',
+  );
+  const saved = await markdown(page);
+  expect(saved).toContain('[^a]: 注');
+  expect(saved).toContain('[^b]: B');
+});
+
+test('typing over a range spanning two definitions keeps both', async ({ page }) => {
+  // handleTextInput is a separate entry point from the Backspace one, and the clamp covers it — a
+  // single character over a boundary-spanning selection was one of the shapes that corrupted the
+  // callout and the code block.
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await page.locator('.ProseMirror div[data-footnote-def]').first().click();
+  await settle(page);
+  const { from, to } = await acrossDefinitions(page, 1, 1);
+  await setRange(page, from, to);
+  await settle(page);
+  await page.keyboard.type('X');
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注X"), footnoteDefinition("B"))',
+  );
+});
+
+test('Shift+Enter and Mod+Enter still break the line in a definition', async ({ page }) => {
+  // Both were dead the moment the definition became isolating: HardBreak binds them straight to
+  // `setHardBreak`, which refuses when the caret's parent is an isolating node. They are routed
+  // through the same insertion as Enter, and this is what says so.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注A\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('二');
+  await page.keyboard.press('Control+Enter');
+  await page.keyboard.type('三');
+
+  expect(await docString(page)).toContain(
+    'footnoteDefinition("注A", hardBreak, "二", hardBreak, "三")',
+  );
+});
+
 test('Backspace outside a definition still joins blocks', async ({ page }) => {
   // Document-wide bindings, so what they decline matters as much as what they take.
   await loadMarkdown(page, '本文[^a]\n\nあとの段落\n\n[^a]: 注A\n');
