@@ -67,3 +67,33 @@ test('every definition marker reserves the same width, so the notes line up', as
   console.log('without the fix — marker widths:', (await markerWidths(page)).join(', '));
   console.log('without the fix — text left edges:', (await textLeftEdges(page)).join(', '));
 });
+
+test('the empty-note placeholder starts where a written note does', async ({ page }) => {
+  // §5.2's placeholder is a `::after`, and an empty definition still holds a trailing `<br>` — so as
+  // an ordinary flex item the placeholder sat a few pixels right of every filled note's text,
+  // reintroducing the misalignment the marker's reserve exists to prevent. It is positioned off the
+  // same two custom properties the marker is laid out from, and this is what holds those together.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await loadMarkdown(page, '本文[^a]と[^b]\n\n[^a]: 注A\n[^b]:\n');
+  await page.evaluate(() => document.fonts.ready);
+
+  const [written, placeholder] = await page.$$eval('.ProseMirror div[data-footnote-def]', (defs) =>
+    defs.map((def) => {
+      if (def.hasAttribute('data-empty')) {
+        return Math.round(parseFloat(getComputedStyle(def, '::after').left) * 100) / 100;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(def);
+      return (
+        Math.round((range.getBoundingClientRect().left - def.getBoundingClientRect().left) * 100) /
+        100
+      );
+    }),
+  );
+  // Sub-pixel: one side is a computed `left`, the other the difference of two viewport rects.
+  expect(placeholder, `written note at ${written}, placeholder at ${placeholder}`).toBeCloseTo(
+    written,
+    1,
+  );
+});

@@ -658,6 +658,13 @@ function footnoteNumbering(): Plugin {
                 // No reference points at this one (§5.4). It is kept rather than deleted — the
                 // author's words are not the editor's to throw away — but it is marked.
                 ...(number === undefined ? { 'data-orphan': '' } : {}),
+                // §5.2's first layer assumed a placeholder on this side and argued it was not
+                // enough on its own, which is how the reference-side marking came to exist — but
+                // the placeholder it was arguing against was never built. CSS cannot find this
+                // state by itself: an empty ProseMirror textblock still holds a trailing `<br>`, so
+                // `:empty` never matches. The emptiness has to arrive as an attribute, and this is
+                // the pass that already computes it.
+                ...(node.content.size === 0 ? { 'data-empty': '' } : {}),
               }),
             );
           }

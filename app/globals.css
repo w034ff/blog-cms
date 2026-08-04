@@ -1428,9 +1428,14 @@ body.block-dragging .table-toolbar {
   font-size: 0.9em;
 }
 .ProseMirror div[data-footnote-def] {
+  /* Named because the placeholder below has to start exactly where a note's first character does,
+     and it is positioned rather than laid out — two rules needing one number. */
+  --footnote-marker: 2.6em;
+  --footnote-gap: 0.5em;
   display: flex;
-  gap: 0.5em;
+  gap: var(--footnote-gap);
   margin: 0.35em 0;
+  position: relative;
 }
 /* `flex: none` alone sizes this box to its own glyphs, so the note text's left edge moved with the
    number: Geist's figures are proportional, and `1` is narrower than `2`. Only the definitions show
@@ -1446,7 +1451,7 @@ body.block-dragging .table-toolbar {
 .ProseMirror div[data-footnote-def]::before {
   content: '[' attr(data-number) ']';
   flex: none;
-  min-width: 2.6em;
+  min-width: var(--footnote-marker);
   font-variant-numeric: tabular-nums;
   color: #656d76;
 }
@@ -1455,6 +1460,29 @@ body.block-dragging .table-toolbar {
 .ProseMirror div[data-footnote-def][data-orphan]::before {
   content: '[?]';
   color: #9a6700;
+}
+/* §5.2's first layer names a placeholder on this side, and then argues it is not enough on its own —
+   which is why the reference is marked too. The placeholder it was arguing against was never built,
+   so the definition an author is standing in said nothing at all about being unfinished.
+
+   `::after`, because `::before` is the number. `[data-empty]` is a decoration and not a CSS test:
+   an empty ProseMirror textblock still holds a trailing `<br>`, so `:empty` never matches it.
+
+   Positioned rather than laid out, because that same trailing `<br>` is a flex item with a width of
+   its own — as a third flex item the placeholder started a few pixels right of where every filled
+   note's text begins, which is the misalignment the marker's `min-width` exists to prevent. Taking
+   it out of the flow puts it exactly at the note's own left edge, which is also where the caret
+   sits, so typing begins on top of it and it disappears on the first character.
+
+   Same amber as the other two unfinished states, and inert: never selected, never copied, never
+   clicked through to. */
+.ProseMirror div[data-footnote-def][data-empty]::after {
+  content: '注釈を入力（空のままでは公開できません）';
+  position: absolute;
+  left: calc(var(--footnote-marker) + var(--footnote-gap));
+  color: #9a6700;
+  pointer-events: none;
+  user-select: none;
 }
 
 /* The published side. remark-gfm emits `<section data-footnotes>` with a screen-reader-only

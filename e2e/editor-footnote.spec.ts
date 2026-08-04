@@ -497,7 +497,11 @@ test('Backspace and Delete inside a definition still edit the text', async ({ pa
   await page.keyboard.press('Backspace');
   expect(await docString(page)).toContain('footnoteDefinition("注")');
 
+  // Home moves the *DOM* selection, which reaches state.selection a debounce later — without this
+  // the Delete below is handed the caret from before it, still at the end, where the edge guard
+  // refuses. Measured as this test failing intermittently.
   await page.keyboard.press('Home');
+  await settle(page);
   await page.keyboard.press('Delete');
   expect(await docString(page)).toContain('footnoteSection(footnoteDefinition)');
 });
@@ -593,6 +597,28 @@ test('Backspace outside a definition still joins blocks', async ({ page }) => {
   await page.keyboard.press('Backspace');
 
   expect(await docString(page)).toContain('paragraph("本文", footnoteReference, "あとの段落")');
+});
+
+test('an empty definition says so where the author is standing', async ({ page }) => {
+  // §5.2's first layer describes a placeholder here and then argues it is not enough by itself,
+  // which is where the reference-side marking came from — but the placeholder itself was never
+  // built. Read off the attribute rather than the rendered text: the content is a CSS `::after`,
+  // which has no node for Playwright to query.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注A\n');
+  const definition = page.locator('.ProseMirror div[data-footnote-def]');
+  await expect(definition).not.toHaveAttribute('data-empty', '');
+
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await expect(definition).toHaveAttribute('data-empty', '');
+  expect(await definition.evaluate((el) => getComputedStyle(el, '::after').content)).toContain(
+    '注釈を入力',
+  );
+
+  // And it goes the moment there is a note again — it marks a state, not an event.
+  await page.keyboard.type('書いた');
+  await expect(definition).not.toHaveAttribute('data-empty', '');
 });
 
 test('a reference with an empty definition is marked in the prose', async ({ page }) => {
