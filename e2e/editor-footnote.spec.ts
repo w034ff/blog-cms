@@ -621,6 +621,44 @@ test('an empty definition says so where the author is standing', async ({ page }
   await expect(definition).not.toHaveAttribute('data-empty', '');
 });
 
+test('selecting a reference marks the definition it belongs to', async ({ page }) => {
+  // Clicking a reference already makes a NodeSelection — it is how a footnote is picked to be
+  // deleted (§5.1) — and it said nothing about which of the notes at the end of the document was
+  // its own. Shown, not jumped to: moving the caret into the definition would strand the author
+  // mid-sentence with no backref to come back by, which is why §5.1 keeps the caret in the prose in
+  // the first place.
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  const definitions = page.locator('.ProseMirror div[data-footnote-def]');
+  await expect(definitions.nth(0)).not.toHaveAttribute('data-paired', '');
+
+  await page.locator('.ProseMirror sup[data-footnote-ref]').nth(1).click();
+  await settle(page);
+  await expect(definitions.nth(1)).toHaveAttribute('data-paired', '');
+  await expect(definitions.nth(0)).not.toHaveAttribute('data-paired', '');
+
+  // The other reference hands it over rather than adding to it.
+  await page.locator('.ProseMirror sup[data-footnote-ref]').nth(0).click();
+  await settle(page);
+  await expect(definitions.nth(0)).toHaveAttribute('data-paired', '');
+  await expect(definitions.nth(1)).not.toHaveAttribute('data-paired', '');
+});
+
+test('a caret in the prose does not light the definitions up', async ({ page }) => {
+  // A NodeSelection and nothing else. A caret next to a reference is where an author writing prose
+  // spends most of its time, and marking on that would be noise rather than an answer — so this is
+  // the half that keeps the highlight meaning something.
+  await loadMarkdown(page, '本文[^a]のあと\n\n[^a]: 注A\n');
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await page.keyboard.press('End');
+  await settle(page);
+
+  await expect(page.locator('.ProseMirror div[data-footnote-def]')).not.toHaveAttribute(
+    'data-paired',
+    '',
+  );
+});
+
 test('a reference with an empty definition is marked in the prose', async ({ page }) => {
   // §5.2's first layer: the unfinished footnote has to be visible from where the author is looking.
   const editor = page.locator('.ProseMirror');

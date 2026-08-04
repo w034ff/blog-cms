@@ -2,7 +2,7 @@ import { InputRule, Node, mergeAttributes } from '@tiptap/core';
 import { isHistoryTransaction } from '@tiptap/pm/history';
 import { Fragment, Slice } from '@tiptap/pm/model';
 import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model';
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { hasUndoableInputRule } from './input-rule-undo';
@@ -621,6 +621,16 @@ function sortDefinitions(tr: Transaction): boolean {
   return true;
 }
 
+// The label of the reference the selection is *on*, or null. A NodeSelection and nothing else: a
+// caret merely sitting next to a reference is where an author writing prose spends most of its
+// time, and lighting the section up as the caret drifts past would be noise rather than an answer.
+function pairedLabel(state: EditorState): string | null {
+  const { selection } = state;
+  if (!(selection instanceof NodeSelection)) return null;
+  if (selection.node.type.name !== 'footnoteReference') return null;
+  return selection.node.attrs.label as string;
+}
+
 // The number is a decoration, never an attribute, and that is the load-bearing choice here. Written
 // into the document it would make every reordering edit — and every load that renumbers — a change
 // the autosave has to save, which is the shape the accordion rejected when it took `persist: false`
@@ -636,6 +646,20 @@ function footnoteNumbering(): Plugin {
       decorations(state) {
         const { order, definitions } = scanFootnotes(state.doc);
         if (order.size === 0 && definitions.size === 0) return null;
+
+        // Which definition is the one the author is pointing at. Clicking a reference already makes
+        // a NodeSelection — it is how a footnote is picked to be deleted (§5.1) — so the gesture is
+        // there and says nothing back. Marking its definition is the whole of the answer: the pair
+        // is otherwise only findable by matching a number by eye.
+        //
+        // Deliberately the *shown* pair and not a jump. Moving the caret to the definition would
+        // strand the author mid-sentence with nothing to bring them back, which is the same reason
+        // §5.1 keeps the caret in the prose when a footnote is inserted; the public page can jump
+        // because it has a backref and no caret to lose (§8). Scrolling the definition into view was
+        // considered alongside this and left out: click is also the delete gesture, and moving the
+        // page under someone who meant to press Backspace is a worse trade than a highlight they
+        // may not need.
+        const paired = pairedLabel(state);
 
         const decorations: Decoration[] = [];
         state.doc.descendants((node, pos) => {
@@ -665,6 +689,7 @@ function footnoteNumbering(): Plugin {
                 // `:empty` never matches. The emptiness has to arrive as an attribute, and this is
                 // the pass that already computes it.
                 ...(node.content.size === 0 ? { 'data-empty': '' } : {}),
+                ...(paired === label ? { 'data-paired': '' } : {}),
               }),
             );
           }

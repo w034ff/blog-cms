@@ -1476,6 +1476,18 @@ body.block-dragging .table-toolbar {
 
    Same amber as the other two unfinished states, and inert: never selected, never copied, never
    clicked through to. */
+/* The definition belonging to the reference the author has selected. Clicking a reference already
+   makes a NodeSelection — the gesture is there, and until now it said nothing about which note at
+   the bottom of the document it belonged to.
+
+   The same blue as the selected reference, so the two read as one thing. `box-shadow` rather than
+   padding: the tint needs to sit a little off the text, and padding here would move the marker and
+   undo the alignment two commits above. */
+.ProseMirror div[data-footnote-def][data-paired] {
+  background: rgba(9, 105, 218, 0.12);
+  box-shadow: 0 0 0 0.25em rgba(9, 105, 218, 0.12);
+  border-radius: 2px;
+}
 .ProseMirror div[data-footnote-def][data-empty]::after {
   content: '注釈を入力（空のままでは公開できません）';
   position: absolute;
