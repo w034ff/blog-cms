@@ -341,11 +341,31 @@ function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
 // baseKeymap's Enter as before. A selection that runs *out* of a cell is not this binding's problem
 // either — the isolating clamp is asked first and answers it (isolating-boundary.ts), including the
 // hard break it leaves in the cell for the same reason as here.
+//
+// Three keys make a hard break, and all three are routed through here (see addKeyboardShortcuts
+// below): Enter, because in a cell it must not split; Shift+Enter and Mod+Enter, because
+// @tiptap/extension-hard-break binds them straight to `setHardBreak` and so would otherwise skip
+// the whole-cell guard below — the same wipe on the key this comment calls the canonical in-cell
+// break. Outside a cell this declines, and HardBreak's own bindings answer them as before.
+//
+// The one selection it must not take at face value is the one Tab leaves behind. setHardBreak is an
+// insert, so it replaces whatever is selected — and after Tab that is the destination cell's entire
+// content (isWholeTextblockSelected above), which the author never selected and cannot see they are
+// about to lose. Tab then Enter read as "move here, then add a line" and instead wiped the cell,
+// leaving only the break. Collapse that shape to the end of the cell first and insert there: the
+// content survives and Enter still does the one thing it does in a cell. This is the same defect the
+// arrow keys had for the same reason, answered the same way (tableVerticalArrow above) — a
+// selection made *by hand* is left alone there, and a partial one is left alone here, so typing over
+// a range you actually chose still replaces it. A hand-made whole-cell selection is
+// indistinguishable from Tab's and so takes the same non-destructive branch; undo is one step
+// either way.
 function hardBreakInCell(editor: Editor): boolean {
   const { selection } = editor.state;
   if (!(selection instanceof TextSelection)) return false;
   if (!selectionInsideCell(selection.$from, selection.$to)) return false;
-  return editor.commands.setHardBreak();
+  if (!isWholeTextblockSelected(selection)) return editor.commands.setHardBreak();
+  // One chain, so the collapse and the break stay one transaction and therefore one undo step.
+  return editor.chain().setTextSelection(selection.to).setHardBreak().run();
 }
 
 // @tiptap/extension-table already stores an `align` attribute per cell (parsed
@@ -449,6 +469,11 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
       ArrowDown: () => tableVerticalArrow(1, this.editor),
       ArrowUp: () => tableVerticalArrow(-1, this.editor),
       Enter: () => hardBreakInCell(this.editor),
+      // HardBreak's own Shift-Enter/Mod-Enter call setHardBreak directly, so they have to be
+      // intercepted here to reach the whole-cell guard — this extension is registered after
+      // StarterKit in PostEditor's array, which ExtensionManager reverses, so these are asked first.
+      'Shift-Enter': () => hardBreakInCell(this.editor),
+      'Mod-Enter': () => hardBreakInCell(this.editor),
     };
   },
   addOptions(): MarkdownTableOptions {
