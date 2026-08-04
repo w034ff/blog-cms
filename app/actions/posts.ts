@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { DEFAULT_CATEGORY, parseTags } from '@/lib/content';
+import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
@@ -79,6 +80,16 @@ async function publish(formData: FormData): Promise<PostFormState> {
   const content = parseContent(formData);
   if (!content) {
     return { error: '入力が不正です。タイトルは必須です。' };
+  }
+  // docs/footnote-requirements.md §5.2's third layer. Autosave and 下書き保存 stay lenient — a note
+  // half-written is work in progress, and refusing to store it is how drafts get lost — but an
+  // empty one is meaningless to a reader, so publishing is where it has to be finished. The number
+  // is what the author sees on screen; the label never is, so it is no use in the message.
+  const incomplete = incompleteFootnotes(content.body);
+  if (incomplete.length > 0) {
+    return {
+      error: `注釈が空の脚注が ${incomplete.length} 件あります。本文を書いてから公開してください。`,
+    };
   }
   const id = parseId(formData);
 
