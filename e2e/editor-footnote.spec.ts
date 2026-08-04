@@ -359,6 +359,83 @@ test('a definition materialized by a paste sorts to its reference', async ({ pag
   );
 });
 
+// Put the caret at the end of the first definition. The click is what focuses the editor, and the
+// settle after it is not optional — a caret placed by clicking reaches state.selection ~20ms late.
+async function caretAtEndOfFirstDefinition(page: import('@playwright/test').Page) {
+  await page.locator('.ProseMirror div[data-footnote-def]').first().click();
+  await settle(page);
+  await page.keyboard.press('End');
+  await settle(page);
+}
+
+test('Enter in a definition breaks the line instead of splitting the note', async ({ page }) => {
+  // A split copies the attributes, so both halves kept the same label: a second definition carrying
+  // the same number, and a second `[^a]:` line in the markdown. Measured before the fix — the column
+  // read [1], [1], [2].
+  await loadMarkdown(page, '本文[^a]と本文[^b]\n\n[^a]: 注A\n[^b]: 注B\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('続き');
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("注A", hardBreak, "続き"), footnoteDefinition("注B"))',
+  );
+  expect(await definitionNumbers(page)).toEqual(['1', '2']);
+});
+
+test('a line broken inside a definition survives the round trip', async ({ page }) => {
+  // Why a hard break is the right answer and not merely a safe one: the shape already round-trips,
+  // because Shift+Enter has always been able to make it. Enter only routes a third key to it.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注A\n');
+  await caretAtEndOfFirstDefinition(page);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('二行目');
+
+  const saved = await markdown(page);
+  // One definition line for one label — the duplicate is what destroyed the note, since
+  // markdown-it's footnote_def keeps the last `[^a]:` it sees and drops what came before.
+  expect(saved.match(/\[\^a\]:/g)).toHaveLength(1);
+  await loadMarkdown(page, saved);
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition("注A", hardBreak, "二行目")))',
+  );
+});
+
+test('Enter in the middle of a definition keeps the words before the caret', async ({ page }) => {
+  // The case that lost text rather than merely looking wrong: split mid-note, the second `[^a]:`
+  // line won on reload and "注釈" was gone.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注釈テキスト\n');
+  await page.locator('.ProseMirror div[data-footnote-def]').first().click();
+  await settle(page);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await settle(page);
+  await page.keyboard.press('Enter');
+
+  const saved = await markdown(page);
+  expect(saved).toContain('注釈');
+  expect(saved).toContain('テキスト');
+  await loadMarkdown(page, saved);
+  expect(await docString(page)).toContain('注釈');
+  expect(await docString(page)).toContain('テキスト');
+});
+
+test('Enter outside a definition still splits the block', async ({ page }) => {
+  // The binding is document-wide, so it has to decline everything that is not a definition — a
+  // swallowed Enter in the prose would be a far worse bug than the one being fixed.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: 注A\n');
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('次の段落');
+
+  expect(await docString(page)).toContain(
+    'doc(paragraph("本文", footnoteReference), paragraph("次の段落")',
+  );
+});
+
 test('a reference with an empty definition is marked in the prose', async ({ page }) => {
   // §5.2's first layer: the unfinished footnote has to be visible from where the author is looking.
   const editor = page.locator('.ProseMirror');

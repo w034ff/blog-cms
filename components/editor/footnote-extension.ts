@@ -318,6 +318,13 @@ export const FootnoteReference = Node.create<{
   },
 });
 
+function inDefinition($pos: ResolvedPos): boolean {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    if ($pos.node(depth).type.name === 'footnoteDefinition') return true;
+  }
+  return false;
+}
+
 // The definition. Inline content only (§1's non-goal list), and deliberately **not** in the
 // `block` group: the document's content expression is `block+ footnoteSection?` (§3.2), and a
 // definition that stayed in the group would still be admitted anywhere at the top level, leaving
@@ -343,6 +350,30 @@ export const FootnoteDefinition = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes({ 'data-footnote-def': '' }, HTMLAttributes), 0];
+  },
+
+  // Enter must not split this node, and the reason is data loss rather than tidiness. A split copies
+  // the attributes, so both halves keep the same label: the section grows a second definition
+  // carrying the same number, and the markdown grows a second `[^a]:` line. markdown-it's
+  // `footnote_def` keeps the *last* definition it sees for a label, so reopening the post throws the
+  // first half away — measured, `[^a]: 注釈` + `[^a]: テキスト` came back as one definition reading
+  // "テキスト", and the words before the caret were gone.
+  //
+  // A hard break instead, which is the answer a table cell already gives (issue #8): both are
+  // inline-only for the same reason, that the markdown line form they serialize to cannot hold block
+  // structure. Nothing new can be authored by it either — Shift+Enter has always made one here, and
+  // `[^a]: 注A\` + a continuation line round-trips as the same hardBreak node (measured), so this
+  // only routes a third key to the shape the other two already produce.
+  //
+  // Declines outside a definition so the key falls through to baseKeymap, and `setHardBreak` reports
+  // its own failure, which keeps this from swallowing an Enter it did not act on.
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        if (!inDefinition(this.editor.state.selection.$from)) return false;
+        return this.editor.commands.setHardBreak();
+      },
+    };
   },
 
   addStorage() {
