@@ -264,19 +264,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // see image-extension.ts.
       Image,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
-      // Stops a footnote definition line from being parsed as a link reference definition,
-      // which silently deleted the note's text — see footnote-literal-extension.ts. It patches
-      // the markdown-it instance the extension above owns; kept next to it for that reason
-      // (tiptap-markdown collects every extension's parse.setup, so the position is only
-      // documentation).
+      // The backstop under the footnote nodes below, not a leftover from before them. Every
+      // definition markdown-it-footnote accepts is claimed before this is asked; what it still
+      // catches is the shapes the plugin declines — a label containing a space among them — which
+      // `reference` would otherwise take as a link reference definition, turning the note's words
+      // into a URL. See footnote-literal-extension.ts.
       FootnoteLiteral,
       // Footnotes (docs/footnote-requirements.md). The reference lives in the prose, the
       // definitions in one section pinned to the end of the document, and `Document` above is
       // replaced only to say that in the schema (`block+ footnoteSection?`, §3.2).
-      // FootnoteLiteral above is left in place deliberately: markdown-it-footnote registers
-      // footnote_def *before* the `reference` rule that guard patches, so the guard stops being
-      // reached rather than fighting it (§7.2), and removing it is a separate step.
-      FootnoteReference.configure({ onBlocked: showNotice }),
+      // FootnoteLiteral above is not in competition with these: markdown-it-footnote registers
+      // footnote_def *before* the `reference` rule it patches, so it is only ever asked about the
+      // lines the plugin refused (§7.2).
+      FootnoteReference.configure({ onBlocked: showNotice, onNotice: showNotice }),
       FootnoteDefinition,
       FootnoteSection,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a

@@ -384,3 +384,32 @@ test('pasting a footnote into a table cell leaves no definition behind', async (
   // The reference fell to plain text inside the cell rather than staying a node.
   expect(doc).not.toMatch(/tableCell\([^)]*footnoteReference/);
 });
+
+// -----------------------------------------------------------------------------------------------
+// The orphan notice (§5.4)
+// -----------------------------------------------------------------------------------------------
+
+test('loading a document with an orphan definition says so', async ({ page }) => {
+  // §5.4: the definition is kept, and the author is told. Kept silently it would be
+  // indistinguishable from a bug — the note is in the document, marked `[?]`, with no reason given.
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: A の注\n\n[^x]: 参照のない注\n');
+
+  await expect(page.getByText(/参照されていない脚注が 1 件/)).toBeVisible();
+  // Kept, not deleted, and marked as having no number to carry.
+  await expect(page.locator('.ProseMirror div[data-footnote-def][data-orphan]')).toHaveCount(1);
+});
+
+test('the orphan notice does not return on every keystroke', async ({ page }) => {
+  // The document holding an orphan is a state, not an event. Reporting it per transaction would
+  // put a toast over the text while the author types.
+  await loadMarkdown(page, '本文\n\n[^x]: 参照のない注\n');
+  await expect(page.getByText(/参照されていない脚注が/)).toBeVisible();
+
+  // Outlast the toast, then type.
+  await expect(page.getByText(/参照されていない脚注が/)).toBeHidden({ timeout: 10_000 });
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await page.keyboard.type('あいうえお');
+
+  await expect(page.getByText(/参照されていない脚注が/)).toBeHidden();
+});

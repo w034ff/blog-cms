@@ -200,13 +200,18 @@ export function unwrapFootnoteParagraphs(element: HTMLElement): void {
 
 // The body reference. `atom` is a requirement rather than a convenience (§2): with a caret inside
 // it, part of a number can be deleted and a broken reference made.
-export const FootnoteReference = Node.create<{ onBlocked: (message: string) => void }>({
+export const FootnoteReference = Node.create<{
+  onBlocked: (message: string) => void;
+  onNotice: (message: string) => void;
+}>({
   name: 'footnoteReference',
 
   addOptions() {
     // The same reporter the table and callout guards write to (PostEditor owns the one toast).
-    // A refused gesture changes nothing, so the notice is the whole of the feedback.
-    return { onBlocked: () => {} };
+    // A refused gesture changes nothing, so the notice is the whole of the feedback. `onNotice`
+    // goes to the same place but is not a refusal — nothing was declined, the author is being told
+    // about something already in their document (§5.4).
+    return { onBlocked: () => {}, onNotice: () => {} };
   },
   group: 'inline',
   inline: true,
@@ -304,7 +309,12 @@ export const FootnoteReference = Node.create<{ onBlocked: (message: string) => v
   },
 
   addProseMirrorPlugins() {
-    return [footnoteNumbering(), footnotePairing(), footnoteClipboard(this.options.onBlocked)];
+    return [
+      footnoteNumbering(),
+      footnotePairing(),
+      footnoteClipboard(this.options.onBlocked),
+      footnoteOrphanNotice(this.options.onNotice),
+    ];
   },
 });
 
@@ -405,6 +415,7 @@ export const Document = Node.create({
 const footnoteNumberingKey = new PluginKey('footnoteNumbering');
 const footnotePairingKey = new PluginKey('footnotePairing');
 const footnoteClipboardKey = new PluginKey('footnoteClipboard');
+const footnoteOrphanNoticeKey = new PluginKey('footnoteOrphanNotice');
 
 // A label is an opaque, stable id (§4). It is never shown — the number the reader sees is derived
 // from document order — so it only has to be unique within the document and survive reordering.
@@ -601,6 +612,48 @@ function materializePendingNotes(state: EditorState): Transaction | null {
   if (last?.type === sectionType) tr.insert(tr.doc.content.size - 1, definitions);
   else tr.insert(tr.doc.content.size, sectionType.create(null, definitions));
   return tr;
+}
+
+// §5.4 — an orphan definition is kept, and the author is told. Keeping it silently is the half that
+// would be indistinguishable from a bug: the note is in the document and in the saved markdown, it
+// carries `[?]` instead of a number, and nothing says why.
+//
+// Reported per label and only once. The document holding an orphan is a state, not an event, so
+// firing on every transaction would put a toast over the text on every keystroke. A label that
+// stops being an orphan is forgotten again, so writing the missing reference and then deleting it
+// reports afresh — which is right, because it is news again.
+//
+// The first check runs from the plugin's view rather than its state, because that is the first
+// point at which there is an editor to attach to, and it is deferred a tick: the load happens
+// inside React's render, and the reporter this calls sets React state.
+function footnoteOrphanNotice(onNotice: (message: string) => void): Plugin {
+  return new Plugin({
+    key: footnoteOrphanNoticeKey,
+    view() {
+      const reported = new Set<string>();
+
+      const check = (state: EditorState) => {
+        const { order } = scanFootnotes(state.doc);
+        const orphans = new Set<string>();
+        state.doc.descendants((node) => {
+          if (node.type.name !== 'footnoteDefinition') return;
+          const label = node.attrs.label as string;
+          if (!order.has(label)) orphans.add(label);
+        });
+
+        for (const label of reported) if (!orphans.has(label)) reported.delete(label);
+
+        const fresh = [...orphans].filter((label) => !reported.has(label));
+        if (fresh.length === 0) return;
+        for (const label of fresh) reported.add(label);
+        onNotice(`本文から参照されていない脚注が ${fresh.length} 件あります。`);
+      };
+
+      return {
+        update: (view) => check(view.state),
+      };
+    },
+  });
 }
 
 // §6.1 — a reference carries its note through the clipboard.

@@ -1,22 +1,27 @@
 import { Extension } from '@tiptap/core';
 import type MarkdownIt from 'markdown-it';
 
-// Keeps GFM footnote syntax as literal text instead of letting markdown-it eat it.
+// Keeps a footnote-shaped definition line as literal text when markdown-it-footnote will not take
+// it, so that markdown-it's `reference` rule cannot.
 //
-// The editor has no footnote node, so `[^1]` is only ever plain text here — but a footnote
-// *definition* line (`[^1]: 注釈テキスト`) is shaped exactly like a markdown link reference
-// definition (`[label]: destination`), and markdown-it's `reference` block rule claims it:
-// the line is consumed without emitting a token, and the `[^1]` in the body then resolves
-// against it into `<a href="注釈テキスト">^1</a>`. So a round-trip through the editor didn't
-// merely fail to render the footnote — it deleted the note's text from the document and left
-// a bogus link whose href was that text.
+// This started as the whole of the footnote story: with no footnote plugin installed, a definition
+// line (`[^1]: 注釈テキスト`) is shaped exactly like a markdown link reference definition
+// (`[label]: destination`), and the `reference` block rule claimed it — the line was consumed
+// without emitting a token, and the `[^1]` in the body then resolved against it into
+// `<a href="注釈テキスト">^1</a>`. Opening a post did not merely fail to render the footnote; it
+// took the note's words out of the document and handed them back as a URL.
 //
-// Declining the reference rule for `[^…]` labels lets the paragraph rule pick the line up as
-// ordinary text; the serializer's own escaping then writes it back as `\[^1\]: 注釈テキスト`,
-// which is stable across further round-trips. Footnotes stay unsupported (a deliberate call —
-// nothing published uses them), but the words the author typed survive.
+// Footnotes are supported now (footnote-extension.ts), and markdown-it-footnote's `footnote_def`
+// rule is registered *before* `reference`, so every definition it accepts is claimed long before
+// this guard is asked. What keeps this file alive is the set of lines it does **not** accept.
+// `footnote_def` refuses a label containing a space and returns the line to the block rules —
+// measured, `[^a b]: 注釈テキスト` comes back as `<a href="%E6%B3%A8...">^a b</a>` with the guard
+// removed, which is the original data loss exactly.
 //
-// Only `^`-prefixed labels are declined, so real link reference definitions keep working.
+// So the role narrowed rather than ended: this is the backstop for the footnote-shaped lines the
+// plugin declines. They stay ordinary text, the serializer's own escaping writes them back as
+// `\[^a b\]: 注釈テキスト`, and the words survive. Declining only `^`-prefixed labels leaves real
+// link reference definitions working.
 
 type BlockRuler = MarkdownIt['block']['ruler'];
 // The rule signature straight off `at()`, so it can't drift from the installed markdown-it.
