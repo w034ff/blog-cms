@@ -1,7 +1,7 @@
 import { InputRule, findParentNode } from '@tiptap/core';
 import type { CommandProps, Editor } from '@tiptap/core';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
-import { Fragment, type Node as PMNode, type NodeType } from '@tiptap/pm/model';
+import { Fragment, type Node as PMNode, type NodeType, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, TextSelection, type EditorState } from '@tiptap/pm/state';
 import { detailsSliceGuard } from './details-slice-guard';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
@@ -146,6 +146,37 @@ function detailsIsOpen(editor: Editor, posBeforeDetails: number, openClassName: 
   return dom instanceof HTMLElement && dom.classList.contains(openClassName);
 }
 
+// The body of the accordion whose title `$head` sits in, and the position its first line starts
+// at — or null when the caret is not in a title, or that accordion is folded. Both keys that go
+// title → body ask through here, so the folded case is answered in one place: putting the caret
+// into a hidden body is the one thing §7.2 is emphatic about.
+//
+// `$head.after()` is the detailsContent; +1 enters it, +1 again enters its first block.
+function openBodyFromSummary(
+  editor: Editor,
+  $head: ResolvedPos,
+  openClassName: string,
+): { body: PMNode; firstLinePos: number } | null {
+  const { schema } = editor.state;
+  if ($head.parent.type !== schema.nodes.detailsSummary) return null;
+  const details = $head.node(-1);
+  if (details.type !== schema.nodes.details) return null;
+  const body = details.lastChild;
+  if (!body || body.type !== schema.nodes.detailsContent) return null;
+  if (!detailsIsOpen(editor, $head.before(-1), openClassName)) return null;
+  return { body, firstLinePos: $head.after() + 2 };
+}
+
+// Put the caret at `pos` and change nothing else, which is the whole of what both keys below do
+// once they have decided they apply.
+function moveCaretTo(editor: Editor, pos: number): boolean {
+  const { tr } = editor.state;
+  tr.setSelection(TextSelection.near(tr.doc.resolve(pos)));
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
+  return true;
+}
+
 // Enter in the title of a just-inserted accordion (§7.4). The official handler *inserts* the
 // body's first line rather than entering the one that is already there — invisible in most shapes,
 // but a freshly inserted body IS one empty paragraph, so it comes out with a spare that the author
@@ -157,29 +188,36 @@ function detailsIsOpen(editor: Editor, posBeforeDetails: number, openClassName: 
 // without the duplicate rather than a departure from it. Once the body holds anything real the two
 // are different operations and the official one is right, so it is left alone.
 //
-// Returns false for everything it does not handle, including a folded accordion — sending the
-// caret into a hidden body is the one thing §7.2 is emphatic about, and the official handler's
-// answer there (a new block below) is the one this must not take away.
+// Returns false for everything it does not handle, including a folded accordion
+// (openBodyFromSummary below), where the official handler's answer — a new block below — is the one
+// this must not take away.
 function enterIntoEmptyBody(editor: Editor, openClassName: string): boolean {
-  const { state } = editor;
-  const { schema, selection } = state;
-  const { $head, empty } = selection;
-  if (!empty || $head.parent.type !== schema.nodes.detailsSummary) return false;
-
-  const details = $head.node(-1);
-  if (details.type !== schema.nodes.details) return false;
-  const body = details.lastChild;
-  if (!body || body.type !== schema.nodes.detailsContent || body.childCount !== 1) return false;
-  const line = body.firstChild;
+  const { $head, empty } = editor.state.selection;
+  if (!empty) return false;
+  const target = openBodyFromSummary(editor, $head, openClassName);
+  if (!target || target.body.childCount !== 1) return false;
+  const line = target.body.firstChild;
   if (!line || !line.isTextblock || line.content.size > 0) return false;
-  if (!detailsIsOpen(editor, $head.before(-1), openClassName)) return false;
+  return moveCaretTo(editor, target.firstLinePos);
+}
 
-  // $head.after() is the detailsContent; +1 enters it, +1 again enters its first block.
-  const { tr } = state;
-  tr.setSelection(TextSelection.near(tr.doc.resolve($head.after() + 2)));
-  tr.scrollIntoView();
-  editor.view.dispatch(tr);
-  return true;
+// Tab in the title moves to the body as it stands — the motion Enter cannot offer. The official
+// Enter *inserts* the body's first line (see above), so leaving a title whose body already holds
+// something costs an empty paragraph the author then has to delete; enterIntoEmptyBody only removes
+// that for the one shape where the two coincide. This is the plain "next field" move, the same
+// meaning Tab has between table cells, and it changes no content at all.
+//
+// Only from the title, and only while the accordion is open (§7.2) — a folded one declines, and Tab
+// then does what it does everywhere else in prose, which is move the browser's focus. The title is
+// `text*`, so no list or table can sit in it and no other extension's Tab is in play here; this
+// binding therefore depends on no ordering.
+//
+// Deliberately one-way. The body is `block+` and so can hold a list, where Shift+Tab already means
+// liftListItem — a body → title binding would have to win that argument first, and nothing is asking
+// for it yet.
+function tabIntoBody(editor: Editor, openClassName: string): boolean {
+  const target = openBodyFromSummary(editor, editor.state.selection.$head, openClassName);
+  return target !== null && moveCaretTo(editor, target.firstLinePos);
 }
 
 // Is an input rule still undoable? TipTap marks each input-rule plugin's spec, and the plugin holds
@@ -329,9 +367,10 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
     };
   },
 
-  // Everything the official extension binds is kept; only Enter gets a case in front of it, and
-  // only the one described at enterIntoEmptyBody. Delegating rather than replacing means a future
-  // @tiptap bump that changes the handler keeps working — this narrows it, it does not restate it.
+  // Everything the official extension binds is kept; Enter and Tab each get a case in front of it,
+  // and only the one described at enterIntoEmptyBody / tabIntoBody. Delegating rather than replacing
+  // means a future @tiptap bump that changes (or newly binds) either handler keeps working — this
+  // narrows them, it does not restate them.
   addKeyboardShortcuts() {
     const parent = this.parent?.();
     const openClassName = this.options.openClassName ?? OPEN_CLASS;
@@ -340,6 +379,10 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
       Enter: (props: { editor: Editor }): boolean => {
         if (enterIntoEmptyBody(props.editor, openClassName)) return true;
         return parent?.Enter?.(props) ?? false;
+      },
+      Tab: (props: { editor: Editor }): boolean => {
+        if (tabIntoBody(props.editor, openClassName)) return true;
+        return parent?.Tab?.(props) ?? false;
       },
     };
   },

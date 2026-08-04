@@ -189,6 +189,80 @@ test('Enter in the title of a folded accordion still lands below it', async ({ p
   );
 });
 
+// Tab from the title, the motion Enter above cannot offer: it enters the body *as it stands*, where
+// Enter inserts a first line in front of it. Three cases, one rule — only from the title, only while
+// open, and never a document change.
+//
+// The key has to be dispatched rather than pressed. Playwright's synthetic Tab, sent through CDP,
+// escapes the contenteditable to the browser's own focus cycling instead of reaching ProseMirror's
+// keydown handler (the same harness quirk recorded in editor-table-whole-cell-selection.spec.ts;
+// real keypresses in a browser do not do this). Dispatching the event on `.ProseMirror` reaches the
+// handler exactly as a real one does — what it cannot reproduce is the native focus move a declined
+// Tab falls through to, which is why the two declining cases below assert "nothing happened" rather
+// than where focus went.
+async function dispatchTab(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document
+      .querySelector('.ProseMirror')
+      ?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true }),
+      );
+  });
+}
+
+test('Tab in the title enters the existing body without adding a line', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+
+  await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
+  await page.locator(`.ProseMirror ${DETAILS} > button`).click();
+  await page.locator(`.ProseMirror ${DETAILS} summary`).click();
+  // Poll the *state* caret before pressing anything: a click lands in the DOM ~20ms before
+  // ProseMirror's state catches up, and a key fired inside that window reads the stale selection
+  // (the same race the Backspace test above waits out).
+  await expect.poll(() => caret(page)).toMatch(/^題@/);
+  await dispatchTab(page);
+
+  // At the start of the body's own first line — not a new one, which is the whole difference from
+  // Enter (the test above lands `paragraph("追加"), paragraph("本文")` on the same document).
+  expect(await caret(page)).toBe('本文@0');
+  await page.keyboard.type('追加');
+  expect(await docString(page)).toContain('detailsContent(paragraph("追加本文"))');
+});
+
+test('Tab in the title of a folded accordion does nothing', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+
+  // Loaded, so folded (§5). The caret must not go into a body no one can see (§7.2); declining
+  // hands Tab back to the browser, whose focus move is the behaviour every other prose Tab has.
+  await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
+  await page.locator(`.ProseMirror ${DETAILS} summary`).click();
+  await expect.poll(() => caret(page)).toMatch(/^題@/);
+  const before = await caretPos(page);
+  await dispatchTab(page);
+
+  expect(await caretPos(page)).toBe(before);
+  expect(await docString(page)).toContain(
+    'details(detailsSummary("題"), detailsContent(paragraph("本文")))',
+  );
+});
+
+test('Tab in the body itself is not the title binding', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+
+  await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
+  await page.locator(`.ProseMirror ${DETAILS} > button`).click();
+  await page.locator(`.ProseMirror ${DETAILS} [data-type="detailsContent"] p`).click();
+  await expect.poll(() => caret(page)).toMatch(/^本文@/);
+  const before = await caretPos(page);
+  await dispatchTab(page);
+
+  expect(await caretPos(page)).toBe(before);
+  expect(await markdown(page)).toBe('<details>\n<summary>題</summary>\n\n本文\n\n</details>');
+});
+
 // The counterpart: opening belongs to the insertion gesture, not to the node. A document arriving
 // from storage renders as a reader sees it — every accordion closed (§5).
 test('an accordion loaded from markdown stays closed', async ({ page }) => {
