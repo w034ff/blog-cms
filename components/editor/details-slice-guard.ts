@@ -43,8 +43,11 @@ export function wouldNestDetails($pos: ResolvedPos, slice: Slice): boolean {
 //
 // So the unwrap goes two levels — the *body's* children are what survive — and the title has to be
 // answered separately, since it is text that would otherwise vanish. It becomes a paragraph ahead
-// of the body, which is what `unsetDetails` already does when an accordion is dissolved from the
-// keyboard; a reader of the resulting document sees the same thing either way.
+// of the body, which is what `unsetDetails` does when an accordion is dissolved from the keyboard;
+// a reader of the resulting document sees the same thing either way. An *empty* title is where the
+// two used to disagree — the size check below drops it, the official command kept it as an empty
+// paragraph — so details-extension.ts now overrides that case to read the rule the way this does
+// (§7.5). Keep the two in step: this is the copy that was right.
 function detailsUnwrapped(details: PMNode, schema: PMNode['type']['schema']): PMNode[] {
   const out: PMNode[] = [];
   details.forEach((child) => {
@@ -139,7 +142,8 @@ const detailsSliceGuardKey = new PluginKey('detailsSliceGuard');
 
 // Named for the destination, like the callout's refusal: the author is holding the content, so
 // what they need to know is where it may not go. §7.3.
-const DETAILS_NESTING_BLOCKED = '折りたたみは引用やリスト、コールアウト、表の中には入れられません';
+const DETAILS_NESTING_BLOCKED =
+  'アコーディオンは引用やリスト、コールアウト、表の中には入れられません';
 
 export function detailsSliceGuard(notify: (message: string) => void): Plugin {
   return new Plugin({

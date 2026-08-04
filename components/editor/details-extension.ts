@@ -1,8 +1,8 @@
-import { InputRule } from '@tiptap/core';
-import type { CommandProps } from '@tiptap/core';
+import { InputRule, findParentNode } from '@tiptap/core';
+import type { CommandProps, Editor } from '@tiptap/core';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
-import { Fragment, type Node as PMNode } from '@tiptap/pm/model';
-import { TextSelection } from '@tiptap/pm/state';
+import { Fragment, type Node as PMNode, type NodeType } from '@tiptap/pm/model';
+import { Plugin, TextSelection, type EditorState } from '@tiptap/pm/state';
 import { detailsSliceGuard } from './details-slice-guard';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -94,12 +94,146 @@ function selectionIsTopLevel({ state }: CommandProps): boolean {
 // nothing the author had already written is lost.
 const DIRECTIVE = /^:::details\s$/;
 
-// The toggle's glyph and label, matching the public page's ::before marker (app/globals.css).
-// The official default writes English (`"Collapse details content"`), and the site's UI is
-// Japanese — §7.3. `renderToggleButton` is called on mount and on every toggle.
+// The class @tiptap/extension-details puts on the NodeView's wrapper while it is open — the
+// official default, restated because three places read it and the option's type allows undefined:
+// the option below, openInsertedDetails, and app/globals.css, which draws the whole open state off
+// it (the marker's direction and the divider under the title).
+const OPEN_CLASS = 'is-open';
+
+// The toggle's accessible name, and nothing else: the marker itself is drawn in CSS
+// (app/globals.css) off the wrapper's `is-open` class, as the same clip-path triangle the public
+// page's ::before uses, so this writes no text into the button. The official default writes
+// English (`"Collapse details content"`), and the site's UI is Japanese — §7.3.
+// `renderToggleButton` is called on mount and on every toggle.
 function renderToggleButton({ element, isOpen }: { element: HTMLElement; isOpen: boolean }): void {
-  element.textContent = isOpen ? '▾' : '▸';
-  element.setAttribute('aria-label', isOpen ? '折りたたみを閉じる' : '折りたたみを開く');
+  element.setAttribute('aria-label', isOpen ? 'アコーディオンを閉じる' : 'アコーディオンを開く');
+}
+
+// A freshly inserted accordion is left open, so the author can write the body without opening it
+// first. Only the two authoring routes do this: a loaded document keeps every accordion closed
+// (§5), which is what a reader gets, and a pasted or dropped one is content being moved rather
+// than written.
+//
+// It has to be done by clicking the toggle, and the reason is §5's `persist: false`. In that mode
+// the official extension's `addAttributes()` returns `[]` — there is no `open` attribute in the
+// schema at all — so there is nothing to set on the node, and equally nothing that could reach the
+// document and mark the post dirty. Open state lives only in the NodeView's own DOM, whose one
+// external control is that button.
+//
+// Deferred by a frame because the NodeView does not exist until the view has processed the
+// transaction that created the node. Everything is re-read inside the callback rather than
+// captured: by then the insertion may have been undone, in which case no accordion holds the
+// selection and this does nothing.
+function openInsertedDetails(editor: Editor, openClassName: string): void {
+  requestAnimationFrame(() => {
+    if (editor.isDestroyed) return;
+    const { $from } = editor.state.selection;
+    for (let depth = $from.depth; depth > 0; depth -= 1) {
+      if ($from.node(depth).type.name !== 'details') continue;
+      const dom = editor.view.nodeDOM($from.before(depth));
+      if (!(dom instanceof HTMLElement) || dom.classList.contains(openClassName)) return;
+      dom.querySelector<HTMLButtonElement>(':scope > button')?.click();
+      return;
+    }
+  });
+}
+
+// Is the accordion holding this position open? Its NodeView's wrapper carries the class while it
+// is (§7.4 — with `persist: false` the DOM is the only place the open state exists, so there is
+// nothing in the document to ask).
+function detailsIsOpen(editor: Editor, posBeforeDetails: number, openClassName: string): boolean {
+  const dom = editor.view.nodeDOM(posBeforeDetails);
+  return dom instanceof HTMLElement && dom.classList.contains(openClassName);
+}
+
+// Enter in the title of a just-inserted accordion (§7.4). The official handler *inserts* the
+// body's first line rather than entering the one that is already there — invisible in most shapes,
+// but a freshly inserted body IS one empty paragraph, so it comes out with a spare that the author
+// has to notice and delete. Same landing place, one line instead of two.
+//
+// Deliberately narrow: only when the body is exactly one empty textblock, which is precisely the
+// shape insertion leaves behind. There, "make a new first line" and "go to the existing one" put
+// the caret in the same place and differ only in the leftover, so this is the official behaviour
+// without the duplicate rather than a departure from it. Once the body holds anything real the two
+// are different operations and the official one is right, so it is left alone.
+//
+// Returns false for everything it does not handle, including a folded accordion — sending the
+// caret into a hidden body is the one thing §7.2 is emphatic about, and the official handler's
+// answer there (a new block below) is the one this must not take away.
+function enterIntoEmptyBody(editor: Editor, openClassName: string): boolean {
+  const { state } = editor;
+  const { schema, selection } = state;
+  const { $head, empty } = selection;
+  if (!empty || $head.parent.type !== schema.nodes.detailsSummary) return false;
+
+  const details = $head.node(-1);
+  if (details.type !== schema.nodes.details) return false;
+  const body = details.lastChild;
+  if (!body || body.type !== schema.nodes.detailsContent || body.childCount !== 1) return false;
+  const line = body.firstChild;
+  if (!line || !line.isTextblock || line.content.size > 0) return false;
+  if (!detailsIsOpen(editor, $head.before(-1), openClassName)) return false;
+
+  // $head.after() is the detailsContent; +1 enters it, +1 again enters its first block.
+  const { tr } = state;
+  tr.setSelection(TextSelection.near(tr.doc.resolve($head.after() + 2)));
+  tr.scrollIntoView();
+  editor.view.dispatch(tr);
+  return true;
+}
+
+// Is an input rule still undoable? TipTap marks each input-rule plugin's spec, and the plugin holds
+// the last rule's inverse until any transaction changes the document or the selection — the same
+// thing `undoInputRule` looks for before it will do anything.
+//
+// Every one of them has to be asked, not the first: TipTap builds one such plugin *per extension*
+// that declares input rules, so this editor carries 13, and the one holding the inverse is whichever
+// extension owns the rule that just fired (measured — checking only the first found nothing, ever).
+// Core's `undoInputRule` loops for the same reason.
+function hasUndoableInputRule(state: EditorState): boolean {
+  return state.plugins.some(
+    (candidate) =>
+      (candidate.spec as { isInputRules?: boolean }).isInputRules === true &&
+      candidate.getState(state) != null,
+  );
+}
+
+// Puts the caret back where the author was typing after `:::details ` is undone by Backspace.
+//
+// `undoInputRule` (@tiptap/core) never sets a selection — it inverts the rule's steps, re-inserts
+// the literal text, and leaves the caret to whatever the step mapping produces. That works for the
+// shortcuts that *wrap* (measured: `:::info ` and `> ` both land at the end of the restored text),
+// because the paragraph survives the wrap and the caret maps back into it. This rule cannot wrap —
+// `details` is `detailsSummary detailsContent`, so the line is replaced outright — and it then puts
+// the caret inside the new node, per §7. Inverting that maps a position inside a node that no
+// longer exists, and the caret comes to rest at the start of the *following* paragraph (measured).
+//
+// So the caret is placed here instead, after the fact. The target is the end of the restored text
+// less whatever the rule had carried into the body, which is where the author's cursor was when the
+// rule fired: for a bare `:::details ` the body is empty and this is the end of the line, and for
+// `:::details本文` it is the boundary between the trigger and 本文.
+//
+// The conditions are narrow enough that nothing else reaches it. An accordion held the selection,
+// the input rule's inverse was available and now is not, and the position it occupied now holds a
+// textblock — that last one is what excludes simply typing in a new accordion's title, which also
+// consumes the undoable but leaves the accordion where it was.
+function detailsInputRuleUndoCaret(detailsType: NodeType): Plugin {
+  return new Plugin({
+    appendTransaction(transactions, oldState, newState) {
+      if (!transactions.some((transaction) => transaction.docChanged)) return null;
+      if (!hasUndoableInputRule(oldState) || hasUndoableInputRule(newState)) return null;
+
+      const was = findParentNode((node) => node.type === detailsType)(oldState.selection);
+      if (!was) return null;
+      const restored = newState.doc.nodeAt(was.pos);
+      if (!restored?.isTextblock) return null;
+
+      const carried = was.node.lastChild?.textContent.length ?? 0;
+      const target = Math.max(was.pos + 1, was.pos + restored.nodeSize - 1 - carried);
+      if (newState.selection.from === target) return null;
+      return newState.tr.setSelection(TextSelection.near(newState.doc.resolve(target)));
+    },
+  });
 }
 
 // The refusal reporter the slice guard needs, declared as a type so `MarkdownDetails.configure({
@@ -117,7 +251,7 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
       // `persist: false` is the default and is load-bearing (§5): with it, the open/closed state
       // never reaches the document, so folding cannot mark the post dirty or fire autosave.
       persist: parent?.persist ?? false,
-      openClassName: parent?.openClassName ?? 'is-open',
+      openClassName: parent?.openClassName ?? OPEN_CLASS,
       HTMLAttributes: parent?.HTMLAttributes ?? {},
       renderToggleButton,
     };
@@ -143,25 +277,87 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
   // guards, where a drop really is refused after the fact.
   addCommands() {
     const parent = this.parent?.();
+    const openClassName = this.options.openClassName ?? OPEN_CLASS;
     return {
       ...parent,
       setDetails:
         () =>
         (props: CommandProps): boolean => {
           if (!selectionIsTopLevel(props)) return false;
-          return parent?.setDetails?.()(props) ?? false;
+          if (!(parent?.setDetails?.()(props) ?? false)) return false;
+          // `dispatch` is absent when the menu asks `can().setDetails()` for its own predicate —
+          // that is a dry run over a throwaway transaction, and nothing may be opened for it.
+          if (props.dispatch) openInsertedDetails(props.editor, openClassName);
+          return true;
         },
+
+      // The official `unsetDetails` turns the title into a paragraph unconditionally, so dissolving
+      // an accordion whose title was never filled in leaves an empty paragraph that stands for
+      // nothing. Insert one from the slash menu, change your mind, press Backspace, and the single
+      // line you started on has become three.
+      //
+      // §7.2's rule is that the title's *characters* survive the dissolve; an empty title has none,
+      // so the paragraph is residue rather than content. detailsUnwrapped (details-slice-guard.ts)
+      // already reads the rule that way — it emits the paragraph only `if (child.content.size > 0)`
+      // — which means the keyboard and the paste/drop repair disagreed today, and the comment there
+      // claiming a reader "sees the same thing either way" was true only for a filled-in title.
+      // This is that rule applied to the other path, not a new one.
+      //
+      // Only the empty case is handled here; with a title to preserve the official command is
+      // right and runs unchanged.
+      unsetDetails:
+        () =>
+        (props: CommandProps): boolean => {
+          const { state, chain } = props;
+          const found = findParentNode((node) => node.type === this.type)(state.selection);
+          const body = found?.node.lastChild;
+          if (!found || !body || (found.node.firstChild?.content.size ?? 0) > 0) {
+            return parent?.unsetDetails?.()(props) ?? false;
+          }
+          const from = found.pos;
+          return (
+            chain()
+              .insertContentAt(
+                { from, to: from + found.node.nodeSize },
+                body.content.toJSON() ?? [],
+              )
+              // Into the first surviving block, which is where the official command lands too.
+              .setTextSelection(from + 1)
+              .run()
+          );
+        },
+    };
+  },
+
+  // Everything the official extension binds is kept; only Enter gets a case in front of it, and
+  // only the one described at enterIntoEmptyBody. Delegating rather than replacing means a future
+  // @tiptap bump that changes the handler keeps working — this narrows it, it does not restate it.
+  addKeyboardShortcuts() {
+    const parent = this.parent?.();
+    const openClassName = this.options.openClassName ?? OPEN_CLASS;
+    return {
+      ...parent,
+      Enter: (props: { editor: Editor }): boolean => {
+        if (enterIntoEmptyBody(props.editor, openClassName)) return true;
+        return parent?.Enter?.(props) ?? false;
+      },
     };
   },
 
   // Keeps a dropped or pasted slice from putting an accordion anywhere but the top level, and
   // repairs a slice that only carries half of one (see details-slice-guard.ts).
   addProseMirrorPlugins() {
-    return [...(this.parent?.() ?? []), detailsSliceGuard(this.options.onBlocked)];
+    return [
+      ...(this.parent?.() ?? []),
+      detailsSliceGuard(this.options.onBlocked),
+      detailsInputRuleUndoCaret(this.type),
+    ];
   },
 
   addInputRules() {
     const detailsType = this.type;
+    const { editor } = this;
+    const openClassName = this.options.openClassName ?? OPEN_CLASS;
     return [
       new InputRule({
         find: DIRECTIVE,
@@ -182,6 +378,7 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
           tr.replaceWith(start, $from.after(1), node);
           // Caret into the (empty) title, matching setDetails — §7 asks both routes to land there.
           tr.setSelection(TextSelection.near(tr.doc.resolve(start + 2)));
+          openInsertedDetails(editor, openClassName);
           return undefined;
         },
       }),

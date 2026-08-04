@@ -1099,83 +1099,220 @@ body.block-dragging .table-toolbar {
    same: the published page holds a real `<details>`/`<summary>`, while the editor's NodeView
    (@tiptap/extension-details) builds `div[data-type="details"]` with a separate <button> for the
    toggle — it cannot use a real <details>, since a click on a real <summary> would fold the block
-   instead of placing the caret in the title. So the marker is a <button> glyph in the editor and
-   a ::before glyph on the public page, positioned into the same gutter, and everything else is
+   instead of placing the caret in the title. So the marker is a <button> in the editor and a
+   ::before on the public page, drawn as the same shape in the same gutter, and everything else is
    shared. Sanitize passes no class on either element (lib/render.ts), so all of this is keyed off
    element and attribute selectors.
 
    Card geometry deliberately matches .code-block / [data-rehype-pretty-code-figure] rather than
-   introducing a third card look. */
+   introducing a third card look. The fill is where it stops short of them: only the title row
+   carries one, so a folded aside reads as part of the prose rather than as heavy as a code block.
+
+   `.prose summary` is left unscoped throughout because these two are the only accordions under
+   .prose — TocNav's mobile <details> is a sibling of the article, not inside it. */
 .prose details,
 .prose [data-type='details'] {
   position: relative;
   margin: 1.25rem 0;
   border: 1px solid #d0d7de;
   border-radius: 0.5rem;
-  /* No side padding on the card itself: the title row spans it edge to edge (so its hit area and
-     hover do too), and the body is inset by its own padding below. */
+  /* No side padding on the card itself: the title row spans it edge to edge, so its fill, its hit
+     area and its hover all reach the border. */
   padding: 0;
 }
 .prose summary {
   /* The browser's own marker is replaced, not kept alongside ours. */
   list-style: none;
   cursor: pointer;
-  padding: 0.5em 1em 0.5em 2.1em;
+  /* The left inset is the callout's two-column arrangement written out as padding, so a callout
+     and an accordion stacked in one article start their text at the same place: the card's own
+     1em, then a marker column the width of the callout's icon (1.1em), then the same 0.6em gap
+     it puts between icon and content. The marker is absolutely positioned into that column
+     below, and its three `left` values are all derived from these same terms. */
+  padding: 0.5em 1em 0.5em calc(1em + 1.1em + 0.6em);
+  /* Fixed rather than inherited: the marker below is centred on the first line by arithmetic over
+     this value, and it has to be a number both DOM shapes agree on. */
+  line-height: 1.5;
+  /* One line's worth of row even with nothing in it. §5.1 lets an untitled accordion save and
+     publish, and a published `<summary></summary>` has no inline content, so it makes no line box
+     and the row collapses to its padding — measured at 16px against the 40px the editor keeps
+     (ProseMirror fills an empty title with a trailing <br>, so it always has a line). The marker
+     is placed by the arithmetic above rather than by the flow, so it does not collapse with the
+     row: it kept its 12px at top 14px and landed 11px into the body text. Same two terms as that
+     arithmetic — the line box plus the row's own padding — so the two stay in step. */
+  min-height: calc(1.5em + 1em);
   font-weight: 600;
+  /* The code block card's own surface (§8.2 asks for the same family and for no new colors). */
+  background: #f6f8fa;
+  /* The fill has to stop at the card's rounded corners, and the row rounds itself rather than the
+     card clipping it: `overflow: hidden` on the card — the code block's way, and the first thing
+     tried here — also clips anything a body can hold that reaches past the padding box. Measured:
+     it cut the public summary's focus ring down to two stubs (§8.2 asks for that ring), and it
+     trapped a wide table, which the rest of the site lets overflow rather than scroll. The inner
+     radius is the card's less its 1px border. Reset to square on the two corners the divider
+     meets, below. */
+  border-radius: calc(0.5rem - 1px);
 }
 .prose summary::-webkit-details-marker {
   display: none;
 }
-/* Public marker. Scoped to a real <details> parent, which is exactly what the editor's div is
-   not — that keeps this rule off the NodeView, where the <button> below is the marker instead. */
+/* Only the public title row folds when clicked; in the editor the click places the caret in the
+   title and the button is the control. So pointer and hover are scoped to a real <details>, and
+   the editor's summary gets the cursor its behaviour actually matches — a tint there would
+   advertise a fold that does not happen. */
+.prose details > summary:hover {
+  background: #eaeef2;
+}
+.prose [data-type='details'] summary {
+  cursor: text;
+}
+/* The divider §8.2 asks for, drawn only while there is a body under it: on a closed accordion the
+   summary is the whole card, and a line at its foot would sit on nothing. Each DOM shape reports
+   open differently — the public page has the `open` attribute, the NodeView has its
+   `openClassName` ('is-open', set on the outer wrapper by @tiptap/extension-details). */
+.prose details[open] > summary,
+.prose [data-type='details'].is-open summary {
+  border-bottom: 1px solid #d0d7de;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Marker. A clip-path triangle rather than a text glyph (▸/▾), whose stroke weight and vertical
+   position vary by font and which falls through to an emoji face on some systems. The shape is a
+   custom property on the card so open and closed are decided once, for both DOM shapes.
+
+   The two carriers differ because only one of them is a control. On the public page the marker is
+   the ::before itself. In the editor it has to be a real focusable button, so the button is the
+   box — grown around the same optical centre into something clickable, and given a focus ring
+   (§8.2: the keyboard must be able to find it) — with the triangle drawn by its own ::before. A
+   ::before is what keeps the clip-path off the button, where it would have cut the ring away too.
+
+   Both are anchored to the card, which is `position: relative` in either DOM, and `top` resolves
+   to the same centre: the title row's padding-top plus half of what its line box leaves over. That
+   is the one number that has to stay in step across the two rules — it is also what keeps the
+   marker on the first line when a title wraps, which the old pair (a static-position ::before
+   against a pinned button) did not. */
+.prose details,
+.prose [data-type='details'] {
+  --details-marker: polygon(30% 6%, 30% 94%, 88% 50%);
+}
+.prose details[open],
+.prose [data-type='details'].is-open {
+  --details-marker: polygon(6% 30%, 94% 30%, 50% 88%);
+}
 .prose details > summary::before {
-  content: '▸';
   position: absolute;
-  left: 1em;
-  font-weight: 400;
-  opacity: 0.7;
+  top: calc(0.5em + (1.5em - 0.75em) / 2);
+  /* Centred in the 1.1em marker column that starts at the card's 1em — the triangle stays 0.75em
+     rather than filling the column, because it is a bare glyph next to the callout's detailed
+     octicon and reads heavy at that size. */
+  left: calc(1em + (1.1em - 0.75em) / 2);
+  width: 0.75em;
+  height: 0.75em;
 }
-.prose details[open] > summary::before {
-  content: '▾';
-}
-/* Editor marker: same glyph, same gutter, but a real focusable control. The glyph itself is
-   written by renderToggleButton (details-extension.ts) along with its Japanese aria-label. */
 .prose [data-type='details'] > button {
   position: absolute;
-  top: 0.5em;
-  left: 1em;
+  top: calc(0.5em + (1.5em - 1.4em) / 2);
+  /* Same optical centre as the ::before above — the marker column's middle — with the box grown
+     around it into a hit target. */
+  left: calc(1em + 1.1em / 2 - 1.4em / 2);
+  width: 1.4em;
+  height: 1.4em;
   padding: 0;
   border: 0;
+  border-radius: 0.25rem;
   background: none;
   color: inherit;
+  /* A button does not inherit the page's font, and every length above is an em — without this
+     they would resolve against the UA's own smaller button font-size and the marker would sit
+     off-centre from the public one. */
+  font: inherit;
   cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.prose [data-type='details'] > button::before {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0.75em;
+  height: 0.75em;
+}
+.prose details > summary::before,
+.prose [data-type='details'] > button::before {
+  content: '';
+  background: currentColor;
+  clip-path: var(--details-marker);
   opacity: 0.7;
-  line-height: inherit;
 }
-/* Body inset. The published page has the blocks as direct children of <details>; the editor wraps
-   them in the extension's own content div. Both get the same padding, and the first/last child
-   margins are collapsed so the card closes tightly around them. */
-.prose details > :not(summary),
+/* Same hover tint and focus ring the editor's other chrome uses (the drag handle above, the code
+   block's diff toggle) — no color of the accordion's own. */
+.prose [data-type='details'] > button:hover {
+  background: rgba(113, 113, 122, 0.15);
+}
+.prose [data-type='details'] > button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+/* Body inset: the same 1em on both sides, plus half of it above and below so the body sits off the
+   divider and off the card's foot.
+
+   The published page has the blocks as direct children of <details> while the editor wraps them in
+   the extension's own content div, and that is why the horizontal inset is a margin on one and a
+   padding on the other. Padding on the public blocks lands on the block itself, and `.prose details
+   > :not(summary)` outweighs Tailwind Typography's `:where()`-wrapped list rule — so a body opening
+   with a bullet list had prose's 1.625em indent replaced by this 1em and its markers ended up on
+   the card's border. A margin sits outside that padding and leaves it alone. The editor never had
+   the problem: its padding is on the wrapper, a level above any list. */
+.prose details > :not(summary) {
+  margin-left: 1em;
+  margin-right: 1em;
+}
 .prose [data-type='detailsContent'] {
-  padding: 0 1em;
+  padding-left: 1em;
+  padding-right: 1em;
 }
+.prose details > summary + *,
+.prose [data-type='detailsContent'] {
+  padding-top: 0.5em;
+}
+/* `:not(summary)` on the public half, because an accordion can have no body at all: §5.1 lets an
+   empty one save and publish, and the stored form then renders as `<details><summary></summary>
+   </details>` (measured through lib/render.ts), where the summary itself is `:last-child`. It
+   happens to be harmless today — the value equals the summary's own padding-bottom, so the row
+   still measures the same 40px in both DOM shapes — but that is a coincidence of two numbers, and
+   this rule is about the body's spacing, not the title's. */
 .prose details > :not(summary):last-child,
 .prose [data-type='detailsContent'] {
   padding-bottom: 0.5em;
 }
-.prose details > :not(summary):first-of-type > :first-child,
+/* The first and last body blocks drop the margin they would otherwise add inside the card; the
+   padding above owns that spacing instead. `summary + *` rather than the previous
+   `:not(summary):first-of-type > :first-child`, which was wrong twice over: `:first-of-type` is
+   per element type, so a body of paragraph-then-list matched both blocks, and `> :first-child`
+   reached a level too deep — for a plain paragraph it matched nothing at all, leaving the public
+   page a full 1.25em above its first line that the editor, whose half of the pair was right,
+   never had. */
+.prose details > summary + *,
 .prose [data-type='detailsContent'] > :first-child {
   margin-top: 0;
 }
-.prose details > :last-child,
+.prose details > :not(summary):last-child,
 .prose [data-type='detailsContent'] > :last-child {
   margin-bottom: 0;
 }
 /* Placeholder for an untitled accordion (§5.1: an empty title is allowed to save and publish, so
    the only safeguard is that the author can see it while writing). ProseMirror fills an empty
-   textblock with a trailing <br>, which is why `:empty` cannot be used here. */
+   textblock with a trailing <br>, which is why `:empty` cannot be used here.
+
+   `float: left; height: 0` is what keeps the caret at the start of the title instead of after the
+   word. Generated content is laid out inline by default, so the placeholder took real width on the
+   line and the caret — which is at offset 0 of an empty textblock — was drawn past it (measured:
+   52.5px right of where the title's own text begins). A zero-height float is not tall enough to
+   shorten any line box, so it paints in the gutter it occupies while the line still starts at 0.
+   This is the same shape @tiptap/extension-placeholder uses, and the reason it uses it. */
 .ProseMirror summary:has(> br.ProseMirror-trailingBreak:only-child)::before {
   content: 'タイトル';
+  float: left;
+  height: 0;
   opacity: 0.45;
   font-weight: 400;
   pointer-events: none;
@@ -1187,11 +1324,22 @@ body.block-dragging .table-toolbar {
     border-color: #3f3f46; /* zinc-700 */
   }
 
-  /* Dark counterpart of the accordion card border above. Same value the code block card uses on
-     a dark surface, so the two read as one family. */
+  /* Dark counterparts of the accordion above — border, divider, title-row fill and its hover.
+     Every value is the one the code block card already uses on a dark surface, so the two read as
+     one family and the accordion still adds no color of its own. */
   .prose details,
   .prose [data-type='details'] {
     border-color: #30363d;
+  }
+  .prose summary {
+    background: #161b22;
+  }
+  .prose details > summary:hover {
+    background: #1c2128;
+  }
+  .prose details[open] > summary,
+  .prose [data-type='details'].is-open summary {
+    border-bottom-color: #30363d;
   }
 
   /* Dark counterpart of the light list-marker overrides above: bullets and

@@ -99,8 +99,14 @@ test('a folded accordion is selected, deleted and restored by one undo', async (
   await page.keyboard.type('題名');
   const built = await docString(page);
   expect(built).toContain('detailsSummary("題名")');
+
+  // Insertion leaves an accordion open (§7.4), so folding it is now part of setting this test up
+  // rather than something to assert. The toggle is a view action — it touches neither the document
+  // nor prosemirror-history — so it cannot disturb what follows.
+  await page.locator('.ProseMirror [data-type="details"] > button').click();
   // Folded: the body is in the document but not on screen.
   await expect(page.locator('.ProseMirror [data-type="detailsContent"]')).toBeHidden();
+  expect(await docString(page)).toBe(built);
 
   // prosemirror-history groups changes made within 500ms of each other into one undo event, and a
   // scripted test types far faster than that — without this pause the deletion joins the
