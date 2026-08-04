@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
-import { markdown, docString, caretPos } from './editor-probe';
+import { markdown, docString, caretPos, settle } from './editor-probe';
 
-// Footnotes (docs/footnote-requirements.md), stage 1 of §11: the markdown round trip, the
-// definitions' section and its placement, both insertion routes, numbering, and pairing.
+// Footnotes (docs/footnote-requirements.md), stages 1 and 2 of §11: the markdown round trip, the
+// definitions' section and its placement, both insertion routes, numbering, pairing, the placement
+// guards and the clipboard rules.
 //
 // The round-trip half comes first because it is the half that loses an author's work. Neither
 // tiptap-markdown nor prosemirror-markdown carries any footnote handling, so both directions are
@@ -241,4 +242,127 @@ test('a reference with an empty definition is marked in the prose', async ({ pag
   await page.locator('.ProseMirror div[data-footnote-def]').click();
   await page.keyboard.type('注釈');
   await expect(reference).not.toHaveAttribute('data-incomplete', '');
+});
+
+// -----------------------------------------------------------------------------------------------
+// Placement guards (§6, criterion 7)
+// -----------------------------------------------------------------------------------------------
+
+test('a footnote cannot be put in a table cell, and says why', async ({ page }) => {
+  // §6: a cell is the one place markdown's pipe form breaks easily, and this editor has already
+  // lost a table's pipe form twice to content it could not represent on one line.
+  await loadMarkdown(page, '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  await page.locator('.ProseMirror td').first().click();
+
+  await page.keyboard.press('Control+Shift+f');
+  expect(await docString(page)).not.toContain('footnoteReference');
+  await expect(page.getByText(/脚注は.*置けません/)).toBeVisible();
+});
+
+test('typing [^ in a table cell leaves the characters alone', async ({ page }) => {
+  // The second of criterion 7's two refusal paths. The shortcut and the input rule are separate
+  // entry points and a guard on one says nothing about the other.
+  await loadMarkdown(page, '| a | b |\n| - | - |\n| 1 | 2 |\n');
+  await page.locator('.ProseMirror td').first().click();
+
+  await page.keyboard.type('[^');
+  expect(await docString(page)).not.toContain('footnoteReference');
+  expect(await docString(page)).toContain('[^');
+});
+
+test('a footnote cannot be put in a code block', async ({ page }) => {
+  await loadMarkdown(page, '```ts\nconst a = 1;\n```\n');
+  await page.locator('.ProseMirror pre').first().click();
+
+  await page.keyboard.press('Control+Shift+f');
+  expect(await docString(page)).not.toContain('footnoteReference');
+});
+
+test('a footnote inside a callout keeps its definition at the end of the document', async ({
+  page,
+}) => {
+  // §6 allows it: a callout is part of the prose. Criterion 13.
+  await loadMarkdown(page, '> [!NOTE]\n> 注意書き\n');
+  await page.locator('.ProseMirror div[data-callout] p:not(.markdown-alert-title)').last().click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Control+Shift+f');
+
+  const doc = await docString(page);
+  expect(doc).toContain('footnoteReference');
+  // The definition is outside the callout, in the section at the end of the document.
+  expect(doc).toMatch(/footnoteSection\(footnoteDefinition\)\)$/);
+});
+
+// -----------------------------------------------------------------------------------------------
+// The clipboard (§6.1–§6.4, criteria 16–18)
+// -----------------------------------------------------------------------------------------------
+
+// Select the first paragraph whole, so the copy carries the reference inside it. The settle is not
+// optional: a caret placed by clicking reaches state.selection ~20ms late, so keys pressed inside
+// that window act on the previous selection. It passes without it when the spec runs alone and
+// fails in a full-suite run, which is the worst way to find out.
+async function selectFirstParagraph(page: import('@playwright/test').Page) {
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+End');
+}
+
+test('duplicating a paragraph duplicates its footnote', async ({ page }) => {
+  // Criterion 16. Definitions live at the end of the document, so a copied paragraph carries none —
+  // the note rides on the reference instead (§6.1), and the label is minted fresh because the
+  // carried one is still in use (§6.2).
+  await loadMarkdown(page, '本文[^a]\n\n[^a]: A の注\n');
+  await selectFirstParagraph(page);
+  await page.keyboard.press('Control+c');
+  // The clipboard write is asynchronous; pasting straight after it can read what was there before.
+  await settle(page);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  await page.keyboard.press('Control+v');
+
+  const saved = await markdown(page);
+  // Two references, two definitions, and the note's words on both.
+  expect(saved.match(/\[\^[^\]]+\]: A の注/g)).toHaveLength(2);
+  expect(await docString(page)).toMatch(
+    /footnoteDefinition\("A の注"\), footnoteDefinition\("A の注"\)/,
+  );
+});
+
+test('cutting and pasting a paragraph keeps the note and the label', async ({ page }) => {
+  // Criterion 17. The cut takes the definition with the reference (§5.1); the paste puts it back
+  // from what the reference carried, and the label is free again so it is reused (§6.2) — a
+  // footnote that only moved must not look like a different one in the diff.
+  await loadMarkdown(page, '本文[^keepme]\n\nあと\n\n[^keepme]: 消えない注\n');
+  await selectFirstParagraph(page);
+  await page.keyboard.press('Control+x');
+  await settle(page);
+  await page.keyboard.press('Control+v');
+
+  const saved = await markdown(page);
+  expect(saved).toContain('[^keepme]');
+  expect(saved).toContain('[^keepme]: 消えない注');
+});
+
+test('pasting a footnote into a table cell leaves no definition behind', async ({ page }) => {
+  // Criterion 18, and the collision §6.3 exists to prevent: the reference falls to plain text, and
+  // the note it was carrying is discarded rather than materialized — a definition with nothing
+  // pointing at it would otherwise be read as an orphan worth keeping (§5.4).
+  await loadMarkdown(page, '本文[^a]\n\n| x | y |\n| - | - |\n| 1 | 2 |\n\n[^a]: A の注\n');
+  await selectFirstParagraph(page);
+  await page.keyboard.press('Control+c');
+  await settle(page);
+  await page.locator('.ProseMirror td').first().click();
+  // A caret placed by clicking reaches state.selection ~20ms late, and pasting inside that window
+  // pastes over the *old* selection — measured here as the copy landing back on its own paragraph.
+  // The same lag has produced a real bug in this editor before.
+  await settle(page);
+  await page.keyboard.press('Control+v');
+
+  const doc = await docString(page);
+  // Exactly the one definition the document started with.
+  expect(doc.match(/footnoteDefinition/g)).toHaveLength(1);
+  // The reference fell to plain text inside the cell rather than staying a node.
+  expect(doc).not.toMatch(/tableCell\([^)]*footnoteReference/);
 });

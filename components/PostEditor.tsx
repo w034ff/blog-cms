@@ -276,7 +276,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // FootnoteLiteral above is left in place deliberately: markdown-it-footnote registers
       // footnote_def *before* the `reference` rule that guard patches, so the guard stops being
       // reached rather than fighting it (§7.2), and removing it is a separate step.
-      FootnoteReference,
+      FootnoteReference.configure({ onBlocked: showNotice }),
       FootnoteDefinition,
       FootnoteSection,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a

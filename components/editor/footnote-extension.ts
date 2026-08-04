@@ -1,10 +1,12 @@
 import { InputRule, Node, mergeAttributes } from '@tiptap/core';
 import { isHistoryTransaction } from '@tiptap/pm/history';
+import { Fragment, Slice } from '@tiptap/pm/model';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { hasUndoableInputRule } from './input-rule-undo';
+import { selectionTouches } from './selection-scan';
 import type MarkdownIt from 'markdown-it';
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs';
 import type Token from 'markdown-it/lib/token.mjs';
@@ -15,10 +17,10 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 // reference that sits in the prose, the definition, the section holding every definition at the end
 // of the document, and the `doc` whose content expression pins that section last.
 //
-// Stage 1 of §11 — the markdown round trip, the section and its placement, both insertion routes,
-// numbering, and reference/definition pairing. **Not yet the guards of §6** (a reference can still
-// be put in a table cell or a code block, and a paste carrying one is not answered), which §11 is
-// emphatic must not be left out of the same release.
+// Stages 1 and 2 of §11 — the markdown round trip, the section and its placement, both insertion
+// routes, numbering, reference/definition pairing, the placement guards of §6, and the clipboard
+// rules of §6.1–§6.4. Stage 3 (§5.4's notice for an orphan definition that arrived from outside)
+// is what is left.
 //
 // Neither tiptap-markdown nor prosemirror-markdown carries any footnote handling, so both
 // directions are written here. Parsing goes through HTML (§2.1): tiptap-markdown renders markdown
@@ -177,8 +179,14 @@ export function unwrapFootnoteParagraphs(element: HTMLElement): void {
 
 // The body reference. `atom` is a requirement rather than a convenience (§2): with a caret inside
 // it, part of a number can be deleted and a broken reference made.
-export const FootnoteReference = Node.create({
+export const FootnoteReference = Node.create<{ onBlocked: (message: string) => void }>({
   name: 'footnoteReference',
+
+  addOptions() {
+    // The same reporter the table and callout guards write to (PostEditor owns the one toast).
+    // A refused gesture changes nothing, so the notice is the whole of the feedback.
+    return { onBlocked: () => {} };
+  },
   group: 'inline',
   inline: true,
   atom: true,
@@ -190,6 +198,19 @@ export const FootnoteReference = Node.create({
         default: '',
         parseHTML: (element) => element.getAttribute('data-label') ?? '',
         renderHTML: (attributes) => ({ 'data-label': attributes.label as string }),
+      },
+      // The note this reference is carrying through the clipboard (§6.1). Set on the way out by
+      // transformCopied and consumed the moment the paste lands; it is never in a settled document,
+      // and the serializer never looks at it — a reference writes `[^label]` and nothing else.
+      //
+      // It has to reach the DOM, because that is what the clipboard actually carries: a slice is
+      // serialized to HTML and parsed back, so an attribute that does not render is an attribute
+      // that does not survive a copy.
+      pendingNote: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-note'),
+        renderHTML: (attributes) =>
+          attributes.pendingNote === null ? {} : { 'data-note': attributes.pendingNote as string },
       },
     };
   },
@@ -218,6 +239,13 @@ export const FootnoteReference = Node.create({
       setFootnote:
         () =>
         ({ state, dispatch }) => {
+          const refusal = placementRefusal(state);
+          if (refusal) {
+            // Only report when the command is actually being run — `can()` asks with no dispatch,
+            // and a menu measuring itself must not raise a toast.
+            if (dispatch) this.options.onBlocked(refusal);
+            return false;
+          }
           const { from, to } = state.selection;
           const tr = state.tr;
           if (!applyFootnoteInsertion(tr, state, from, to)) return false;
@@ -241,6 +269,13 @@ export const FootnoteReference = Node.create({
       new InputRule({
         find: /\[\^$/,
         handler: ({ state, range }) => {
+          // Criterion 7 counts two refusal paths on purpose: a guard on the shortcut says nothing
+          // about the input rule, and the author reaches the same wall by either route.
+          const refusal = placementRefusal(state);
+          if (refusal) {
+            this.options.onBlocked(refusal);
+            return null;
+          }
           return applyFootnoteInsertion(state.tr, state, range.from, range.to) ? undefined : null;
         },
       }),
@@ -248,7 +283,7 @@ export const FootnoteReference = Node.create({
   },
 
   addProseMirrorPlugins() {
-    return [footnoteNumbering(), footnotePairing()];
+    return [footnoteNumbering(), footnotePairing(), footnoteClipboard(this.options.onBlocked)];
   },
 });
 
@@ -348,20 +383,29 @@ export const Document = Node.create({
 
 const footnoteNumberingKey = new PluginKey('footnoteNumbering');
 const footnotePairingKey = new PluginKey('footnotePairing');
+const footnoteClipboardKey = new PluginKey('footnoteClipboard');
 
 // A label is an opaque, stable id (§4). It is never shown — the number the reader sees is derived
 // from document order — so it only has to be unique within the document and survive reordering.
-function mintLabel(doc: PMNode): string {
+function mintLabelAvoiding(taken: Set<string>): string {
+  for (;;) {
+    const label = `fn-${Math.random().toString(36).slice(2, 5)}`;
+    if (!taken.has(label)) return label;
+  }
+}
+
+function labelsInUse(doc: PMNode): Set<string> {
   const taken = new Set<string>();
   doc.descendants((node) => {
     if (node.type.name === 'footnoteReference' || node.type.name === 'footnoteDefinition') {
       taken.add(node.attrs.label as string);
     }
   });
-  for (;;) {
-    const label = `fn-${Math.random().toString(36).slice(2, 5)}`;
-    if (!taken.has(label)) return label;
-  }
+  return taken;
+}
+
+function mintLabel(doc: PMNode): string {
+  return mintLabelAvoiding(labelsInUse(doc));
 }
 
 interface FootnoteScan {
@@ -452,6 +496,14 @@ function footnotePairing(): Plugin {
       if (hasUndoableInputRule(state)) return null;
       if (oldState.doc.eq(state.doc)) return null;
 
+      // §6.2 — the label is settled here and not at paste time. transformPasted sees only the
+      // slice, so deciding there would mean minting a new label every time and a cut-and-paste
+      // would change the label of a footnote that merely moved. Here the destination document is
+      // in hand: the carried label is reused when it is free (a move) and replaced when it is
+      // already spoken for (a duplicate), which is what keeps §4's one reference = one definition.
+      const materialized = materializePendingNotes(state);
+      if (materialized) return materialized;
+
       const sectionType = state.schema.nodes.footnoteSection;
       const section = state.doc.lastChild;
       if (!sectionType || section?.type !== sectionType) return null;
@@ -487,6 +539,126 @@ function footnotePairing(): Plugin {
   });
 }
 
+// Give every reference that arrived carrying a note (§6.1) its definition back.
+function materializePendingNotes(state: EditorState): Transaction | null {
+  const referenceType = state.schema.nodes.footnoteReference;
+  const definitionType = state.schema.nodes.footnoteDefinition;
+  const sectionType = state.schema.nodes.footnoteSection;
+  if (!referenceType || !definitionType || !sectionType) return null;
+
+  const pending: { pos: number; node: PMNode }[] = [];
+  state.doc.descendants((node, pos) => {
+    if (node.type === referenceType && node.attrs.pendingNote !== null) pending.push({ pos, node });
+  });
+  if (pending.length === 0) return null;
+
+  // Labels already spoken for: every definition, and every reference that is not one of these.
+  const taken = new Set<string>();
+  state.doc.descendants((node) => {
+    if (node.type === definitionType) taken.add(node.attrs.label as string);
+    else if (node.type === referenceType && node.attrs.pendingNote === null) {
+      taken.add(node.attrs.label as string);
+    }
+  });
+
+  const tr = state.tr;
+  const definitions: PMNode[] = [];
+  for (const { pos, node } of pending) {
+    const carried = node.attrs.label as string;
+    const label = taken.has(carried) ? mintLabelAvoiding(taken) : carried;
+    taken.add(label);
+    // setNodeMarkup only rewrites attributes, so no position after it moves and the loop can go
+    // forwards over positions taken before it started.
+    tr.setNodeMarkup(pos, undefined, { label, pendingNote: null });
+    const note = node.attrs.pendingNote as string;
+    definitions.push(
+      definitionType.create({ label }, note === '' ? null : state.schema.text(note)),
+    );
+  }
+
+  const last = tr.doc.lastChild;
+  if (last?.type === sectionType) tr.insert(tr.doc.content.size - 1, definitions);
+  else tr.insert(tr.doc.content.size, sectionType.create(null, definitions));
+  return tr;
+}
+
+// §6.1 — a reference carries its note through the clipboard.
+//
+// The naive rule (drop a reference to plain text unless the slice carries its definition) is right
+// for a paste from outside and wrong inside the document. Definitions live in a section at the end
+// (§3), so a copied paragraph never carries one, and duplicating a paragraph that has a footnote
+// would silently degrade it; cutting is worse, since removing the reference takes the definition
+// with it (§5.1) and the note's words go with it.
+//
+// So the note travels on the reference itself. Everything else falls out of that: a duplicate has a
+// note and keeps its footnote, a cut-and-paste has one and keeps its words, and only a reference
+// from somewhere else arrives with nothing and falls back to plain text.
+function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
+  return new Plugin({
+    key: footnoteClipboardKey,
+
+    props: {
+      transformCopied: (slice, view) => {
+        const { definitions } = scanFootnoteText(view.state.doc);
+        return mapReferences(slice, view.state, (node) => {
+          const label = node.attrs.label as string;
+          return node.type.create({ ...node.attrs, pendingNote: definitions.get(label) ?? '' });
+        });
+      },
+
+      // transformPasted is not paste-only — prosemirror-view runs it over `view.dragging.slice` on
+      // a drop too, which is exactly what §6.4 wants: one rule answering both gestures, rather than
+      // a second one in isolating-boundary.ts giving a drop its own answer.
+      transformPasted: (slice, view) => {
+        // §6.3: the placement guard is asked first. A reference landing in a cell or a code block
+        // becomes plain text and its carried note is discarded — materializing it would leave a
+        // definition with nothing pointing at it, which §5.4 would then read as an orphan to keep.
+        const refused = placementRefusal(view.state);
+        if (refused) onBlocked(refused);
+
+        return mapReferences(slice, view.state, (node) => {
+          const note = node.attrs.pendingNote as string | null;
+          if (refused || note === null) {
+            // Plain text, the shape it had before this editor understood footnotes.
+            return view.state.schema.text(`[^${node.attrs.label as string}]`);
+          }
+          return node;
+        });
+      },
+    },
+  });
+}
+
+// Walk a slice and replace every footnoteReference with whatever `swap` returns. Written over
+// Fragment rather than a transaction because a slice is not in the document yet — there are no
+// positions to address and nothing to dispatch.
+function mapReferences(slice: Slice, state: EditorState, swap: (node: PMNode) => PMNode): Slice {
+  const referenceType = state.schema.nodes.footnoteReference;
+  if (!referenceType) return slice;
+
+  const mapFragment = (fragment: Fragment): Fragment => {
+    const mapped: PMNode[] = [];
+    fragment.forEach((child) => {
+      if (child.type === referenceType) mapped.push(swap(child));
+      else mapped.push(child.copy(mapFragment(child.content)));
+    });
+    return Fragment.fromArray(mapped);
+  };
+
+  return new Slice(mapFragment(slice.content), slice.openStart, slice.openEnd);
+}
+
+// The definitions' text, keyed by label — what a reference has to carry with it.
+function scanFootnoteText(doc: PMNode): { definitions: Map<string, string> } {
+  const definitions = new Map<string, string>();
+  doc.descendants((node) => {
+    if (node.type.name === 'footnoteDefinition') {
+      definitions.set(node.attrs.label as string, node.textContent);
+    }
+  });
+  return { definitions };
+}
+
 // Both routes do the same thing (§9): put a reference where the caret is, create its empty
 // definition, and **leave the caret in the prose**. Sending it to the definition would break the
 // flow footnotes exist to protect — thinking of an aside while writing a sentence.
@@ -494,6 +666,30 @@ function footnotePairing(): Plugin {
 // One transaction, not two. Beyond the undo atomicity §5.1 asks for, it is what keeps the `[^`
 // rule's undo record alive: any second transaction in the same round clears the record
 // undoInputRule needs, which is the trap trailing-node-extension.ts was written to answer.
+// §6's placement rules. A cell is the one place markdown's pipe form breaks easily — this editor
+// has lost a table's pipe form twice already to content it could not put on one line — and a code
+// block holds text and nothing else.
+//
+// `selectionTouches` rather than `editor.isActive`: isActive requires the node to *cover* the whole
+// range, so it answers false for a selection reaching one character past a table's edge, and every
+// guard written that way waved a mixed selection through. It also answers for a caret, since
+// nodesBetween(pos, pos) still visits the nodes containing pos.
+function placementRefusal(state: EditorState): string | null {
+  if (selectionTouches(state, 'tableCell', 'tableHeader')) {
+    return '脚注は表のセル内には置けません。';
+  }
+  if (selectionTouches(state, 'codeBlock')) {
+    return '脚注はコードブロック内には置けません。';
+  }
+  // A definition holds inline content, so a reference *fits* inside one — the schema will not stop
+  // it. Nested footnotes are a non-goal (§1), and a reference living in the section would also make
+  // the materialization below insert into what it is walking.
+  if (selectionTouches(state, 'footnoteSection', 'footnoteDefinition')) {
+    return '脚注の中に脚注は置けません。';
+  }
+  return null;
+}
+
 // Takes the transaction rather than making one. Both callers already have the transaction their
 // caller will dispatch — the command has `state.tr`, and an input rule is handed one that already
 // carries the typed characters — and building a second against the same document produced steps
