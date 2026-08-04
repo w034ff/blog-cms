@@ -42,4 +42,13 @@ describe('incompleteFootnotes', () => {
   it('accepts the indentation markdown-it allows on a definition line', () => {
     expect(incompleteFootnotes('本文[^a]\n\n   [^a]: 注釈\n')).toEqual([]);
   });
+
+  it('reads CRLF the same as LF', () => {
+    // Publish arrives through a form, and form submission rewrites the body's newlines to CRLF, so
+    // CRLF — not LF — is what this function is actually handed. Only the final line escapes the
+    // trailing `\r`, which is why a single footnote passed while two or more did not.
+    const body = '本文[^a]と[^b]\n\n[^a]: 注釈1\n[^b]: 注釈2';
+    expect(incompleteFootnotes(body)).toEqual([]);
+    expect(incompleteFootnotes(body.replace(/\n/g, '\r\n'))).toEqual([]);
+  });
 });

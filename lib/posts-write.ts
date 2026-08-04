@@ -16,6 +16,16 @@ export type PostInput = {
   body: string;
 };
 
+// The two ways content reaches the server disagree about line endings: autosave posts JSON and
+// keeps the editor's LF, while publish/unpublish go through a form, and form submission rewrites
+// every newline in a value to CRLF. Left alone, a post's stored markdown flips between the two
+// depending on which button was pressed, and every line-based reader of the body has to know it —
+// lib/footnotes.ts did not, and counted written footnotes as empty. One form is stored: LF, what
+// the editor serialized in the first place.
+function normalizeNewlines(body: string): string {
+  return body.replace(/\r\n?/g, '\n');
+}
+
 // Whether a slug is already taken. Used at publish time to keep public URLs
 // unique; null slugs (drafts) never match a lookup.
 export function slugExists(slug: string): boolean {
@@ -34,7 +44,7 @@ export function createPost(input: PostInput): number {
   const now = new Date().toISOString();
   const row = db
     .insert(posts)
-    .values({ ...input, createdAt: now, updatedAt: now })
+    .values({ ...input, body: normalizeNewlines(input.body), createdAt: now, updatedAt: now })
     .returning({ id: posts.id })
     .get();
   return row.id;
@@ -42,7 +52,7 @@ export function createPost(input: PostInput): number {
 
 export function updatePost(id: number, input: PostInput): void {
   db.update(posts)
-    .set({ ...input, updatedAt: new Date().toISOString() })
+    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: new Date().toISOString() })
     .where(eq(posts.id, id))
     .run();
 }
@@ -67,12 +77,13 @@ export function autosavePost(id: number, content: DraftContent): void {
     .where(eq(posts.id, id))
     .get();
   if (!row) return;
+  const normalized = { ...content, body: normalizeNewlines(content.body) };
   // Never let autosave wipe an existing title. The title field is briefly empty
   // whenever the author clears it to retype; if a debounced autosave fires in
   // that window (or the in-progress retype is then lost to navigation), the
   // blank would overwrite a real title and surface as an empty title in the
   // admin list. Keep the stored title when the incoming one is blank.
-  const safe = content.title.trim() === '' ? { ...content, title: row.title } : content;
+  const safe = normalized.title.trim() === '' ? { ...normalized, title: row.title } : normalized;
   if (row.draft) {
     db.update(posts)
       .set({ ...safe, updatedAt: new Date().toISOString() })
@@ -98,6 +109,7 @@ export function commitPost(id: number, content: DraftContent, draft: boolean, da
   db.update(posts)
     .set({
       ...content,
+      body: normalizeNewlines(content.body),
       date,
       draft,
       draftContent: null,

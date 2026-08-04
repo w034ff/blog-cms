@@ -32,7 +32,14 @@ export function incompleteFootnotes(body: string): string[] {
   const references: string[] = [];
   let fence: string | null = null;
 
-  for (const line of body.split('\n')) {
+  // `\r?\n`, not `\n`: publish reaches the server through a form, and form submission rewrites
+  // every newline in the value to CRLF (PostEditor's hidden `body` input). Splitting on `\n` alone
+  // leaves a trailing `\r` on every line but the last, which `DEFINITION` cannot match — `.` does
+  // not match `\r` and `$` without `m` only matches the very end. Each such line then fell through
+  // to the reference scan below, so a *written* note was counted as an empty one; with N footnotes
+  // the last definition still matched and publish was refused with N-1. Storage is normalized to LF
+  // now (lib/posts-write.ts), but every post saved before that still has CRLF in the database.
+  for (const line of body.split(/\r?\n/)) {
     const fenceMatch = FENCE.exec(line);
     if (fenceMatch) {
       const marker = fenceMatch[1][0];
