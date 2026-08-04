@@ -21,6 +21,7 @@ import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
 import { FootnoteLiteral } from './editor/footnote-literal-extension';
+import { FootnoteDefinition, FootnoteReference } from './editor/footnote-extension';
 import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
@@ -260,6 +261,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // (tiptap-markdown collects every extension's parse.setup, so the position is only
       // documentation).
       FootnoteLiteral,
+      // SPIKE (docs/footnote-requirements.md §7): the footnote markdown layer alone — no
+      // definition section, no guards, no insertion route, no styling. Registered to measure the
+      // round trip. FootnoteLiteral above is left in place deliberately: markdown-it-footnote
+      // registers footnote_def *before* the `reference` rule that guard patches, so the guard
+      // stops being reached rather than fighting it (§7.2), and removing it is a separate step.
+      FootnoteReference,
+      FootnoteDefinition,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
