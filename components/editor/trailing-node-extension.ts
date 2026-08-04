@@ -56,15 +56,36 @@ export const TrailingNode = Extension.create({
     // upstream does rather than named outright, so a schema change can't strand this.
     const defaultType = this.editor.schema.topNodeType.contentMatch.defaultType;
 
+    // The footnote definitions' section (docs/footnote-requirements.md §3) is pinned to the end of
+    // the document by the doc's content expression, so "the last node" stops meaning what it says
+    // here. Asked naively, the check below is true of the section on every keystroke and the
+    // paragraph lands *below* the definitions — where text typed into it shows under the footnotes
+    // in the editor and above them on the page, since remark-gfm always emits the section last.
+    // Answering "do nothing when the section is last" instead leaves a table or a fence sitting
+    // against the section with nowhere below it to put the caret, which is the entire reason this
+    // extension exists.
+    //
+    // So both questions skip past it: the type check reads the last node *before* the section, and
+    // the paragraph is inserted before the section rather than at the end of the document.
+    const sectionType = this.editor.schema.nodes.footnoteSection;
+
     return [
       new Plugin({
         key: trailingNodeKey,
         appendTransaction: (transactions, _oldState, state) => {
           if (!defaultType) return null;
-          if (state.doc.lastChild?.type === defaultType) return null;
+
+          const last = state.doc.lastChild;
+          const trailingSection = sectionType && last?.type === sectionType ? last : null;
+          const index = state.doc.childCount - (trailingSection ? 2 : 1);
+          if (index >= 0 && state.doc.child(index).type === defaultType) return null;
+
           if (hasUndoableInputRule(state)) return null;
           if (transactions.some(isHistoryTransaction)) return null;
-          return state.tr.insert(state.doc.content.size, defaultType.create());
+
+          const end = state.doc.content.size;
+          const position = trailingSection ? end - trailingSection.nodeSize : end;
+          return state.tr.insert(position, defaultType.create());
         },
       }),
     ];

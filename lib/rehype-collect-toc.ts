@@ -29,18 +29,26 @@ export function rehypeCollectToc() {
     //
     // The ids themselves are untouched — rehype-slug still assigns one to every heading, so an
     // in-page `[…](#見出し)` or an external `#user-content-…` still resolves here.
-    const inDetails = new Set<Element>();
+    // The footnote section is excluded for a different reason (docs/footnote-requirements.md §8):
+    // it is not a section the author wrote. remark-gfm labels it with its own
+    // `<h2 class="sr-only" id="footnote-label">Footnotes</h2>`, so without this the table of
+    // contents of a Japanese post gains an English entry reading "Footnotes" — measured, not
+    // feared. It is screen-reader-only chrome, and the jumps into it are the backref links, not
+    // the contents.
+    const hidden = new Set<Element>();
     visit(tree, 'element', (node: Element) => {
-      if (node.tagName !== 'details') return;
+      const isDetails = node.tagName === 'details';
+      const isFootnotes = node.tagName === 'section' && 'dataFootnotes' in node.properties;
+      if (!isDetails && !isFootnotes) return;
       visit(node, 'element', (inner: Element) => {
-        if (inner.tagName === 'h2' || inner.tagName === 'h3') inDetails.add(inner);
+        if (inner.tagName === 'h2' || inner.tagName === 'h3') hidden.add(inner);
       });
     });
 
     const toc: TocEntry[] = [];
     visit(tree, 'element', (node: Element) => {
       if (node.tagName !== 'h2' && node.tagName !== 'h3') return;
-      if (inDetails.has(node)) return;
+      if (hidden.has(node)) return;
       const id = node.properties.id;
       if (typeof id !== 'string') return;
       toc.push({ id, text: toString(node), level: node.tagName === 'h2' ? 2 : 3 });

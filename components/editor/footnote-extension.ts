@@ -32,6 +32,7 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 
 const FOOTNOTE_REF_TAG = 'sup[data-footnote-ref]';
 const FOOTNOTE_DEF_TAG = 'div[data-footnote-def]';
+const FOOTNOTE_SECTION_TAG = 'div[data-footnote-section]';
 
 // Labels reach the DOM through an attribute, so they need HTML attribute escaping — not the
 // markdown escaping `state.text()` would apply. A label carrying `"` or `&` would otherwise break
@@ -140,9 +141,11 @@ export function installFootnotes(markdownit: MarkdownIt): void {
   rules.footnote_open = (tokens, idx) =>
     `<div data-footnote-def data-label="${escapeAttribute(labelOf(tokens[idx].meta))}">`;
   rules.footnote_close = () => '</div>\n';
-  // The section chrome and the backref have no counterpart in the schema.
-  rules.footnote_block_open = () => '';
-  rules.footnote_block_close = () => '';
+  // The plugin's own chrome (`<hr class="footnotes-sep">`, `<section>`, `<ol>`) is replaced by the
+  // one wrapper the schema has: the definitions' home at the end of the document (§3).
+  rules.footnote_block_open = () => '<div data-footnote-section>\n';
+  rules.footnote_block_close = () => '</div>\n';
+  // The backref would land in the document as content — `↩︎` is not something the author typed.
   rules.footnote_anchor = () => '';
 }
 
@@ -202,12 +205,12 @@ export const FootnoteReference = Node.create({
   },
 });
 
-// The definition. Inline content only (§1's non-goal list), and for the spike it lives at the top
-// level rather than inside the section §3 asks for — the section is what needs the TrailingNode
-// change, and this is measuring the markdown layer alone.
+// The definition. Inline content only (§1's non-goal list), and deliberately **not** in the
+// `block` group: the document's content expression is `block+ footnoteSection?` (§3.2), and a
+// definition that stayed in the group would still be admitted anywhere at the top level, leaving
+// that expression decorative. Its only home is the section below.
 export const FootnoteDefinition = Node.create({
   name: 'footnoteDefinition',
-  group: 'block',
   content: 'inline*',
   defining: true,
 
@@ -241,4 +244,53 @@ export const FootnoteDefinition = Node.create({
       },
     };
   },
+});
+
+// The definitions' home at the end of the document (§3). Not in the `block` group either — the
+// document's content expression names it directly, and putting it in the group would let it be
+// created anywhere `block+` matches.
+//
+// It is not a draggable type (`block-drag-handle.ts` works from an explicit allowlist, so nothing
+// is needed there), and it takes no part in the table of contents on the public side (§8, enforced
+// in lib/rehype-collect-toc.ts).
+export const FootnoteSection = Node.create({
+  name: 'footnoteSection',
+  content: 'footnoteDefinition+',
+  defining: true,
+  isolating: true,
+
+  parseHTML() {
+    return [{ tag: FOOTNOTE_SECTION_TAG }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes({ 'data-footnote-section': '' }, HTMLAttributes), 0];
+  },
+
+  addStorage() {
+    return {
+      markdown: {
+        // The definitions write their own `[^label]: ` lines; the section is only their container,
+        // and GFM has no syntax for it.
+        serialize: (state: MarkdownSerializerState, node: PMNode) => state.renderContent(node),
+        parse: { setup: installFootnotes, updateDOM: unwrapFootnoteParagraphs },
+      },
+    };
+  },
+});
+
+// Replaces StarterKit's `doc` (disabled in PostEditor) for one reason: the content expression.
+// `block+ footnoteSection?` states in the schema what §3 asks for and §6.2's reconciliation would
+// otherwise be the only thing enforcing — the section can exist at most once, and only last.
+//
+// Nothing else is lost by declaring it here. @tiptap/extension-document is this node plus a
+// `renderMarkdown`, and that belongs to TipTap 3's own markdown module, which tiptap-markdown 0.9.0
+// never reads (the same reason details-extension.ts writes its own serializer).
+//
+// This alone does not put the trailing paragraph in the right place — see §3.2 and the
+// footnoteSection branch in trailing-node-extension.ts, which is the half that moves it.
+export const Document = Node.create({
+  name: 'doc',
+  topNode: true,
+  content: 'block+ footnoteSection?',
 });

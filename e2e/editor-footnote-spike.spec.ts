@@ -37,12 +37,12 @@ test.beforeEach(async ({ page }) => {
 test('a footnote round-trips as GFM syntax', async ({ page }) => {
   const { first, second, doc } = await roundTrip(page, '本文[^1]\n\n[^1]: 注釈テキスト\n');
 
-  // Both halves are real nodes now, not the literal text the guard used to leave behind. The
-  // trailing paragraph is TrailingNode's, and it is §3.1 measured rather than argued: the last
-  // node is not a paragraph, so one is appended below the definition. Once the definitions live in
-  // the section §3 asks for, that paragraph has to move above it.
+  // Both halves are real nodes now, not the literal text the guard used to leave behind, and the
+  // definition lives in the section the schema pins to the end of the document (§3, §3.2). No
+  // trailing paragraph: the last node *before* the section is already one, which is the whole of
+  // §3.1's change to TrailingNode.
   expect(doc).toBe(
-    'doc(paragraph("本文", footnoteReference), footnoteDefinition("注釈テキスト"), paragraph)',
+    'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition("注釈テキスト")))',
   );
   // The note's text is in the document, and the syntax is unescaped GFM — the whole point.
   expect(first).toContain('[^1]: 注釈テキスト');
@@ -105,4 +105,42 @@ test('an orphan definition keeps its text', async ({ page }) => {
   const { first } = await roundTrip(page, '本文\n\n[^x]: 消えては困る注釈\n');
 
   expect(first).toContain('消えては困る注釈');
+});
+
+// §3.1 / §3.2 — the definitions' section is pinned last, and TrailingNode has to answer around it.
+// Both halves are needed: read naively the paragraph lands *below* the definitions, and answered
+// with "do nothing when the section is last" a table sits against the section with nowhere below
+// it to put the caret.
+test('a block against the definition section still gets a paragraph above it', async ({ page }) => {
+  // The table has to be the last thing *before* the section for the question to arise at all.
+  await loadMarkdown(page, '本文[^1]\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n[^1]: 注釈\n');
+
+  const doc = await docString(page);
+  // An empty paragraph between the table and the section — somewhere to put the caret below the
+  // table — and the section is still the document's last child.
+  expect(doc).toContain('), paragraph, footnoteSection(');
+  expect(doc.endsWith('footnoteSection(footnoteDefinition("注釈")))')).toBe(true);
+});
+
+test('nothing can be placed after the definition section', async ({ page }) => {
+  await loadMarkdown(page, '本文[^1]\n\n[^1]: 注釈\n');
+
+  // The content expression is `block+ footnoteSection?` (§3.2), so a block aimed past the section
+  // has nowhere to land there. Driven through the editor's own command rather than asked of the
+  // schema, because what matters is that the *gesture* cannot put content below the footnotes.
+  await page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & {
+          editor?: {
+            state: { doc: { content: { size: number } } };
+            commands: { insertContentAt(position: number, value: string): boolean };
+          };
+        })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    el.editor.commands.insertContentAt(el.editor.state.doc.content.size, '<p>あと</p>');
+  });
+
+  // Whatever ProseMirror did with it, the section is still the document's last child.
+  expect(await docString(page)).toMatch(/footnoteSection\(footnoteDefinition\("注釈"\)\)\)$/);
 });

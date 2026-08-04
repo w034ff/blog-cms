@@ -137,6 +137,18 @@ describe('renderMdxToHtml — table of contents', () => {
     // The id is still assigned, so an in-page or external anchor into the fold resolves.
     expect(html).toContain('id="user-content-畳まれた見出し"');
   });
+
+  // docs/footnote-requirements.md §8. remark-gfm labels the footnote section with its own
+  // screen-reader-only `<h2>Footnotes</h2>`, which the collector had no reason to filter until the
+  // editor started saving real footnote syntax — a Japanese post's contents would otherwise gain an
+  // English entry the author never wrote.
+  it('leaves the footnote section out of the table of contents', async () => {
+    const { html, toc } = await renderMdxToHtml('## 見出し\n\n本文[^1]\n\n[^1]: 注釈\n');
+
+    expect(toc.map((t) => t.text)).toEqual(['見出し']);
+    // The section is still rendered, and its heading still carries an id — only the contents skip it.
+    expect(html).toContain('id="user-content-footnote-label"');
+  });
 });
 
 // Sanitize renames every id (`user-content-` clobber prefix) but never touches an href, so an
