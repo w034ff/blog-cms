@@ -94,6 +94,23 @@ export async function selectInside(page: Page, typeName: string): Promise<void> 
   await setRange(page, from, to);
 }
 
+// Collapse the current selection to its end — the deterministic counterpart to pressing End after a
+// shift-selection. That key moves the *DOM* selection, which reaches state.selection a debounce
+// later (ProseMirror's DOMObserver.flushSoon, ~20ms), so a key pressed inside that window acts on
+// the ranged selection End was meant to collapse — and Enter *replaces* a ranged selection. This
+// reads `selection.to`, so it names the end of the range just selected rather than re-resolving a
+// node by type, which would be a different node the moment the document leads with something else.
+export function collapseToEnd(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (EditorProbe & { editor?: { state: { selection: { to: number } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const { to } = el.editor.state.selection;
+    el.editor.commands.setTextSelection({ from: to, to });
+  });
+}
+
 // Select the first node of `typeName` *as a node* — the selection the block drag handle makes, and
 // the one to copy a whole block with. A TextSelection spanning the same ground has to put its
 // endpoints on the block boundaries either side, where the parent is the doc rather than a

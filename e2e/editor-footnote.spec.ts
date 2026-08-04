@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { collapseToEnd, loadMarkdown, selectInside } from './editor-authoring';
 import { markdown, docString, caretPos, settle } from './editor-probe';
 import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
@@ -316,15 +316,23 @@ test('a footnote inside a callout keeps its definition at the end of the documen
 // The clipboard (§6.1–§6.4, criteria 16–18)
 // -----------------------------------------------------------------------------------------------
 
-// Select the first paragraph whole, so the copy carries the reference inside it. The settle is not
-// optional: a caret placed by clicking reaches state.selection ~20ms late, so keys pressed inside
-// that window act on the previous selection. It passes without it when the spec runs alone and
-// fails in a full-suite run, which is the worst way to find out.
+// Select the first paragraph whole, so the copy carries the reference inside it.
+//
+// The click is only for focus — the clipboard keys need it — and the settle after it is not
+// optional: a caret placed by clicking reaches state.selection ~20ms late (ProseMirror's
+// DOMObserver.flushSoon), and a pending flush would otherwise overwrite the selection made below.
+//
+// The selection itself goes through the command rather than Home+Shift+End, and that is the point.
+// Those keys move the *DOM* selection, which reaches state.selection a debounce later, so a
+// Control+c pressed inside that window is handed the stale one: ProseMirror builds an empty slice,
+// declines the copy, and the browser's native handler puts the DOM selection on the clipboard as
+// plain text. The paste then lands `本文[^a]` as literal characters and the footnote is simply gone.
+// Measured 2026-08-05 from a full-suite trace — 5ms between Shift+End and Control+c — where it
+// passed alone and on retry and failed only under the load of the whole suite.
 async function selectFirstParagraph(page: import('@playwright/test').Page) {
   await page.locator('.ProseMirror p').first().click();
   await settle(page);
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Shift+End');
+  await selectInside(page, 'paragraph');
 }
 
 test('duplicating a paragraph duplicates its footnote', async ({ page }) => {
@@ -336,7 +344,9 @@ test('duplicating a paragraph duplicates its footnote', async ({ page }) => {
   await page.keyboard.press('Control+c');
   // The clipboard write is asynchronous; pasting straight after it can read what was there before.
   await settle(page);
-  await page.keyboard.press('End');
+  // Not End: the same debounce would leave Enter looking at the selection just copied, and Enter
+  // replaces a ranged selection — the paragraph, its reference and the whole definition section go.
+  await collapseToEnd(page);
   await page.keyboard.press('Enter');
   await settle(page);
   await page.keyboard.press('Control+v');
