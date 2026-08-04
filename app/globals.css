@@ -1432,9 +1432,22 @@ body.block-dragging .table-toolbar {
   gap: 0.5em;
   margin: 0.35em 0;
 }
+/* `flex: none` alone sizes this box to its own glyphs, so the note text's left edge moved with the
+   number: Geist's figures are proportional, and `1` is narrower than `2`. Only the definitions show
+   it, because only they stack vertically — the same width difference in the reference is inline
+   prose with nothing to line up against. `tabular-nums` equalizes the digits themselves; `min-width`
+   reserves one box for every marker, which is what also keeps `[10]` from shunting its note further
+   right than `[9]`.
+
+   2.6em is measured, not guessed (e2e/editor-footnote-marker-width.spec.ts, at this section's own
+   0.9em): a marker needs 1.29em at one digit, 1.89em at two and 2.49em at three. So the box holds
+   up to `[999]`. Past that `min-width` stops equalizing and the misalignment returns — no post will
+   reach it, but the number is a ceiling rather than a guarantee. */
 .ProseMirror div[data-footnote-def]::before {
   content: '[' attr(data-number) ']';
   flex: none;
+  min-width: 2.6em;
+  font-variant-numeric: tabular-nums;
   color: #656d76;
 }
 /* No reference points at this one (§5.4). Kept — the author's words are not the editor's to throw
