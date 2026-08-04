@@ -1,7 +1,7 @@
 import { InputRule, Node, mergeAttributes } from '@tiptap/core';
 import { isHistoryTransaction } from '@tiptap/pm/history';
 import { Fragment, Slice } from '@tiptap/pm/model';
-import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -311,7 +311,7 @@ export const FootnoteReference = Node.create<{
   addProseMirrorPlugins() {
     return [
       footnoteNumbering(),
-      footnotePairing(),
+      footnotePairing(this.options.onBlocked),
       footnoteClipboard(this.options.onBlocked),
       footnoteOrphanNotice(this.options.onNotice),
     ];
@@ -519,7 +519,7 @@ function footnoteNumbering(): Plugin {
 // Undo and input rules are skipped for the reasons trailing-node-extension.ts documents at length:
 // an append riding an undo cannot be taken back by the next Ctrl+Z, and any appended transaction
 // clears the record undoInputRule needs.
-function footnotePairing(): Plugin {
+function footnotePairing(onBlocked: (message: string) => void): Plugin {
   return new Plugin({
     key: footnotePairingKey,
     appendTransaction: (transactions, oldState, state) => {
@@ -533,7 +533,7 @@ function footnotePairing(): Plugin {
       // would change the label of a footnote that merely moved. Here the destination document is
       // in hand: the carried label is reused when it is free (a move) and replaced when it is
       // already spoken for (a duplicate), which is what keeps §4's one reference = one definition.
-      const materialized = materializePendingNotes(state);
+      const materialized = materializePendingNotes(state, onBlocked);
       if (materialized) return materialized;
 
       const sectionType = state.schema.nodes.footnoteSection;
@@ -571,8 +571,18 @@ function footnotePairing(): Plugin {
   });
 }
 
-// Give every reference that arrived carrying a note (§6.1) its definition back.
-function materializePendingNotes(state: EditorState): Transaction | null {
+// Give every reference that arrived carrying a note (§6.1) its definition back — or take the
+// reference away, when it landed somewhere §6 does not allow one.
+//
+// Both answers live here rather than in `transformPasted` because only here is the destination
+// known. A paste puts it in `view.state.selection`, but a drop does not: while transformPasted
+// runs, the selection is still the range being dragged. Answering there sent a footnote into a
+// table cell (measured), and answering in both places would be the two-rules-for-one-event shape
+// §6 opens by warning about.
+function materializePendingNotes(
+  state: EditorState,
+  onBlocked: (message: string) => void,
+): Transaction | null {
   const referenceType = state.schema.nodes.footnoteReference;
   const definitionType = state.schema.nodes.footnoteDefinition;
   const sectionType = state.schema.nodes.footnoteSection;
@@ -584,33 +594,73 @@ function materializePendingNotes(state: EditorState): Transaction | null {
   });
   if (pending.length === 0) return null;
 
-  // Labels already spoken for: every definition, and every reference that is not one of these.
-  const taken = new Set<string>();
+  // A label is spoken for by another *reference*, never by a definition. This is what tells a move
+  // from a duplicate: a dragged footnote arrives while its own definition is still in the section —
+  // the whole move is one transaction, so nothing deleted it — and counting that definition as a
+  // claim would mint a new label, build a second definition, and leave the first an orphan.
+  // Measured before the distinction existed, on both a drag into prose and one into a cell.
+  const claimed = new Set<string>();
+  const definitions = new Set<string>();
   state.doc.descendants((node) => {
-    if (node.type === definitionType) taken.add(node.attrs.label as string);
+    if (node.type === definitionType) definitions.add(node.attrs.label as string);
     else if (node.type === referenceType && node.attrs.pendingNote === null) {
-      taken.add(node.attrs.label as string);
+      claimed.add(node.attrs.label as string);
     }
   });
 
-  const tr = state.tr;
-  const definitions: PMNode[] = [];
+  type Plan = { pos: number; node: PMNode; label: string; refused: boolean };
+  const plans: Plan[] = [];
+  let refusal: string | null = null;
   for (const { pos, node } of pending) {
+    const refusedHere = hostRefusalAt(state.doc.resolve(pos));
+    if (refusedHere) {
+      refusal = refusedHere;
+      plans.push({ pos, node, label: node.attrs.label as string, refused: true });
+      continue;
+    }
     const carried = node.attrs.label as string;
-    const label = taken.has(carried) ? mintLabelAvoiding(taken) : carried;
-    taken.add(label);
-    // setNodeMarkup only rewrites attributes, so no position after it moves and the loop can go
-    // forwards over positions taken before it started.
-    tr.setNodeMarkup(pos, undefined, { label, pendingNote: null });
-    const note = node.attrs.pendingNote as string;
-    definitions.push(
-      definitionType.create({ label }, note === '' ? null : state.schema.text(note)),
+    const label = claimed.has(carried)
+      ? mintLabelAvoiding(new Set([...claimed, ...definitions]))
+      : carried;
+    claimed.add(label);
+    plans.push({ pos, node, label, refused: false });
+  }
+
+  const tr = state.tr;
+  const created: PMNode[] = [];
+  for (const plan of plans) {
+    if (plan.refused) continue;
+    // A move brings its own definition with it — it was never deleted — so only make one when the
+    // label has none.
+    if (definitions.has(plan.label)) continue;
+    definitions.add(plan.label);
+    const note = plan.node.attrs.pendingNote as string;
+    created.push(
+      definitionType.create({ label: plan.label }, note === '' ? null : state.schema.text(note)),
     );
   }
 
-  const last = tr.doc.lastChild;
-  if (last?.type === sectionType) tr.insert(tr.doc.content.size - 1, definitions);
-  else tr.insert(tr.doc.content.size, sectionType.create(null, definitions));
+  // Backwards, because a refusal replaces a one-wide atom with several characters and every
+  // position after it would move.
+  for (const plan of [...plans].reverse()) {
+    if (plan.refused) {
+      tr.replaceWith(
+        plan.pos,
+        plan.pos + plan.node.nodeSize,
+        state.schema.text(`[^${plan.label}]`),
+      );
+    } else {
+      tr.setNodeMarkup(plan.pos, undefined, { label: plan.label, pendingNote: null });
+    }
+  }
+
+  if (created.length > 0) {
+    const last = tr.doc.lastChild;
+    if (last?.type === sectionType) tr.insert(tr.doc.content.size - 1, created);
+    else tr.insert(tr.doc.content.size, sectionType.create(null, created));
+  }
+
+  if (refusal) onBlocked(refusal);
   return tr;
 }
 
@@ -622,10 +672,6 @@ function materializePendingNotes(state: EditorState): Transaction | null {
 // firing on every transaction would put a toast over the text on every keystroke. A label that
 // stops being an orphan is forgotten again, so writing the missing reference and then deleting it
 // reports afresh — which is right, because it is news again.
-//
-// The first check runs from the plugin's view rather than its state, because that is the first
-// point at which there is an editor to attach to, and it is deferred a tick: the load happens
-// inside React's render, and the reporter this calls sets React state.
 function footnoteOrphanNotice(onNotice: (message: string) => void): Plugin {
   return new Plugin({
     key: footnoteOrphanNoticeKey,
@@ -680,22 +726,44 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         });
       },
 
+      // A drop is refused outright rather than repaired after the fact. A drop *moves*: the source
+      // is deleted by the same transaction that inserts, so letting a refused reference fall to
+      // plain text at the destination takes its definition's reference away and leaves the note an
+      // orphan — the document ends up worse than if nothing had happened (measured). Refusing the
+      // whole gesture is also what the table drop guard does, and it loses nothing: a refused drop
+      // deletes no source.
+      //
+      // Only a drop needs this. A paste leaves its source alone, so the repair in
+      // materializePendingNotes is enough there.
+      handleDrop: (view, event, slice) => {
+        const referenceType = view.state.schema.nodes.footnoteReference;
+        if (!referenceType) return false;
+        let carriesReference = false;
+        slice.content.descendants((node) => {
+          if (node.type === referenceType) carriesReference = true;
+        });
+        if (!carriesReference) return false;
+
+        const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
+        if (!at) return false;
+        const refused = hostRefusalAt(view.state.doc.resolve(at.pos));
+        if (!refused) return false;
+
+        onBlocked(refused);
+        return true;
+      },
+
       // transformPasted is not paste-only — prosemirror-view runs it over `view.dragging.slice` on
       // a drop too, which is exactly what §6.4 wants: one rule answering both gestures, rather than
       // a second one in isolating-boundary.ts giving a drop its own answer.
       transformPasted: (slice, view) => {
-        // §6.3: the placement guard is asked first. A reference landing in a cell or a code block
-        // becomes plain text and its carried note is discarded — materializing it would leave a
-        // definition with nothing pointing at it, which §5.4 would then read as an orphan to keep.
-        const refused = placementRefusal(view.state);
-        if (refused) onBlocked(refused);
-
+        // Only the "did it bring a note" half is decided here. Where it landed is not knowable yet
+        // for a drop, so §6.3's placement question is asked once the slice is in the document —
+        // see materializePendingNotes.
         return mapReferences(slice, view.state, (node) => {
           const note = node.attrs.pendingNote as string | null;
-          if (refused || note === null) {
-            // Plain text, the shape it had before this editor understood footnotes.
-            return view.state.schema.text(`[^${node.attrs.label as string}]`);
-          }
+          // Plain text, the shape it had before this editor understood footnotes.
+          if (note === null) return view.state.schema.text(`[^${node.attrs.label as string}]`);
           return node;
         });
       },
@@ -748,6 +816,22 @@ function scanFootnoteText(doc: PMNode): { definitions: Map<string, string> } {
 // range, so it answers false for a selection reaching one character past a table's edge, and every
 // guard written that way waved a mixed selection through. It also answers for a caret, since
 // nodesBetween(pos, pos) still visits the nodes containing pos.
+// The same rules asked of one position rather than of the selection. A drop needs this: at the
+// moment `transformPasted` runs, `view.state.selection` is still the *dragged* range, not where it
+// is about to land, so a selection-based check answers about the wrong place entirely — measured,
+// a footnote dragged into a table cell went straight in.
+function hostRefusalAt($pos: ResolvedPos): string | null {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    const name = $pos.node(depth).type.name;
+    if (name === 'tableCell' || name === 'tableHeader') return '脚注は表のセル内には置けません。';
+    if (name === 'codeBlock') return '脚注はコードブロック内には置けません。';
+    if (name === 'footnoteSection' || name === 'footnoteDefinition') {
+      return '脚注の中に脚注は置けません。';
+    }
+  }
+  return null;
+}
+
 function placementRefusal(state: EditorState): string | null {
   if (selectionTouches(state, 'tableCell', 'tableHeader')) {
     return '脚注は表のセル内には置けません。';

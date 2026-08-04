@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 import { markdown, docString, caretPos, settle } from './editor-probe';
+import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
 // Footnotes (docs/footnote-requirements.md), stages 1 and 2 of §11: the markdown round trip, the
 // definitions' section and its placement, both insertion routes, numbering, pairing, the placement
@@ -412,4 +413,48 @@ test('the orphan notice does not return on every keystroke', async ({ page }) =>
   await page.keyboard.type('あいうえお');
 
   await expect(page.getByText(/参照されていない脚注が/)).toBeHidden();
+});
+
+// -----------------------------------------------------------------------------------------------
+// Criterion 14 — dragging a footnote across a boundary (§6.4)
+// -----------------------------------------------------------------------------------------------
+//
+// §6.4 reasons that drops need no rule of their own: prosemirror-view runs transformPasted over the
+// dragged slice, so paste and drop answer through one path. That is read off the source; these
+// measure it. handleDrop fires on the *native* drop event, which the ordinary mouse API cannot
+// produce — see e2e/native-drag.ts for the CDP machinery.
+
+test('dragging a footnote into ordinary prose leaves no orphan behind', async ({ page }) => {
+  await loadMarkdown(page, '本文[^a]です\n\n移動先の段落\n\n[^a]: A の注\n');
+
+  const source = page.locator('.ProseMirror p').first();
+  const target = page.locator('.ProseMirror p').nth(1);
+  const origin = await dragSelect(page, await caretPoint(source, 0), await caretPoint(source, 4));
+  await cdpNativeDrag(page, origin, await caretPoint(target, 3));
+
+  const doc = await docString(page);
+  // One footnote before, one after: a move must not mint a second definition, and the one that
+  // existed must not be left pointing at nothing.
+  expect(doc.match(/footnoteDefinition/g)).toHaveLength(1);
+  await expect(page.locator('.ProseMirror div[data-footnote-def][data-orphan]')).toHaveCount(0);
+  // A footnote that only moved is the same footnote (§6.2).
+  expect(await markdown(page)).toContain('[^a]: A の注');
+});
+
+test('dragging a footnote into a table cell leaves no orphan behind', async ({ page }) => {
+  await loadMarkdown(page, '本文[^a]です\n\n| x | y |\n| - | - |\n| 1 | 2 |\n\n[^a]: A の注\n');
+
+  const source = page.locator('.ProseMirror p').first();
+  const origin = await dragSelect(page, await caretPoint(source, 0), await caretPoint(source, 4));
+  await cdpNativeDrag(page, origin, await caretPoint(page.locator('.ProseMirror td').first(), 1));
+
+  // The drop is refused outright, which is the only answer that loses nothing: a drop moves, so
+  // repairing it at the destination would delete the source and leave the note an orphan.
+  const doc = await docString(page);
+  expect(doc.match(/footnoteDefinition/g)).toHaveLength(1);
+  await expect(page.locator('.ProseMirror div[data-footnote-def][data-orphan]')).toHaveCount(0);
+  expect(doc).not.toMatch(/tableCell\([^)]*footnoteReference/);
+  // Nothing moved: the reference is still where it was, and the author is told why.
+  expect(doc).toMatch(/paragraph\("本文", footnoteReference, "です"\)/);
+  await expect(page.getByText(/表のセル内には置けません/)).toBeVisible();
 });
