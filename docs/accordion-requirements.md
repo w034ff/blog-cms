@@ -3,7 +3,7 @@
 - 状態: **実装済み（2026-08-03）**
 - 作成: 2026-08-03
 - 実装: `components/editor/details-extension.ts`、`components/editor/details-slice-guard.ts`、`app/globals.css`、`lib/rehype-collect-toc.ts`
-- 関連: `docs/footnote-requirements.md`（文書の型）、`components/editor/callout-extension.ts`（最も近い前例）
+- 関連: `docs/footnote-requirements.md`（文書の型）、`components/editor/callout-extension.ts`（最も近い前例）、`docs/toc-requirements.md`（§8.1 の判断を目次側から参照している）
 
 Zenn の `:::details` に相当する折りたたみブロックを、エディタと公開ページの両方で扱えるようにするための要件。**この文書は設計の記録であり、実装後もそのまま維持している** — 判断とその理由が書いてあり、コードだけでは復元できないのはそちらだからである。実測した結果は §4.4 と §6.3 に、当初の想定と違っていた点も含めて残してある。
 
