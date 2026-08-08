@@ -933,16 +933,12 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
       // whole gesture is also what the table drop guard does, and it loses nothing: a refused drop
       // deletes no source.
       //
-      // Only a drop needs this. A paste leaves its source alone, so the repair in
-      // materializePendingNotes is enough there.
+      // `posAtCoords` reads the document as it stands, before anything is inserted, so the accordion
+      // title of §6.5 is still there to be found — which is what makes this the one route where that
+      // refusal works after the fact. handlePaste below is the other half, and exists because on the
+      // paste path it does not.
       handleDrop: (view, event, slice) => {
-        const referenceType = view.state.schema.nodes.footnoteReference;
-        if (!referenceType) return false;
-        let carriesReference = false;
-        slice.content.descendants((node) => {
-          if (node.type === referenceType) carriesReference = true;
-        });
-        if (!carriesReference) return false;
+        if (!carriesReference(view.state, slice)) return false;
 
         const at = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!at) return false;
@@ -950,6 +946,46 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         if (!refused) return false;
 
         onBlocked(refused);
+        return true;
+      },
+
+      // The accordion title (§6.5), and only it. Every other refused destination is repaired after
+      // the slice has landed (materializePendingNotes), because the reference *does* land there: a
+      // table cell and a code block both hold it, and the repair finds it inside them. A title does
+      // not — `detailsSummary` is `text*`, so the reference never comes to rest in it and the
+      // ancestor walk `hostRefusalAt` performs can never see a summary above it.
+      //
+      // Measured, all three slice shapes: the fitter splits the accordion apart to place the
+      // reference, the reference ends up in a *paragraph* of the torn body, and asking about that
+      // position answers `null`. The after-the-fact repair is not merely late here, it is blind, and
+      // by the time it runs the tear is already in the document.
+      //
+      // So the refusal has to come before the slice is placed, and this is the only hook where the
+      // destination is known that early: `view.state.selection` is where a paste lands, whereas
+      // `transformPasted` runs on the drop path too, where the selection is still the dragged range
+      // (§6.3's correction). The drop path keeps its own answer above.
+      //
+      // Falling to plain text rather than refusing the gesture is §6.3's rule unchanged — a paste
+      // deletes no source, so the words still land and only the reference degrades. `text*` takes
+      // `[^label]` happily, so the degraded slice goes into the title without tearing anything
+      // (measured). Reproducing prosemirror-view's paste metas is what keeps the table's paste
+      // repair and the autosave seeing this as the paste it is, the same as the three other guards
+      // that take a paste over.
+      handlePaste: (view, _event, slice) => {
+        if (!selectionTouches(view.state, 'detailsSummary')) return false;
+        if (!carriesReference(view.state, slice)) return false;
+
+        const flattened = mapReferences(slice, view.state, (node) =>
+          view.state.schema.text(`[^${node.attrs.label as string}]`),
+        );
+        view.dispatch(
+          view.state.tr
+            .replaceSelection(flattened)
+            .scrollIntoView()
+            .setMeta('paste', true)
+            .setMeta('uiEvent', 'paste'),
+        );
+        onBlocked(ACCORDION_TITLE_REFUSAL);
         return true;
       },
 
@@ -969,6 +1005,18 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
       },
     },
   });
+}
+
+// Does this slice bring a reference with it? Both gesture handlers open with the same question, and
+// neither has anything to say about a slice carrying none.
+function carriesReference(state: EditorState, slice: Slice): boolean {
+  const referenceType = state.schema.nodes.footnoteReference;
+  if (!referenceType) return false;
+  let found = false;
+  slice.content.descendants((node) => {
+    if (node.type === referenceType) found = true;
+  });
+  return found;
 }
 
 // Walk a slice and replace every footnoteReference with whatever `swap` returns. Written over
@@ -1016,15 +1064,44 @@ function scanFootnoteText(doc: PMNode): { definitions: Map<string, string> } {
 // range, so it answers false for a selection reaching one character past a table's edge, and every
 // guard written that way waved a mixed selection through. It also answers for a caret, since
 // nodesBetween(pos, pos) still visits the nodes containing pos.
+// The accordion's *title* is the third refusal, and unlike the other two it is the schema that
+// insists rather than the markdown. `detailsSummary` is `text*` (@tiptap/extension-details), the one
+// other textblock in this editor besides `codeBlock` that will not hold an inline atom — measured by
+// enumerating every textblock's `contentMatch.matchType(footnoteReference)`, and those two are the
+// whole list. Without a guard the insertion does not fail cleanly: ProseMirror's fitting algorithm
+// takes the reference at a position it cannot occupy and *splits the accordion in two* to place it.
+// Measured, from a caret mid-title, `details(summary("タイトル"), content(p("本文")))` became
+//
+//   details(summary("タイ"), content(p([^1], "トル"))) + details(summary(""), content(p("本文")))
+//
+// — half the title torn off into the body, and a second empty accordion holding the original body.
+// That is the reported breakage, and it is worse than the table cell's, which merely refuses.
+//
+// The stored form agrees. The title round-trips as one raw HTML line (`<summary>…</summary>`,
+// accordion-requirements §2.1), so a `[^label]` written there is inside an HTML block and reaches
+// neither markdown-it-footnote on load nor remark-gfm on the public page; `serializeDetails` reads
+// the title through `textContent`, which a reference has none of, so it would be dropped on save
+// even if the schema let it in. Refusing is the only answer that is not a silent loss — supporting
+// it would mean `inline*`, a summary serializer, and a public renderer that can hold a marker there.
+//
+// The *body* is unaffected and must stay so: it is `block+` → paragraph → `inline*`, and a footnote
+// in an accordion's body works today (measured alongside the tear). So the name here is
+// `detailsSummary`, never `details`.
+const ACCORDION_TITLE_REFUSAL = '脚注はアコーディオンのタイトル内には置けません。';
+
 // The same rules asked of one position rather than of the selection. A drop needs this: at the
 // moment `transformPasted` runs, `view.state.selection` is still the *dragged* range, not where it
 // is about to land, so a selection-based check answers about the wrong place entirely — measured,
 // a footnote dragged into a table cell went straight in.
-function hostRefusalAt($pos: ResolvedPos): string | null {
+// Exported for footnote-placement.test.ts. Both refusals are reachable only through an Editor, which
+// needs a DOM the vitest suite does not have, so the guards themselves are the testable seam — the
+// same trade installFootnotes above already makes.
+export function hostRefusalAt($pos: ResolvedPos): string | null {
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     const name = $pos.node(depth).type.name;
     if (name === 'tableCell' || name === 'tableHeader') return '脚注は表のセル内には置けません。';
     if (name === 'codeBlock') return '脚注はコードブロック内には置けません。';
+    if (name === 'detailsSummary') return ACCORDION_TITLE_REFUSAL;
     if (name === 'footnoteSection' || name === 'footnoteDefinition') {
       return '脚注の中に脚注は置けません。';
     }
@@ -1032,13 +1109,14 @@ function hostRefusalAt($pos: ResolvedPos): string | null {
   return null;
 }
 
-function placementRefusal(state: EditorState): string | null {
+export function placementRefusal(state: EditorState): string | null {
   if (selectionTouches(state, 'tableCell', 'tableHeader')) {
     return '脚注は表のセル内には置けません。';
   }
   if (selectionTouches(state, 'codeBlock')) {
     return '脚注はコードブロック内には置けません。';
   }
+  if (selectionTouches(state, 'detailsSummary')) return ACCORDION_TITLE_REFUSAL;
   // A definition holds inline content, so a reference *fits* inside one — the schema will not stop
   // it. Nested footnotes are a non-goal (§1), and a reference living in the section would also make
   // the materialization below insert into what it is walking.

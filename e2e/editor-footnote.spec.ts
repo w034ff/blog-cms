@@ -709,6 +709,73 @@ test('a footnote cannot be put in a code block', async ({ page }) => {
   expect(await docString(page)).not.toContain('footnoteReference');
 });
 
+// Criterion 7b (§6.5). The accordion's title is the one refusal the schema insists on rather than
+// the markdown: `detailsSummary` is `text*`, so with no guard the insertion does not fail — the
+// fitter splits the accordion in two to make room for the reference, tearing half the title into the
+// body and leaving a spare empty accordion behind. That is what these two pin.
+const ACCORDION = '<details>\n<summary>タイトル</summary>\n\n本文\n\n</details>\n';
+
+test('a footnote cannot be put in an accordion title', async ({ page }) => {
+  await loadMarkdown(page, ACCORDION);
+  await page.locator('.ProseMirror summary').first().click();
+  await settle(page);
+  await page.keyboard.press('End');
+
+  await page.keyboard.press('Control+Shift+f');
+
+  const doc = await docString(page);
+  expect(doc).not.toContain('footnoteReference');
+  // The accordion is intact: one of them, title whole, body untouched.
+  expect(doc.match(/detailsSummary/g)).toHaveLength(1);
+  expect(doc).toContain('detailsSummary("タイトル")');
+  expect(doc).toContain('paragraph("本文")');
+  await expect(page.getByText(/アコーディオンのタイトル内には置けません/)).toBeVisible();
+});
+
+test('typing [^ in an accordion title leaves the characters alone', async ({ page }) => {
+  // The input rule is the other entry point, and a guard on the shortcut says nothing about it —
+  // the same pairing criterion 7 makes for the table cell.
+  await loadMarkdown(page, ACCORDION);
+  await page.locator('.ProseMirror summary').first().click();
+  await settle(page);
+  await page.keyboard.press('End');
+
+  await page.keyboard.type('[^');
+
+  const doc = await docString(page);
+  expect(doc).not.toContain('footnoteReference');
+  expect(doc).toContain('detailsSummary("タイトル[^")');
+});
+
+test('a footnote inside an accordion body keeps its definition at the end of the document', async ({
+  page,
+}) => {
+  // The half that must not be lost to the guard above: the body is `block+` → paragraph →
+  // `inline*`, so it takes a reference exactly like a callout's. The guard names `detailsSummary`,
+  // never `details`.
+  await loadMarkdown(page, ACCORDION);
+  // A loaded accordion is folded (§5 of the accordion requirements), and a hidden body cannot be
+  // clicked into — the toggle is the only way to open one, since `persist: false` keeps the open
+  // state out of the document entirely.
+  const body = page.locator('.ProseMirror [data-type="detailsContent"]');
+  await page.locator('.ProseMirror [data-type="details"] > button').click();
+  await expect(body).toBeVisible();
+
+  await body.locator('p').last().click();
+  // Not optional, and this test found out the hard way — it failed only under the load of the whole
+  // spec, exactly as the clipboard helper below documents. A caret placed by clicking reaches
+  // `state.selection` ~20ms late, so the shortcut was still being asked about the *stale* selection,
+  // which after a load sits at the top of the document — inside the title. The refusal added above
+  // then answered correctly for a place the author had already left.
+  await settle(page);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Control+Shift+f');
+
+  const doc = await docString(page);
+  expect(doc).toContain('footnoteReference');
+  expect(doc).toMatch(/footnoteSection\(footnoteDefinition\)\)$/);
+});
+
 test('a footnote inside a callout keeps its definition at the end of the document', async ({
   page,
 }) => {
@@ -808,6 +875,34 @@ test('pasting a footnote into a table cell leaves no definition behind', async (
   expect(doc).not.toMatch(/tableCell\([^)]*footnoteReference/);
 });
 
+test('pasting a footnote into an accordion title leaves the accordion whole', async ({ page }) => {
+  // §6.5's paste half, and the reason it needs a hook of its own. Every other refused destination is
+  // repaired *after* the slice lands, which works because the reference lands there; a `text*` title
+  // never holds one, so the fitter tears the accordion apart to place it and the repair — which asks
+  // about the reference's position — finds an ordinary paragraph and answers nothing. Measured
+  // before the guard: two accordions, half the title in the body.
+  await loadMarkdown(page, `本文[^a]です\n\n${ACCORDION}\n[^a]: A の注\n`);
+  await selectFirstParagraph(page);
+  await page.keyboard.press('Control+c');
+  await settle(page);
+  await page.locator('.ProseMirror summary').first().click();
+  await page.keyboard.press('End');
+  // The click's caret reaches state.selection ~20ms late; pasting inside that window pastes over the
+  // selection just copied.
+  await settle(page);
+  await page.keyboard.press('Control+v');
+
+  const doc = await docString(page);
+  // One accordion, still whole, with the pasted words in its title as plain text.
+  expect(doc.match(/detailsSummary/g)).toHaveLength(1);
+  expect(doc).toContain('detailsSummary("タイトル本文[^a]です")');
+  expect(doc).toContain('detailsContent(paragraph("本文"))');
+  // The reference did not become a node there, and no second definition was minted for it.
+  expect(doc).not.toMatch(/detailsContent\([^)]*footnoteReference/);
+  expect(doc.match(/footnoteDefinition/g)).toHaveLength(1);
+  await expect(page.getByText(/アコーディオンのタイトル内には置けません/)).toBeVisible();
+});
+
 // -----------------------------------------------------------------------------------------------
 // The orphan notice (§5.4)
 // -----------------------------------------------------------------------------------------------
@@ -879,4 +974,27 @@ test('dragging a footnote into a table cell leaves no orphan behind', async ({ p
   // Nothing moved: the reference is still where it was, and the author is told why.
   expect(doc).toMatch(/paragraph\("本文", footnoteReference, "です"\)/);
   await expect(page.getByText(/表のセル内には置けません/)).toBeVisible();
+});
+
+test('dragging a footnote into an accordion title leaves the accordion whole', async ({ page }) => {
+  // The third route into §6.5's title, and the one that could not be settled by reading: whether
+  // `posAtCoords` over a `<summary>` resolves *inside* the summary node is a browser fact, and the
+  // refusal is worthless if it does not. Criterion 14 already cost this spec that lesson once.
+  //
+  // Unlike the paste, this is refused outright rather than degraded — a drop moves, so falling to
+  // plain text at the destination would delete the source and orphan the note (§6.3).
+  await loadMarkdown(page, `本文[^a]です\n\n${ACCORDION}\n[^a]: A の注\n`);
+
+  const source = page.locator('.ProseMirror p').first();
+  const origin = await dragSelect(page, await caretPoint(source, 0), await caretPoint(source, 4));
+  await cdpNativeDrag(page, origin, await caretPoint(page.locator('.ProseMirror summary'), 3));
+
+  const doc = await docString(page);
+  expect(doc.match(/detailsSummary/g)).toHaveLength(1);
+  expect(doc).toContain('detailsSummary("タイトル")');
+  expect(doc.match(/footnoteDefinition/g)).toHaveLength(1);
+  await expect(page.locator('.ProseMirror div[data-footnote-def][data-orphan]')).toHaveCount(0);
+  // Nothing moved, and the author is told why.
+  expect(doc).toMatch(/paragraph\("本文", footnoteReference, "です"\)/);
+  await expect(page.getByText(/アコーディオンのタイトル内には置けません/)).toBeVisible();
 });
