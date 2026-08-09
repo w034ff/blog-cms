@@ -2,7 +2,7 @@ import { textblockTypeInputRule } from '@tiptap/core';
 import type { CommandProps, Editor, InputRule } from '@tiptap/core';
 import { CodeBlock } from '@tiptap/extension-code-block';
 import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
@@ -194,6 +194,96 @@ function deleteSoleCodeChar(
   if ($from.parentOffset !== (dir === -1 ? text.length : 0)) return false;
   if (dispatch) {
     dispatch(state.tr.delete($from.start(), $from.end()).scrollIntoView());
+  }
+  return true;
+}
+
+// Backspace in an *empty* code block: turn it back into a paragraph. This is the keyboard way out
+// of a fence once the fence-undo record has expired, and it is the whole of what base CodeBlock's
+// Backspace was still being delegated to — so it is taken over here rather than delegated, and the
+// parent handler is no longer called at all (its other branch is the destructive `$anchor.pos === 1`
+// one, refused below).
+//
+// It is taken over because base answers it with TipTap's `clearNodes()`, which **throws** in this
+// document. That command picks the replacement type with
+//
+//   const { defaultType } = $mappedFrom.parent.contentMatchAt($mappedFrom.index());
+//   tr.setNodeMarkup(nodeRange.start, defaultType);
+//
+// and takes `defaultType` unchecked. Our `doc` is `block+ footnoteSection?` (footnote-extension.ts),
+// so once `block+` is satisfied — i.e. at every top-level position but the first child —
+// `ContentMatch.defaultType` returns `footnoteSection`, and setting a code block to a node whose
+// content is `footnoteDefinition+` raises "RangeError: Invalid content for node type
+// footnoteSection". Measured: an empty code block with any block above it could not be removed with
+// Backspace at all — the key threw, uncaught, and left the document untouched. Only a block that is
+// the doc's *first* child escaped (there `defaultType` is still `paragraph`), and only at the top
+// level: inside a list item or a quote the question is asked of *that* container, whose content
+// expression has no `footnoteSection` in reach.
+//
+// prosemirror-commands never had this problem because it resolves the same idiom through
+// `defaultBlockAt()`, which filters to textblocks. Naming `paragraph` outright is stronger than
+// re-deriving that filter: it is the type this conversion always wanted.
+//
+// One deliberate behaviour change comes with it. `clearNodes` also ran `tr.lift(...)`, so emptying a
+// code block inside a list item converted it *and* lifted it out of the bullet. A plain
+// `setNodeMarkup` leaves it where it is, which is what every other block does when you empty it —
+// the boundary specs assert the resulting document rather than just the block's disappearance.
+function clearEmptyCodeBlock(codeType: NodeType, { state, tr, dispatch }: CommandProps): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type !== codeType || $from.parent.content.size > 0) return false;
+  if (dispatch) {
+    const pos = $from.before();
+    tr.setNodeMarkup(pos, state.schema.nodes.paragraph, null);
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1));
+    dispatch(tr.scrollIntoView());
+  }
+  return true;
+}
+
+// Backspace at the very start of a code block's code: select the whole block, so a second press
+// deletes it. Two jobs in one step.
+//
+// The first is to keep prosemirror-commands' `joinBackward` from reaching its *lift* fallback. That
+// command asks `findCutBefore` for a boundary to join across, and `findCutBefore` returns null
+// immediately when the caret's parent is `isolating` — which a code block always is. Null is not
+// read as "refuse", though: joinBackward falls through to `$cursor.blockRange()` + `liftTarget` and
+// lifts the block out of whatever contains it. So the flag that was added to protect the block's
+// edges is exactly what routed the gesture into the destructive branch. Measured, one Backspace at
+// the start of the code (`e2e/editor-codeblock-boundary.spec.ts`):
+//   • in a list item — the whole `listItem` was lifted, taking the bullet with it:
+//     `- 項目` + fence  →  `項目` + fence, the `bulletList` gone from the document;
+//   • in a blockquote — the code block escaped the quote and became a top-level sibling;
+//   • in an accordion (`details`) — the same escape; neither node is `isolating`.
+// A code block inside a *callout* was already immune, because prosemirror-transform's `liftTarget`
+// breaks its search loop on an isolating ancestor and the callout is one. So the container alone
+// decided between "nothing happens" and "torn apart", which is not a distinction the author can see.
+//
+// The second job is why this selects rather than simply refusing, which is what it did first and
+// what the author reported back as making a fence hard to get rid of. Refusing outright left no
+// Backspace route out of the block at all — and worse than inconvenient, it created a dead key: a
+// block loaded from markdown carries a **trailing newline** (markdown-it terminates fence content
+// with one — see serializeCodeBlock), so deleting its visible text leaves `codeBlock("\n")`. That
+// block looks empty on screen but is not `content.size === 0`, so step 4 declines, and a bare
+// refusal here then swallowed every further press. "Visually empty" and "empty" are different
+// states, and node-selection is what covers the gap without having to guess which whitespace counts.
+//
+// Selecting the node is prosemirror-commands' own idiom for "there is nothing to join into"
+// (`selectNodeBackward`), it is visible, any arrow key undoes it, and the second Backspace then goes
+// through baseKeymap's `deleteSelection` — measured to remove the block and leave the list, quote or
+// accordion around it standing.
+//
+// Last in the Backspace chain, so every step with something to do still runs first — undoing a
+// just-typed fence (step 1) in particular, which this would otherwise shadow. The `empty` test is
+// load-bearing in both directions: it keeps a ranged selection on the normal path, and it stops this
+// from re-selecting the block on the *second* press, which would make it undeletable.
+function selectCodeBlockBackward(
+  codeType: NodeType,
+  { state, tr, dispatch }: CommandProps,
+): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type !== codeType || $from.parentOffset !== 0) return false;
+  if (dispatch) {
+    dispatch(tr.setSelection(NodeSelection.create(tr.doc, $from.before())).scrollIntoView());
   }
   return true;
 }
@@ -404,7 +494,12 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   //    (see fenceUndoKey).
   // 3. deleteSoleCodeChar — keeps the emptying deletion away from the browser (see its comment);
   //    also bound to Delete and the word-delete chords, where it guards the same case.
-  // 4. The inherited handler. 5. The shared isolating-boundary step-in.
+  // 4. clearEmptyCodeBlock — an empty block goes back to being a paragraph. Base CodeBlock's own
+  //    handler used to do this and is no longer called at all (see the binding's comment).
+  // 5. The shared isolating-boundary step-in.
+  // 6. selectCodeBlockBackward — the last word at the block's start: baseKeymap's joinBackward
+  //    can't lift the block out of a list item / quote / accordion, and the block is selected so a
+  //    second Backspace removes it (see that function).
   //
   // Delete gets the mirror treatment at the block's *end*: after deleteSoleCodeChar, fall back to
   // stepIntoNextIsolating, which only acts when the following top-level block is empty (deletes
@@ -461,12 +556,34 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         editor.isActive(this.name)
           ? (parentShortcuts?.['Mod-Alt-c']?.({ editor }) ?? false)
           : editor.commands.insertCodeBlock(),
+      // Base CodeBlock's Backspace is no longer delegated to at all: it answers exactly two cases,
+      // and both are now handled here.
+      //   • an *empty* block clears to a paragraph. Kept as behaviour, but performed by
+      //     clearEmptyCodeBlock — base does it with `clearNodes()`, which throws in this document
+      //     (see that function: `defaultType` resolves to `footnoteSection`).
+      //   • `$anchor.pos === 1` — the caret at the start of a code block that happens to be the
+      //     document's *first* node — clears it as well. That is upstream's generic "nothing above
+      //     to join into, so escape the block" hatch, and it fires on a *non-empty* block: one
+      //     Backspace at the start of the code destroyed the fence, took its language and filename
+      //     with it, and left multi-line code in a single paragraph holding literal \n characters
+      //     (which reload as headings/lists). The identical keystroke with any block above the code
+      //     block is a plain no-op — `isolating` refuses the join — so the position in the document
+      //     was the only thing deciding between "no-op" and "lose the block", which is not a
+      //     distinction the author can see. Dropped, which restores the no-op and matches the
+      //     callout, whose own start is likewise left alone while it holds content
+      //     (callout-extension.ts).
+      // Nothing is lost at the top of the document by dropping it: ArrowUp there lands on a gap
+      // cursor before the block (measured), so typing still opens a paragraph above it with the
+      // fence left standing — which is the gesture that "escape" was standing in for. That gap
+      // cursor exists *because* the block is isolating: prosemirror-gapcursor's needsGap() tests
+      // exactly that spec flag.
       Backspace: ({ editor }) =>
         editor.commands.undoInputRule() ||
         editor.commands.command((props) => undoFenceTyping(codeType, props)) ||
         deleteSole(-1)({ editor }) ||
-        (parentShortcuts?.Backspace?.({ editor }) ?? false) ||
-        editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)),
+        editor.commands.command((props) => clearEmptyCodeBlock(codeType, props)) ||
+        editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)) ||
+        editor.commands.command((props) => selectCodeBlockBackward(codeType, props)),
       Delete: ({ editor }) =>
         deleteSole(1)({ editor }) ||
         editor.commands.command((props) => stepIntoNextIsolating(codeType, props)),
