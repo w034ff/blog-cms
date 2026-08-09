@@ -1482,21 +1482,6 @@ body.block-dragging .table-toolbar {
   content: '[?]';
   color: #9a6700;
 }
-/* §5.2's first layer names a placeholder on this side, and then argues it is not enough on its own —
-   which is why the reference is marked too. The placeholder it was arguing against was never built,
-   so the definition an author is standing in said nothing at all about being unfinished.
-
-   `::after`, because `::before` is the number. `[data-empty]` is a decoration and not a CSS test:
-   an empty ProseMirror textblock still holds a trailing `<br>`, so `:empty` never matches it.
-
-   Positioned rather than laid out, because that same trailing `<br>` is a flex item with a width of
-   its own — as a third flex item the placeholder started a few pixels right of where every filled
-   note's text begins, which is the misalignment the marker's `min-width` exists to prevent. Taking
-   it out of the flow puts it exactly at the note's own left edge, which is also where the caret
-   sits, so typing begins on top of it and it disappears on the first character.
-
-   Same amber as the other two unfinished states, and inert: never selected, never copied, never
-   clicked through to. */
 /* The definition belonging to the reference the author has selected. Clicking a reference already
    makes a NodeSelection — the gesture is there, and until now it said nothing about which note at
    the bottom of the document it belonged to.
@@ -1509,10 +1494,36 @@ body.block-dragging .table-toolbar {
   box-shadow: 0 0 0 0.25em rgba(9, 105, 218, 0.12);
   border-radius: 2px;
 }
+/* §5.2's first layer names a placeholder on this side, and then argues it is not enough on its own —
+   which is why the reference is marked too. The placeholder it was arguing against was never built,
+   so the definition an author is standing in said nothing at all about being unfinished.
+
+   `::after`, because `::before` is the number. `[data-empty]` is a decoration and not a CSS test:
+   an empty ProseMirror textblock still holds a trailing `<br>`, so `:empty` never matches it.
+
+   Positioned rather than laid out, and BOTH offsets are given (`top` added 2026-08-09). That same
+   trailing `<br>` is why: it is real content, and where it puts the placeholder depends on how the
+   definition is laid out.
+
+   Under the flex row this rule was written for, the `<br>` and this pseudo-element were both flex
+   items — blockified, laid out in a row, no line breaking — and only the horizontal offset was in
+   question: as a third item the placeholder shrink-wrapped a few pixels right of where every filled
+   note's text begins. `left` answered that. Out of flex the `<br>` is a forced line break instead,
+   so with `top: auto` the placeholder took its static position on the definition's SECOND line and
+   painted over the note below it — measured one full line box down, 23.05px, with the definition
+   itself 23.05px tall. `left` had not moved; the axis nothing was holding was the other one.
+
+   `top: 0` is the definition's own content top (no vertical padding here), which is where a written
+   note's first line begins — so the placeholder sits exactly where the caret does, and typing starts
+   on top of it and makes it disappear on the first character.
+
+   Same amber as the other two unfinished states, and inert: never selected, never copied, never
+   clicked through to. */
 .ProseMirror div[data-footnote-def][data-empty]::after {
   content: '注釈を入力（空のままでは公開できません）';
   position: absolute;
   left: calc(var(--footnote-marker) + var(--footnote-gap));
+  top: 0;
   color: #9a6700;
   pointer-events: none;
   user-select: none;

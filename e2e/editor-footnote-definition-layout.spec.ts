@@ -96,35 +96,68 @@ test('a marker never reaches the note beside it', async ({ page }) => {
   console.log(`marker reserve ${reserve}px, widest of ${COUNT} is ${widest}px`);
 });
 
-test('the empty-note placeholder starts where a written note does', async ({ page }) => {
-  // §5.2's placeholder is a `::after`, positioned rather than laid out — originally because an empty
-  // definition still holds a trailing `<br>`, which as a flex item gave the placeholder a box of its
-  // own and set it a few pixels right of every filled note's text. The flex row it was escaping is
-  // gone, but the escape is still what aligns it: both it and the note text are placed off the same
-  // two custom properties, and this is what holds those together.
+test('the empty-note placeholder sits where a written note does, on both axes', async ({
+  page,
+}) => {
+  // §5.2's placeholder is a `::after`, positioned rather than laid out — an empty definition still
+  // holds a trailing `<br>`, and under the flex row that `<br>` was an item with a width of its own
+  // that pushed the placeholder a few pixels right of every filled note's text.
+  //
+  // BOTH axes, because the version of this test written for the flex row checked only `left`, and
+  // out of flex it could not fail: it compared the computed `left` against the note's own offset,
+  // and after the row became a padded block those are the same `calc()` twice. Meanwhile the axis it
+  // was not watching had broken — out of flex the `<br>` is a forced line break, so a `top: auto`
+  // placeholder took its static position on the definition's SECOND line and painted over the note
+  // below it. So this measures where the placeholder is actually painted, against where a written
+  // note's text actually is, and a third definition below the empty one gives the vertical slip
+  // something to land on.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await loadMarkdown(page, '本文[^a]と[^b]\n\n[^a]: 注A\n[^b]:\n');
+  await loadMarkdown(page, '本文[^a]と[^b]と[^c]\n\n[^a]: 注A\n[^b]:\n[^c]: 注C\n');
   await page.evaluate(() => document.fonts.ready);
 
-  const [written, placeholder] = await page.$$eval('.ProseMirror div[data-footnote-def]', (defs) =>
-    defs.map((def) => {
-      if (def.hasAttribute('data-empty')) {
-        return Math.round(parseFloat(getComputedStyle(def, '::after').left) * 100) / 100;
-      }
+  const section = page.locator('.ProseMirror div[data-footnote-section]');
+  await section.scrollIntoViewIfNeeded();
+  await section.screenshot({ path: 'e2e/.tmp/footnote-empty-placeholder.png' });
+
+  // Both definitions are measured against their OWN box, since they sit at different y. A
+  // pseudo-element has no node to measure, so the placeholder's painted origin is its containing
+  // block — the definition's PADDING box, which here is its border box — plus its used offsets.
+  // Chrome resolves those to px even when the declaration is `auto`, which is what lets the
+  // vertical assertion below fail rather than read `auto` and give up.
+  const [written, empty] = await page.$$eval('.ProseMirror div[data-footnote-def]', (defs) =>
+    defs.slice(0, 2).map((def) => {
+      const round = (n: number) => Math.round(n * 100) / 100;
+      const box = def.getBoundingClientRect();
+      const after = getComputedStyle(def, '::after');
       const range = document.createRange();
       range.selectNodeContents(def);
-      return (
-        Math.round((range.getBoundingClientRect().left - def.getBoundingClientRect().left) * 100) /
-        100
-      );
+      return {
+        empty: def.hasAttribute('data-empty'),
+        height: round(box.height),
+        // Where the content starts, as an offset inside the definition: the placeholder's used
+        // offsets, or the note's own glyphs.
+        left: def.hasAttribute('data-empty')
+          ? round(parseFloat(after.left))
+          : round(range.getBoundingClientRect().left - box.left),
+        // Only the placeholder has a vertical offset to read: a written note is in flow, so its
+        // line is the definition's own first line by construction.
+        top: def.hasAttribute('data-empty') ? round(parseFloat(after.top)) : null,
+      };
     }),
   );
-  // Sub-pixel: one side is a computed `left`, the other the difference of two viewport rects.
-  expect(placeholder, `written note at ${written}, placeholder at ${placeholder}`).toBeCloseTo(
-    written,
-    1,
-  );
+  expect(written.empty, 'the first definition is the written one').toBe(false);
+  expect(empty.empty, 'the second definition is the empty one').toBe(true);
+
+  const where = `written note starts ${written.left}px in, placeholder at (${empty.left}, ${empty.top}) in a ${empty.height}px definition`;
+  // Sub-pixel: one side is a used offset, the other the difference of two viewport rects.
+  expect(empty.left, where).toBeCloseTo(written.left, 1);
+  // The placeholder starts on the definition's own first line — its used `top` is the definition's
+  // content top, which has no vertical padding above it. This is the statement the static position
+  // broke: measured before the fix it read 23.05px in a 23.05px definition, one whole line box down
+  // and printing over the note below.
+  expect(empty.top, where).toBeGreaterThanOrEqual(0);
+  expect(empty.top, where).toBeLessThan(empty.height / 2);
 });
 
 test('clicking to the right of a note puts the caret at its end, not its start', async ({
