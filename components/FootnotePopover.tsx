@@ -120,6 +120,7 @@ type Controller = {
   scheduleClose: () => void;
   cancelClose: () => void;
   isOpen: () => boolean;
+  isOpenFor: (reference: HTMLAnchorElement) => boolean;
   destroy: () => void;
 };
 
@@ -214,6 +215,10 @@ function createPopover(kind: PopoverKind): Controller {
     open(reference) {
       cancelClose();
       if (anchor === reference) return;
+      // Reopening for another reference has to go through close(): `showPopover()` throws on an
+      // element that is already showing, and `manual` has no "only one at a time" rule to lean on
+      // (§5.1.1). Guarded here rather than at the call sites — there are three of them.
+      if (anchor) close();
       if (!fill(popover, reference, kind)) return;
       anchor = reference;
       // Measured before it can be seen: the size is only knowable once it is in the top layer, and
@@ -228,6 +233,7 @@ function createPopover(kind: PopoverKind): Controller {
     scheduleClose,
     cancelClose,
     isOpen: () => anchor !== null,
+    isOpenFor: (reference) => anchor === reference,
     destroy() {
       close();
       popover.remove();
@@ -268,10 +274,14 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
         cancelOpen();
         // Coming back to the reference from the popover is the other half of the bridge.
         preview.cancelClose();
+        // Another reference's note is dropped at once rather than after this one's open delay:
+        // otherwise the previous note hangs over the reference now under the pointer for 200ms,
+        // and — where a pinned popover makes the timer below return early — with no close pending
+        // at all. Two references in one sentence is enough to meet both.
+        if (!preview.isOpenFor(reference)) preview.close();
         openTimer = window.setTimeout(() => {
           openTimer = 0;
           if (pinned.isOpen()) return; // a hybrid device can have one pinned already
-          preview.close(); // `manual` has no "only one open" rule of its own (§5.1.1)
           preview.open(reference);
         }, OPEN_DELAY_MS);
       };

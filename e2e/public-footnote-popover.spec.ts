@@ -166,6 +166,59 @@ test('the pointer can travel into the preview and use the note’s link', async 
   await expect(preview).toBeHidden();
 });
 
+test('the open preview takes the pointer away from the body it covers', async ({ page }) => {
+  // §4.1.1's fourth cost, and the one with no answer: `pointer-events: none` also kept whatever the
+  // box overlaid alive, and it is gone. Pinned as the INTENDED state rather than a good one — this
+  // goes red if the declaration comes back, and whoever brings it back reads the section.
+  await openPost(page);
+  const preview = page.locator('.footnote-popover--preview');
+  const long = refs(page).nth(1); // the tall note, so the box covers several lines of prose
+
+  await long.hover();
+  await expect(preview).toBeVisible();
+  const box = await rects(page, '.footnote-popover--preview');
+  const spot = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+
+  // What is under that point with the box gone, and with it there. Read at the same coordinates,
+  // so the two answers are about the same place on the page.
+  await page.mouse.move(0, 0);
+  await expect(preview).toBeHidden();
+  const uncovered = await page.evaluate(
+    (at) => document.elementFromPoint(at.x, at.y)?.closest('#post-body') !== null,
+    spot,
+  );
+  expect(uncovered).toBe(true); // the box really is over the article, not over empty margin
+
+  await long.hover();
+  await expect(preview).toBeVisible();
+  const covered = await page.evaluate(
+    (at) => document.elementFromPoint(at.x, at.y)?.closest('.footnote-popover') !== null,
+    spot,
+  );
+  expect(covered).toBe(true);
+});
+
+test('moving to another reference drops the previous note at once', async ({ page }) => {
+  // §6.1's last rule. Without it the note just left hangs over the reference now under the pointer
+  // for the length of the open delay — and where a pinned popover makes the open path return early,
+  // with no close pending at all.
+  await openPost(page);
+  const preview = page.locator('.footnote-popover--preview');
+
+  await refs(page).first().hover();
+  await expect(preview).toContainText('注釈に'); // the `rich` note
+
+  await refs(page).nth(1).hover();
+  // Immediately: inside the open delay, so the box is either gone or already showing the new note —
+  // what it must not be is the previous note sitting over this reference. Read as "open AND still
+  // the old text", because a closed popover keeps its last content until the next open fills it.
+  const stale = await preview.evaluate(
+    (el) => el.matches(':popover-open') && (el.textContent ?? '').includes('注釈に'),
+  );
+  expect(stale).toBe(false);
+  await expect(preview).toContainText('長い注釈'); // and the new one does arrive
+});
+
 test('a modifier click is left for the browser', async ({ page }) => {
   await openPost(page);
   // Read `defaultPrevented` from a document listener, which runs after the enhancer's own — then
