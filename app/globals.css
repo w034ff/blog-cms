@@ -1645,12 +1645,14 @@ body.block-dragging .table-toolbar {
   overflow: hidden;
 }
 
-/* Hover and focus open something the reader cannot enter: it is a copy of text that is already on
-   the page, and the way to the real thing is the click this design refuses to take away (§3.1).
-   The same declaration keeps the popover from eating the click that follows the hover (§5.3). */
-.footnote-popover--preview {
-  pointer-events: none;
-}
+/* The preview used to carry `pointer-events: none` — one declaration that made it unenterable
+   (§4.1), unable to eat the click that follows a hover (§5.3), and safe to hide from assistive
+   technology (§3.5.1). It was removed on 2026-08-09 so that a reader can move into the note and use
+   its links, which is also what WCAG SC 1.4.13's Hoverable clause asks for.
+
+   What replaces each half: the close delay in components/FootnotePopover.tsx carries the pointer
+   across the gap, and the click stays safe geometrically — the box is placed clear of the
+   reference (§5.3), never over it, so there is nothing between the reader and the anchor. */
 
 /* Eight lines, then `…`. The number is measured (§4.3) but it is a first value: notes that get
    clipped constantly mean it is too low, and a `…` that never appears means it was never doing

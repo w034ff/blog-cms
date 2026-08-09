@@ -95,12 +95,11 @@ test('hover previews the note, and the plain click it is added to is untouched',
   await expect(preview.locator('.footnote-popover-note code')).toHaveCount(1);
   await expect(preview.locator('.footnote-popover-note strong')).toHaveCount(1);
 
-  // A transient copy of text that is already on the page: not announced, not reachable, not
-  // clickable. `inert` is what makes the note's own link unreachable — `aria-hidden` alone would
-  // leave a focusable element inside a hidden subtree (§3.5.1).
-  await expect(preview).toHaveAttribute('aria-hidden', 'true');
-  await expect(preview).toHaveAttribute('inert', '');
-  await expect(preview).toHaveCSS('pointer-events', 'none');
+  // Reachable, so hidden from nobody: the preview can be entered and its links used (§4.1.1), and
+  // `aria-hidden` or `inert` over usable controls is the pairing §3.5.1 rules out.
+  await expect(preview).not.toHaveAttribute('aria-hidden', 'true');
+  await expect(preview).not.toHaveAttribute('inert', '');
+  await expect(preview).not.toHaveCSS('pointer-events', 'none');
 
   // No internal scrolling (§4.3.1). The `[popover]` UA rule is `overflow: auto`, so this is a real
   // thing to hold down rather than a property that comes for free. Measured in the ordinary case;
@@ -126,11 +125,45 @@ test('hover previews the note, and the plain click it is added to is untouched',
   await expect(preview).toBeHidden();
 
   // The property this whole design is built around (§3.1): the reference is still an anchor, and
-  // hovering it first — the way a reader actually arrives at the click — changes nothing.
+  // hovering it first — the way a reader actually arrives at the click — changes nothing. With
+  // `pointer-events: none` gone (§4.1.1), the only thing keeping the box out of that click's way is
+  // where it is put, which is why this and criterion 16 above are now one pair.
   await rich.hover();
   await expect(preview).toBeVisible();
   await rich.click();
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#user-content-fn-rich');
+});
+
+test('the pointer can travel into the preview and use the note’s link', async ({ page }) => {
+  // WCAG SC 1.4.13 Hoverable, and the reason the close delay exists (§6.1). The reference and the
+  // box are separated by a gap that keeps the box off the click (§5.3), so the pointer is briefly
+  // over neither — an immediate close would make the preview unreachable in principle.
+  await openPost(page);
+  const preview = page.locator('.footnote-popover--preview');
+  await refs(page).first().hover();
+  await expect(preview).toBeVisible();
+
+  const box = await rects(page, '.footnote-popover--preview');
+  const link = preview.locator('.footnote-popover-note a[href="https://example.com/"]');
+  const linkBox = await link.boundingBox();
+
+  // Cross the gap the way a hand does — through the dead zone, not by teleporting inside.
+  await page.mouse.move((box.left + box.right) / 2, box.bottom + 4);
+  await page.mouse.move(linkBox!.x + linkBox!.width / 2, linkBox!.y + linkBox!.height / 2);
+  // Longer than the close delay: a preview that merely closes late would pass a shorter wait.
+  await page.waitForTimeout(600);
+  await expect(preview).toBeVisible();
+
+  // Reachable, not just visible: the link under the pointer is what a click would land on.
+  const hit = await link.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+  });
+  expect(hit).toBe(true);
+
+  // And it still closes once the pointer leaves for good — the delay is a bridge, not a latch.
+  await page.mouse.move(0, 0);
+  await expect(preview).toBeHidden();
 });
 
 test('a modifier click is left for the browser', async ({ page }) => {

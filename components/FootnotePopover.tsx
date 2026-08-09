@@ -9,7 +9,10 @@ import { useEffect } from 'react';
 // of a node that is already here (§2) and the reference stays an ordinary anchor. Nothing below
 // rewrites `href` or `id` — with no script the page behaves exactly as it did (§3.4).
 
-const OPEN_DELAY_MS = 120; // §6: a `sup` is a small target, and a pointer on its way elsewhere crosses it
+const OPEN_DELAY_MS = 200; // §6: a `sup` is a small target, and a pointer on its way elsewhere crosses it
+// §6: the preview can be entered now, so leaving the reference cannot close it at once — the
+// pointer has to cross the gap that keeps the box off the reference (§5.3) to get there.
+const CLOSE_DELAY_MS = 200;
 const VIEWPORT_MARGIN = 16; // 1rem — the same number as the width's `calc(100vw - 2rem)` (§5.2.1)
 const REFERENCE_GAP = 8; // §5.3: the popover must not cover the reference the reader is about to click
 
@@ -112,6 +115,10 @@ function place(popover: PopoverElement, reference: HTMLAnchorElement): void {
 type Controller = {
   open: (reference: HTMLAnchorElement) => void;
   close: () => void;
+  // Half of the hover bridge: the reference schedules on the way out and cancels on the way back,
+  // and so does the popover itself.
+  scheduleClose: () => void;
+  cancelClose: () => void;
   isOpen: () => boolean;
   destroy: () => void;
 };
@@ -124,22 +131,26 @@ function createPopover(kind: PopoverKind): Controller {
   // listener below is what pays it (WCAG SC 1.4.13 Dismissible).
   popover.setAttribute('popover', kind === 'preview' ? 'manual' : 'auto');
   popover.className = `footnote-popover footnote-popover--${kind} prose prose-zinc dark:prose-invert`;
-  // Static, because the two states differ in what they hold: the preview is an untouchable copy of
-  // text already on the page, while the pinned one holds a link, and a focusable element inside
-  // `aria-hidden` is absent to assistive technology yet still stops the Tab order (§3.5.1).
-  //
-  // `inert` alongside it, because the preview has the same problem inside: a note may itself
-  // contain links (§4.1 keeps them deliberately), so `aria-hidden` on its own would create exactly
-  // the pairing §3.5.1 rules out. `inert` is what makes the clone unreachable rather than merely
-  // unclickable — `pointer-events: none` says nothing to the Tab key.
-  if (kind === 'preview') {
-    popover.setAttribute('aria-hidden', 'true');
-    popover.setAttribute('inert', '');
-  }
+  // Neither popover is hidden from assistive technology any more (§3.5.1, revised 2026-08-09): the
+  // preview can be entered, so its cloned links are real targets, and `aria-hidden` or `inert` over
+  // reachable controls is the pairing that section rules out.
   document.body.appendChild(popover);
 
   let anchor: HTMLAnchorElement | null = null;
   let frame = 0;
+  let closeTimer = 0;
+
+  const cancelClose = () => {
+    if (closeTimer) window.clearTimeout(closeTimer);
+    closeTimer = 0;
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer = window.setTimeout(() => {
+      closeTimer = 0;
+      close();
+    }, CLOSE_DELAY_MS);
+  };
 
   const reposition = () => {
     if (frame || !anchor) return;
@@ -183,14 +194,25 @@ function createPopover(kind: PopoverKind): Controller {
   });
 
   const close = () => {
+    cancelClose();
     if (!anchor) return;
     anchor = null;
     unlisten();
     popover.hidePopover();
   };
 
+  // The hover bridge (§6). The reference and the popover are two boxes with a gap between them, and
+  // a pointer travelling from one to the other is outside both for a moment — so leaving either
+  // only schedules the close, and arriving at the other cancels it. This is the machinery §9 spent
+  // a while avoiding; it exists because the preview is enterable, and only for that reason.
+  if (kind === 'preview') {
+    popover.addEventListener('pointerenter', cancelClose);
+    popover.addEventListener('pointerleave', scheduleClose);
+  }
+
   return {
     open(reference) {
+      cancelClose();
       if (anchor === reference) return;
       if (!fill(popover, reference, kind)) return;
       anchor = reference;
@@ -203,6 +225,8 @@ function createPopover(kind: PopoverKind): Controller {
       listen();
     },
     close,
+    scheduleClose,
+    cancelClose,
     isOpen: () => anchor !== null,
     destroy() {
       close();
@@ -242,6 +266,8 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
       const onPointerEnter = (event: PointerEvent) => {
         if (event.pointerType === 'touch') return; // touch has no hover; the tap path handles it
         cancelOpen();
+        // Coming back to the reference from the popover is the other half of the bridge.
+        preview.cancelClose();
         openTimer = window.setTimeout(() => {
           openTimer = 0;
           if (pinned.isOpen()) return; // a hybrid device can have one pinned already
@@ -252,7 +278,8 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
 
       const onPointerLeave = () => {
         cancelOpen();
-        preview.close();
+        // Scheduled, not immediate: the pointer may be on its way into the popover (§6).
+        preview.scheduleClose();
       };
 
       const onFocus = () => {
