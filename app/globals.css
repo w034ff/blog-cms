@@ -1394,8 +1394,10 @@ body.block-dragging .table-toolbar {
    reason the accordion's fold is `persist: false`: a reading gesture must not write to the
    database). That makes CSS the only thing that can draw it, here and for the definition alike.
 
-   Everything below is editor-only. The published page gets remark-gfm's own footnote section,
-   which is styled by @tailwindcss/typography and needs none of this. */
+   Everything below is editor-only; the published side follows at `.prose section[data-footnotes]`.
+   The two surfaces are kept in step by hand — remark-gfm's markup is not ProseMirror's, so nothing
+   here can be literally shared — and the divergences that remain are deliberate, not oversights.
+   They are named where they occur. */
 .ProseMirror sup[data-footnote-ref] {
   font-size: 0.75em;
   line-height: 0;
@@ -1511,8 +1513,95 @@ body.block-dragging .table-toolbar {
   font-size: 0.9em;
 }
 
+/* The reference, brought into line with the editor's (2026-08-09). Until now the published page had
+   no rule for it at all, so it fell through to @tailwindcss/typography's plain link styling: a
+   near-black (`--tw-prose-links` is zinc-900 under prose-zinc), underlined `1`, which reads as an
+   ordinary link that happens to be raised rather than as a footnote. The editor drew a blue `[1]`
+   for the same thing.
+
+   remark-gfm puts `data-footnote-ref` on the `<a>`, not on the `<sup>` — hence the `:has()` for the
+   size, which has to land on the `sup` so the `a` inherits it. The attribute survives sanitize
+   because hast-util-sanitize's defaultSchema allow-lists `dataFootnoteRef` on `a`; the schema at
+   lib/render.ts only widens div/p/span, so that entry is untouched.
+
+   NOT unified, deliberately: the weight and the pointer cursor. This one is a real link — it jumps
+   to the definition — while the editor's is an atom (`cursor: default`, a NodeSelection target).
+   That divergence is the behavioural difference showing through, and flattening it entirely would
+   cost the reader the cue that the number can be clicked. */
+.prose sup:has(> a[data-footnote-ref]) {
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: super;
+  padding: 0 0.1em;
+}
+/* Prose underlines every `a`, and on a raised 0.75em number that rule is doing more work than the
+   link needs: at this size the underline sits almost on the digits and the reference reads heavier
+   than the sentence carrying it. The colour already separates it from the body text, so the
+   underline is held back for the pointer.
+
+   The `↩` backref takes the same treatment, and takes it *because* the reference does. The two are
+   one round trip — down to the note, back to the sentence — so a reader meeting them a page apart
+   should meet the same thing twice. It also has the reference's problem in a sharper form: a single
+   glyph with a permanent rule under it shows more line than symbol.
+
+   `:focus-visible` alongside `:hover` is not decoration — with the resting underline gone, hover is
+   the only remaining affordance, and hover is a thing a keyboard cannot do. Without this pair the
+   change would quietly cost keyboard users the cue it costs no one else. The backref is the more
+   important of the two here: it is a plain `↩` with no bracketed digits to mark it as navigation,
+   so on this side the focus ring and the underline are all there is. */
+.prose a[data-footnote-ref],
+.prose a[data-footnote-backref] {
+  color: #0969da;
+  text-decoration: none;
+}
+.prose a[data-footnote-ref]:hover,
+.prose a[data-footnote-ref]:focus-visible,
+.prose a[data-footnote-backref]:hover,
+.prose a[data-footnote-backref]:focus-visible {
+  text-decoration: underline;
+}
+/* A shade smaller than the note it closes. The `↩` is a symbol, not a word: at the note's own size
+   it reads as one more character of the sentence, and the sentence has already ended.
+
+   The padding is not spacing — it is what stops the click target shrinking with the glyph. Vertical
+   padding on an inline box grows its hit area without moving the line, so the mark recedes while the
+   target does not follow it down: measured, 12.1×18 before, 15.1×19.7 after. Slightly larger, which
+   is the right direction for the smallest link on the page. */
+.prose a[data-footnote-backref] {
+  font-size: 0.85em;
+  padding: 0.15em 0.2em;
+}
+/* Pseudo-content, because the `1` here is real text (the editor's `sup` is empty and the whole
+   `[1]` is drawn from a `data-number` decoration). Put on the `a` rather than the `sup` so the
+   brackets join the click target and the hover underline — the number alone is a small thing to
+   hit. A copied selection still yields `1`, which is what the Markdown says. */
+.prose a[data-footnote-ref]::before {
+  content: '[';
+}
+.prose a[data-footnote-ref]::after {
+  content: ']';
+}
+
+/* The definitions on this side are deliberately NOT the editor's `[1]` (2026-08-09). They stay
+   @tailwindcss/typography's ordered list — `1.` markers, prose's own indent — because this surface
+   already had a settled look and it is the one a reader sees. Unifying the reference was worth it
+   (there the published page had no styling at all and fell through to plain link colours); doing
+   the same to the definitions would have moved every note's text and traded a readable list for
+   consistency with an editing surface nobody but the author sees.
+
+   Recorded because it was tried, in both halves, and taken back out: `content: '[' counter(list-item)
+   ']'` on `::marker`, plus a `--footnote-marker` indent reserve on the `> ol`. So the two surfaces
+   agree on the reference and diverge on the definitions, and that is the decision, not a gap.
+   docs/footnote-requirements.md §4.2.
+
+   The one thing in this section that IS styled is the `↩` backref, up with the reference rule it
+   matches. It is not part of the definitions' look — it is the return leg of the reference's jump,
+   and it is grouped by what it does rather than by where it sits. */
+
 @media (prefers-color-scheme: dark) {
-  .ProseMirror sup[data-footnote-ref] {
+  .ProseMirror sup[data-footnote-ref],
+  .prose a[data-footnote-ref],
+  .prose a[data-footnote-backref] {
     color: #4493f8;
   }
   .ProseMirror sup[data-footnote-ref][data-incomplete],
