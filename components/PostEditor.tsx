@@ -32,6 +32,7 @@ import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
+import { ClearNodes } from './editor/clear-nodes-extension';
 import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
@@ -249,6 +250,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         },
       }),
       Document,
+      // Directly under Document because it exists to answer for Document's content expression:
+      // `block+ footnoteSection?` makes `ContentMatch.defaultType` return `footnoteSection` past
+      // the first child, and TipTap's own `clearNodes` takes that unchecked and throws. Replaces
+      // the command with upstream's body picking a *textblock* instead — see
+      // clear-nodes-extension.ts. Reachable as Mod-Alt-0 on almost any line of a post.
+      ClearNodes,
       TrailingNode,
       // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
       // (same node, extended to serialize column alignment) and the paragraph-only
