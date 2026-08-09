@@ -219,6 +219,33 @@ test('moving to another reference drops the previous note at once', async ({ pag
   await expect(preview).toContainText('長い注釈'); // and the new one does arrive
 });
 
+test('the preview follows its reference while the pointer stays in it', async ({ page }) => {
+  // Criterion 20, measured on the preview now that the pinned box answers a scroll by closing (§6).
+  // It has to be measured with the pointer parked INSIDE the box: with the pointer on the
+  // reference, the page sliding out from under it is a genuine leave, and the box closes.
+  await openPost(page);
+  const preview = page.locator('.footnote-popover--preview');
+  await refs(page).nth(1).hover();
+  await expect(preview).toBeVisible();
+
+  const box = await rects(page, '.footnote-popover--preview');
+  await page.mouse.move((box.left + box.right) / 2, box.bottom + 4);
+  await page.mouse.move((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+  await page.waitForTimeout(300);
+  await expect(preview).toBeVisible();
+
+  const gap = async () => {
+    const p = await rects(page, '.footnote-popover--preview');
+    const r = await rects(page, '#post-body a[data-footnote-ref]', 1);
+    return Math.round(Math.min(Math.abs(r.top - p.bottom), Math.abs(p.top - r.bottom)));
+  };
+  expect(await gap()).toBe(8);
+  await page.mouse.wheel(0, 40);
+  await page.waitForTimeout(300);
+  await expect(preview).toBeVisible();
+  await expect.poll(gap).toBe(8); // still attached, having moved with the page
+});
+
 test('a modifier click is left for the browser', async ({ page }) => {
   await openPost(page);
   // Read `defaultPrevented` from a document listener, which runs after the enhancer's own — then
@@ -435,30 +462,47 @@ test.describe('touch', () => {
     await expect(jump).toHaveText('定義へ');
     await expect(jump).toHaveAttribute('href', '#user-content-fn-rich');
 
-    // Scroll and resize move it; neither closes it (§5.2.3 — the close conditions are §6's alone).
+    // Resize moves it and does not close it — the viewport changing shape is not the reader saying
+    // anything, and on a phone it is often just the address bar (§6).
     //
-    // Measured as the gap to whichever side it is on, not as a signed offset: scrolling changes how
-    // much room is left above, so the box is allowed to flip below on the way (§5.2). "Still
-    // attached to its reference" is the claim criterion 20 makes, and a side-specific number would
-    // fail a correct flip.
+    // Measured as the gap to whichever side it is on, not as a signed offset: the box is allowed to
+    // flip below when the room above runs out (§5.2), and a side-specific number would fail a
+    // correct flip.
     const gap = async () => {
       const p = await rects(page, '.footnote-popover--pinned');
       const r = await rects(page, '#post-body a[data-footnote-ref]');
       return Math.round(Math.min(Math.abs(r.top - p.bottom), Math.abs(p.top - r.bottom)));
     };
-    const resting = await gap();
-    expect(resting).toBe(8);
-    await page.evaluate(() => window.scrollBy(0, 120));
-    await expect(pinned).toBeVisible();
-    await expect.poll(gap).toBe(resting);
+    expect(await gap()).toBe(8);
     await page.setViewportSize({ width: 900, height: 800 });
     await expect(pinned).toBeVisible();
-    await expect.poll(gap).toBe(resting);
+    await expect.poll(gap).toBe(8);
 
     // Touch has no click to fall back on, so this link is the only way to the rest of a clipped
     // note (§4.3.1) — and following it closes the box rather than leaving it over the destination.
     await jump.tap();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe('#user-content-fn-rich');
+    await expect(pinned).toBeHidden();
+  });
+
+  test('scrolling dismisses the pinned note, but a nudge does not', async ({ page }) => {
+    // Touch has no "the pointer left", so the pinned box had no way out except a deliberate tap —
+    // it rode along over the article for as long as the reader kept reading (§6). A scroll is that
+    // reader saying they have moved on.
+    await openPost(page);
+    const pinned = page.locator('.footnote-popover--pinned');
+    const box = await refs(page).first().boundingBox();
+    await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await expect(pinned).toBeVisible();
+
+    // Under the threshold: what an address bar collapsing or a rubber band produces, and not a
+    // decision. The box stays and keeps its place beside the reference.
+    await page.evaluate(() => window.scrollBy(0, 12));
+    await page.waitForTimeout(250);
+    await expect(pinned).toBeVisible();
+
+    // Past it: gone.
+    await page.evaluate(() => window.scrollBy(0, 60));
     await expect(pinned).toBeHidden();
   });
 

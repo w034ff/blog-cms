@@ -13,6 +13,11 @@ const OPEN_DELAY_MS = 200; // §6: a `sup` is a small target, and a pointer on i
 // §6: the preview can be entered now, so leaving the reference cannot close it at once — the
 // pointer has to cross the gap that keeps the box off the reference (§5.3) to get there.
 const CLOSE_DELAY_MS = 200;
+// §6: how far the page must move before a PINNED popover gives up. Touch has no "the pointer left"
+// to close on, so a scroll is the reader's way of saying they have moved on. Not zero, because iOS
+// emits scroll for an address bar collapsing or a rubber band — neither is a reader deciding
+// anything. One line of body text is the initial value.
+const SCROLL_DISMISS_PX = 24;
 const VIEWPORT_MARGIN = 16; // 1rem — the same number as the width's `calc(100vw - 2rem)` (§5.2.1)
 const REFERENCE_GAP = 8; // §5.3: the popover must not cover the reference the reader is about to click
 
@@ -153,6 +158,8 @@ function createPopover(kind: PopoverKind): Controller {
     }, CLOSE_DELAY_MS);
   };
 
+  let openedAt = 0;
+
   const reposition = () => {
     if (frame || !anchor) return;
     frame = window.requestAnimationFrame(() => {
@@ -160,19 +167,38 @@ function createPopover(kind: PopoverKind): Controller {
       if (anchor) place(popover, anchor);
     });
   };
+
+  // The pinned popover is dismissed by a scroll instead of following it (§6). The preview still
+  // follows, because there the pointer resting in the box is the reader saying they are still
+  // reading — a state touch has no equivalent of.
+  const onScroll = () => {
+    if (kind === 'pinned' && anchor && Math.abs(window.scrollY - openedAt) > SCROLL_DISMISS_PX) {
+      close();
+      return;
+    }
+    reposition();
+  };
+
+  // Resize never dismisses. It can move the page without the reader scrolling (a phone's address
+  // bar collapsing is exactly that), so the baseline moves with it or the next scroll check would
+  // read someone else's movement as the reader's.
+  const onResize = () => {
+    openedAt = window.scrollY;
+    reposition();
+  };
   const scrollOptions: AddEventListenerOptions = { passive: true, capture: true };
 
   // Scroll and resize move it, never close it — the close conditions are §6's and nowhere else
   // (§5.2.3).
   const listen = () => {
-    window.addEventListener('scroll', reposition, scrollOptions);
-    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', onScroll, scrollOptions);
+    window.addEventListener('resize', onResize);
   };
   const unlisten = () => {
     if (frame) window.cancelAnimationFrame(frame);
     frame = 0;
-    window.removeEventListener('scroll', reposition, scrollOptions);
-    window.removeEventListener('resize', reposition);
+    window.removeEventListener('scroll', onScroll, scrollOptions);
+    window.removeEventListener('resize', onResize);
   };
 
   // Following 「定義へ」 is a same-page hash jump, so nothing unloads and light dismiss never fires
@@ -221,6 +247,7 @@ function createPopover(kind: PopoverKind): Controller {
       if (anchor) close();
       if (!fill(popover, reference, kind)) return;
       anchor = reference;
+      openedAt = window.scrollY; // the baseline the pinned dismissal measures against
       // Measured before it can be seen: the size is only knowable once it is in the top layer, and
       // `visibility` keeps that first frame from landing at the UA's centred position.
       popover.style.visibility = 'hidden';
