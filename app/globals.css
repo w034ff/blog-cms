@@ -1617,10 +1617,89 @@ body.block-dragging .table-toolbar {
    matches. It is not part of the definitions' look — it is the return leg of the reference's jump,
    and it is grouped by what it does rather than by where it sits. */
 
+/* The reading preview (docs/footnote-popover-requirements.md). Two elements built by
+   components/FootnotePopover.tsx — a `manual` one for hover/focus, an `auto` one for a pinned tap.
+   Both live in the top layer, so a reference inside a table, a callout or an accordion is drawn
+   over its own ancestors' `overflow` and `z-index` rather than clipped by them (§5.1).
+
+   Three UA declarations for `[popover]` have to be undone. `inset: 0` + `margin: auto` centre the
+   box in the viewport, and the enhancer sets `left`/`top` itself; `overflow: auto` would give it
+   the internal scrolling §4.3.1 rules out — a small floating box whose swipe might move the note or
+   the page behind it is a thing a reader cannot predict before touching it.
+
+   `.prose` is on the element (the content is prose — links, inline code, emphasis, §5.4), which
+   brings a 65ch `max-width` with it. That would cap the box at ~455px and quietly undo the width
+   §4.3 computed its line budget from, so the width is pinned on both properties. */
+.footnote-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(30rem, calc(100vw - 2rem));
+  max-width: min(30rem, calc(100vw - 2rem));
+  padding: 1rem; /* the exact value §4.3's ~31 and §4.3.1's ~22 characters per line are measured from */
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(140 149 159 / 0.2);
+  font-size: 0.9em; /* the definitions' own size (section[data-footnotes] above) */
+  overflow: hidden;
+}
+
+/* Hover and focus open something the reader cannot enter: it is a copy of text that is already on
+   the page, and the way to the real thing is the click this design refuses to take away (§3.1).
+   The same declaration keeps the popover from eating the click that follows the hover (§5.3). */
+.footnote-popover--preview {
+  pointer-events: none;
+}
+
+/* Eight lines, then `…`. The number is measured (§4.3) but it is a first value: notes that get
+   clipped constantly mean it is too low, and a `…` that never appears means it was never doing
+   anything (§4.3.3).
+
+   `-webkit-line-clamp` rather than a `max-height`, because the ellipsis is the whole point — a
+   gradient fade over a short last line shows nothing at all, and a height cap shows no signal
+   either. The two mechanisms are never combined: on a short viewport it is the line count that
+   drops, not the height (§4.3.2). */
+.footnote-popover-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
+  margin: 0;
+}
+@media (max-height: 32rem) {
+  .footnote-popover-note {
+    -webkit-line-clamp: 4;
+  }
+}
+
+/* Touch only, and load-bearing: with the plain click left alone for desktop (§3.1), this is the
+   jump for a reader who has no click — and the only way to the rest of a clipped note (§4.3.1).
+   Outside the clamp, so eight lines of note never push it out of the box. */
+.footnote-popover-jump {
+  display: inline-block;
+  margin-top: 0.75rem;
+  color: #0969da;
+  font-size: 0.9em;
+  text-decoration: none;
+}
+.footnote-popover-jump:hover,
+.footnote-popover-jump:focus-visible {
+  text-decoration: underline;
+}
+
 @media (prefers-color-scheme: dark) {
   .ProseMirror sup[data-footnote-ref],
   .prose a[data-footnote-ref],
   .prose a[data-footnote-backref] {
+    color: #4493f8;
+  }
+  .footnote-popover {
+    background: #161b22;
+    border-color: #30363d;
+    box-shadow: 0 8px 24px rgb(1 4 9 / 0.8);
+  }
+  .footnote-popover-jump {
     color: #4493f8;
   }
   .ProseMirror sup[data-footnote-ref][data-incomplete],

@@ -5,6 +5,7 @@ import { getPostBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
+import { FootnotePopover } from '@/components/FootnotePopover';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 
@@ -116,9 +117,11 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
-        {/* Client enhancer: injects a copy button into each code block after mount. The body
-            above stays server-rendered; this only adds the interactive control. */}
+        {/* Client enhancers: both attach behaviour to the server-rendered body after mount and
+            render nothing themselves — a copy button on each code block, and a preview of the note
+            behind each footnote reference (which stays a working anchor either way). */}
         <CodeCopyButtons targetId='post-body' />
+        <FootnotePopover targetId='post-body' />
       </div>
       {showToc && <TocNavDesktop toc={toc} />}
     </article>
