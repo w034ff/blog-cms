@@ -303,6 +303,81 @@ function domLanguage(element: HTMLElement): string {
   return languageClass ? languageClass.slice('language-'.length) : '';
 }
 
+// Base CodeBlock ships a paste handler (`codeBlockVSCodeHandler`) that turns *any* clipboard
+// carrying VS Code's `vscode-editor-data` flavour into a code block (docs/link-requirements.md
+// §2.5, where this was found and measured — a link investigation walked into it). Its whole test
+// is "is there
+// text, and does the flavour name a language" — it never looks at what was pasted. So copying a
+// URL, a word or a sentence out of an editor window produced a code block, and because it runs
+// `replaceSelectionWith`, it did so by destroying whatever was selected.
+//
+// It is replaced rather than dropped: a multi-line paste out of a code editor really is a code
+// block, and that flavour is the only place its language can come from. The added condition is
+// that the text actually span more than one line — a single line is ambiguous enough that the
+// ``` fence and the `/` menu are the better ways to ask for code.
+//
+// Only reached when the link extension's own paste handler declines, which it does unless the
+// selection is non-empty and the pasted text is exactly one URL: `Link` sets `priority: 1000`, and
+// ExtensionManager sorts by priority *after* reversing the extension list, so it is asked first
+// regardless of array position (see PostEditor's note on ordering, which holds only among equal
+// priorities).
+const VSCODE_HANDLER_KEY = 'codeBlockVSCodeHandler';
+
+// A PluginKey's name, for identifying someone else's plugin in a list. prosemirror-state stores it
+// (suffixed, e.g. 'codeBlockVSCodeHandler$') on the key object but leaves it out of its type
+// declarations, so it is read through this narrow shape rather than an `any` cast.
+function pluginKeyName(plugin: Plugin): string {
+  const key = plugin.spec.key as { key?: string } | undefined;
+  return key?.key ?? '';
+}
+
+// Whether the pasted text has content on more than one line. A trailing newline is stripped first
+// because VS Code's Ctrl+C with nothing selected copies the caret's whole line *including* its
+// newline — that is still one line of content, and treating it as multi-line would put the common
+// "copy this one line" case straight back into a code block.
+function spansMultipleLines(text: string): boolean {
+  return text.replace(/\r\n?/g, '\n').trimEnd().includes('\n');
+}
+
+// The replacement for the handler described above. Mirrors base CodeBlock's version — same
+// language source, same `paste` meta, same post-insert caret fix — with the multi-line condition
+// added and the unguarded `JSON.parse` made total (a malformed flavour must fall through to the
+// normal paste, not throw inside a DOM event handler).
+function vscodeMultilinePastePlugin(type: NodeType, editor: Editor): Plugin {
+  return new Plugin({
+    key: new PluginKey('codeBlockVSCodeMultilineHandler'),
+    props: {
+      handlePaste: (view, event) => {
+        if (!event.clipboardData) return false;
+        if (editor.isActive(type.name)) return false;
+
+        const text = event.clipboardData.getData('text/plain');
+        const flavour = event.clipboardData.getData('vscode-editor-data');
+        if (!text || !flavour || !spansMultipleLines(text)) return false;
+
+        let language: unknown;
+        try {
+          language = (JSON.parse(flavour) as { mode?: unknown }).mode;
+        } catch {
+          return false;
+        }
+        if (typeof language !== 'string' || !language) return false;
+
+        const { tr, schema } = view.state;
+        tr.replaceSelectionWith(
+          type.create({ language }, schema.text(text.replace(/\r\n?/g, '\n'))),
+        );
+        if (tr.selection.$from.parent.type !== type) {
+          tr.setSelection(TextSelection.near(tr.doc.resolve(Math.max(0, tr.selection.from - 2))));
+        }
+        tr.setMeta('paste', true);
+        view.dispatch(tr);
+        return true;
+      },
+    },
+  });
+}
+
 // StarterKit's plain CodeBlock, extended so the editor surfaces (and can edit) the block's
 // language and filename. The base node (input rule, whitespace handling, etc.) is inherited;
 // we add a `filename` attribute, a NodeView with a language <select> + filename field, and a
@@ -519,8 +594,27 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   // invalidate the record — so a stale fence can never resurface later.
   addProseMirrorPlugins() {
     const codeType = this.type;
+    const parentPlugins = this.parent?.() ?? [];
+    // Base CodeBlock's VS Code paste handler, swapped for the multi-line-only one above. Filtered
+    // by key rather than by dropping the parent's plugins wholesale, which would also lose
+    // anything else the base extension contributes now or later. PluginKey suffixes its name
+    // ('codeBlockVSCodeHandler$'), hence the prefix test.
+    const withoutVSCodeHandler = parentPlugins.filter(
+      (plugin) => !pluginKeyName(plugin).startsWith(VSCODE_HANDLER_KEY),
+    );
+    if (withoutVSCodeHandler.length === parentPlugins.length) {
+      // The key belongs to upstream, so a rename there makes this filter a no-op — and then the
+      // base handler is still in the list *and* ours is appended after it, so the unconditional
+      // behaviour comes back in full (handlePaste is first-wins and the base plugin comes first).
+      // This warning is a breadcrumb, not a guard: e2e/editor-vscode-paste.spec.ts's single-line
+      // cases are what actually catch the revert.
+      console.warn(
+        `[code-block] base CodeBlock plugin '${VSCODE_HANDLER_KEY}' not found — its unconditional "VS Code paste becomes a code block" behaviour is back`,
+      );
+    }
     return [
-      ...(this.parent?.() ?? []),
+      ...withoutVSCodeHandler,
+      vscodeMultilinePastePlugin(codeType, this.editor),
       new Plugin({
         key: diffHighlightKey,
         state: {
