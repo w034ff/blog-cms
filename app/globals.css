@@ -1429,31 +1429,50 @@ body.block-dragging .table-toolbar {
   border-top: 1px solid #d0d7de;
   font-size: 0.9em;
 }
+/* An ordinary block with the marker lifted out of the flow, NOT a flex row (changed 2026-08-09).
+
+   It was a flex row, and the marker was a `flex: none` item beside an anonymous one holding the
+   note. That anonymous item shrink-wraps: measured, a definition box 766px wide had a text box of
+   103.9px, and the ~617px to its right belonged to the flex container rather than to any line. A
+   click there gave the browser no text to hit, so `caretRangeFromPoint` answered with the container
+   and ProseMirror resolved it to offset 0 — **clicking to the right of a note put the caret at its
+   start**, where every other block in the editor puts it at the end.
+
+   Taking the marker out of the flow makes the note's line box span the row, which is what the caret
+   was missing. The layout is otherwise identical — same text left edge, same marker width, same
+   hanging indent on a wrapped note, all measured either way before the change.
+
+   This is also the second time this flex row cost something: the empty-note placeholder below is
+   already `position: absolute` because as a flex item it landed a few pixels right of a written
+   note's text. That was the same shrink-wrap, escaped for one rule instead of removed. Now there is
+   one mechanism where there were two. */
 .ProseMirror div[data-footnote-def] {
   /* Named because the placeholder below has to start exactly where a note's first character does,
      and it is positioned rather than laid out — two rules needing one number. */
   --footnote-marker: 2.6em;
   --footnote-gap: 0.5em;
-  display: flex;
-  gap: var(--footnote-gap);
+  padding-left: calc(var(--footnote-marker) + var(--footnote-gap));
   margin: 0.35em 0;
   position: relative;
 }
-/* `flex: none` alone sizes this box to its own glyphs, so the note text's left edge moved with the
-   number: Geist's figures are proportional, and `1` is narrower than `2`. Only the definitions show
-   it, because only they stack vertically — the same width difference in the reference is inline
-   prose with nothing to line up against. `tabular-nums` equalizes the digits themselves; `min-width`
-   reserves one box for every marker, which is what also keeps `[10]` from shunting its note further
-   right than `[9]`.
+/* `left: 0` is the definition's own left edge: an absolutely positioned box resolves against its
+   positioned ancestor's PADDING box, and the padding above is what the note text is indented by, so
+   the marker sits outside the text rather than inside the indent it creates.
 
-   2.6em is measured, not guessed (e2e/editor-footnote-marker-width.spec.ts, at this section's own
-   0.9em): a marker needs 1.29em at one digit, 1.89em at two and 2.49em at three. So the box holds
-   up to `[999]`. Past that `min-width` stops equalizing and the misalignment returns — no post will
-   reach it, but the number is a ceiling rather than a guarantee. */
+   `width` rather than the old `min-width`, and that changes how this fails. Under flex the marker
+   was a laid-out item, so an over-wide one pushed the note text right — visible as misalignment,
+   which is what `min-width` and `tabular-nums` were for. Out of flow it pushes nothing: an over-wide
+   marker OVERLAPS the note's first characters instead. Different symptom, same ceiling.
+
+   2.6em is measured, not guessed (e2e/editor-footnote-definition-layout.spec.ts, at this section's
+   own 0.9em): a marker needs 1.29em at one digit, 1.89em at two and 2.49em at three. So the box
+   holds up to `[999]`. `tabular-nums` is kept — it no longer decides the note's position, but it
+   still keeps the digits themselves from jittering between numbers. */
 .ProseMirror div[data-footnote-def]::before {
   content: '[' attr(data-number) ']';
-  flex: none;
-  min-width: var(--footnote-marker);
+  position: absolute;
+  left: 0;
+  width: var(--footnote-marker);
   font-variant-numeric: tabular-nums;
   color: #656d76;
 }
