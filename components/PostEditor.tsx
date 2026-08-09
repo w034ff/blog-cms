@@ -27,6 +27,7 @@ import {
   FootnoteReference,
   FootnoteSection,
 } from './editor/footnote-extension';
+import { isPublishableUri } from './editor/link-protocols';
 import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
@@ -231,6 +232,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         // document is replaced by ours: the same top node, but its content expression admits the
         // footnote definitions' section as an optional last child — see footnote-extension.ts.
         document: false,
+        // link is kept (it is what makes a pasted URL a link) but must not open on click: the
+        // default sends a left click to window.open, so a link inside the editor could not be
+        // clicked into and the caret could never be placed in it — the text was uneditable and,
+        // with no toolbar control for links either, unremovable. Only this option is overridden,
+        // so autolink/linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
+        // The trade is that the editor loses "open this link"; the browser's own hover status bar
+        // is what shows where a link points while writing.
+        //
+        // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
+        // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
+        // is closed at this end.
+        link: {
+          openOnClick: false,
+          isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
+        },
       }),
       Document,
       TrailingNode,
@@ -333,16 +349,41 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         class:
           'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] px-4 py-3 focus:outline-none',
       },
-      // Intercept pasted image files and upload them instead of letting the
-      // browser inline them as data URLs. uploadImages is identity-stable (the
-      // hook reaches the editor through a ref), so this once-created handler
-      // never goes stale.
-      handlePaste: (_view, event) => {
+      // The two pastes that have to be answered ahead of every plugin. First, image files:
+      // upload them instead of letting the browser inline them as data URLs (uploadImages is
+      // identity-stable — the hook reaches the editor through a ref — so this once-created
+      // handler never goes stale). Second, a URL the site cannot publish, for the reason spelled
+      // out below.
+      handlePaste: (view, event) => {
         const files = imageFilesFromList(event.clipboardData?.files);
-        if (files.length === 0) return false;
-        event.preventDefault();
-        void uploadImages(files);
-        return true;
+        if (files.length > 0) {
+          event.preventDefault();
+          void uploadImages(files);
+          return true;
+        }
+        // The one hole the link extension's own `isAllowedUri` does not cover. Pasting a URL over
+        // a selection is handled by its `linkOnPaste` plugin, which applies the mark with a raw
+        // `setMark` — and unlike `setLink`, that never consults `isAllowedUri`. So a scheme this
+        // site cannot publish (editor/link-protocols.ts) would slip past everywhere else it is
+        // refused, and has to be answered here instead: the props passed to useEditor are asked
+        // before every plugin (prosemirror-view's someProp reads `_props` first), which is the
+        // only way to get in front of an extension declaring `priority: 1000`.
+        //
+        // Only the case that plugin claims: a non-empty selection and one line of text. Anything
+        // else already reaches a gated path. Replacing the selection with the text is what the
+        // paste would have done anyway, minus the link.
+        const pasted = event.clipboardData?.getData('text/plain') ?? '';
+        if (
+          !view.state.selection.empty &&
+          pasted &&
+          !pasted.includes('\n') &&
+          !isPublishableUri(pasted, () => true)
+        ) {
+          event.preventDefault();
+          view.dispatch(view.state.tr.insertText(pasted));
+          return true;
+        }
+        return false;
       },
     },
     onUpdate: ({ editor }) => {
