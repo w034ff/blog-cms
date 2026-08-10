@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, selectInside } from './editor-authoring';
+import { loadMarkdown, selectInside, setRange } from './editor-authoring';
 import { markdown, docString, caret, caretPos } from './editor-probe';
 
 // The accordion's two insertion routes and the one placement rule behind them
@@ -299,12 +299,20 @@ test('the shortcut carries text typed after the trigger into the body', async ({
 // accordion.
 
 // Builds an empty line above an existing paragraph and leaves the caret on it.
+//
+// The caret is placed by command and the click only takes focus — and the click happens *before*
+// the content is loaded, so its own caret cannot arrive late and overwrite anything. This used to
+// be `click(p)` + `Home`, which is the click→key lag in its purest form: the click's caret reaches
+// `state.selection` ~20ms after the keypress, so Home moved a caret that was then replaced by the
+// click's own at the end of the line, and the poll sat on `後続の段落@5` until it timed out.
+// Diagnosed from the retained trace on 2026-08-10 after it failed both in a full run and, later, on
+// its own. Fixed by construction, which is the standing remedy for this family.
 async function lineAboveAParagraph(page: Page) {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '後続の段落\n');
-  await page.locator('.ProseMirror p').first().click();
-  await page.keyboard.press('Home');
+  await setRange(page, 1);
   await expect.poll(() => caret(page)).toBe('後続の段落@0');
   await page.keyboard.press('Enter');
   await page.keyboard.press('ArrowUp');
@@ -411,4 +419,119 @@ test('inside a table cell the row is hidden and the table survives', async ({ pa
   expect(await editor.locator(DETAILS).count()).toBe(0);
   expect(await markdown(page)).toContain('| a | b |');
   expect(before).toContain('| a | b |');
+});
+
+// §7.8 — Backspace at the START OF THE BODY. The document said nothing about this position until
+// 2026-08-10, and what happens there turns out to depend on the body's first block. These two pin
+// the paragraph cases, which are the ones the accordion itself decides; the list / quote / code /
+// callout rows of §7.8's table are what those nodes do at the start of *any* container and belong
+// to them, not here.
+//
+// `pageerror` is watched on both: the symptom being asserted is a document that did not change,
+// and a byte-identical document is exactly what an uncaught throw also leaves behind (the lesson
+// from the clearNodes RangeError). Without this the two are indistinguishable.
+
+// The start of the body's first line. Resolved to the first *textblock* inside `detailsContent`:
+// `detailsContent` + 1 is the position before that block, and a raw position that is not inside a
+// textblock silently lands somewhere else — measuring the title's end while claiming to measure
+// the body, which is how the first pass at §7.8 got the wrong answer.
+async function bodyFirstLine(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as Element & {
+      editor?: {
+        state: {
+          doc: {
+            descendants(
+              f: (
+                n: { type: { name: string }; isTextblock: boolean; nodeSize: number },
+                pos: number,
+              ) => void,
+            ): void;
+          };
+        };
+      };
+    };
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    let start = -1;
+    let end = -1;
+    let target = -1;
+    el.editor.state.doc.descendants((node, at) => {
+      if (start === -1 && node.type.name === 'detailsContent') {
+        start = at;
+        end = at + node.nodeSize;
+      }
+      if (start !== -1 && target === -1 && at > start && at < end && node.isTextblock) {
+        target = at + 1;
+      }
+    });
+    if (target === -1) throw new Error('no textblock in detailsContent');
+    return target;
+  });
+}
+
+// Open the accordion and put the caret at the body's first line. A loaded accordion is folded
+// (§5) and a folded body takes no caret at all — a selection set into the hidden `detailsContent`
+// normalizes back to the end of the title.
+async function caretAtBodyStart(page: Page, md: string): Promise<void> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await loadMarkdown(page, md);
+  const toggle = page.locator(`.ProseMirror ${DETAILS} > button`);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを閉じる');
+  const target = await bodyFirstLine(page);
+  await setRange(page, target);
+  await expect.poll(() => caretPos(page)).toBe(target);
+}
+
+for (const { label, md } of [
+  {
+    label: 'a line with text in it',
+    md: '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n',
+  },
+  { label: 'the body’s only, empty line', md: '<details>\n<summary>題</summary>\n\n</details>\n' },
+]) {
+  test(`Backspace at the start of ${label} does nothing`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await caretAtBodyStart(page, md);
+
+    const doc = await docString(page);
+    const at = await caretPos(page);
+    await page.keyboard.press('Backspace');
+
+    // Both, not just the document: half of the tear this refuses would show only as a moved caret
+    // (the text absorbed into the title leaves the body's own node in place).
+    expect(await docString(page)).toBe(doc);
+    expect(await caretPos(page)).toBe(at);
+    expect(errors).toEqual([]);
+  });
+}
+
+// The one shape that does act, and the only motion from body back to title anywhere in the editor
+// (§7.2 declined to *bind* one, which is not the same as saying the motion is unreachable). It
+// needs a sibling after it: joinBackward's branch here has to produce a legal delete step, and
+// `block+` cannot give up its only child — which is exactly why the case above does nothing.
+test('Backspace on an empty first body line with a sibling deletes it and returns to the title', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await caretAtBodyStart(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
+
+  // Enter at the body's start opens an empty line ahead of 本文 — the shape under test.
+  await page.keyboard.press('Enter');
+  const target = await bodyFirstLine(page);
+  await setRange(page, target);
+  await expect.poll(() => caretPos(page)).toBe(target);
+  expect(await docString(page)).toContain('detailsContent(paragraph, paragraph("本文"))');
+
+  await page.keyboard.press('Backspace');
+
+  // The empty line is gone and the caret sits at the END of the title, so typing continues it.
+  expect(await docString(page)).toContain('detailsContent(paragraph("本文"))');
+  expect(await caret(page)).toBe('題@1');
+  await page.keyboard.type('名');
+  expect(await docString(page)).toContain('detailsSummary("題名")');
+  expect(errors).toEqual([]);
 });
