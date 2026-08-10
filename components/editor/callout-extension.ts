@@ -351,7 +351,15 @@ export const Callout = TiptapNode.create<CalloutOptions>({
           // caret (see selection-scan.ts). A selection reaching from the paragraph above into
           // either one used to pass, and insertContent then *replaced* the range: the table
           // vanished outright, and the quote lost the text the selection had covered.
-          if (selectionTouches(state, 'table', 'blockquote')) return false;
+          //
+          // `detailsSummary` is the third, and it is the one that breaks *structurally*. An
+          // accordion's title is `text*`, so it holds no block at all — and ProseMirror does not
+          // refuse, it makes room: the fitter splits the accordion in two around the callout and
+          // grows a second, untitled one from the title's remainder, which then saves as two
+          // `<details>`. Measured (docs/accordion-requirements.md §6.5 records the same tear for
+          // the footnote). Naming `detailsSummary` and never `details` is deliberate: §6.3 blesses
+          // a callout in the accordion's *body*, which is `block+` and takes one cleanly.
+          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary')) return false;
           return commands.insertContent({
             type: this.name,
             attrs: { type },

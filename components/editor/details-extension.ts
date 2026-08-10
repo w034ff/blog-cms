@@ -418,6 +418,22 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
 // its own — but tiptap-markdown builds its serializer map from every registered node, and a node
 // with no entry falls back to raw HTML. Declaring no-ops keeps that fallback from ever running.
 export const MarkdownDetailsSummary = DetailsSummary.extend({
+  // No marks in the title (§1's non-goal, made permanent 2026-08-10). The official node is `text*`
+  // and says nothing about marks, so bold/italic/strike/code/accent/link all applied — and then
+  // vanished on save, because serializeDetails reads `textContent` and the title round-trips as one
+  // raw `<summary>…</summary>` line. Silent loss at save time, which is the worst place for it.
+  //
+  // Declared on the schema rather than guarded per command, and §6.3's "禁止するのは操作であって
+  // スキーマではない" does not argue against it here. That rule exists because forbidding a *shape*
+  // drops the content of any markdown carrying it the moment the document opens — but a dropped
+  // mark keeps its text, and the emphasis is already lost at save today, so this moves the loss
+  // from silent-on-save to visible-on-press without making it larger. One declaration also answers
+  // every route at once: the toolbar greys itself out (`can().toggleBold()` turns false), the
+  // keyboard chords decline, and a pasted or loaded `<summary><b>x</b></summary>` keeps its words
+  // and leaves the mark behind. Re-opening this means §6.5's three pieces — content expression,
+  // serializer, public renderer — not this line alone.
+  marks: '',
+
   addStorage() {
     return { markdown: { serialize: () => {} } };
   },

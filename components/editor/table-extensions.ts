@@ -436,7 +436,11 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
       // covers the plain caret-in-a-cell case.
       insertTable:
         (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
-          if (selectionTouches(props.state, 'table')) return false;
+          // `detailsSummary` for the same reason one level over: an accordion's title is `text*`,
+          // so a table inserted there does not go in — the fitter splits the accordion around it
+          // and the document saves as two `<details>`. The body is untouched by this name and
+          // still takes a table, which §6.3 of docs/accordion-requirements.md asks for explicitly.
+          if (selectionTouches(props.state, 'table', 'detailsSummary')) return false;
           return parent?.insertTable?.(options)(props) ?? false;
         },
       setColumnAlign:
