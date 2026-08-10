@@ -192,4 +192,23 @@ describe('renderMdxToHtml — in-page links', () => {
     expect(html).toContain('<h2 class="sr-only"');
     expect(html).toContain('class="data-footnote-backref"');
   });
+
+  it('gives two references to one note the same number and two backrefs', async () => {
+    // docs/footnote-requirements.md §6.2 — the editor makes these now (copy-and-paste of a
+    // reference shares its definition), so the published side has to hold up. It needs nothing:
+    // remark-gfm numbers both `1`, distinguishes only the reference ids, and writes a backref per
+    // reference. Pinned because the pipeline's own footnote handling is the whole implementation —
+    // if a future clobber or sanitize edit broke the second id, nothing else would notice.
+    const { html } = await renderMdxToHtml('One[^a] and two[^a].\n\n[^a]: The note.\n');
+
+    expect(html).toContain('id="user-content-fnref-a"');
+    expect(html).toContain('id="user-content-fnref-a-2"');
+    // One definition, pointed at twice.
+    expect(html.match(/href="#user-content-fn-a"/g)).toHaveLength(2);
+    expect(html.match(/id="user-content-fn-a"/g)).toHaveLength(1);
+    // …and a way back from each, the second marked `↩2`.
+    expect(html).toContain('href="#user-content-fnref-a-2"');
+    expect(html).toContain('aria-label="Back to reference 1-2"');
+    expect(html).not.toContain('user-content-user-content-');
+  });
 });

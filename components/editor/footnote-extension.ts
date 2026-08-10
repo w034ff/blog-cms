@@ -794,22 +794,39 @@ function materializePendingNotes(
   });
   if (pending.length === 0) return null;
 
-  // A label is spoken for by another *reference*, never by a definition. This is what tells a move
-  // from a duplicate: a dragged footnote arrives while its own definition is still in the section —
-  // the whole move is one transaction, so nothing deleted it — and counting that definition as a
-  // claim would mint a new label, build a second definition, and leave the first an orphan.
-  // Measured before the distinction existed, on both a drag into prose and one into a cell.
-  const claimed = new Set<string>();
-  const definitions = new Set<string>();
-  state.doc.descendants((node) => {
-    if (node.type === definitionType) definitions.add(node.attrs.label as string);
-    else if (node.type === referenceType && node.attrs.pendingNote === null) {
-      claimed.add(node.attrs.label as string);
-    }
-  });
+  // What a carried label may claim in the destination document, asked of the *definitions* — the
+  // references are no longer consulted, and that inversion is the whole of the sharing rule (§6.2).
+  //
+  // A definition already under that name holding the *same* note is the same footnote, so the
+  // reference joins it rather than forking. That is what makes copy-and-paste the gesture for a
+  // second reference to one note, and it is why a drag-move still works: the move is one
+  // transaction, so the dragged footnote lands while its own definition is still in the section,
+  // and matching it there is now the answer rather than the trap it used to be.
+  //
+  // A definition under that name holding a *different* note is an accidental collision, and it
+  // mints. Labels are opaque but not all of them are generated — §4.1 keeps the ones external
+  // markdown brings — so two posts each holding a `[^1]` is the ordinary case rather than a
+  // coincidence, and reusing the label there would put the destination's words under the pasted
+  // reference and drop the ones it carried. Losing the author's words is the line this is drawn at.
+  //
+  // A name with no definition is a move whose definition was deleted with its reference (§5.1), or
+  // a paste into a document that has never seen it. Both keep the carried label and rebuild the
+  // note from what the reference brought.
+  //
+  // Comparing the note's text rather than tracking where the slice came from is deliberate. An
+  // editor-session id carried beside `pendingNote` would be exact, and §6.2's objection to
+  // provenance would not even apply (a slice without the attribute already falls to plain text),
+  // but it buys precision in a case the text comparison only gets wrong when the two notes read
+  // identically — where sharing and forking are indistinguishable to a reader anyway.
+  const definitions = scanFootnoteText(state.doc).definitions;
+  const taken = labelsInUse(state.doc);
 
   type Plan = { pos: number; node: PMNode; label: string; refused: boolean };
   const plans: Plan[] = [];
+  // Minted once per carried label, never once per reference. Two references to one note inside a
+  // single slice have to come out of a collision the way they went in; minting inside the loop gave
+  // them a label each and split one shared note into two independent ones with identical text.
+  const minted = new Map<string, string>();
   let refusal: string | null = null;
   for (const { pos, node } of pending) {
     const refusedHere = hostRefusalAt(state.doc.resolve(pos));
@@ -819,10 +836,13 @@ function materializePendingNotes(
       continue;
     }
     const carried = node.attrs.label as string;
-    const label = claimed.has(carried)
-      ? mintLabelAvoiding(new Set([...claimed, ...definitions]))
-      : carried;
-    claimed.add(label);
+    const existing = definitions.get(carried);
+    let label = carried;
+    if (existing !== undefined && existing !== (node.attrs.pendingNote as string)) {
+      label = minted.get(carried) ?? mintLabelAvoiding(taken);
+      minted.set(carried, label);
+      taken.add(label);
+    }
     plans.push({ pos, node, label, refused: false });
   }
 
@@ -830,11 +850,11 @@ function materializePendingNotes(
   const created: PMNode[] = [];
   for (const plan of plans) {
     if (plan.refused) continue;
-    // A move brings its own definition with it — it was never deleted — so only make one when the
-    // label has none.
+    // Nothing to build when the name already has its note: a move brought its own definition along,
+    // and a shared reference is pointing at one that was already there.
     if (definitions.has(plan.label)) continue;
-    definitions.add(plan.label);
     const note = plan.node.attrs.pendingNote as string;
+    definitions.set(plan.label, note);
     created.push(
       definitionType.create({ label: plan.label }, note === '' ? null : state.schema.text(note)),
     );

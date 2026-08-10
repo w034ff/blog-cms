@@ -77,6 +77,23 @@ test('two footnotes keep their own labels and text', async ({ page }) => {
   expect(second).toBe(first);
 });
 
+test('two references to one note round-trip as a single definition', async ({ page }) => {
+  // §4's "1 reference = 1 definition" was retired 2026-08-11 (§6.2). The markdown layer needed
+  // nothing for it: markdown-it-footnote emits a `footnote_ref` token per reference and the parse
+  // is keyed on the label the renderer rules write into `data-label`, so both references find the
+  // one definition. Pinned because it is the shape the editor now *produces*, not just reads.
+  const { first, second, doc } = await roundTrip(page, '本文[^a]と再度[^a]\n\n[^a]: A の注\n');
+
+  expect(doc).toBe(
+    'doc(paragraph("本文", footnoteReference, "と再度", footnoteReference), footnoteSection(footnoteDefinition("A の注")))',
+  );
+  expect(first).toContain('本文[^a]と再度[^a]');
+  // One definition line, not two — the count is the assertion, since both references read [1]
+  // whatever the section holds.
+  expect(first.match(/\[\^a\]: A の注/g)).toHaveLength(1);
+  expect(second).toBe(first);
+});
+
 test('a footnote at the end of the document round-trips', async ({ page }) => {
   // The definition section is designed to sit at the document's end (§3), so this is the shape
   // every footnote eventually takes.
@@ -814,10 +831,15 @@ async function selectFirstParagraph(page: import('@playwright/test').Page) {
   await selectInside(page, 'paragraph');
 }
 
-test('duplicating a paragraph duplicates its footnote', async ({ page }) => {
-  // Criterion 16. Definitions live at the end of the document, so a copied paragraph carries none —
-  // the note rides on the reference instead (§6.1), and the label is minted fresh because the
-  // carried one is still in use (§6.2).
+test('duplicating a paragraph shares its footnote', async ({ page }) => {
+  // Criterion 16, inverted 2026-08-11 (§6.2). The reference still carries its note through the
+  // clipboard (§6.1), but a carried label whose definition already holds the same words is now the
+  // same footnote rather than a collision, so the copy joins it instead of minting. This is the
+  // gesture that makes a second reference to one note.
+  //
+  // Counting is the assertion, and deliberately so: both references read [1] either way, because
+  // the number is a decoration recomputed from document order on every state. Asserting the number
+  // here would be the same shape of criterion that let §10.1's ordering gap ship unmeasured.
   await loadMarkdown(page, '本文[^a]\n\n[^a]: A の注\n');
   await selectFirstParagraph(page);
   await page.keyboard.press('Control+c');
@@ -829,13 +851,40 @@ test('duplicating a paragraph duplicates its footnote', async ({ page }) => {
   await page.keyboard.press('Enter');
   await settle(page);
   await page.keyboard.press('Control+v');
+  await settle(page);
 
   const saved = await markdown(page);
-  // Two references, two definitions, and the note's words on both.
-  expect(saved.match(/\[\^[^\]]+\]: A の注/g)).toHaveLength(2);
-  expect(await docString(page)).toMatch(
-    /footnoteDefinition\("A の注"\), footnoteDefinition\("A の注"\)/,
+  // Two references, one definition, one definition line.
+  expect(saved.match(/\[\^a\]/g)).toHaveLength(3);
+  expect(saved.match(/\[\^[^\]]+\]: A の注/g)).toHaveLength(1);
+  expect(await docString(page)).toContain('footnoteSection(footnoteDefinition("A の注"))');
+  expect(await numbers(page)).toEqual(['1', '1']);
+});
+
+test('deleting one of two references keeps the note, and the last one takes it', async ({
+  page,
+}) => {
+  // The reference count §4 named as the reason not to allow this, measured against the code that
+  // was already doing it: footnotePairing asks whether *any* reference still carries the label
+  // (`order.has`), so nothing had to be added for the first deletion to be survivable.
+  await loadMarkdown(page, '本文[^a]と再度[^a]\n\n[^a]: A の注\n');
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+
+  // The second reference: 本文(2) + ref(1) + と再度(3) puts it at 7.
+  await setRange(page, 7, 8);
+  await page.keyboard.press('Backspace');
+  await settle(page);
+  expect(await docString(page)).toBe(
+    'doc(paragraph("本文", footnoteReference, "と再度"), footnoteSection(footnoteDefinition("A の注")))',
   );
+
+  await setRange(page, 3, 4);
+  await page.keyboard.press('Backspace');
+  await settle(page);
+  // Now nothing points at it, so the definition goes — and the section with it, since its content
+  // is `footnoteDefinition+` and an empty one is not a document ProseMirror will build (§5.1).
+  expect(await docString(page)).toBe('doc(paragraph("本文と再度"))');
 });
 
 test('cutting and pasting a paragraph keeps the note and the label', async ({ page }) => {
@@ -851,6 +900,70 @@ test('cutting and pasting a paragraph keeps the note and the label', async ({ pa
   const saved = await markdown(page);
   expect(saved).toContain('[^keepme]');
   expect(saved).toContain('[^keepme]: 消えない注');
+});
+
+// Copy the first paragraph, then open a different document and paste it at the end — the shape of
+// carrying a footnote between two posts. The clipboard is the browser's, so it survives the load.
+async function copyFirstParagraphInto(
+  page: import('@playwright/test').Page,
+  source: string,
+  destination: string,
+) {
+  await loadMarkdown(page, source);
+  await selectFirstParagraph(page);
+  await page.keyboard.press('Control+c');
+  await settle(page);
+
+  await loadMarkdown(page, destination);
+  await page.locator('.ProseMirror p').first().click();
+  await settle(page);
+  await collapseToEnd(page);
+  await page.keyboard.press('Enter');
+  await settle(page);
+  await page.keyboard.press('Control+v');
+  await settle(page);
+}
+
+test('a label that collides with a different note does not adopt it', async ({ page }) => {
+  // The route sharing must not swallow (§6.2). Labels are opaque but not all of them are generated
+  // — §4.1 keeps the ones external markdown brings — so two posts each holding a `[^1]` is ordinary
+  // rather than a coincidence. Matching on the label alone would put 別の注 under the pasted
+  // reference and drop 元の注 entirely: the note's words, lost to a name collision.
+  await copyFirstParagraphInto(
+    page,
+    '元の本文[^1]\n\n[^1]: 元の注\n',
+    '別の記事[^1]\n\n[^1]: 別の注\n',
+  );
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("別の注"), footnoteDefinition("元の注"))',
+  );
+  expect(await numbers(page)).toEqual(['1', '2']);
+
+  const saved = await markdown(page);
+  expect(saved).toContain('[^1]: 別の注');
+  // The arrival kept its words under a name of its own.
+  expect(saved).toMatch(/\[\^(?!1\])[^\]]+\]: 元の注/);
+});
+
+test('two references sharing a note stay one footnote when the label has to change', async ({
+  page,
+}) => {
+  // The minting is per carried label, not per reference. Done in the loop it gave these two a label
+  // each and split one shared note into two independent ones holding identical text — a paragraph's
+  // internal sharing quietly coming apart in transit.
+  await copyFirstParagraphInto(
+    page,
+    '元[^1]と再度[^1]\n\n[^1]: 元の注\n',
+    '別[^1]\n\n[^1]: 別の注\n',
+  );
+
+  expect(await docString(page)).toContain(
+    'footnoteSection(footnoteDefinition("別の注"), footnoteDefinition("元の注"))',
+  );
+  // Three references, two definitions: the pasted pair still points at one note.
+  expect(await numbers(page)).toEqual(['1', '2', '2']);
+  expect((await markdown(page)).match(/: 元の注/g)).toHaveLength(1);
 });
 
 test('pasting a footnote into a table cell leaves no definition behind', async ({ page }) => {
