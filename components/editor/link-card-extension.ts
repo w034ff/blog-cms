@@ -168,10 +168,27 @@ export const LinkCard = Node.create({
 
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
 
+      // Deferred by a frame so the DOM under the pointer is not rebuilt while the browser is still
+      // dispatching the click that hit it: without this, `update` → `render` → `replaceChildren`
+      // runs synchronously inside the result row's own handler.
+      //
+      // **This is not what fixes the double click** — the fixed head band in globals.css is, and
+      // it is sufficient on its own. Measured both ways: with the band reverted and this deferral
+      // kept, a second click 250ms later still destroys the card; with the band in place and this
+      // deferral removed, it does not. A frame is ~16ms and a second click is ~150-300ms, so this
+      // can only ever cover a synthetic gesture — which it does, and that is the trap it leaves
+      // behind: `dblclick()` in a spec fires both clicks inside one frame, so a regression spec
+      // written that way passes on this line alone while the geometry is broken. The spec spaces
+      // its clicks for that reason.
+      //
+      // `getPos()` is read inside the callback rather than captured: a frame is long enough for
+      // the document to have changed, and the NodeView may be gone entirely.
       const setHref = (href: string) => {
-        const pos = getPos();
-        if (typeof pos !== 'number') return;
-        editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'href', href));
+        requestAnimationFrame(() => {
+          const pos = getPos();
+          if (typeof pos !== 'number') return;
+          editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'href', href));
+        });
       };
 
       const render = (n: PMNode) => {
@@ -238,6 +255,25 @@ async function fetchPost(href: string): Promise<PostSearchResult | null> {
   }
 }
 
+// The band both states put their controls in, and the reason the card's buttons cannot be hit by a
+// second click meant for the picker.
+//
+// The two states are different heights — a resolved card is three lines, the picker is a search box
+// plus a list — so anything bottom-anchored moves *up* into the band the result rows occupied when
+// the card resolves. That is exactly what happened: 「変更」 and 「リンクに戻す」 rendered within
+// 3px of where the first result row had been, so a double-click on a row cleared or dissolved the
+// card the first click had just made (recovered from the WAL, then reproduced — a card the author
+// believed they had left behind was a plain text link by the time it reached the public page).
+//
+// So the controls are top-anchored instead, in a band of fixed height that holds the search box in
+// one state and the buttons in the other. The picker's only clickable rows live below this band,
+// and a stray click inside it lands on the search input, which does nothing to the document.
+function head(): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'link-card-head';
+  return el;
+}
+
 // The resolved card: title, and a note when the target is a draft. `onClear` puts the card back
 // into its picker state so the author can point it somewhere else without deleting it.
 function renderCard(
@@ -247,13 +283,19 @@ function renderCard(
   onClear: () => void,
   pos: () => number | undefined,
 ): void {
+  const actions = head();
+  actions.append(
+    button('変更', onClear),
+    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos())),
+  );
+
   const title = document.createElement('span');
   title.className = 'link-card-title';
   title.textContent = titleCache.get(href) ?? href;
   const meta = document.createElement('span');
   meta.className = 'link-card-meta';
   meta.textContent = href;
-  body.append(title, meta);
+  body.append(actions, title, meta);
 
   if (!titleCache.has(href)) {
     void fetchPost(href).then((post) => {
@@ -265,14 +307,6 @@ function renderCard(
       if (post.draft) meta.textContent = `${href}（未公開の記事）`;
     });
   }
-
-  const actions = document.createElement('div');
-  actions.className = 'link-card-actions';
-  actions.append(
-    button('変更', onClear),
-    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos())),
-  );
-  body.appendChild(actions);
 }
 
 // The insert flow (§5.2-3): search your own posts and pick one. It lives in the card rather than in
@@ -287,9 +321,12 @@ function renderPicker(
   input.type = 'search';
   input.className = 'link-card-search';
   input.placeholder = '記事のタイトルで検索…';
+  // Same band the resolved card puts its buttons in — see head().
+  const controls = head();
+  controls.appendChild(input);
   const list = document.createElement('ul');
   list.className = 'link-card-results';
-  body.append(input, list);
+  body.append(controls, list);
 
   const show = (results: PostSearchResult[]) => {
     list.replaceChildren();

@@ -207,6 +207,58 @@ test('a card is allowed inside a blockquote (3a)', async ({ page }) => {
   expect(await docString(page)).toContain('blockquote(paragraph("引用"), linkCard)');
 });
 
+// A second click meant for the result row must not reach the resolved card's buttons.
+//
+// This is a regression spec, and the defect it pins shipped: the buttons rendered within 3px of
+// where the first result row had been, so a double-click on a result cleared the card (「変更」,
+// at the row's left edge) or dissolved it into a text link (「リンクに戻す」, just right of it).
+// Recovered from data/blog.db-wal, where a card the author had just made went
+// `data-href="/posts/…"` → `data-href=""` → `[タイトル](/posts/…)` inside one autosave window, and
+// then reproduced here. The 12 specs above all stayed green throughout: every one of them clicks
+// once, and Playwright's default click lands on the row's horizontal *centre*, which is the one
+// part of that band the buttons never covered.
+//
+// Swept across the row rather than taken at a single point, because the two buttons sat at
+// different offsets and a spec aimed at one of them would have passed while the other was live.
+// Offsets are from the row's left edge — where the title text is, i.e. where a person actually
+// clicks, not where Playwright does.
+//
+// Two spaced clicks rather than `dblclick()`, and the gap is the whole point. Playwright's
+// `dblclick` delivers both clicks inside one animation frame, which the deferral in `setHref`
+// swallows on its own — so a spec written that way passed with the *geometry still broken*, and
+// would have certified the layout fix while measuring the frame timing instead. Measured: with the
+// buttons put back at the foot of the card, the `dblclick` form stayed green and this one goes red
+// at x=24. A person's second click arrives long after that frame, so it has to meet the layout.
+test('a second click on a result row a moment later leaves the card resolved (4b)', async ({
+  page,
+}) => {
+  for (const x of [24, 60, 100, 140, 200]) {
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    await page.locator('.ProseMirror').click();
+    await page.keyboard.type('/リンクカード');
+    await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+    await expect(page.locator('.link-card-search')).toBeFocused();
+
+    const row = page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE });
+    const box = await row.boundingBox();
+    if (!box) throw new Error('the result row has no box');
+    const point = { x: box.x + x, y: box.y + box.height / 2 };
+    await page.mouse.click(point.x, point.y);
+    // Long enough to be a second click rather than one gesture, and long enough for the fetched
+    // title to be in the cache — which is what made the stored link read as the post's title.
+    await page.waitForTimeout(250);
+    await page.mouse.click(point.x, point.y);
+    await settle(page);
+
+    // Both halves matter: the node has to survive *and* keep its reference. Clearing it back to
+    // `data-href=""` left a card in the document too, and that is what the first failure looked
+    // like — a card that had silently forgotten which post it pointed at.
+    expect(await docString(page), `second click at x=${x}`).toContain('linkCard');
+    expect(await markdown(page), `second click at x=${x}`).toContain(CARD_MD);
+  }
+});
+
 // The start of the *inline content* of the first node of `typeName` — the offset-0 caret every
 // case above needs, because `startOfLine` is what decides whether `/` opens the menu at all.
 //

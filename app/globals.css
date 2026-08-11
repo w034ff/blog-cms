@@ -1424,12 +1424,29 @@ body.link-menu-open .table-toolbar {
   outline: 2px solid rgba(9, 105, 218, 0.5);
   outline-offset: 1px;
 }
-.prose .link-card-actions {
+/* The control band, shared by both of the NodeView's states (link-card-extension.ts's head()).
+   This rule is a fix, not a nicety, and it is the one that carries it — the deferral in that file
+   is not sufficient on its own, this is (measured both ways).
+
+   A resolved card is three lines and the picker is a search box plus a list, so anything anchored
+   to the foot of the card moves *up* into the band the result rows occupied as soon as the card
+   resolves. That shipped: 「変更」 and 「リンクに戻す」 landed within 3px of the first result row,
+   and a second click on a row — the row the author had just picked — cleared or dissolved the
+   card. Holding the controls at the top in a band of fixed height puts them where the picker keeps
+   its search input, which is the one part of that state a stray click can safely hit.
+
+   So `min-height` is load-bearing: without it the band sizes to its content, the two states differ
+   by a few px, and that is all it takes. `e2e/editor-link-card.spec.ts` goes red if it is dropped. */
+.prose .link-card-head {
   display: flex;
+  align-items: center;
   gap: 0.5em;
-  margin-top: 0.75em;
+  min-height: 2.2em;
 }
-.prose .link-card-actions button,
+.prose .link-card-view .link-card-title {
+  margin-top: 0.25em;
+}
+.prose .link-card-head button,
 .prose .link-card-results button {
   padding: 0.15em 0.6em;
   border: 1px solid #d0d7de;
@@ -1448,18 +1465,21 @@ body.link-menu-open .table-toolbar {
 }
 /* Same hover tint and focus ring the editor's other chrome uses (the drag handle, the accordion
    toggle, the code block's diff toggle) — no colour of the card's own. */
-.prose .link-card-actions button:hover,
+.prose .link-card-head button:hover,
 .prose .link-card-results button:hover {
   background: rgba(113, 113, 122, 0.15);
 }
-.prose .link-card-actions button:focus-visible,
+.prose .link-card-head button:focus-visible,
 .prose .link-card-results button:focus-visible,
 .prose .link-card-search:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
 }
 .prose .link-card-search {
-  width: 100%;
+  /* Fills the band rather than sizing it: `min-height` on .link-card-head is what pins the
+     band's height, and a `width: 100%` here would fight the flex row it now sits in. */
+  flex: 1;
+  min-width: 0;
   padding: 0.3em 0.6em;
   border: 1px solid #d0d7de;
   border-radius: 4px;
@@ -1497,7 +1517,7 @@ body.link-menu-open .table-toolbar {
   }
   .prose .link-card-view,
   .prose .link-card-search,
-  .prose .link-card-actions button {
+  .prose .link-card-head button {
     border-color: #30363d;
   }
 
