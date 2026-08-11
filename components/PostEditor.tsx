@@ -36,6 +36,7 @@ import { ClearNodes } from './editor/clear-nodes-extension';
 import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
+import { LinkBubble } from './editor/LinkBubble';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
@@ -238,8 +239,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         // clicked into and the caret could never be placed in it — the text was uneditable and,
         // with no toolbar control for links either, unremovable. Only this option is overridden,
         // so autolink/linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
-        // The trade is that the editor loses "open this link"; the browser's own hover status bar
-        // is what shows where a link points while writing.
+        // What this gave up — "open this link" from inside the editor — is handed back by the link
+        // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
         //
         // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
         // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
@@ -521,6 +522,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           )}
         </div>
         {editor && <TableToolbar editor={editor} />}
+        {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
+            are BubbleMenus that portal themselves to <body> — neither renders here. */}
+        {editor && <LinkBubble editor={editor} onNotice={showNotice} />}
       </div>
 
       <input type='hidden' name='body' value={body} />

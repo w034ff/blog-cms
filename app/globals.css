@@ -307,6 +307,17 @@ body.block-dragging .table-toolbar {
   display: none !important;
 }
 
+/* Editor-only chrome: the same suppression for the other floating menu that can want the same
+   space. A link inside a table cell satisfies both menus' `shouldShow` at once, and the decision
+   (docs/link-requirements.md §5.5.4-2) is that the link card wins there — it is the more specific
+   target, and the table controls come back the moment the caret leaves the link. LinkBubble.tsx
+   sets this class from the bubble menu's own onShow/onHide. CSS for the same reason as above:
+   opening the card's URL field changes neither the selection nor the document, so the table menu's
+   `shouldShow` would never be asked again. */
+body.link-menu-open .table-toolbar {
+  display: none !important;
+}
+
 /* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
    (block-drag-handle.ts) — useful (Delete then removes it) but invisible on its own. ProseMirror
    tags the selected node's DOM with `.ProseMirror-selectednode`; this rings it so the selection —
