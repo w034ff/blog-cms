@@ -1357,7 +1357,150 @@ body.link-menu-open .table-toolbar {
   pointer-events: none;
 }
 
+/* Link card (docs/link-card-requirements.md). Same card as the accordion and the code block —
+   1px #d0d7de border, 6px radius, #f6f8fa on hover — so a third block construct adds no palette
+   of its own. Text only: `posts` has no thumbnail column (§8.2).
+
+   `color` and `text-decoration` are reset deliberately, and the selector's specificity is the
+   reason this works. `.prose a { color: #0969da }` above is (0,1,1) and Tailwind Typography's
+   own underline comes in through a `:where()` wrapper at (0,0,0); `.prose a.link-card` is (0,2,1)
+   and outranks both. Without the reset the whole card — title, description and date alike —
+   renders blue and underlined, because the `<a>` wraps all of it (that wrapping is what makes the
+   card one click target). This is the same trap the footnote jump link is in, one rule up. */
+.prose a.link-card {
+  display: block;
+  margin: 1.25em 0;
+  padding: 0.75em 1em;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.12s ease;
+}
+.prose a.link-card:hover {
+  background: #f6f8fa;
+}
+.prose .link-card-title {
+  display: block;
+  font-weight: 600;
+}
+/* Both secondary lines: smaller and dimmed rather than given a colour, so the card needs no dark
+   counterpart for them — `opacity` rides whatever the body colour is on either surface. */
+.prose .link-card-description,
+.prose .link-card-meta {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+}
+.prose .link-card-description {
+  margin-top: 0.25em;
+  /* Two lines at most: a description is free text and a long one would turn the card into a
+     paragraph with a border. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+.prose .link-card-meta {
+  margin-top: 0.5em;
+}
+
+/* The editor's card (link-card-extension.ts's NodeView). Same box as the published one above, but
+   it is a <div> rather than an <a> — there is nothing to click through to while editing — so the
+   border and radius are restated here instead of being inherited from that rule. Everything inside
+   is chrome: the title/meta rules above already reach it, since they are keyed on the class rather
+   than on the anchor. */
+.prose .link-card-view {
+  margin: 1.25em 0;
+  padding: 0.75em 1em;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+}
+/* The whole card is one drag/selection target (it is an atom), so the selected state is drawn on
+   the box rather than by the browser's text highlight, which has nothing to paint inside a node
+   with no text of its own. */
+.ProseMirror-selectednode.link-card-view {
+  outline: 2px solid rgba(9, 105, 218, 0.5);
+  outline-offset: 1px;
+}
+.prose .link-card-actions {
+  display: flex;
+  gap: 0.5em;
+  margin-top: 0.75em;
+}
+.prose .link-card-actions button,
+.prose .link-card-results button {
+  padding: 0.15em 0.6em;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+  cursor: pointer;
+}
+.prose .link-card-results button {
+  display: block;
+  width: 100%;
+  border: none;
+  text-align: left;
+}
+/* Same hover tint and focus ring the editor's other chrome uses (the drag handle, the accordion
+   toggle, the code block's diff toggle) — no colour of the card's own. */
+.prose .link-card-actions button:hover,
+.prose .link-card-results button:hover {
+  background: rgba(113, 113, 122, 0.15);
+}
+.prose .link-card-actions button:focus-visible,
+.prose .link-card-results button:focus-visible,
+.prose .link-card-search:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+.prose .link-card-search {
+  width: 100%;
+  padding: 0.3em 0.6em;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9375em;
+}
+.prose .link-card-results {
+  /* Overrides Tailwind Typography's list rules: these are menu rows, not prose. */
+  margin: 0.5em 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 12em;
+  overflow-y: auto;
+}
+.prose .link-card-results li {
+  margin: 0;
+  padding: 0;
+}
+.prose .link-card-empty {
+  padding: 0.15em 0.6em;
+  font-size: 0.875em;
+  opacity: 0.7;
+}
+
 @media (prefers-color-scheme: dark) {
+  /* Dark counterpart of the link card above — the accordion's and the code block card's dark
+     values, for the same reason the light ones are shared. */
+  .prose a.link-card {
+    border-color: #30363d;
+  }
+  .prose a.link-card:hover {
+    background: #161b22;
+  }
+  .prose .link-card-view,
+  .prose .link-card-search,
+  .prose .link-card-actions button {
+    border-color: #30363d;
+  }
+
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */

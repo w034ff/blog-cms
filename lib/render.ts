@@ -13,21 +13,30 @@ import { rehypeCodeFilename } from './rehype-code-filename';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
+import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
 
-export type { TocEntry };
+export type { TocEntry, CardTarget, ResolveCard };
 
-// defaultSchema (GitHub's allowlist) minus className, so the alert transform's
-// container/title/content classes survive sanitization. The nested `['className', …]`
-// form is a value allowlist: only these exact class names pass on div/p/span — no
-// arbitrary classes, no `style`, so the untrusted-author guard is unweakened.
-// The `['className', …values]` value-allowlist form is a tuple, so type it as one.
-const alertClasses: [string, ...string[]] = [
+// defaultSchema (GitHub's allowlist) plus the class names this site's own block constructs
+// round-trip as. The nested `['className', …]` form is a value allowlist: only these exact class
+// names pass on div/p/span — no arbitrary classes, no `style`, so the untrusted-author guard is
+// unweakened. The `['className', …values]` value-allowlist form is a tuple, so type it as one.
+//
+// One tuple per (tag, attribute) — a second `['className', …]` on the same tag would be dead
+// rather than additive (see the <span> note below), so `link-card` joins the alert names here
+// instead of getting a list of its own.
+//   - markdown-alert-*: the GitHub-alert transform's container/title/content.
+//   - link-card: the stored form of a link card (docs/link-card-requirements.md §4.2), an empty
+//     `<div class="link-card" data-href="/posts/…">` that rehypeLinkCard resolves further down
+//     this pipeline. Without this the class is stripped and the card silently becomes an empty div.
+const divClasses: [string, ...string[]] = [
   'className',
   'markdown-alert',
   'markdown-alert-note',
   'markdown-alert-warning',
   'markdown-alert-caution',
   'markdown-alert-content',
+  'link-card',
 ];
 const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
 // Both allowed <span> classes, merged into one value-allowlist tuple: a schema attribute list
@@ -51,7 +60,11 @@ const schema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
-    div: [...(defaultSchema.attributes?.div ?? []), alertClasses],
+    // `dataHref` is a bare property name, not a value allowlist, so allowing it lets ANY value
+    // through on any div — including one an author hand-wrote. That is deliberate and is why
+    // rehype-link-card validates the reference itself instead of trusting this schema; see
+    // docs/link-card-requirements.md §4.4, and CARD_HREF in lib/rehype-link-card.ts.
+    div: [...(defaultSchema.attributes?.div ?? []), divClasses, 'dataHref'],
     p: [...(defaultSchema.attributes?.p ?? []), titleClass],
     span: [...(defaultSchema.attributes?.span ?? []), spanClasses],
   },
@@ -113,9 +126,27 @@ const processor = unified()
     defaultLang: { block: 'plaintext' },
     transformers: [diffLineHighlight()],
   })
+  // Turns each stored `<div class="link-card" data-href>` into a card, a plain link, or nothing
+  // (docs/link-card-requirements.md §6.1). Last, and after sanitize for the same reason
+  // pretty-code is: everything it builds is this pipeline's own markup, so none of it has to be
+  // allow-listed. Nothing above it reads cards — rehypeCollectToc only looks at headings and
+  // rehypeClobberFragmentLinks only at `#…` hrefs — but the position is pinned by a test in
+  // lib/render.test.ts rather than by this argument, since a card does emit an `<a href>`.
+  .use(rehypeLinkCard)
   .use(rehypeStringify);
 
-export async function renderMdxToHtml(source: string): Promise<{ html: string; toc: TocEntry[] }> {
-  const file = await processor.process(source);
+// `resolveCard` is injected rather than imported so this module stays pure and `server-only`
+// without depending on the DB (docs/link-card-requirements.md §6): the post page hands over a
+// closure around getPostBySlug, and a test hands over a literal. It travels as VFile data because
+// `processor` is built once at module load — per-call options must not mean rebuilding it.
+// Omitting it renders every card as a plain link rather than failing.
+export async function renderMdxToHtml(
+  source: string,
+  options: { resolveCard?: ResolveCard } = {},
+): Promise<{ html: string; toc: TocEntry[] }> {
+  const file = await processor.process({
+    value: source,
+    data: { resolveCard: options.resolveCard },
+  });
   return { html: String(file), toc: file.data.toc ?? [] };
 }

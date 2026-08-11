@@ -25,7 +25,10 @@ declare module '@tiptap/core' {
 // legal there but only from the second child on, and converting the first paragraph would leave
 // the item headless. A table cell answers false and must keep doing so — ParagraphTableCell is
 // `paragraph+`, and a code block in a cell has no GFM pipe form (table-extensions.ts).
-function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
+// Exported because the link card asks exactly this question and gets exactly these answers — a
+// cell and an accordion title refuse, a list item accepts from the second child on. Two copies of
+// the walk would be two things to keep in step; see link-card-extension.ts.
+export function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
   const { $from, empty } = state.selection;
   // Only for a caret: with a range, "after the textblock" is not where the author is pointing.
   if (!empty || $from.depth < 1) return false;

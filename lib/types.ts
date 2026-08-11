@@ -36,3 +36,14 @@ export type CategoryCount = {
   category: string;
   count: number;
 };
+
+// One row of `/api/posts/search` — what the link card's NodeView draws and what its insert search
+// lists (docs/link-card-requirements.md §5.3). Declared here rather than in the route so the
+// editor can import the type without importing a server module. Deliberately no `body`: a search
+// must not become a way to read whole posts.
+export type PostSearchResult = {
+  slug: string;
+  title: string;
+  date: string;
+  draft: boolean;
+};

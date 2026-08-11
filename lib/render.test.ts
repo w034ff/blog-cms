@@ -212,3 +212,148 @@ describe('renderMdxToHtml — in-page links', () => {
     expect(html).not.toContain('user-content-user-content-');
   });
 });
+
+// docs/link-card-requirements.md §9, the rows this side of the feature can measure. A card is
+// stored as a reference and nothing else — `<div class="link-card" data-href="/posts/…">` — so
+// everything a reader sees is built here, at render time, from whatever `resolveCard` reports.
+//
+// The security shape is the point of most of these. `data-href` is allowed on the sanitize schema
+// as a bare property name, so any value passes it (§4.4), and rehypeLinkCard runs *after*
+// sanitize, so the `<a href>` it emits never meets the protocol check either. The reference is
+// therefore validated by the stage itself, and that is what 2c/2d pin.
+describe('renderMdxToHtml — link cards', () => {
+  const CARD = '<div class="link-card" data-href="/posts/abc123"></div>';
+
+  // Stands in for the DB. The real one closes over getPostBySlug (app/posts/[slug]/page.tsx);
+  // this is the whole reason the resolver is injected rather than imported (§6, criterion 5a).
+  const resolveCard = async (href: string) =>
+    href === '/posts/abc123'
+      ? { title: '参照先の記事', date: '2026年8月12日', description: '説明文' }
+      : null;
+
+  it('resolves a stored reference into a card (2a)', async () => {
+    const { html } = await renderMdxToHtml(CARD, { resolveCard });
+    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
+    expect(html).toContain('<span class="link-card-description">説明文</span>');
+    expect(html).toContain('<span class="link-card-meta">2026年8月12日</span>');
+  });
+
+  it('reads the title from the resolver, not from the stored markdown (1b/1c)', async () => {
+    // The stored form holds no display text at all, so a renamed post shows its new title with
+    // no rewrite of any body that links to it. Same source, a different resolver, a different
+    // title — which is the round-trip claim §4.2 makes, measured at the only place it can be.
+    const renamed = async () => ({ title: '改題後', date: '', description: '' });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: renamed });
+    expect(html).toContain('改題後');
+    expect(CARD).not.toContain('改題後');
+    // Empty date/description contribute no empty spans.
+    expect(html).not.toContain('link-card-meta');
+    expect(html).not.toContain('link-card-description');
+  });
+
+  it('keeps `class` and `data-href` through sanitize (2a)', async () => {
+    // Without the schema edit both are stripped and the card arrives at the stage as a bare
+    // <div>, which resolves to nothing — i.e. it fails silently. Measured by rendering with no
+    // resolver, where a card that survived sanitize still becomes the fallback link.
+    const { html } = await renderMdxToHtml(CARD);
+    // Asserted on the produced `<a>`, not on `href="/posts/abc123"` alone: the stored
+    // `data-href="…"` contains that substring verbatim, so the looser check passes even when the
+    // stage never saw the card.
+    expect(html).toContain('<a href="/posts/abc123">');
+    expect(html).not.toContain('<div');
+  });
+
+  it('does not let the new div allowlist widen what else passes (2b)', async () => {
+    // `link-card` shares one `['className', …]` tuple with the alert classes — hast-util-sanitize
+    // returns on the first entry matching an attribute name, so a second tuple would be dead.
+    // This pins that merging them broke neither side, and that the list is still exact.
+    const { html } = await renderMdxToHtml(
+      '<div class="evil">x</div>\n\n> [!NOTE]\n> ok\n\n<div class="link-card" data-href="/posts/abc123"></div>',
+    );
+    expect(html).toContain('markdown-alert markdown-alert-note');
+    expect(html).toContain('<div class="markdown-alert-content">');
+    expect(html).not.toContain('evil');
+  });
+
+  it('refuses a hand-written javascript: reference (2c)', async () => {
+    // The §4.4 hole. `html: true` in the editor and rehype-raw here mean an author can type this
+    // literally, and no protocol check stands between it and the output — so the stage's own
+    // shape test is the only thing that stops it. It must not become a link of any kind.
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="javascript:alert(1)"></div>',
+      { resolveCard },
+    );
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('<a');
+  });
+
+  it('refuses references that are not same-origin `/posts/…` (2c/2d)', async () => {
+    for (const href of [
+      '//evil.example/posts/x',
+      'https://evil.example',
+      '/admin/posts/1',
+      '/posts/../admin',
+      // Passes a naive `[\w.~-]+` slug class and resolves to the site root, not a post.
+      '/posts/..',
+    ]) {
+      const { html } = await renderMdxToHtml(`<div class="link-card" data-href="${href}"></div>`, {
+        resolveCard,
+      });
+      expect(html, href).not.toContain('<a');
+      expect(html, href).not.toContain('evil.example');
+    }
+  });
+
+  it('falls back to a plain link for an unknown slug (2d)', async () => {
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="/posts/gone"></div>',
+      {
+        resolveCard,
+      },
+    );
+    expect(html).toContain('<a href="/posts/gone">/posts/gone</a>');
+    expect(html).not.toContain('class="link-card"');
+    // Unwrapped, like the resolved card: the stage can't see the parent, and a `<p>` is not legal
+    // everywhere a `<div>` was.
+    expect(html).not.toContain('<p><a href="/posts/gone">');
+  });
+
+  it('falls back to a plain link for a draft, which resolves the same as unknown (2e)', async () => {
+    // getPostBySlug returns null for a draft (lib/posts.ts), so the resolver cannot tell the two
+    // apart and neither does this. Pinned separately from 2d because it is a different authoring
+    // mistake with the same rendering, and §6.1 chose that on purpose.
+    const draftOnly = async () => null;
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: draftOnly });
+    expect(html).toContain('<a href="/posts/abc123">/posts/abc123</a>');
+  });
+
+  it('leaves headings, the toc and in-page links untouched around a card', async () => {
+    // Pins the stage's position (§10): it runs last, after pretty-code, and nothing it does can
+    // reach rehypeCollectToc (headings only) or rehypeClobberFragmentLinks (`#…` hrefs only).
+    // Worth measuring rather than arguing, since a card DOES emit an `<a href>` — the one output
+    // shape a fragment-link rewrite could in principle have touched.
+    const { html, toc } = await renderMdxToHtml(
+      `## 導入\n\n${CARD}\n\n[導入へ](#導入)\n\n\`\`\`ts\nconst x = 1;\n\`\`\`\n`,
+      { resolveCard },
+    );
+    expect(toc).toEqual([{ id: 'user-content-導入', text: '導入', level: 2 }]);
+    expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
+    // The card's own href is a path, not a fragment, so the rewrite left it alone.
+    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    // …and pretty-code still ran on the fence below it.
+    expect(html).toContain('data-rehype-pretty-code-figure');
+  });
+
+  it('resolves several cards in one document independently', async () => {
+    // The stage collects first and splices after, so an earlier replacement must not shift a
+    // later one's index — and a removal (the javascript: card) shifts the list hardest.
+    const { html } = await renderMdxToHtml(
+      `${CARD}\n\n<div class="link-card" data-href="javascript:alert(1)"></div>\n\n<div class="link-card" data-href="/posts/gone"></div>\n\n${CARD}\n`,
+      { resolveCard },
+    );
+    expect(html.match(/<a class="link-card"/g)).toHaveLength(2);
+    expect(html.match(/<a href="\/posts\/gone">/g)).toHaveLength(1);
+    expect(html).not.toContain('javascript:');
+  });
+});

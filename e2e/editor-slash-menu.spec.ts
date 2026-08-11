@@ -73,7 +73,8 @@ test('Escape closes the slash menu without inserting', async ({ page }) => {
 // (slash-command.ts asks each row via `editor.can()`). setCallout refuses inside a quote —
 // a blockquote is someone else's words, a callout the author's own aside — so the three
 // 囲み枠 rows drop there while コードブロック stays, since a fenced block nests fine in a
-// quote. Browser-only: the availability check reads the live editor state.
+// quote. リンクカード stays for the same reason: a quote is `block+`, so the card is a legal
+// child of it. Browser-only: the availability check reads the live editor state.
 test('the slash menu hides the callout rows inside a quote, keeping the code block', async ({
   page,
 }) => {
@@ -89,8 +90,7 @@ test('the slash menu hides the callout rows inside a quote, keeping the code blo
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(1);
-  await expect(menu.getByRole('button')).toHaveText('コードブロック');
+  await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンクカード']);
 });
 
 // The same check must not hide the rows where setCallout *does* work. Inside an existing
@@ -110,7 +110,7 @@ test('the slash menu still offers the callout rows inside an existing callout', 
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(4); // 3 callout types + code block
+  await expect(menu.getByRole('button')).toHaveCount(5); // 3 callout types + code block + link card
 });
 
 // The `/` trigger is gated off inside a code block (slash-command.ts's `allow`): with

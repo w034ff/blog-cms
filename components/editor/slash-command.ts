@@ -67,6 +67,20 @@ const ITEMS: SlashEntry[] = [
     run: (chain) => chain.insertCodeBlock(),
     available: (editor) => editor.can().insertCodeBlock(),
   },
+  {
+    // The card is inserted unresolved and its NodeView asks which post — the search is part of the
+    // card, not a second popup on top of this one (docs/link-card-requirements.md §5.2-3).
+    //
+    // `available` carries the whole placement rule here, and it is half of §5.4: setLinkCard asks
+    // canPlaceAfterCaret, so a table cell (`paragraph+`) and an accordion title (`text*`) drop the
+    // row. The other half — a card arriving by paste or drop — is answered by the guards that were
+    // already in place; see the note in link-card-extension.ts.
+    id: 'link-card',
+    title: 'リンクカード',
+    keywords: ['link', 'card', 'linkcard', 'link card', 'リンク', 'カード', '記事'],
+    run: (chain) => chain.setLinkCard(),
+    available: (editor) => editor.can().setLinkCard(),
+  },
 ];
 
 // Whether the menu has anything at all to offer at the caret. Drives the trigger below, so a

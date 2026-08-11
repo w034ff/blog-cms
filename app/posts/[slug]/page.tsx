@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getPostBySlug } from '@/lib/posts';
-import { renderMdxToHtml } from '@/lib/render';
+import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { FootnotePopover } from '@/components/FootnotePopover';
@@ -16,6 +16,25 @@ type Params = { slug: string };
 const MIN_HEADINGS_FOR_TOC = 3;
 
 export const dynamic = 'force-dynamic';
+
+// The DB half of a link card. It lives here, not in lib/render.ts, so the render pipeline keeps
+// no dependency on `posts` (docs/link-card-requirements.md §6) — the stage is handed this closure
+// and knows nothing about where a title comes from.
+//
+// The href has already been validated as `/posts/<slug>` by the stage before it gets here, so this
+// only has to take the slug off the end. `getPostBySlug` returns null for a draft as well as for a
+// slug that doesn't exist; both mean "no card", and the stage renders a plain link for either
+// (§6.1). The date is formatted here because that is where this site's UTC-store / JST-display
+// rule already lives.
+async function resolveCard(href: string): Promise<CardTarget | null> {
+  const target = await getPostBySlug(href.slice('/posts/'.length));
+  if (!target) return null;
+  return {
+    title: target.title,
+    date: formatPostDate(target.date),
+    description: target.description,
+  };
+}
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
@@ -47,7 +66,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   const post = await getPostBySlug(slug);
   if (!post) notFound();
 
-  const { html, toc } = await renderMdxToHtml(post.body);
+  const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
   const showToc = toc.length >= MIN_HEADINGS_FOR_TOC;
 
   return (

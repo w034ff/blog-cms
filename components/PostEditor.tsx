@@ -19,6 +19,7 @@ import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
 import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
+import { LinkCard } from './editor/link-card-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
 import { FootnoteLiteral } from './editor/footnote-literal-extension';
 import {
@@ -287,6 +288,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // the block, so a quote/fence right after an image isn't glued onto the image's line —
       // see image-extension.ts.
       Image,
+      // A post of your own shown as a card instead of a line of link text. Stores only the
+      // reference (`<div class="link-card" data-href>`), so the title comes from `posts` at render
+      // time on both sides — see docs/link-card-requirements.md and lib/rehype-link-card.ts.
+      // Must be registered above Markdown for the same reason Image is: its serializer is what
+      // keeps the card out of tiptap-markdown's raw-HTML fallback.
+      LinkCard,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
       // The backstop under the footnote nodes below, not a leftover from before them. Every
       // definition markdown-it-footnote accepts is claimed before this is asked; what it still
