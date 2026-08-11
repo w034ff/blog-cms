@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { loadMarkdown } from './editor-authoring';
+import { docString } from './editor-probe';
 
 async function getMarkdown(page: Page): Promise<string> {
   return page.evaluate(() => {
@@ -530,6 +532,62 @@ test("the table toolbar's post-drop position has no stale intermediate frame", a
   await page.waitForTimeout(400);
   const settledBox = await toolbar.boundingBox();
   expect(immediateBox).toEqual(settledBox);
+});
+
+// Dragging onto the footnote definitions' section. `block+ footnoteSection?` (footnote-extension.ts)
+// pins the section past the last place a block may go, so the gap at `doc.content.size` — which
+// findBoundary() used to return for any pointer below the last child's midpoint — is not a legal
+// target. The failure was silent in the document and loud in the console: `tr.insert` refuses an
+// unfittable slice by adding no step at all (`replaceStep` returns null), so the doc came back
+// byte-identical and only `NodeSelection.create` reacted, throwing "Cannot read properties of null
+// (reading 'nodeSize')" out of the mouseup handler. A doc-shape assertion alone therefore passes
+// either way — the pageerror watch is what actually discriminates, so it leads here.
+//
+// Post-fix the whole band from the last real block downwards resolves to the gap *above* the
+// section, which is the only schema-valid answer. The drop target Y is derived from the section's
+// own rect rather than a fixed offset, so a change in the definitions' height can't quietly move
+// this test off the zone it means to cover.
+test('dragging a block onto the footnote section drops it above the definitions, not past them', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await loadMarkdown(page, '> 引用文\n\n本文[^1]\n\n[^1]: 注釈テキスト\n');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const section = editor.locator('div[data-footnote-section]');
+  const sectionBox = await section.boundingBox();
+  if (!handleBox || !sectionBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  // Into the section's own lower half — the deepest the pointer can go and still be over content,
+  // and the position that used to resolve to "after the section".
+  await page.mouse.move(sectionBox.x + sectionBox.width / 2, sectionBox.y + sectionBox.height - 2, {
+    steps: 8,
+  });
+  const indicator = page.locator('.block-drag-indicator');
+  await expect(indicator).toBeVisible();
+  // The indicator is drawn at the last *block*'s bottom edge, so it never appears below the
+  // definitions promising a drop that cannot happen.
+  const indicatorBox = await indicator.boundingBox();
+  if (!indicatorBox) throw new Error('missing bounding box');
+  expect(indicatorBox.y).toBeLessThanOrEqual(sectionBox.y);
+  await page.mouse.up();
+
+  expect(errors).toEqual([]);
+  // Moved, not copied, and landed above the section — which is still the document's last child.
+  // (TrailingNode adds the empty paragraph, since the blockquote is now the last block before it.)
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("本文", footnoteReference), blockquote(paragraph("引用文")), paragraph, footnoteSection(footnoteDefinition("注釈テキスト")))',
+    );
 });
 
 // The visual counterpart to the NodeSelection test above: clicking a handle (no drag) node-selects

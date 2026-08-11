@@ -40,24 +40,44 @@ interface Boundary {
   width: number;
 }
 
+// Where the document stops accepting blocks. Normally the very end, but the footnote definitions'
+// section is pinned past it by the doc's content expression — `block+ footnoteSection?`
+// (footnote-extension.ts) — so when one exists the last admissible gap is the one *before* it.
+// Same question trailing-node-extension.ts answers for where its paragraph goes, and answered the
+// same way: off `doc.lastChild`'s type, not a search for the node by name.
+function endOfBlocks(doc: ProseMirrorNode): number {
+  const last = doc.lastChild;
+  const sectionType = doc.type.schema.nodes.footnoteSection;
+  return last && last.type === sectionType ? doc.content.size - last.nodeSize : doc.content.size;
+}
+
 // Finds the doc position to drop at for a given pointer Y, plus where to draw the indicator line
 // (matching the width of the top-level blocks themselves — not `.ProseMirror`'s own box, which is
 // wider by its `px-4` padding on each side and would overhang past the blocks' actual edges).
 // Only positions between top-level siblings are candidates — dropping a whole top-level node only
-// ever makes sense at another top-level gap, and restricting to gaps that already exist means the
-// position is always schema-valid without needing prosemirror-transform's generic (and here
-// unnecessary) `dropPoint`. Built from `view.nodeDOM` + `getBoundingClientRect` rather than
-// `view.posAtCoords`: the pointer roams outside the content area during a drag (that's the point of
-// a custom drag), and `posAtCoords` returns null there.
+// ever makes sense at another top-level gap. For the gaps *between* blocks that also settles
+// schema validity for free (the gap already holds a block boundary), so prosemirror-transform's
+// generic (and here unnecessary) `dropPoint` is not needed; the gap at the tail is the one
+// exception and is clamped by endOfBlocks() above rather than taken as `doc.content.size`. Built
+// from `view.nodeDOM` + `getBoundingClientRect` rather than `view.posAtCoords`: the pointer roams
+// outside the content area during a drag (that's the point of a custom drag), and `posAtCoords`
+// returns null there.
+//
+// The footnote section is skipped as a candidate for the same reason: it is an ordinary top-level
+// child with a full-height box the pointer sweeps over on the way down, but no gap it bounds is a
+// place a block may land. Skipping it resolves that whole band to the tail gap instead, drawn at
+// the last real block's own edges like every other indicator.
 //
 // `excludeFrom` skips the dragged node itself (always exactly one top-level child, at that
 // offset) — see applyMove()'s comment for why excluding it, rather than collapsing its layout
 // away, is the current approach.
 function findBoundary(view: EditorView, clientY: number, excludeFrom: number): Boundary {
+  const { doc } = view.state;
+  const sectionType = doc.type.schema.nodes.footnoteSection;
   const children: { offset: number; top: number; bottom: number; left: number; width: number }[] =
     [];
-  view.state.doc.forEach((_node, offset) => {
-    if (offset === excludeFrom) return;
+  doc.forEach((node, offset) => {
+    if (offset === excludeFrom || node.type === sectionType) return;
     const dom = view.nodeDOM(offset);
     if (dom instanceof HTMLElement) {
       const rect = dom.getBoundingClientRect();
@@ -75,9 +95,10 @@ function findBoundary(view: EditorView, clientY: number, excludeFrom: number): B
       return { pos: child.offset, y: child.top, left: child.left, width: child.width };
     }
   }
+  const end = endOfBlocks(doc);
   const last = children[children.length - 1];
-  if (!last) return { pos: view.state.doc.content.size, y: 0, left: 0, width: 0 };
-  return { pos: view.state.doc.content.size, y: last.bottom, left: last.left, width: last.width };
+  if (!last) return { pos: end, y: 0, left: 0, width: 0 };
+  return { pos: end, y: last.bottom, left: last.left, width: last.width };
 }
 
 // What the plugin (and the handle's mousedown) can ask of a live drag session.
@@ -161,7 +182,16 @@ function createDragController(view: EditorView): DragController {
     if (target === from || target === to) return;
     const tr = view.state.tr.delete(from, to);
     const pos = tr.mapping.map(target);
+    // `Transform.insert` is silent about refusing: `replaceStep` returns null for a slice that
+    // cannot be fitted and no step is added, so the only symptom is that the next line finds no
+    // node at `pos` and NodeSelection.create throws on `nodeAfter.nodeSize` — a TypeError out of
+    // the mouseup handler, with the document left byte-identical. That is what a drop aimed past
+    // the footnote section used to produce; findBoundary() no longer offers such a target, and
+    // counting steps keeps any future one a no-op rather than a crash. `tr.docChanged` cannot
+    // answer this — the delete above already set it.
+    const steps = tr.steps.length;
     tr.insert(pos, node);
+    if (tr.steps.length === steps) return;
     tr.setSelection(NodeSelection.create(tr.doc, pos));
     view.dispatch(tr);
     view.focus();
