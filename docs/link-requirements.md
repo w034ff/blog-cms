@@ -5,7 +5,7 @@
 - 作成: 2026-08-09（設計の記録。①の実装より先に書いている）
 - 実装: `components/PostEditor.tsx`（StarterKit の `link` 設定）、`components/editor/link-protocols.ts`（§2.4）、`components/editor/code-block-extension.ts`（§2.5）、`components/editor/LinkBubble.tsx` + `app/globals.css` の `body.link-menu-open`（§5.5）、`e2e/editor-link-click.spec.ts`、`e2e/editor-link-protocols.spec.ts`、`e2e/editor-vscode-paste.spec.ts`、`e2e/editor-link-bubble.spec.ts`、`e2e/editor-link-markdown-syntax.spec.ts`（2026-08-11 の実測。**機能の「不在」を固定しているので、§5.4 を作れば 3 件が反転する** — §5.4 末尾）
 - 対象: 上記に加えて `lib/render.ts`（公開側パイプライン、§6 が触ることになる場所）
-- 関連: `docs/footnote-popover-requirements.md` §0（「実使用がほぼ無い機能をどう扱うか」の前例）、`components/editor/TableGridMenu.tsx`（②のダイアログの前例）
+- 関連: `docs/link-card-requirements.md`（§1 の非目標から分離した先。あちらの §5.1 はこの文書の §2.1.1 に乗っている）、`docs/footnote-popover-requirements.md` §0（「実使用がほぼ無い機能をどう扱うか」の前例）、`components/editor/TableGridMenu.tsx`（②のダイアログの前例）
 
 エディタでテキストにリンクを付け、公開ページでそれを読ませるための要件。
 
@@ -46,7 +46,7 @@
 **非目標**（この文書では対象外）:
 
 - 記事間リンクの補完・記事タイトルの自動取得（内部リンクは相対パスを手書きする — ただしその「手書き」が現状どの経路でも成立しないことが 2026-08-11 に判明した。§2.1.1）
-- リンクカード／URL の展開表示（Zenn の `@[card]` に相当するもの）
+- リンクカード／URL の展開表示（Zenn の `@[card]` に相当するもの）— 2026-08-12 に `docs/link-card-requirements.md` へ分離した。あちらが決めたのは内部記事のカードと保存形式で、外部 URL のカードは同 §8 で延期している
 - リンク切れ検査
 - `title` 属性を著者が編集する UI（§5.3 で「壊さない」ことだけ要求する）
 
