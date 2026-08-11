@@ -945,6 +945,15 @@ body.link-menu-open .table-toolbar {
    need to see cells to edit them. Applies to both surfaces (both use .prose). */
 .prose table {
   border-collapse: collapse;
+  /* Column widths come from the grid, not from what is typed into it. The typography
+     plugin pairs `width: 100%` with `table-layout: auto` (its src/styles.js, `table:`),
+     and a table that cannot grow makes one column's gain its neighbours' loss — measured
+     while typing ~80 characters into a 3-column table, the other two went 255px → 44px.
+     Auto layout also sizes columns from min-content, which `overflow-wrap: break-word`
+     (above) deliberately does not affect, so an unbroken token pushed the table 1618px
+     past the editor frame. Settling the width first answers both. The cost, and why the
+     widths are not made tunable instead, are in docs/table-requirements.md §11. */
+  table-layout: fixed;
 }
 
 .prose th,
