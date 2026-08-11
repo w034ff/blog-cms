@@ -307,6 +307,17 @@ body.block-dragging .table-toolbar {
   display: none !important;
 }
 
+/* Editor-only chrome: the same suppression for the other floating menu that can want the same
+   space. A link inside a table cell satisfies both menus' `shouldShow` at once, and the decision
+   (docs/link-requirements.md §5.5.4-2) is that the link card wins there — it is the more specific
+   target, and the table controls come back the moment the caret leaves the link. LinkBubble.tsx
+   sets this class from the bubble menu's own onShow/onHide. CSS for the same reason as above:
+   opening the card's URL field changes neither the selection nor the document, so the table menu's
+   `shouldShow` would never be asked again. */
+body.link-menu-open .table-toolbar {
+  display: none !important;
+}
+
 /* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
    (block-drag-handle.ts) — useful (Delete then removes it) but invisible on its own. ProseMirror
    tags the selected node's DOM with `.ProseMirror-selectednode`; this rings it so the selection —
@@ -662,8 +673,8 @@ body.block-dragging .table-toolbar {
 }
 .code-copy-icon svg {
   display: block;
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 1rem;
+  height: 1rem;
 }
 /* Empty until a copy; hide it so the flex gap doesn't pad the icon's left. */
 .code-copy-label:empty {
@@ -886,6 +897,34 @@ body.block-dragging .table-toolbar {
   color: #cf222e;
 }
 
+/* Link color (2026-08-11, reversing docs/link-requirements.md §7's "leave it at the typography
+   default"). prose-zinc gives `a` no hue of its own: zinc-900 against a zinc-700 body in light,
+   white against zinc-300 in dark — 1.7:1 and 1.5:1 respectively, so the permanent underline was
+   the only thing separating a link from the sentence around it.
+
+   The reason to reverse it is already in this file. The footnote-reference rule below records that
+   a near-black underlined number "reads as an ordinary link" and fixes it with this exact blue —
+   so the page ended up with its most link-colored element being the footnote reference while the
+   real links stayed body-colored. The pair (#0969da / #4493f8) is taken from there rather than
+   introduced, which also keeps blue meaning one thing across both surfaces.
+
+   Editor-side this buys something the public page doesn't need: `openOnClick: false` means an
+   editor link never navigates, and the link card only appears once the caret is already inside
+   one, so "where does this link start and end" had to be read off the underline alone.
+
+   Color only, deliberately:
+   - The underline stays. It is the non-color cue WCAG SC 1.4.1 wants, and unlike the raised
+     0.75em footnote number (see below) a full-size link has room for it.
+   - `.footnote-popover-jump` is an `<a>` inside a `.prose` popover, so this rule outranks its own
+     (0,1,1 over 0,1,0) — same color in both schemes, and taking nothing but `color` here leaves
+     its `text-decoration: none` standing.
+   The footnote ref/backref rules carry an attribute selector and outrank this one in both schemes.
+   Dark counterpart lives in the bottom prefers-color-scheme block. Applies to both surfaces
+   (editor and post both use .prose). */
+.prose a {
+  color: #0969da;
+}
+
 /* Table of contents (components/TocNav.tsx), post page only — not `.prose`-scoped since it
    sits outside the article body. `scroll-mt` gives a jumped-to heading a little breathing room
    from the viewport edge; there's no fixed site header to clear, so a small value is enough.
@@ -1095,10 +1134,251 @@ body.block-dragging .table-toolbar {
   --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.141.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
 }
 
+/* Accordion (docs/accordion-requirements.md §8.2). Two DOM shapes have to end up looking the
+   same: the published page holds a real `<details>`/`<summary>`, while the editor's NodeView
+   (@tiptap/extension-details) builds `div[data-type="details"]` with a separate <button> for the
+   toggle — it cannot use a real <details>, since a click on a real <summary> would fold the block
+   instead of placing the caret in the title. So the marker is a <button> in the editor and a
+   ::before on the public page, drawn as the same shape in the same gutter, and everything else is
+   shared. Sanitize passes no class on either element (lib/render.ts), so all of this is keyed off
+   element and attribute selectors.
+
+   Card geometry deliberately matches .code-block / [data-rehype-pretty-code-figure] rather than
+   introducing a third card look. The fill is where it stops short of them: only the title row
+   carries one, so a folded aside reads as part of the prose rather than as heavy as a code block.
+
+   `.prose summary` is left unscoped throughout because these two are the only accordions under
+   .prose — TocNav's mobile <details> is a sibling of the article, not inside it. */
+.prose details,
+.prose [data-type='details'] {
+  position: relative;
+  margin: 1.25rem 0;
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  /* No side padding on the card itself: the title row spans it edge to edge, so its fill, its hit
+     area and its hover all reach the border. */
+  padding: 0;
+}
+.prose summary {
+  /* The browser's own marker is replaced, not kept alongside ours. */
+  list-style: none;
+  cursor: pointer;
+  /* The left inset is the callout's two-column arrangement written out as padding, so a callout
+     and an accordion stacked in one article start their text at the same place: the card's own
+     1em, then a marker column the width of the callout's icon (1.1em), then the same 0.6em gap
+     it puts between icon and content. The marker is absolutely positioned into that column
+     below, and its three `left` values are all derived from these same terms. */
+  padding: 0.5em 1em 0.5em calc(1em + 1.1em + 0.6em);
+  /* Fixed rather than inherited: the marker below is centred on the first line by arithmetic over
+     this value, and it has to be a number both DOM shapes agree on. */
+  line-height: 1.5;
+  /* One line's worth of row even with nothing in it. §5.1 lets an untitled accordion save and
+     publish, and a published `<summary></summary>` has no inline content, so it makes no line box
+     and the row collapses to its padding — measured at 16px against the 40px the editor keeps
+     (ProseMirror fills an empty title with a trailing <br>, so it always has a line). The marker
+     is placed by the arithmetic above rather than by the flow, so it does not collapse with the
+     row: it kept its 12px at top 14px and landed 11px into the body text. Same two terms as that
+     arithmetic — the line box plus the row's own padding — so the two stay in step. */
+  min-height: calc(1.5em + 1em);
+  font-weight: 600;
+  /* The code block card's own surface (§8.2 asks for the same family and for no new colors). */
+  background: #f6f8fa;
+  /* The fill has to stop at the card's rounded corners, and the row rounds itself rather than the
+     card clipping it: `overflow: hidden` on the card — the code block's way, and the first thing
+     tried here — also clips anything a body can hold that reaches past the padding box. Measured:
+     it cut the public summary's focus ring down to two stubs (§8.2 asks for that ring), and it
+     trapped a wide table, which the rest of the site lets overflow rather than scroll. The inner
+     radius is the card's less its 1px border. Reset to square on the two corners the divider
+     meets, below. */
+  border-radius: calc(0.5rem - 1px);
+}
+.prose summary::-webkit-details-marker {
+  display: none;
+}
+/* Only the public title row folds when clicked; in the editor the click places the caret in the
+   title and the button is the control. So pointer and hover are scoped to a real <details>, and
+   the editor's summary gets the cursor its behaviour actually matches — a tint there would
+   advertise a fold that does not happen. */
+.prose details > summary:hover {
+  background: #eaeef2;
+}
+.prose [data-type='details'] summary {
+  cursor: text;
+}
+/* The divider §8.2 asks for, drawn only while there is a body under it: on a closed accordion the
+   summary is the whole card, and a line at its foot would sit on nothing. Each DOM shape reports
+   open differently — the public page has the `open` attribute, the NodeView has its
+   `openClassName` ('is-open', set on the outer wrapper by @tiptap/extension-details). */
+.prose details[open] > summary,
+.prose [data-type='details'].is-open summary {
+  border-bottom: 1px solid #d0d7de;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Marker. A clip-path triangle rather than a text glyph (▸/▾), whose stroke weight and vertical
+   position vary by font and which falls through to an emoji face on some systems. The shape is a
+   custom property on the card so open and closed are decided once, for both DOM shapes.
+
+   The two carriers differ because only one of them is a control. On the public page the marker is
+   the ::before itself. In the editor it has to be a real focusable button, so the button is the
+   box — grown around the same optical centre into something clickable, and given a focus ring
+   (§8.2: the keyboard must be able to find it) — with the triangle drawn by its own ::before. A
+   ::before is what keeps the clip-path off the button, where it would have cut the ring away too.
+
+   Both are anchored to the card, which is `position: relative` in either DOM, and `top` resolves
+   to the same centre: the title row's padding-top plus half of what its line box leaves over. That
+   is the one number that has to stay in step across the two rules — it is also what keeps the
+   marker on the first line when a title wraps, which the old pair (a static-position ::before
+   against a pinned button) did not. */
+.prose details,
+.prose [data-type='details'] {
+  --details-marker: polygon(30% 6%, 30% 94%, 88% 50%);
+}
+.prose details[open],
+.prose [data-type='details'].is-open {
+  --details-marker: polygon(6% 30%, 94% 30%, 50% 88%);
+}
+.prose details > summary::before {
+  position: absolute;
+  top: calc(0.5em + (1.5em - 0.75em) / 2);
+  /* Centred in the 1.1em marker column that starts at the card's 1em — the triangle stays 0.75em
+     rather than filling the column, because it is a bare glyph next to the callout's detailed
+     octicon and reads heavy at that size. */
+  left: calc(1em + (1.1em - 0.75em) / 2);
+  width: 0.75em;
+  height: 0.75em;
+}
+.prose [data-type='details'] > button {
+  position: absolute;
+  top: calc(0.5em + (1.5em - 1.4em) / 2);
+  /* Same optical centre as the ::before above — the marker column's middle — with the box grown
+     around it into a hit target. */
+  left: calc(1em + 1.1em / 2 - 1.4em / 2);
+  width: 1.4em;
+  height: 1.4em;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: none;
+  color: inherit;
+  /* A button does not inherit the page's font, and every length above is an em — without this
+     they would resolve against the UA's own smaller button font-size and the marker would sit
+     off-centre from the public one. */
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.prose [data-type='details'] > button::before {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0.75em;
+  height: 0.75em;
+}
+.prose details > summary::before,
+.prose [data-type='details'] > button::before {
+  content: '';
+  background: currentColor;
+  clip-path: var(--details-marker);
+  opacity: 0.7;
+}
+/* Same hover tint and focus ring the editor's other chrome uses (the drag handle above, the code
+   block's diff toggle) — no color of the accordion's own. */
+.prose [data-type='details'] > button:hover {
+  background: rgba(113, 113, 122, 0.15);
+}
+.prose [data-type='details'] > button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+/* Body inset: the same 1em on both sides, plus half of it above and below so the body sits off the
+   divider and off the card's foot.
+
+   The published page has the blocks as direct children of <details> while the editor wraps them in
+   the extension's own content div, and that is why the horizontal inset is a margin on one and a
+   padding on the other. Padding on the public blocks lands on the block itself, and `.prose details
+   > :not(summary)` outweighs Tailwind Typography's `:where()`-wrapped list rule — so a body opening
+   with a bullet list had prose's 1.625em indent replaced by this 1em and its markers ended up on
+   the card's border. A margin sits outside that padding and leaves it alone. The editor never had
+   the problem: its padding is on the wrapper, a level above any list. */
+.prose details > :not(summary) {
+  margin-left: 1em;
+  margin-right: 1em;
+}
+.prose [data-type='detailsContent'] {
+  padding-left: 1em;
+  padding-right: 1em;
+}
+.prose details > summary + *,
+.prose [data-type='detailsContent'] {
+  padding-top: 0.5em;
+}
+/* `:not(summary)` on the public half, because an accordion can have no body at all: §5.1 lets an
+   empty one save and publish, and the stored form then renders as `<details><summary></summary>
+   </details>` (measured through lib/render.ts), where the summary itself is `:last-child`. It
+   happens to be harmless today — the value equals the summary's own padding-bottom, so the row
+   still measures the same 40px in both DOM shapes — but that is a coincidence of two numbers, and
+   this rule is about the body's spacing, not the title's. */
+.prose details > :not(summary):last-child,
+.prose [data-type='detailsContent'] {
+  padding-bottom: 0.5em;
+}
+/* The first and last body blocks drop the margin they would otherwise add inside the card; the
+   padding above owns that spacing instead. `summary + *` rather than the previous
+   `:not(summary):first-of-type > :first-child`, which was wrong twice over: `:first-of-type` is
+   per element type, so a body of paragraph-then-list matched both blocks, and `> :first-child`
+   reached a level too deep — for a plain paragraph it matched nothing at all, leaving the public
+   page a full 1.25em above its first line that the editor, whose half of the pair was right,
+   never had. */
+.prose details > summary + *,
+.prose [data-type='detailsContent'] > :first-child {
+  margin-top: 0;
+}
+.prose details > :not(summary):last-child,
+.prose [data-type='detailsContent'] > :last-child {
+  margin-bottom: 0;
+}
+/* Placeholder for an untitled accordion (§5.1: an empty title is allowed to save and publish, so
+   the only safeguard is that the author can see it while writing). ProseMirror fills an empty
+   textblock with a trailing <br>, which is why `:empty` cannot be used here.
+
+   `float: left; height: 0` is what keeps the caret at the start of the title instead of after the
+   word. Generated content is laid out inline by default, so the placeholder took real width on the
+   line and the caret — which is at offset 0 of an empty textblock — was drawn past it (measured:
+   52.5px right of where the title's own text begins). A zero-height float is not tall enough to
+   shorten any line box, so it paints in the gutter it occupies while the line still starts at 0.
+   This is the same shape @tiptap/extension-placeholder uses, and the reason it uses it. */
+.ProseMirror summary:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: 'タイトル';
+  float: left;
+  height: 0;
+  opacity: 0.45;
+  font-weight: 400;
+  pointer-events: none;
+}
+
 @media (prefers-color-scheme: dark) {
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */
+  }
+
+  /* Dark counterparts of the accordion above — border, divider, title-row fill and its hover.
+     Every value is the one the code block card already uses on a dark surface, so the two read as
+     one family and the accordion still adds no color of its own. */
+  .prose details,
+  .prose [data-type='details'] {
+    border-color: #30363d;
+  }
+  .prose summary {
+    background: #161b22;
+  }
+  .prose details > summary:hover {
+    background: #1c2128;
+  }
+  .prose details[open] > summary,
+  .prose [data-type='details'].is-open summary {
+    border-bottom-color: #30363d;
   }
 
   /* Dark counterpart of the light list-marker overrides above: bullets and
@@ -1130,6 +1410,12 @@ body.block-dragging .table-toolbar {
     color: #f85149;
   }
 
+  /* Dark counterpart of the link color above — the same brighter blue the footnote reference
+     switches to further down, and the one .markdown-alert-note already uses on this surface. */
+  .prose a {
+    color: #4493f8;
+  }
+
   /* Brighter accents + faint tint for the dark surface (the light hues above go
      muddy on a dark background). */
   .prose .markdown-alert-note {
@@ -1143,5 +1429,343 @@ body.block-dragging .table-toolbar {
   .prose .markdown-alert-caution {
     --alert-accent: #d29922;
     --alert-bg: rgba(210, 153, 34, 0.1);
+  }
+}
+
+/* Footnotes in the editor (docs/footnote-requirements.md §4, §5.2).
+
+   The number is not in the document — it is a `data-number` decoration computed from document
+   order, so reordering a paragraph renumbers on screen without touching what gets saved (the same
+   reason the accordion's fold is `persist: false`: a reading gesture must not write to the
+   database). That makes CSS the only thing that can draw it, here and for the definition alike.
+
+   Everything below is editor-only; the published side follows at `.prose section[data-footnotes]`.
+   The two surfaces are kept in step by hand — remark-gfm's markup is not ProseMirror's, so nothing
+   here can be literally shared — and the divergences that remain are deliberate, not oversights.
+   They are named where they occur. */
+.ProseMirror sup[data-footnote-ref] {
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: super;
+  padding: 0 0.1em;
+  color: #0969da;
+  cursor: default;
+}
+.ProseMirror sup[data-footnote-ref]::after {
+  content: '[' attr(data-number) ']';
+}
+/* §5.2's first layer. The author is looking at the prose, not at the definitions, so an unwritten
+   note has to be visible from the reference — "two of these are still empty" while writing. */
+.ProseMirror sup[data-footnote-ref][data-incomplete] {
+  color: #9a6700;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
+.ProseMirror sup[data-footnote-ref].ProseMirror-selectednode {
+  background: rgba(9, 105, 218, 0.15);
+  border-radius: 2px;
+}
+
+/* The definitions' section: the same rule remark-gfm draws above its own footnotes on the public
+   page, so the editor and the page agree on where the body ends. */
+.ProseMirror div[data-footnote-section] {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d0d7de;
+  font-size: 0.9em;
+}
+/* An ordinary block with the marker lifted out of the flow, NOT a flex row (changed 2026-08-09).
+
+   It was a flex row, and the marker was a `flex: none` item beside an anonymous one holding the
+   note. That anonymous item shrink-wraps: measured, a definition box 766px wide had a text box of
+   103.9px, and the ~617px to its right belonged to the flex container rather than to any line. A
+   click there gave the browser no text to hit, so `caretRangeFromPoint` answered with the container
+   and ProseMirror resolved it to offset 0 — **clicking to the right of a note put the caret at its
+   start**, where every other block in the editor puts it at the end.
+
+   Taking the marker out of the flow makes the note's line box span the row, which is what the caret
+   was missing. The layout is otherwise identical — same text left edge, same marker width, same
+   hanging indent on a wrapped note, all measured either way before the change.
+
+   This is also the second time this flex row cost something: the empty-note placeholder below is
+   already `position: absolute` because as a flex item it landed a few pixels right of a written
+   note's text. That was the same shrink-wrap, escaped for one rule instead of removed. Now there is
+   one mechanism where there were two. */
+.ProseMirror div[data-footnote-def] {
+  /* Named because the placeholder below has to start exactly where a note's first character does,
+     and it is positioned rather than laid out — two rules needing one number. */
+  --footnote-marker: 2.6em;
+  --footnote-gap: 0.5em;
+  padding-left: calc(var(--footnote-marker) + var(--footnote-gap));
+  margin: 0.35em 0;
+  position: relative;
+}
+/* `left: 0` is the definition's own left edge: an absolutely positioned box resolves against its
+   positioned ancestor's PADDING box, and the padding above is what the note text is indented by, so
+   the marker sits outside the text rather than inside the indent it creates.
+
+   `width` rather than the old `min-width`, and that changes how this fails. Under flex the marker
+   was a laid-out item, so an over-wide one pushed the note text right — visible as misalignment,
+   which is what `min-width` and `tabular-nums` were for. Out of flow it pushes nothing: an over-wide
+   marker OVERLAPS the note's first characters instead. Different symptom, same ceiling.
+
+   2.6em is measured, not guessed (e2e/editor-footnote-definition-layout.spec.ts, at this section's
+   own 0.9em): a marker needs 1.29em at one digit, 1.89em at two and 2.49em at three. So the box
+   holds up to `[999]`. `tabular-nums` is kept — it no longer decides the note's position, but it
+   still keeps the digits themselves from jittering between numbers. */
+.ProseMirror div[data-footnote-def]::before {
+  content: '[' attr(data-number) ']';
+  position: absolute;
+  left: 0;
+  width: var(--footnote-marker);
+  font-variant-numeric: tabular-nums;
+  color: #656d76;
+}
+/* No reference points at this one (§5.4). Kept — the author's words are not the editor's to throw
+   away — but it cannot carry a number, so it says why instead. */
+.ProseMirror div[data-footnote-def][data-orphan]::before {
+  content: '[?]';
+  color: #9a6700;
+}
+/* The definition belonging to the reference the author has selected. Clicking a reference already
+   makes a NodeSelection — the gesture is there, and until now it said nothing about which note at
+   the bottom of the document it belonged to.
+
+   The same blue as the selected reference, so the two read as one thing. `box-shadow` rather than
+   padding: the tint needs to sit a little off the text, and padding here would move the marker and
+   undo the alignment two commits above. */
+.ProseMirror div[data-footnote-def][data-paired] {
+  background: rgba(9, 105, 218, 0.12);
+  box-shadow: 0 0 0 0.25em rgba(9, 105, 218, 0.12);
+  border-radius: 2px;
+}
+/* §5.2's first layer names a placeholder on this side, and then argues it is not enough on its own —
+   which is why the reference is marked too. The placeholder it was arguing against was never built,
+   so the definition an author is standing in said nothing at all about being unfinished.
+
+   `::after`, because `::before` is the number. `[data-empty]` is a decoration and not a CSS test:
+   an empty ProseMirror textblock still holds a trailing `<br>`, so `:empty` never matches it.
+
+   Positioned rather than laid out, and BOTH offsets are given (`top` added 2026-08-09). That same
+   trailing `<br>` is why: it is real content, and where it puts the placeholder depends on how the
+   definition is laid out.
+
+   Under the flex row this rule was written for, the `<br>` and this pseudo-element were both flex
+   items — blockified, laid out in a row, no line breaking — and only the horizontal offset was in
+   question: as a third item the placeholder shrink-wrapped a few pixels right of where every filled
+   note's text begins. `left` answered that. Out of flex the `<br>` is a forced line break instead,
+   so with `top: auto` the placeholder took its static position on the definition's SECOND line and
+   painted over the note below it — measured one full line box down, 23.05px, with the definition
+   itself 23.05px tall. `left` had not moved; the axis nothing was holding was the other one.
+
+   `top: 0` is the definition's own content top (no vertical padding here), which is where a written
+   note's first line begins — so the placeholder sits exactly where the caret does, and typing starts
+   on top of it and makes it disappear on the first character.
+
+   Same amber as the other two unfinished states, and inert: never selected, never copied, never
+   clicked through to. */
+.ProseMirror div[data-footnote-def][data-empty]::after {
+  content: '注釈を入力（空のままでは公開できません）';
+  position: absolute;
+  left: calc(var(--footnote-marker) + var(--footnote-gap));
+  top: 0;
+  color: #9a6700;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The published side. remark-gfm emits `<section data-footnotes>` with a screen-reader-only
+   `<h2>Footnotes</h2>` and an ordered list, and nothing visual between the prose and the notes —
+   measured on the real page, the notes read as one more list at the end of the body and a reader
+   has no way to tell them apart from it.
+
+   The editor draws a rule there, so leaving the page without one would put the boundary in one
+   view and not the other. The two rules are written from the same three values for that reason. */
+.prose section[data-footnotes] {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d0d7de;
+  font-size: 0.9em;
+}
+
+/* The reference, brought into line with the editor's (2026-08-09). Until now the published page had
+   no rule for it at all, so it fell through to @tailwindcss/typography's plain link styling: a
+   near-black (`--tw-prose-links` is zinc-900 under prose-zinc), underlined `1`, which reads as an
+   ordinary link that happens to be raised rather than as a footnote. The editor drew a blue `[1]`
+   for the same thing.
+
+   remark-gfm puts `data-footnote-ref` on the `<a>`, not on the `<sup>` — hence the `:has()` for the
+   size, which has to land on the `sup` so the `a` inherits it. The attribute survives sanitize
+   because hast-util-sanitize's defaultSchema allow-lists `dataFootnoteRef` on `a`; the schema at
+   lib/render.ts only widens div/p/span, so that entry is untouched.
+
+   NOT unified, deliberately: the weight and the pointer cursor. This one is a real link — it jumps
+   to the definition — while the editor's is an atom (`cursor: default`, a NodeSelection target).
+   That divergence is the behavioural difference showing through, and flattening it entirely would
+   cost the reader the cue that the number can be clicked. */
+.prose sup:has(> a[data-footnote-ref]) {
+  font-size: 0.75em;
+  line-height: 0;
+  vertical-align: super;
+  padding: 0 0.1em;
+}
+/* Prose underlines every `a`, and on a raised 0.75em number that rule is doing more work than the
+   link needs: at this size the underline sits almost on the digits and the reference reads heavier
+   than the sentence carrying it. The colour already separates it from the body text, so the
+   underline is held back for the pointer.
+
+   The `↩` backref takes the same treatment, and takes it *because* the reference does. The two are
+   one round trip — down to the note, back to the sentence — so a reader meeting them a page apart
+   should meet the same thing twice. It also has the reference's problem in a sharper form: a single
+   glyph with a permanent rule under it shows more line than symbol.
+
+   `:focus-visible` alongside `:hover` is not decoration — with the resting underline gone, hover is
+   the only remaining affordance, and hover is a thing a keyboard cannot do. Without this pair the
+   change would quietly cost keyboard users the cue it costs no one else. The backref is the more
+   important of the two here: it is a plain `↩` with no bracketed digits to mark it as navigation,
+   so on this side the focus ring and the underline are all there is. */
+.prose a[data-footnote-ref],
+.prose a[data-footnote-backref] {
+  color: #0969da;
+  text-decoration: none;
+}
+.prose a[data-footnote-ref]:hover,
+.prose a[data-footnote-ref]:focus-visible,
+.prose a[data-footnote-backref]:hover,
+.prose a[data-footnote-backref]:focus-visible {
+  text-decoration: underline;
+}
+/* A shade smaller than the note it closes. The `↩` is a symbol, not a word: at the note's own size
+   it reads as one more character of the sentence, and the sentence has already ended.
+
+   The padding is not spacing — it is what stops the click target shrinking with the glyph. Vertical
+   padding on an inline box grows its hit area without moving the line, so the mark recedes while the
+   target does not follow it down: measured, 12.1×18 before, 15.1×19.7 after. Slightly larger, which
+   is the right direction for the smallest link on the page. */
+.prose a[data-footnote-backref] {
+  font-size: 0.85em;
+  padding: 0.15em 0.2em;
+}
+/* Pseudo-content, because the `1` here is real text (the editor's `sup` is empty and the whole
+   `[1]` is drawn from a `data-number` decoration). Put on the `a` rather than the `sup` so the
+   brackets join the click target and the hover underline — the number alone is a small thing to
+   hit. A copied selection still yields `1`, which is what the Markdown says. */
+.prose a[data-footnote-ref]::before {
+  content: '[';
+}
+.prose a[data-footnote-ref]::after {
+  content: ']';
+}
+
+/* The definitions on this side are deliberately NOT the editor's `[1]` (2026-08-09). They stay
+   @tailwindcss/typography's ordered list — `1.` markers, prose's own indent — because this surface
+   already had a settled look and it is the one a reader sees. Unifying the reference was worth it
+   (there the published page had no styling at all and fell through to plain link colours); doing
+   the same to the definitions would have moved every note's text and traded a readable list for
+   consistency with an editing surface nobody but the author sees.
+
+   Recorded because it was tried, in both halves, and taken back out: `content: '[' counter(list-item)
+   ']'` on `::marker`, plus a `--footnote-marker` indent reserve on the `> ol`. So the two surfaces
+   agree on the reference and diverge on the definitions, and that is the decision, not a gap.
+   docs/footnote-requirements.md §4.2.
+
+   The one thing in this section that IS styled is the `↩` backref, up with the reference rule it
+   matches. It is not part of the definitions' look — it is the return leg of the reference's jump,
+   and it is grouped by what it does rather than by where it sits. */
+
+/* The reading preview (docs/footnote-popover-requirements.md). Two elements built by
+   components/FootnotePopover.tsx — a `manual` one for hover/focus, an `auto` one for a pinned tap.
+   Both live in the top layer, so a reference inside a table, a callout or an accordion is drawn
+   over its own ancestors' `overflow` and `z-index` rather than clipped by them (§5.1).
+
+   Three UA declarations for `[popover]` have to be undone. `inset: 0` + `margin: auto` centre the
+   box in the viewport, and the enhancer sets `left`/`top` itself; `overflow: auto` would give it
+   the internal scrolling §4.3.1 rules out — a small floating box whose swipe might move the note or
+   the page behind it is a thing a reader cannot predict before touching it.
+
+   `.prose` is on the element (the content is prose — links, inline code, emphasis, §5.4), which
+   brings a 65ch `max-width` with it. That would cap the box at ~455px and quietly undo the width
+   §4.3 computed its line budget from, so the width is pinned on both properties. */
+.footnote-popover {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(30rem, calc(100vw - 2rem));
+  max-width: min(30rem, calc(100vw - 2rem));
+  padding: 1rem; /* the exact value §4.3's ~31 and §4.3.1's ~22 characters per line are measured from */
+  border: 1px solid #d0d7de;
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(140 149 159 / 0.2);
+  font-size: 0.9em; /* the definitions' own size (section[data-footnotes] above) */
+  overflow: hidden;
+}
+
+/* The preview used to carry `pointer-events: none` — one declaration that made it unenterable
+   (§4.1), unable to eat the click that follows a hover (§5.3), and safe to hide from assistive
+   technology (§3.5.1). It was removed on 2026-08-09 so that a reader can move into the note and use
+   its links, which is also what WCAG SC 1.4.13's Hoverable clause asks for.
+
+   What replaces each half: the close delay in components/FootnotePopover.tsx carries the pointer
+   across the gap, and the click stays safe geometrically — the box is placed clear of the
+   reference (§5.3), never over it, so there is nothing between the reader and the anchor. */
+
+/* Eight lines, then `…`. The number is measured (§4.3) but it is a first value: notes that get
+   clipped constantly mean it is too low, and a `…` that never appears means it was never doing
+   anything (§4.3.3).
+
+   `-webkit-line-clamp` rather than a `max-height`, because the ellipsis is the whole point — a
+   gradient fade over a short last line shows nothing at all, and a height cap shows no signal
+   either. The two mechanisms are never combined: on a short viewport it is the line count that
+   drops, not the height (§4.3.2). */
+.footnote-popover-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
+  margin: 0;
+}
+@media (max-height: 32rem) {
+  .footnote-popover-note {
+    -webkit-line-clamp: 4;
+  }
+}
+
+/* Touch only, and load-bearing: with the plain click left alone for desktop (§3.1), this is the
+   jump for a reader who has no click — and the only way to the rest of a clipped note (§4.3.1).
+   Outside the clamp, so eight lines of note never push it out of the box. */
+.footnote-popover-jump {
+  display: inline-block;
+  margin-top: 0.75rem;
+  color: #0969da;
+  font-size: 0.9em;
+  text-decoration: none;
+}
+.footnote-popover-jump:hover,
+.footnote-popover-jump:focus-visible {
+  text-decoration: underline;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ProseMirror sup[data-footnote-ref],
+  .prose a[data-footnote-ref],
+  .prose a[data-footnote-backref] {
+    color: #4493f8;
+  }
+  .footnote-popover {
+    background: #161b22;
+    border-color: #30363d;
+    box-shadow: 0 8px 24px rgb(1 4 9 / 0.8);
+  }
+  .footnote-popover-jump {
+    color: #4493f8;
+  }
+  .ProseMirror sup[data-footnote-ref][data-incomplete],
+  .ProseMirror div[data-footnote-def][data-orphan]::before {
+    color: #d29922;
+  }
+  .ProseMirror div[data-footnote-section],
+  .prose section[data-footnotes] {
+    border-top-color: #30363d;
   }
 }

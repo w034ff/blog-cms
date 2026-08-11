@@ -42,6 +42,22 @@ const ITEMS: SlashEntry[] = [
     available: (editor) => editor.can().setCallout(type),
   })),
   {
+    // アコーディオン, not 折りたたみ (§7.3, revised 2026-08-03). This row first read 折りたたみ,
+    // to follow 囲み枠 above in preferring a native word — but that principle was never held:
+    // the callout is 囲み枠 in this menu and コールアウト in its own refusal notice, and this
+    // block's notice named it that way too. With the convention that thin, the author's own word
+    // wins, and 折りたたみ stays a search keyword so either spelling finds the row.
+    //
+    // setDetails is top-level only (details-extension.ts), and `available` is what keeps the row
+    // out of a quote, a list item or a cell — it can only be trusted because that command is
+    // wrapped with the placement check; the official one accepts everywhere.
+    id: 'details',
+    title: 'アコーディオン',
+    keywords: ['details', 'accordion', 'toggle', '折りたたみ', 'たたむ'],
+    run: (chain) => chain.setDetails(),
+    available: (editor) => editor.can().setDetails(),
+  },
+  {
     id: 'code-block',
     title: 'コードブロック',
     keywords: ['code', 'codeblock', 'code block', 'コード'],

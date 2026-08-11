@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { dragMoves, resolveDropTarget } from './drop-target';
 import { repairIncomingSlice, wouldNestCallout } from './callout-slice-guard';
+import { unwrapHalfSelectedDetails, wouldNestDetails } from './details-slice-guard';
 import { tableDropRefusal } from './table-cell-rules';
 
 // prosemirror-dropcursor's `disableDropCursor` hook (return true to hide the drop indicator), for
@@ -33,12 +34,16 @@ import { tableDropRefusal } from './table-cell-rules';
 function disableDropCursor(view: EditorView, pos: { pos: number }, event: DragEvent): boolean {
   const dragged = view.dragging?.slice;
   if (!dragged) return false;
-  const slice = repairIncomingSlice(dragged);
+  const slice = unwrapHalfSelectedDetails(repairIncomingSlice(dragged));
   const $target = resolveDropTarget(view, pos.pos, slice, dragMoves(view, event));
   // Both of the table's reasons hide it, including the slice-shaped one: a block being dragged over
   // a cell is refused wherever in that cell it would land, so promising a landing spot and then
   // raising a notice would be a worse answer than never promising one.
-  return tableDropRefusal($target, slice) !== null || wouldNestCallout($target, slice);
+  return (
+    tableDropRefusal($target, slice) !== null ||
+    wouldNestCallout($target, slice) ||
+    wouldNestDetails($target, slice)
+  );
 }
 
 export const DropCursorGuard = Extension.create({

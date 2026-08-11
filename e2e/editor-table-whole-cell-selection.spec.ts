@@ -1,14 +1,25 @@
 import { test, expect, type Page } from '@playwright/test';
-import { caret, settle } from './editor-probe';
+import { caret, docString, markdown, settle } from './editor-probe';
 
 // Tab's own goToNextCell (prosemirror-tables) selects the destination cell's entire
-// content, mirroring spreadsheet overwrite-on-type UX. That non-empty TextSelection
-// makes prosemirror-view's vertical-arrow handling (and prosemirror-tables' own
-// arrow("vert") keymap) bail out entirely, so ArrowDown/Up right after Tab used to
-// fall through to the browser's native "collapse selection to its edge" behavior
-// instead of changing rows — looking like a sideways jump. table-extensions.ts adds
-// a keyboard shortcut that recognizes that exact shape (isWholeTextblockSelected) and
-// moves a row instead.
+// content, mirroring spreadsheet overwrite-on-type UX. Two different keys then read
+// that non-empty TextSelection wrongly, and both are pinned here:
+//
+//   • ArrowDown/Up — prosemirror-view's vertical-arrow handling (and prosemirror-tables'
+//     own arrow("vert") keymap) bail out on a non-empty selection entirely, so an arrow
+//     right after Tab used to fall through to the browser's native "collapse selection to
+//     its edge" behavior instead of changing rows — looking like a sideways jump.
+//   • Enter / Shift+Enter / Mod+Enter — all three make a hard break in a cell, and
+//     setHardBreak is an insert, so it replaced the selection: Tab then any of them wiped
+//     the destination cell's content and left only the break. Worse than the arrows, since
+//     that is data loss on a gesture that reads as pure navigation.
+//
+// table-extensions.ts answers both by recognizing that exact shape
+// (isWholeTextblockSelected): the arrows move a row, and the break keys collapse to the
+// end of the cell before inserting. Shift/Mod+Enter belong to @tiptap/extension-hard-break,
+// which calls setHardBreak directly, so the table extension has to intercept them to get
+// them past the same guard — which is exactly why they are pinned here by key, not by
+// trusting that one code path covers all three.
 //
 // These specs reproduce that selection shape with Home, Shift+End instead of an
 // actual Tab press: Playwright's synthetic Tab key, dispatched via CDP, escapes the
@@ -121,4 +132,64 @@ test('ArrowDown on a whole-cell selection in the last row exits the table, not s
   await settle(page);
   expect(await caret(page)).toBe('@0');
   await expect(page.locator('.ProseMirror table tr')).toHaveCount(4);
+});
+
+// The headline case: after Tab the cell's whole content is selected, and setHardBreak is
+// an insert, so the break keys used to replace it — `tableCell(paragraph(hardBreak))`, the
+// text gone. The break is what they all do in a cell (a second paragraph has no pipe form,
+// see table-extensions.ts), so the fix is where it goes, not what it is: to the end of the
+// content rather than over it. Mod+Enter is Control+Enter on this harness's platform.
+for (const key of ['Enter', 'Shift+Enter', 'Control+Enter']) {
+  test(`${key} on a whole-cell selection keeps the content and breaks after it`, async ({
+    page,
+  }) => {
+    const rows = await setUpTable(page);
+
+    await selectWholeCell(page, rows.nth(2).locator('td').nth(1)); // B2
+    await page.keyboard.press(key);
+    await settle(page);
+    expect(await docString(page)).toContain('tableCell(paragraph("B2", hardBreak))');
+
+    // A trailing break writes nothing (prosemirror-markdown's hard_break serializer skips
+    // one with no content after it), so the second line is typed before the markdown is
+    // asserted — and the table is still a pipe table, which is what the break buys.
+    await page.keyboard.type('X');
+    await settle(page);
+    expect(await docString(page)).toContain('tableCell(paragraph("B2", hardBreak, "X"))');
+    expect(await markdown(page)).toContain('| B1 | B2<br>X | B3 |');
+  });
+}
+
+// Intercepting Shift+Enter for the table must not cost prose its own hard break: the guard
+// declines outside a cell and @tiptap/extension-hard-break's binding answers as before.
+test('Shift+Enter outside a table still makes a hard break', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await settle(page);
+
+  await page.keyboard.type('x');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('y');
+  await settle(page);
+  expect(await docString(page)).toContain('paragraph("x", hardBreak, "y")');
+});
+
+// The other half of the rule: a selection the author actually made is still replaced, the
+// same as typing over it would. Only the whole-textblock shape Tab leaves behind is treated
+// as navigation — "B" here is selected by hand and goes.
+test('Enter over a partial selection in a cell still replaces it', async ({ page }) => {
+  const rows = await setUpTable(page);
+
+  const cell = rows.nth(2).locator('td').nth(1); // B2
+  await cell.click();
+  await settle(page);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowRight');
+  await settle(page);
+
+  await page.keyboard.press('Enter');
+  await settle(page);
+  expect(await docString(page)).toContain('tableCell(paragraph(hardBreak, "2"))');
 });

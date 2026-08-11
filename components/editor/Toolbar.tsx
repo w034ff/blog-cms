@@ -4,6 +4,7 @@ import type { ChangeEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { selectionTouches } from './selection-scan';
+import { IMAGE_BLOCKED_HOSTS } from './useImageUpload';
 import { ToolbarButton } from './ToolbarButton';
 import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { CalloutMenu } from './CalloutMenu';
@@ -65,14 +66,15 @@ export function Toolbar({
   uploading: boolean;
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
-  // An image is a block node, and neither a paragraph-only table cell nor a code block can hold
-  // one: inserting splits the host in two around it and the saved markdown comes out corrupt
-  // either way (see useImageUpload, which refuses for both). Grey the picker out to match —
-  // using ToolbarButton's own disabled treatment, since this control is a <label> + hidden
-  // <input>, not a button. Paste and drag-and-drop hit the same refusal but have no affordance
-  // to grey out. Same selectionTouches call as the refusal it mirrors, so the two agree on a
-  // selection that only reaches into one of those hosts (see selection-scan.ts).
-  const imageBlocked = selectionTouches(editor.state, 'table', 'codeBlock');
+  // An image is a block node, and none of the three hosts below can hold one: a table cell is
+  // paragraph-only, a code block is a `code` textblock, and an accordion's title is `text*`.
+  // Inserting splits the host in two around it and the saved markdown comes out corrupt every time
+  // (see useImageUpload, which refuses for all three). Grey the picker out to match — using
+  // ToolbarButton's own disabled treatment, since this control is a <label> + hidden <input>, not
+  // a button. Paste and drag-and-drop hit the same refusal but have no affordance to grey out.
+  // The host list is the refusal's own, so the two cannot drift on a selection that only reaches
+  // into one of them (see selection-scan.ts).
+  const imageBlocked = selectionTouches(editor.state, ...Object.keys(IMAGE_BLOCKED_HOSTS));
 
   return (
     <div className='flex flex-wrap items-center gap-0.5'>

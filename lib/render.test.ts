@@ -124,6 +124,31 @@ describe('renderMdxToHtml — table of contents', () => {
     const { toc } = await renderMdxToHtml('Just a paragraph.\n');
     expect(toc).toEqual([]);
   });
+
+  // docs/accordion-requirements.md §8.1: the table of contents lists what a reader can see, and an
+  // accordion's contents are folded away by the author's choice. Leaving them out also keeps the
+  // default navigation off a route whose behaviour is the browser's to decide — whether following
+  // a fragment into a closed <details> expands it is not uniform.
+  it('leaves out headings folded inside an accordion, keeping the rest', async () => {
+    const { html, toc } = await renderMdxToHtml(
+      '## 見える見出し\n\n<details>\n<summary>畳んだ節</summary>\n\n## 畳まれた見出し\n\n### 深いほう\n\n</details>\n\n## 続き\n',
+    );
+    expect(toc.map((t) => t.text)).toEqual(['見える見出し', '続き']);
+    // The id is still assigned, so an in-page or external anchor into the fold resolves.
+    expect(html).toContain('id="user-content-畳まれた見出し"');
+  });
+
+  // docs/footnote-requirements.md §8. remark-gfm labels the footnote section with its own
+  // screen-reader-only `<h2>Footnotes</h2>`, which the collector had no reason to filter until the
+  // editor started saving real footnote syntax — a Japanese post's contents would otherwise gain an
+  // English entry the author never wrote.
+  it('leaves the footnote section out of the table of contents', async () => {
+    const { html, toc } = await renderMdxToHtml('## 見出し\n\n本文[^1]\n\n[^1]: 注釈\n');
+
+    expect(toc.map((t) => t.text)).toEqual(['見出し']);
+    // The section is still rendered, and its heading still carries an id — only the contents skip it.
+    expect(html).toContain('id="user-content-footnote-label"');
+  });
 });
 
 // Sanitize renames every id (`user-content-` clobber prefix) but never touches an href, so an
@@ -166,5 +191,24 @@ describe('renderMdxToHtml — in-page links', () => {
     expect(html).toContain('<section data-footnotes="" class="footnotes">');
     expect(html).toContain('<h2 class="sr-only"');
     expect(html).toContain('class="data-footnote-backref"');
+  });
+
+  it('gives two references to one note the same number and two backrefs', async () => {
+    // docs/footnote-requirements.md §6.2 — the editor makes these now (copy-and-paste of a
+    // reference shares its definition), so the published side has to hold up. It needs nothing:
+    // remark-gfm numbers both `1`, distinguishes only the reference ids, and writes a backref per
+    // reference. Pinned because the pipeline's own footnote handling is the whole implementation —
+    // if a future clobber or sanitize edit broke the second id, nothing else would notice.
+    const { html } = await renderMdxToHtml('One[^a] and two[^a].\n\n[^a]: The note.\n');
+
+    expect(html).toContain('id="user-content-fnref-a"');
+    expect(html).toContain('id="user-content-fnref-a-2"');
+    // One definition, pointed at twice.
+    expect(html.match(/href="#user-content-fn-a"/g)).toHaveLength(2);
+    expect(html.match(/id="user-content-fn-a"/g)).toHaveLength(1);
+    // …and a way back from each, the second marked `↩2`.
+    expect(html).toContain('href="#user-content-fnref-a-2"');
+    expect(html).toContain('aria-label="Back to reference 1-2"');
+    expect(html).not.toContain('user-content-user-content-');
   });
 });

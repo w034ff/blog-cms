@@ -69,6 +69,19 @@ export function caret(page: Page): Promise<string> {
   });
 }
 
+// The caret's absolute document position (`selection.from`). caret() above is the readable probe and
+// should be preferred; this is for the cases it cannot decide — when two candidate landing places
+// hold the same text, or both are non-empty and the question is which *block* the caret is in.
+export function caretPos(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { state: { selection: { from: number } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    return el.editor.state.selection.from;
+  });
+}
+
 // Let ProseMirror's 20ms selection-sync debounce (DOMObserver.flushSoon) settle WITHOUT recreating
 // the selection — a page-side timeout, never an arrow/click (those take the DOM-readback path and
 // would paper over a stuck/foreign selection).

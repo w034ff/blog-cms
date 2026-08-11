@@ -2,7 +2,7 @@ import { textblockTypeInputRule } from '@tiptap/core';
 import type { CommandProps, Editor, InputRule } from '@tiptap/core';
 import { CodeBlock } from '@tiptap/extension-code-block';
 import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
@@ -198,6 +198,96 @@ function deleteSoleCodeChar(
   return true;
 }
 
+// Backspace in an *empty* code block: turn it back into a paragraph. This is the keyboard way out
+// of a fence once the fence-undo record has expired, and it is the whole of what base CodeBlock's
+// Backspace was still being delegated to — so it is taken over here rather than delegated, and the
+// parent handler is no longer called at all (its other branch is the destructive `$anchor.pos === 1`
+// one, refused below).
+//
+// It is taken over because base answers it with TipTap's `clearNodes()`, which **throws** in this
+// document. That command picks the replacement type with
+//
+//   const { defaultType } = $mappedFrom.parent.contentMatchAt($mappedFrom.index());
+//   tr.setNodeMarkup(nodeRange.start, defaultType);
+//
+// and takes `defaultType` unchecked. Our `doc` is `block+ footnoteSection?` (footnote-extension.ts),
+// so once `block+` is satisfied — i.e. at every top-level position but the first child —
+// `ContentMatch.defaultType` returns `footnoteSection`, and setting a code block to a node whose
+// content is `footnoteDefinition+` raises "RangeError: Invalid content for node type
+// footnoteSection". Measured: an empty code block with any block above it could not be removed with
+// Backspace at all — the key threw, uncaught, and left the document untouched. Only a block that is
+// the doc's *first* child escaped (there `defaultType` is still `paragraph`), and only at the top
+// level: inside a list item or a quote the question is asked of *that* container, whose content
+// expression has no `footnoteSection` in reach.
+//
+// prosemirror-commands never had this problem because it resolves the same idiom through
+// `defaultBlockAt()`, which filters to textblocks. Naming `paragraph` outright is stronger than
+// re-deriving that filter: it is the type this conversion always wanted.
+//
+// One deliberate behaviour change comes with it. `clearNodes` also ran `tr.lift(...)`, so emptying a
+// code block inside a list item converted it *and* lifted it out of the bullet. A plain
+// `setNodeMarkup` leaves it where it is, which is what every other block does when you empty it —
+// the boundary specs assert the resulting document rather than just the block's disappearance.
+function clearEmptyCodeBlock(codeType: NodeType, { state, tr, dispatch }: CommandProps): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type !== codeType || $from.parent.content.size > 0) return false;
+  if (dispatch) {
+    const pos = $from.before();
+    tr.setNodeMarkup(pos, state.schema.nodes.paragraph, null);
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1));
+    dispatch(tr.scrollIntoView());
+  }
+  return true;
+}
+
+// Backspace at the very start of a code block's code: select the whole block, so a second press
+// deletes it. Two jobs in one step.
+//
+// The first is to keep prosemirror-commands' `joinBackward` from reaching its *lift* fallback. That
+// command asks `findCutBefore` for a boundary to join across, and `findCutBefore` returns null
+// immediately when the caret's parent is `isolating` — which a code block always is. Null is not
+// read as "refuse", though: joinBackward falls through to `$cursor.blockRange()` + `liftTarget` and
+// lifts the block out of whatever contains it. So the flag that was added to protect the block's
+// edges is exactly what routed the gesture into the destructive branch. Measured, one Backspace at
+// the start of the code (`e2e/editor-codeblock-boundary.spec.ts`):
+//   • in a list item — the whole `listItem` was lifted, taking the bullet with it:
+//     `- 項目` + fence  →  `項目` + fence, the `bulletList` gone from the document;
+//   • in a blockquote — the code block escaped the quote and became a top-level sibling;
+//   • in an accordion (`details`) — the same escape; neither node is `isolating`.
+// A code block inside a *callout* was already immune, because prosemirror-transform's `liftTarget`
+// breaks its search loop on an isolating ancestor and the callout is one. So the container alone
+// decided between "nothing happens" and "torn apart", which is not a distinction the author can see.
+//
+// The second job is why this selects rather than simply refusing, which is what it did first and
+// what the author reported back as making a fence hard to get rid of. Refusing outright left no
+// Backspace route out of the block at all — and worse than inconvenient, it created a dead key: a
+// block loaded from markdown carries a **trailing newline** (markdown-it terminates fence content
+// with one — see serializeCodeBlock), so deleting its visible text leaves `codeBlock("\n")`. That
+// block looks empty on screen but is not `content.size === 0`, so step 4 declines, and a bare
+// refusal here then swallowed every further press. "Visually empty" and "empty" are different
+// states, and node-selection is what covers the gap without having to guess which whitespace counts.
+//
+// Selecting the node is prosemirror-commands' own idiom for "there is nothing to join into"
+// (`selectNodeBackward`), it is visible, any arrow key undoes it, and the second Backspace then goes
+// through baseKeymap's `deleteSelection` — measured to remove the block and leave the list, quote or
+// accordion around it standing.
+//
+// Last in the Backspace chain, so every step with something to do still runs first — undoing a
+// just-typed fence (step 1) in particular, which this would otherwise shadow. The `empty` test is
+// load-bearing in both directions: it keeps a ranged selection on the normal path, and it stops this
+// from re-selecting the block on the *second* press, which would make it undeletable.
+function selectCodeBlockBackward(
+  codeType: NodeType,
+  { state, tr, dispatch }: CommandProps,
+): boolean {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type !== codeType || $from.parentOffset !== 0) return false;
+  if (dispatch) {
+    dispatch(tr.setSelection(NodeSelection.create(tr.doc, $from.before())).scrollIntoView());
+  }
+  return true;
+}
+
 // Restore the fence text recorded by fenceUndoKey: swap the still-empty code block for a
 // paragraph holding the literal fence, caret at its end. False when no live record exists,
 // letting Backspace fall through to the inherited behaviour.
@@ -224,6 +314,23 @@ function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps):
 // A `diff: true` block writes `diff` (or `diff_<language>`, when a language is also set) as
 // the fence's language segment instead of the bare language — the inverse of the `diff`/
 // `diff_<lang>` prefix updateCodeBlockDOM strips back out below.
+//
+// One deliberate departure from the default: the content's *trailing* newline is dropped before
+// it is written. A block loaded from markdown always has one — markdown-it's fence content is
+// terminated by a newline, so `- 項目 / ```ts / const a = 1 / ``` ` parses to the text
+// "const a = 1\n" (a block typed in the editor has no such newline). prosemirror-markdown's
+// `text()` splits on \n, so that terminator becomes a final *empty line*, and `write()` prefixes
+// every line it emits with the current delimiter — `if (this.delim && this.atBlank())`. At the
+// top level the delimiter is "" and nothing shows, which is why this went unnoticed; inside a
+// list item, a quote, or a callout it emitted a delimiter-only line ("  " / "> ") between the
+// code and the closing fence, and re-parsing read that line back as a blank line of *content*.
+// The block therefore grew one blank line per open→save cycle, indefinitely (measured across
+// list / quote / callout / nested list; only the top level was stable).
+//
+// `ensureNewLine()` below writes the terminator back, so dropping it here changes nothing about
+// the fence's shape — it only stops the empty line from being routed through `write()`. The one
+// visible consequence is that blank lines at the very *end* of a code block are trimmed over the
+// next couple of saves rather than preserved; that converges, which the growth did not.
 function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void {
   const language = stringAttr(node.attrs.language);
   const filename = stringAttr(node.attrs.filename);
@@ -232,7 +339,7 @@ function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void 
   const langSegment = node.attrs.diff ? 'diff' + (language ? `_${language}` : '') : language;
   const params = langSegment + (filename ? `:${filename}` : '');
   state.write(fence + params + '\n');
-  state.text(node.textContent, false);
+  state.text(node.textContent.replace(/\n$/, ''), false);
   state.ensureNewLine();
   state.write(fence);
   state.closeBlock(node);
@@ -286,6 +393,81 @@ function domLanguage(element: HTMLElement): string {
   return languageClass ? languageClass.slice('language-'.length) : '';
 }
 
+// Base CodeBlock ships a paste handler (`codeBlockVSCodeHandler`) that turns *any* clipboard
+// carrying VS Code's `vscode-editor-data` flavour into a code block (docs/link-requirements.md
+// §2.5, where this was found and measured — a link investigation walked into it). Its whole test
+// is "is there
+// text, and does the flavour name a language" — it never looks at what was pasted. So copying a
+// URL, a word or a sentence out of an editor window produced a code block, and because it runs
+// `replaceSelectionWith`, it did so by destroying whatever was selected.
+//
+// It is replaced rather than dropped: a multi-line paste out of a code editor really is a code
+// block, and that flavour is the only place its language can come from. The added condition is
+// that the text actually span more than one line — a single line is ambiguous enough that the
+// ``` fence and the `/` menu are the better ways to ask for code.
+//
+// Only reached when the link extension's own paste handler declines, which it does unless the
+// selection is non-empty and the pasted text is exactly one URL: `Link` sets `priority: 1000`, and
+// ExtensionManager sorts by priority *after* reversing the extension list, so it is asked first
+// regardless of array position (see PostEditor's note on ordering, which holds only among equal
+// priorities).
+const VSCODE_HANDLER_KEY = 'codeBlockVSCodeHandler';
+
+// A PluginKey's name, for identifying someone else's plugin in a list. prosemirror-state stores it
+// (suffixed, e.g. 'codeBlockVSCodeHandler$') on the key object but leaves it out of its type
+// declarations, so it is read through this narrow shape rather than an `any` cast.
+function pluginKeyName(plugin: Plugin): string {
+  const key = plugin.spec.key as { key?: string } | undefined;
+  return key?.key ?? '';
+}
+
+// Whether the pasted text has content on more than one line. A trailing newline is stripped first
+// because VS Code's Ctrl+C with nothing selected copies the caret's whole line *including* its
+// newline — that is still one line of content, and treating it as multi-line would put the common
+// "copy this one line" case straight back into a code block.
+function spansMultipleLines(text: string): boolean {
+  return text.replace(/\r\n?/g, '\n').trimEnd().includes('\n');
+}
+
+// The replacement for the handler described above. Mirrors base CodeBlock's version — same
+// language source, same `paste` meta, same post-insert caret fix — with the multi-line condition
+// added and the unguarded `JSON.parse` made total (a malformed flavour must fall through to the
+// normal paste, not throw inside a DOM event handler).
+function vscodeMultilinePastePlugin(type: NodeType, editor: Editor): Plugin {
+  return new Plugin({
+    key: new PluginKey('codeBlockVSCodeMultilineHandler'),
+    props: {
+      handlePaste: (view, event) => {
+        if (!event.clipboardData) return false;
+        if (editor.isActive(type.name)) return false;
+
+        const text = event.clipboardData.getData('text/plain');
+        const flavour = event.clipboardData.getData('vscode-editor-data');
+        if (!text || !flavour || !spansMultipleLines(text)) return false;
+
+        let language: unknown;
+        try {
+          language = (JSON.parse(flavour) as { mode?: unknown }).mode;
+        } catch {
+          return false;
+        }
+        if (typeof language !== 'string' || !language) return false;
+
+        const { tr, schema } = view.state;
+        tr.replaceSelectionWith(
+          type.create({ language }, schema.text(text.replace(/\r\n?/g, '\n'))),
+        );
+        if (tr.selection.$from.parent.type !== type) {
+          tr.setSelection(TextSelection.near(tr.doc.resolve(Math.max(0, tr.selection.from - 2))));
+        }
+        tr.setMeta('paste', true);
+        view.dispatch(tr);
+        return true;
+      },
+    },
+  });
+}
+
 // StarterKit's plain CodeBlock, extended so the editor surfaces (and can edit) the block's
 // language and filename. The base node (input rule, whitespace handling, etc.) is inherited;
 // we add a `filename` attribute, a NodeView with a language <select> + filename field, and a
@@ -312,7 +494,12 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   //    (see fenceUndoKey).
   // 3. deleteSoleCodeChar — keeps the emptying deletion away from the browser (see its comment);
   //    also bound to Delete and the word-delete chords, where it guards the same case.
-  // 4. The inherited handler. 5. The shared isolating-boundary step-in.
+  // 4. clearEmptyCodeBlock — an empty block goes back to being a paragraph. Base CodeBlock's own
+  //    handler used to do this and is no longer called at all (see the binding's comment).
+  // 5. The shared isolating-boundary step-in.
+  // 6. selectCodeBlockBackward — the last word at the block's start: baseKeymap's joinBackward
+  //    can't lift the block out of a list item / quote / accordion, and the block is selected so a
+  //    second Backspace removes it (see that function).
   //
   // Delete gets the mirror treatment at the block's *end*: after deleteSoleCodeChar, fall back to
   // stepIntoNextIsolating, which only acts when the following top-level block is empty (deletes
@@ -369,12 +556,34 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         editor.isActive(this.name)
           ? (parentShortcuts?.['Mod-Alt-c']?.({ editor }) ?? false)
           : editor.commands.insertCodeBlock(),
+      // Base CodeBlock's Backspace is no longer delegated to at all: it answers exactly two cases,
+      // and both are now handled here.
+      //   • an *empty* block clears to a paragraph. Kept as behaviour, but performed by
+      //     clearEmptyCodeBlock — base does it with `clearNodes()`, which throws in this document
+      //     (see that function: `defaultType` resolves to `footnoteSection`).
+      //   • `$anchor.pos === 1` — the caret at the start of a code block that happens to be the
+      //     document's *first* node — clears it as well. That is upstream's generic "nothing above
+      //     to join into, so escape the block" hatch, and it fires on a *non-empty* block: one
+      //     Backspace at the start of the code destroyed the fence, took its language and filename
+      //     with it, and left multi-line code in a single paragraph holding literal \n characters
+      //     (which reload as headings/lists). The identical keystroke with any block above the code
+      //     block is a plain no-op — `isolating` refuses the join — so the position in the document
+      //     was the only thing deciding between "no-op" and "lose the block", which is not a
+      //     distinction the author can see. Dropped, which restores the no-op and matches the
+      //     callout, whose own start is likewise left alone while it holds content
+      //     (callout-extension.ts).
+      // Nothing is lost at the top of the document by dropping it: ArrowUp there lands on a gap
+      // cursor before the block (measured), so typing still opens a paragraph above it with the
+      // fence left standing — which is the gesture that "escape" was standing in for. That gap
+      // cursor exists *because* the block is isolating: prosemirror-gapcursor's needsGap() tests
+      // exactly that spec flag.
       Backspace: ({ editor }) =>
         editor.commands.undoInputRule() ||
         editor.commands.command((props) => undoFenceTyping(codeType, props)) ||
         deleteSole(-1)({ editor }) ||
-        (parentShortcuts?.Backspace?.({ editor }) ?? false) ||
-        editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)),
+        editor.commands.command((props) => clearEmptyCodeBlock(codeType, props)) ||
+        editor.commands.command((props) => stepIntoPreviousIsolating(codeType, props)) ||
+        editor.commands.command((props) => selectCodeBlockBackward(codeType, props)),
       Delete: ({ editor }) =>
         deleteSole(1)({ editor }) ||
         editor.commands.command((props) => stepIntoNextIsolating(codeType, props)),
@@ -502,8 +711,27 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   // invalidate the record — so a stale fence can never resurface later.
   addProseMirrorPlugins() {
     const codeType = this.type;
+    const parentPlugins = this.parent?.() ?? [];
+    // Base CodeBlock's VS Code paste handler, swapped for the multi-line-only one above. Filtered
+    // by key rather than by dropping the parent's plugins wholesale, which would also lose
+    // anything else the base extension contributes now or later. PluginKey suffixes its name
+    // ('codeBlockVSCodeHandler$'), hence the prefix test.
+    const withoutVSCodeHandler = parentPlugins.filter(
+      (plugin) => !pluginKeyName(plugin).startsWith(VSCODE_HANDLER_KEY),
+    );
+    if (withoutVSCodeHandler.length === parentPlugins.length) {
+      // The key belongs to upstream, so a rename there makes this filter a no-op — and then the
+      // base handler is still in the list *and* ours is appended after it, so the unconditional
+      // behaviour comes back in full (handlePaste is first-wins and the base plugin comes first).
+      // This warning is a breadcrumb, not a guard: e2e/editor-vscode-paste.spec.ts's single-line
+      // cases are what actually catch the revert.
+      console.warn(
+        `[code-block] base CodeBlock plugin '${VSCODE_HANDLER_KEY}' not found — its unconditional "VS Code paste becomes a code block" behaviour is back`,
+      );
+    }
     return [
-      ...(this.parent?.() ?? []),
+      ...withoutVSCodeHandler,
+      vscodeMultilinePastePlugin(codeType, this.editor),
       new Plugin({
         key: diffHighlightKey,
         state: {

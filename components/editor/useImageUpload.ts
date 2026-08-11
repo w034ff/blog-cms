@@ -40,9 +40,21 @@ function altTextFromFilename(name: string): string {
 // merely reaches into one the caret is not inside it, so "inside" would be quietly wrong in exactly
 // the case above. Neither host can hold a block node — a cell is paragraph-only, a code block is a
 // `code` textblock (see the guard below).
-const IMAGE_BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
-const IMAGE_BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
-const IMAGE_BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
+//
+// Built from the hosts actually touched rather than written out per combination: with two hosts
+// three constants covered it, and the third (an accordion's title, added 2026-08-10) would have
+// made seven. The wording of the one- and two-host cases is unchanged. 「アコーディオンのタイトル」
+// matches what the footnote guard already calls it — the same feature carrying two names is the
+// mistake §7.3 of docs/accordion-requirements.md records about 囲み枠/コールアウト.
+export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
+  table: '表のセル',
+  codeBlock: 'コードブロック',
+  detailsSummary: 'アコーディオンのタイトル',
+};
+
+function imageBlockedMessage(hosts: string[]): string {
+  return `${hosts.map((name) => IMAGE_BLOCKED_HOSTS[name]).join('と')}には画像を挿入できません`;
+}
 
 // The editor's image-upload concern: send files to /api/uploads and insert each
 // as an image node at the cursor, from any of the three entry points — the
@@ -98,16 +110,15 @@ export function useImageUpload(
       // host, setImage replaced the range instead of splitting it — the table disappeared, and
       // the code block came out empty (its markdown an empty fence).
       // Asked per host so the notice can name the one in the way; both together is its own case.
-      const inTable = selectionTouches(editor.state, 'table');
-      const inCodeBlock = selectionTouches(editor.state, 'codeBlock');
-      if (inTable || inCodeBlock) {
-        showBlocked(
-          inTable && inCodeBlock
-            ? IMAGE_BLOCKED_IN_BOTH
-            : inTable
-              ? IMAGE_BLOCKED_IN_TABLE
-              : IMAGE_BLOCKED_IN_CODE_BLOCK,
-        );
+      // An accordion's title joins the two: it is `text*`, so an image splits the accordion in two
+      // and grows a second, untitled one — the same tear the callout and table pickers now refuse
+      // (measured 2026-08-10). Order fixed here, not by discovery order, so a selection touching
+      // two hosts always names them the same way round.
+      const blockedHosts = Object.keys(IMAGE_BLOCKED_HOSTS).filter((name) =>
+        selectionTouches(editor.state, name),
+      );
+      if (blockedHosts.length > 0) {
+        showBlocked(imageBlockedMessage(blockedHosts));
         return;
       }
       setUploading(true);

@@ -9,18 +9,34 @@ import { TableKit } from '@tiptap/extension-table';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
 import { Callout } from './editor/callout-extension';
+import {
+  MarkdownDetails,
+  MarkdownDetailsContent,
+  MarkdownDetailsSummary,
+} from './editor/details-extension';
 import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
 import { Blockquote } from './editor/blockquote-extension';
+import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
+import { FootnoteLiteral } from './editor/footnote-literal-extension';
+import {
+  Document,
+  FootnoteDefinition,
+  FootnoteReference,
+  FootnoteSection,
+} from './editor/footnote-extension';
+import { isPublishableUri } from './editor/link-protocols';
 import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
 import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
 import { SlashCommand } from './editor/slash-command';
 import { CodeBlockWithLanguage } from './editor/code-block-extension';
+import { ClearNodes } from './editor/clear-nodes-extension';
 import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
+import { LinkBubble } from './editor/LinkBubble';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
@@ -200,6 +216,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // bold/italic/strike/code are replaced by the guarded versions below (same behavior,
       // but toggling one that's excluded by accentEmphasis is a true no-op — see
       // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
+      // trailingNode is replaced by ours below: same appended paragraph, but it waits while a
+      // just-fired input rule can still be undone, so Backspace after a block shortcut typed at
+      // the end of the document restores what was typed — see trailing-node-extension.ts.
       StarterKit.configure({
         heading: false,
         bulletList: false,
@@ -211,7 +230,34 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         strike: false,
         code: false,
         underline: false,
+        trailingNode: false,
+        // document is replaced by ours: the same top node, but its content expression admits the
+        // footnote definitions' section as an optional last child — see footnote-extension.ts.
+        document: false,
+        // link is kept (it is what makes a pasted URL a link) but must not open on click: the
+        // default sends a left click to window.open, so a link inside the editor could not be
+        // clicked into and the caret could never be placed in it — the text was uneditable and,
+        // with no toolbar control for links either, unremovable. Only this option is overridden,
+        // so autolink/linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
+        // What this gave up — "open this link" from inside the editor — is handed back by the link
+        // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
+        //
+        // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
+        // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
+        // is closed at this end.
+        link: {
+          openOnClick: false,
+          isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
+        },
       }),
+      Document,
+      // Directly under Document because it exists to answer for Document's content expression:
+      // `block+ footnoteSection?` makes `ContentMatch.defaultType` return `footnoteSection` past
+      // the first child, and TipTap's own `clearNodes` takes that unchecked and throws. Replaces
+      // the command with upstream's body picking a *textblock* instead — see
+      // clear-nodes-extension.ts. Reachable as Mod-Alt-0 on almost any line of a post.
+      ClearNodes,
+      TrailingNode,
       // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
       // (same node, extended to serialize column alignment) and the paragraph-only
       // cells (markdown can't store block structure inside a cell), so disable its own.
@@ -242,6 +288,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // see image-extension.ts.
       Image,
       Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
+      // The backstop under the footnote nodes below, not a leftover from before them. Every
+      // definition markdown-it-footnote accepts is claimed before this is asked; what it still
+      // catches is the shapes the plugin declines — a label containing a space among them — which
+      // `reference` would otherwise take as a link reference definition, turning the note's words
+      // into a URL. See footnote-literal-extension.ts.
+      FootnoteLiteral,
+      // Footnotes (docs/footnote-requirements.md). The reference lives in the prose, the
+      // definitions in one section pinned to the end of the document, and `Document` above is
+      // replaced only to say that in the schema (`block+ footnoteSection?`, §3.2).
+      // FootnoteLiteral above is not in competition with these: markdown-it-footnote registers
+      // footnote_def *before* the `reference` rule it patches, so it is only ever asked about the
+      // lines the plugin refused (§7.2).
+      FootnoteReference.configure({ onBlocked: showNotice, onNotice: showNotice }),
+      FootnoteDefinition.configure({ onBlocked: showNotice }),
+      FootnoteSection,
       // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
       // non-editable label chip and only the body is editable, so it can't be broken
       // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
@@ -252,6 +313,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
       // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
       Blockquote,
+      // Zenn-style folding block, stored as raw `<details>`/`<summary>` HTML (markdown has no
+      // syntax for it — see docs/accordion-requirements.md). `onBlocked` is the shared notice: a
+      // drop carrying an accordion into a quote, list, callout or cell is refused, and a refused
+      // gesture changes nothing, so the message is the whole of the feedback.
+      MarkdownDetails.configure({ onBlocked: showNotice }),
+      MarkdownDetailsSummary,
+      MarkdownDetailsContent,
       // `/` at the start of a line opens a small block-insert menu (callouts + code block);
       // choosing a row deletes the `/query` and runs that block's command.
       SlashCommand,
@@ -289,16 +357,41 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         class:
           'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] px-4 py-3 focus:outline-none',
       },
-      // Intercept pasted image files and upload them instead of letting the
-      // browser inline them as data URLs. uploadImages is identity-stable (the
-      // hook reaches the editor through a ref), so this once-created handler
-      // never goes stale.
-      handlePaste: (_view, event) => {
+      // The two pastes that have to be answered ahead of every plugin. First, image files:
+      // upload them instead of letting the browser inline them as data URLs (uploadImages is
+      // identity-stable — the hook reaches the editor through a ref — so this once-created
+      // handler never goes stale). Second, a URL the site cannot publish, for the reason spelled
+      // out below.
+      handlePaste: (view, event) => {
         const files = imageFilesFromList(event.clipboardData?.files);
-        if (files.length === 0) return false;
-        event.preventDefault();
-        void uploadImages(files);
-        return true;
+        if (files.length > 0) {
+          event.preventDefault();
+          void uploadImages(files);
+          return true;
+        }
+        // The one hole the link extension's own `isAllowedUri` does not cover. Pasting a URL over
+        // a selection is handled by its `linkOnPaste` plugin, which applies the mark with a raw
+        // `setMark` — and unlike `setLink`, that never consults `isAllowedUri`. So a scheme this
+        // site cannot publish (editor/link-protocols.ts) would slip past everywhere else it is
+        // refused, and has to be answered here instead: the props passed to useEditor are asked
+        // before every plugin (prosemirror-view's someProp reads `_props` first), which is the
+        // only way to get in front of an extension declaring `priority: 1000`.
+        //
+        // Only the case that plugin claims: a non-empty selection and one line of text. Anything
+        // else already reaches a gated path. Replacing the selection with the text is what the
+        // paste would have done anyway, minus the link.
+        const pasted = event.clipboardData?.getData('text/plain') ?? '';
+        if (
+          !view.state.selection.empty &&
+          pasted &&
+          !pasted.includes('\n') &&
+          !isPublishableUri(pasted, () => true)
+        ) {
+          event.preventDefault();
+          view.dispatch(view.state.tr.insertText(pasted));
+          return true;
+        }
+        return false;
       },
     },
     onUpdate: ({ editor }) => {
@@ -429,6 +522,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           )}
         </div>
         {editor && <TableToolbar editor={editor} />}
+        {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
+            are BubbleMenus that portal themselves to <body> — neither renders here. */}
+        {editor && <LinkBubble editor={editor} onNotice={showNotice} />}
       </div>
 
       <input type='hidden' name='body' value={body} />
