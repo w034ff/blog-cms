@@ -897,6 +897,34 @@ body.link-menu-open .table-toolbar {
   color: #cf222e;
 }
 
+/* Link color (2026-08-11, reversing docs/link-requirements.md §7's "leave it at the typography
+   default"). prose-zinc gives `a` no hue of its own: zinc-900 against a zinc-700 body in light,
+   white against zinc-300 in dark — 1.7:1 and 1.5:1 respectively, so the permanent underline was
+   the only thing separating a link from the sentence around it.
+
+   The reason to reverse it is already in this file. The footnote-reference rule below records that
+   a near-black underlined number "reads as an ordinary link" and fixes it with this exact blue —
+   so the page ended up with its most link-colored element being the footnote reference while the
+   real links stayed body-colored. The pair (#0969da / #4493f8) is taken from there rather than
+   introduced, which also keeps blue meaning one thing across both surfaces.
+
+   Editor-side this buys something the public page doesn't need: `openOnClick: false` means an
+   editor link never navigates, and the link card only appears once the caret is already inside
+   one, so "where does this link start and end" had to be read off the underline alone.
+
+   Color only, deliberately:
+   - The underline stays. It is the non-color cue WCAG SC 1.4.1 wants, and unlike the raised
+     0.75em footnote number (see below) a full-size link has room for it.
+   - `.footnote-popover-jump` is an `<a>` inside a `.prose` popover, so this rule outranks its own
+     (0,1,1 over 0,1,0) — same color in both schemes, and taking nothing but `color` here leaves
+     its `text-decoration: none` standing.
+   The footnote ref/backref rules carry an attribute selector and outrank this one in both schemes.
+   Dark counterpart lives in the bottom prefers-color-scheme block. Applies to both surfaces
+   (editor and post both use .prose). */
+.prose a {
+  color: #0969da;
+}
+
 /* Table of contents (components/TocNav.tsx), post page only — not `.prose`-scoped since it
    sits outside the article body. `scroll-mt` gives a jumped-to heading a little breathing room
    from the viewport edge; there's no fixed site header to clear, so a small value is enough.
@@ -1380,6 +1408,12 @@ body.link-menu-open .table-toolbar {
   /* Dark counterpart of the TOC active-link color above. */
   .toc-link.is-active {
     color: #f85149;
+  }
+
+  /* Dark counterpart of the link color above — the same brighter blue the footnote reference
+     switches to further down, and the one .markdown-alert-note already uses on this surface. */
+  .prose a {
+    color: #4493f8;
   }
 
   /* Brighter accents + faint tint for the dark surface (the light hues above go
