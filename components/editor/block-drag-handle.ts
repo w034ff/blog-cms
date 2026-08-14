@@ -15,6 +15,7 @@ const DRAGGABLE_TYPES = new Set([
   'image',
   'table',
   'codeBlock',
+  'linkCard',
 ]);
 
 // Pointer movement (px) before a mousedown-on-handle counts as a drag rather than a plain click
@@ -350,13 +351,21 @@ function alignHandles(view: EditorView): void {
   });
 }
 
-// A hover-revealed grip in the left gutter of blockquotes, callouts, images, tables, and code
-// blocks, for selecting (and dragging to reorder) the whole block in one action — mousedown-only
-// for now, no keyboard equivalent.
+// A hover-revealed grip in the left gutter of every type in DRAGGABLE_TYPES above — blockquotes,
+// callouts, accordions, images, tables, code blocks and link cards — for selecting (and dragging to
+// reorder) the whole block in one action — mousedown-only for now, no keyboard equivalent.
 //
 // One handle per matching top-level node, via a widget decoration placed immediately before it
-// (`side: -1`) rather than a NodeView: none of blockquote/image/table already have one, and a
-// single decoration-scan plugin covers all five without adding three new NodeViews. There's no
+// (`side: -1`) rather than a NodeView: a plain `toDOM` node (blockquote, image) has nothing to hang
+// one in, and a single decoration-scan plugin covers all seven uniformly — the types that do have a
+// NodeView (callout, codeBlock and linkCard here, details' from @tiptap/extension-details) would each
+// otherwise need the same grip built by hand. A
+// natively draggable node is not exempt: `image` and `linkCard` both carry `draggable: true`, so
+// prosemirror-view sets the DOM attribute (dist: `if (node.type.spec.draggable) dom.draggable = true`
+// — it runs for a custom NodeView's `dom` too) and grabbing the block itself already moves it
+// (measured for the card 2026-08-14: a native drag reorders it with its `data-href` intact). Both get
+// a handle anyway. The handle is the visible, uniform affordance, and unlike the native path it
+// cannot aim anywhere but the top-level gaps findBoundary() offers. There's no
 // mousemove-driven hit-testing for *showing* a handle either — the widget is a real sibling in the
 // document flow, and CSS (`:has(+ :hover)`, globals.css) reveals it exactly when the block right
 // after it is hovered. Actually *dragging* it, once picked up, is DragController's job (above).

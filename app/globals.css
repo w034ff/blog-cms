@@ -167,8 +167,9 @@ body {
   position: relative;
 }
 
-/* Editor-only chrome: a hover-revealed grip in the left gutter of blockquotes, callouts, images,
-   tables, and code blocks (components/editor/block-drag-handle.ts) — click-drag the whole block
+/* Editor-only chrome: a hover-revealed grip in the left gutter of every type in
+   `DRAGGABLE_TYPES` — blockquotes, callouts, accordions, images, tables, code blocks and link cards
+   (components/editor/block-drag-handle.ts) — click-drag the whole block
    to reorder it. Each handle is a widget decoration placed immediately before its target, so it's
    a real DOM sibling; `top` is set in JS to match the target's own `offsetTop` (see
    block-drag-handle.ts), but the horizontal offset is this fixed left value, since every target

@@ -11,11 +11,15 @@ async function getMarkdown(page: Page): Promise<string> {
   });
 }
 
+// A card the seeded DB can resolve (e2e/prepare-db.mts), in the stored reference-only form —
+// the same constants editor-link-card.spec.ts uses.
+const CARD_HREF = '/posts/second-post';
+const CARD_TITLE = 'React Server Components を学ぶよ';
+const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
+
 // One handle per matching top-level node (components/editor/block-drag-handle.ts); a plain
 // paragraph gets none. Structural check, no dragging involved.
-test('a handle appears before each of the five target types, none before a paragraph', async ({
-  page,
-}) => {
+test('a handle appears before a target type, none before a paragraph', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await editor.click();
@@ -167,6 +171,72 @@ for (const kind of ['blockquote', 'table'] as const) {
     }
   });
 }
+
+// The link card (docs/link-card-requirements.md §7.2), which is the one target type that is both an
+// atom and a NodeView. Three things at once, because they only hold together: the handle belongs to
+// the card, the drag reorders it, and the card comes out the other side still pointing at the same
+// post. The last one is the point — the card stores a reference and nothing a reader sees (§4.2), so
+// a move that dropped `data-href` would leave a card that had silently forgotten its target, which
+// is exactly the shape of the failure §7.1 recovered from the WAL. The reference is therefore
+// asserted on the saved markdown, not on the rendered title (which the NodeView refetches and would
+// happily redraw over an empty attribute).
+test("dragging a link card's handle past a following paragraph reorders it, reference intact", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, `${CARD_MD}\n\n後の段落\n`);
+
+  // The handle exists and is the card's own: `decorations()` places it immediately before its
+  // target, so the sibling right after it is the thing it would drag.
+  const handle = editor.locator('.block-drag-handle');
+  await expect(handle).toHaveCount(1);
+  const targetClass = await page.evaluate(
+    () =>
+      document.querySelector('.ProseMirror > .block-drag-handle')?.nextElementSibling?.className ??
+      null,
+  );
+  expect(targetClass).toContain('link-card-view');
+
+  // Resolved first, so the preview assertion below is about a real card rather than a card still
+  // waiting on `/api/posts/search`.
+  await expect(editor.locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+  const handleBox = await handle.boundingBox();
+  const cardBox = await editor.locator('.link-card-view').boundingBox();
+  const targetPara = editor.locator('p', { hasText: '後の段落' });
+  const targetBox = await targetPara.boundingBox();
+  if (!handleBox || !cardBox || !targetBox) throw new Error('missing bounding box');
+
+  // alignHandles() pins each handle's `top` to its target's `offsetTop`, which is only the right
+  // number while the two share an offsetParent (`.ProseMirror`). Asserted for this type because the
+  // drag below cannot catch a misalignment — it aims at the handle's own box wherever that box has
+  // ended up, so a handle parked at the top of the document would still drive the whole gesture.
+  expect(Math.abs(handleBox.y - cardBox.y)).toBeLessThan(8);
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+  // The preview clones the NodeView's own DOM, so what follows the cursor is the card as drawn —
+  // not the empty `div.link-card` the document actually stores.
+  const preview = page.locator('.block-drag-preview');
+  await expect(preview.locator('.link-card-view')).toHaveCount(1);
+  await expect(preview.locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await page.mouse.up();
+
+  expect(errors).toEqual([]);
+  // Moved, not copied. TrailingNode adds the empty paragraph, since the card is now the last block.
+  await expect.poll(() => docString(page)).toBe('doc(paragraph("後の段落"), linkCard, paragraph)');
+  expect(await getMarkdown(page)).toContain(CARD_MD);
+});
 
 // The original reported bug, guarded directly: dropping on the very next indicator down (not the
 // one after that) must move the block by exactly one slot. Before findBoundary() excluded the

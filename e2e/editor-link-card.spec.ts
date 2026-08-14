@@ -105,6 +105,54 @@ test('a card can be turned back into a text link (4b)', async ({ page }) => {
   expect(await markdown(page)).toContain(`[${CARD_TITLE}](${CARD_HREF})`);
 });
 
+// §7.3, and the answer to what §10 used to list as unmeasured. A card is an atom, so
+// prosemirror-commands deletes it whole from the edge of the neighbouring textblock in one press —
+// its `joinBackward` has an explicit branch for it (dist: `// If the node before is an atom, delete
+// it`, guarded by `before.isAtom && $cut.depth == $cursor.depth - 1`), and `joinForward` has the
+// twin (`after.isAtom`). Nothing in this repo binds Backspace for the card, so that branch is what
+// runs, and `selectNodeBackward` — the "select it first, delete on the second press" step — is never
+// reached because joinBackward already returned true.
+//
+// The behavior is kept (same as `image`, the other atom block), so what has to hold is the way back:
+// undo must return the card *with its reference*, since a card that came back pointing nowhere would
+// be the §7.1 failure by another route. That is the half this spec exists for — the deletion itself
+// is upstream's and would pass without any of this file's code.
+for (const gesture of ['Backspace', 'Delete'] as const) {
+  test(`${gesture} at a card's edge deletes it, and undo restores the reference (4e)`, async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    await page.locator('.ProseMirror').click();
+    // The card sits on the side the gesture reaches: before the paragraph for Backspace, after it
+    // for Delete. `本文` is the document's first paragraph either way.
+    await loadMarkdown(
+      page,
+      gesture === 'Backspace' ? `${CARD_MD}\n\n本文\n` : `本文\n\n${CARD_MD}\n`,
+    );
+    await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+    if (gesture === 'Backspace') {
+      await setRange(page, await firstPos(page, 'paragraph'));
+    } else {
+      await selectInside(page, 'paragraph');
+      await collapseToEnd(page);
+    }
+
+    // prosemirror-history groups changes made within 500ms into one event, and `loadMarkdown` is a
+    // single one of them (setContent). Without this pause the deletion joins it and the undo below
+    // rolls back the whole document, which would say nothing about what the deletion cost.
+    await page.waitForTimeout(700);
+    await page.keyboard.press(gesture);
+    expect(await docString(page)).not.toContain('linkCard');
+
+    await page.keyboard.press('Control+z');
+    expect(await docString(page)).toContain('linkCard');
+    // The reference, not just the node: this is what makes the one-press deletion acceptable.
+    expect(await markdown(page)).toContain(CARD_MD);
+  });
+}
+
 // §5.4, the gesture half. `available` reads the same predicate `setLinkCard` runs, so a context
 // where the card cannot be placed drops the row — and where it is the only row left, `hasAnyItem`
 // declines the trigger and `/` stays an ordinary character.

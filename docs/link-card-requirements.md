@@ -2,7 +2,7 @@
 
 - 状態: **実装済み**（2026-08-12）。着手前に書かれた設計の記録で、実装後に実測値を入れてある（§9）。決めたのは保存形式（§4 の①）、入力の引き金（§5 の②）、公開側の解決方法（§6 の③）の 3 つと、解決できなかったカードの行き先（§6.1。2026-08-12 追記）。外部 URL のカード（§8）は理由付きで**延期**
 - 作成: 2026-08-12（実装より先に書いている。`docs/link-requirements.md` と同じ順序）
-- 実装: `components/editor/link-card-extension.ts`（ノード + NodeView + 2 つのコマンド）、`lib/rehype-link-card.ts` と `lib/render.ts`（§6）、`app/api/posts/search/route.ts`（§5.3）、`components/editor/slash-command.ts` の 1 行、`app/globals.css`
+- 実装: `components/editor/link-card-extension.ts`（ノード + NodeView + 2 つのコマンド）、`lib/rehype-link-card.ts` と `lib/render.ts`（§6）、`app/api/posts/search/route.ts`（§5.3）、`components/editor/slash-command.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行（§7.2）、`app/globals.css`
 - 対象: `lib/posts.ts`（`getPostBySlug`、内部カードの唯一のデータ源）、`lib/db/schema.ts`（§8.2 のサムネイル列の不在）
 - 関連: `docs/link-requirements.md`（この文書はあちらの非目標を 1 行取り下げるものである — §1）、`components/editor/details-extension.ts`（保存形式の前例、§4.2）、`docs/footnote-popover-requirements.md` §0（実使用がほぼ無い機能の扱い方の前例）
 
@@ -239,6 +239,26 @@ renderMdxToHtml(source, { resolveCard });
 
 この節は実使用で壊れた 1 件から書いている。`data/blog.db-wal` に `data-href="/posts/…"` → `data-href=""` → `[タイトル](/posts/…)` が 1 回の autosave 窓の中に残っており、そこから再現した。既存の 12 spec が全部緑のまま通っていたのは、どれも 1 回しかクリックせず、しかも Playwright の既定クリック位置が行の水平中央 — ボタンが唯一届かない場所 — だったためである。
 
+### 7.2 カードはブロックドラッグハンドルの対象である（2026-08-14 追記）
+
+**決定**: `block-drag-handle.ts` の `DRAGGABLE_TYPES` に `linkCard` を入れる。カードは他の 6 種と同じく左のガターにハンドルを持ち、同じ操作で並べ替えられる。
+
+**理由**: これは判断の記録ではなく抜けの補修である。初版がこの許可リストに触れていないのは意図ではない — 根拠は 3 つある。(a) `image` も atom の block で `draggable: true` だが許可リストに入っており、「atom だから要らない」では説明が付かない。(b) `unsetLinkCard` の `at` 引数のコメントが「ハンドルで掴んだカード（NodeSelection）も解除できるように」と、存在しない経路を前提に書かれていた。(c) 本書に検討や却下の記録が無い（アコーディオンは `docs/accordion-requirements.md` §6.2 の表で明示的に追加している）。
+
+**実測（2026-08-14）**: ハンドルが無くてもカードは動いていた。カードを直接掴むネイティブドラッグで `doc(linkCard, paragraph("後の段落"))` → `doc(paragraph("後の段落"), linkCard, paragraph)` になり、`data-href` は保たれ `pageerror` も無い。`draggable: true` に対して prosemirror-view が `dom.draggable = true` を立てるのは NodeView の `dom` にも及ぶためである。**したがって補修しているのは操作の可否ではなく、他のブロックと揃った掴みどころの有無である。**
+
+**機構**: 許可リストの 1 行だけ。ハンドルは widget decoration なので NodeView 側には何も足さない。対象は文書の直接の子だけなので、引用やリスト項目の中のカードにハンドルは出ない（他の 6 種と同じ範囲であり、`block-drag-handle.ts` の `decorations` が `state.doc.forEach` で走ることの帰結である）。落とし先は `findBoundary` が返すトップレベルの隙間に限られ、この経路は `handleDrop` を通らないので、§5.4 が塞いでいるセルとタイトルへの新しい入口は増えない（ネイティブドラッグ側は従来どおり両ガードを通る）。併せて、種類を数え上げていたコメント 2 か所（`block-drag-handle.ts` と `app/globals.css`）を許可リストの現状に合わせた。どちらも `details` を足したときから 5 種のままだった。
+
+### 7.3 カードの削除は上流の atom の規則のままにする（2026-08-14 追記）
+
+**決定**: 隣の段落の端で Backspace（または Delete）を 1 回押すとカードは消える。この挙動は変えない。代わりに担保するのは戻り道で、**undo は参照ごとカードを戻す**。
+
+**機構**: `prosemirror-commands` の `joinBackward` に atom を丸ごと消す分岐があり（dist の `// If the node before is an atom, delete it`、条件は `before.isAtom && $cut.depth == $cursor.depth - 1`）、`joinForward` に対の分岐がある（`after.isAtom`）。TipTap の Backspace の連鎖は `undoInputRule → deleteSelection → joinBackward → selectNodeBackward` で、`joinBackward` が true を返すため「まず選択し 2 回目で消す」段（`selectNodeBackward`）には落ちない。このリポジトリはカードに Backspace を割り当てていないので、既定がそのまま出ている。
+
+**理由**: 同じ atom の block である `image` と同一であり、カードだけ例外を作る側にコストがある。§7.1 の事故は参照が黙って壊れる形だったが、こちらはカードそのものが消えるので著者に見える。危ないのは戻したときに参照が失われている場合だけで、そこは基準 4e が測る。
+
+なお 4e が測るのは編集セッション内の undo であって、保存の耐久性ではない。削除と undo の間に autosave が挟まれば保存済みの本文からは参照が消えている — これはカードに限らずどのブロックでも同じで、この文書の対象外である。
+
 ---
 
 ## 8. 延期 — 外部 URL のカード
@@ -262,31 +282,33 @@ renderMdxToHtml(source, { resolveCard });
 
 ## 9. 受け入れ基準（実装時に測る）
 
-**21 件のうち 20 件を 2026-08-12 に実測した**（4c は同日の追記。§7.1）**。** 残る 1 件（6c）は §10 に理由を書いてある。**測れないものはここに入れない**（`link-requirements.md` §8 末尾の規則）。
+**23 件のうち 22 件を実測した。** 20 件と 4c は 2026-08-12（4c は §7.1 の追記）、4d と 4e は 2026-08-14（§7.2・§7.3）。残る 1 件（6c）は §10 に理由を書いてある。**測れないものはここに入れない**（`link-requirements.md` §8 末尾の規則）。
 
-| #   | 基準                                                                       | 実測                                                                |
-| --- | -------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 1a  | 挿入したカードが保存 → 再読込でカードのまま戻る（§4 の往復）               | `editor-link-card.spec.ts`（挿入と往復の 2 本）                     |
-| 1b  | 保存形式が参照だけで、タイトル等の表示文字列を含まない（§4.2）             | 同上。保存 markdown にタイトル文字列が無いこと                      |
-| 1c  | 参照先の記事のタイトルを変えると、カードの表示も変わる（焼き込んでいない） | エディタは `/api/posts/search`、公開側は `public-link-card.spec.ts` |
-| 2a  | 公開ページで `class` / `data-href` が sanitize に落とされない（§4.3）      | `render.test.ts`（許可を外すと 9 件・7 件落ちる）+ 実ページ         |
-| 2b  | 既存のアラート（`markdown-alert-*`）の class が巻き添えで死んでいない      | 同上。アラートと `evil` class を同じ文書で測る                      |
-| 2c  | **手書きの `data-href="javascript:…"` がリンクを生まない**（§4.4）         | `render.test.ts` + 公開ページ実測。`<a>` を 1 つも生まない          |
-| 2d  | 未知の slug / `/posts/` 以外を指すカードが解決されず、壊れた出力にならない | 同上（`//evil.example` `/posts/..` 等 5 形）+ 公開ページ実測        |
-| 2e  | `draft` の記事を指すカードが素のテキストリンクになる（§6.1）               | 同上。未知 slug と同じ分岐で、公開ページでも素のリンク              |
-| 3a  | カードが行を占有し、段落の途中に入らない（挿入・ペースト・ドロップ）       | `editor-link-card.spec.ts`。引用の中は通ることも測った              |
-| 3b  | カードが置けない場所でスラッシュメニューの行が出ない（§5.4）               | 同上 2 本。行を強制的に available にすると両方落ちる                |
-| 3c  | **`link-requirements.md` の既存 spec が 1 件も落ちていない**               | E2E 444 件・unit 137 件が緑。行数を数える 2 件のみ更新              |
-| 4a  | カードの中にキャレットが入らず、バブルが出ない（§7-1）                     | `editor-link-card.spec.ts`。NodeSelection が付きバブルは 0 件       |
-| 4b  | カードをテキストリンクに戻せる（§7-3）                                     | 同上。`[タイトル](/posts/…)` に戻る                                 |
-| 4c  | 記事を選んだ直後の 2 回目のクリックがカードを壊さない（§7.1）              | 同上。行の左端から 5 点。ボタンを末尾に戻すと x=24 で赤             |
-| 5a  | `renderMdxToHtml` が DB を import していない（§6）                         | `lib/render.ts` は DB を import しない（注入のみ）                  |
-| 5b  | 解決段が目次・ページ内リンク・コード整形と順序で衝突しない                 | `render.test.ts`。見出し・`#…`・fence を同じ文書で測る              |
-| 5c  | `resolveCard` の実物（`getPostBySlug` + 日付整形）が動く                   | `public-link-card.spec.ts`。stub ではない唯一の経路                 |
-| 5d  | カードが `.prose a` の青と下線をかぶらない                                 | 同上。リセットを外すと落ちる（§14 の一般規則の巻き添え）            |
-| 6a  | アコーディオンのタイトルへのペースト／ドロップがアコーディオンを割らない   | `link-card-placement.test.ts` + E2E。ガードを潰すと落ちる           |
-| 6b  | テーブルのセルへのペースト／ドロップがテーブルを割らない                   | 同上                                                                |
-| 6c  | リスト項目とコードブロックでの挿入とペーストの結果が決まっている           | **未実測**（§10）。引用は 3a で測った                               |
+| #   | 基準                                                                       | 実測                                                                                    |
+| --- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1a  | 挿入したカードが保存 → 再読込でカードのまま戻る（§4 の往復）               | `editor-link-card.spec.ts`（挿入と往復の 2 本）                                         |
+| 1b  | 保存形式が参照だけで、タイトル等の表示文字列を含まない（§4.2）             | 同上。保存 markdown にタイトル文字列が無いこと                                          |
+| 1c  | 参照先の記事のタイトルを変えると、カードの表示も変わる（焼き込んでいない） | エディタは `/api/posts/search`、公開側は `public-link-card.spec.ts`                     |
+| 2a  | 公開ページで `class` / `data-href` が sanitize に落とされない（§4.3）      | `render.test.ts`（許可を外すと 9 件・7 件落ちる）+ 実ページ                             |
+| 2b  | 既存のアラート（`markdown-alert-*`）の class が巻き添えで死んでいない      | 同上。アラートと `evil` class を同じ文書で測る                                          |
+| 2c  | **手書きの `data-href="javascript:…"` がリンクを生まない**（§4.4）         | `render.test.ts` + 公開ページ実測。`<a>` を 1 つも生まない                              |
+| 2d  | 未知の slug / `/posts/` 以外を指すカードが解決されず、壊れた出力にならない | 同上（`//evil.example` `/posts/..` 等 5 形）+ 公開ページ実測                            |
+| 2e  | `draft` の記事を指すカードが素のテキストリンクになる（§6.1）               | 同上。未知 slug と同じ分岐で、公開ページでも素のリンク                                  |
+| 3a  | カードが行を占有し、段落の途中に入らない（挿入・ペースト・ドロップ）       | `editor-link-card.spec.ts`。引用の中は通ることも測った                                  |
+| 3b  | カードが置けない場所でスラッシュメニューの行が出ない（§5.4）               | 同上 2 本。行を強制的に available にすると両方落ちる                                    |
+| 3c  | **`link-requirements.md` の既存 spec が 1 件も落ちていない**               | E2E 449 件（setup 込み）・unit 137 件が緑（2026-08-14 再測）。行数を数える 2 件のみ更新 |
+| 4a  | カードの中にキャレットが入らず、バブルが出ない（§7-1）                     | `editor-link-card.spec.ts`。NodeSelection が付きバブルは 0 件                           |
+| 4b  | カードをテキストリンクに戻せる（§7-3）                                     | 同上。`[タイトル](/posts/…)` に戻る                                                     |
+| 4c  | 記事を選んだ直後の 2 回目のクリックがカードを壊さない（§7.1）              | 同上。行の左端から 5 点。ボタンを末尾に戻すと x=24 で赤                                 |
+| 4d  | カードをドラッグハンドルで並べ替えても参照が残る（§7.2）                   | `editor-block-drag-handle.spec.ts`。許可リストから外すと赤                              |
+| 4e  | 端での Backspace / Delete がカードを消し、undo が参照ごと戻す（§7.3）      | `editor-link-card.spec.ts`。前後 2 方向で測る                                           |
+| 5a  | `renderMdxToHtml` が DB を import していない（§6）                         | `lib/render.ts` は DB を import しない（注入のみ）                                      |
+| 5b  | 解決段が目次・ページ内リンク・コード整形と順序で衝突しない                 | `render.test.ts`。見出し・`#…`・fence を同じ文書で測る                                  |
+| 5c  | `resolveCard` の実物（`getPostBySlug` + 日付整形）が動く                   | `public-link-card.spec.ts`。stub ではない唯一の経路                                     |
+| 5d  | カードが `.prose a` の青と下線をかぶらない                                 | 同上。リセットを外すと落ちる（§14 の一般規則の巻き添え）                                |
+| 6a  | アコーディオンのタイトルへのペースト／ドロップがアコーディオンを割らない   | `link-card-placement.test.ts` + E2E。ガードを潰すと落ちる                               |
+| 6b  | テーブルのセルへのペースト／ドロップがテーブルを割らない                   | 同上                                                                                    |
+| 6c  | リスト項目とコードブロックでの挿入とペーストの結果が決まっている           | **未実測**（§10）。引用は 3a で測った                                                   |
 
 3c を表に入れているのは、この機能が既存のリンクの挙動を触らずに追加できるという主張そのものを測る行だからである。
 
@@ -296,7 +318,6 @@ renderMdxToHtml(source, { resolveCard });
 
 ## 10. 未実測のこと
 
-- **カードを atom にしたときの Backspace の挙動**（基準 6c の一部）。選択のほうは測った — クリックで NodeSelection が付き、キャレットは中に入らない（4a）。Backspace は測っていない。アコーディオンと脚注で繰り返し踏んでいる領域である（`accordion-editor-notes.md`）。
 - **リスト項目とコードブロックでのカードの挙動**（基準 6c）。`canPlaceAfterCaret` の答えは分かっている（リスト項目は 2 番目の子から可、コードブロックはスラッシュのトリガー自体が止まる）が、実際に走らせてはいない。
 - **`/posts/..` のような形が `resolveCard` に届く前に落ちること以外の、スラッグ文字クラスの端**。`[\w~-][\w.~-]*` で通る／落ちる例は測ったが、網羅はしていない。
 
