@@ -150,6 +150,11 @@ export function LinkBubble({
   // "Maximum update depth" loop the table toolbar documents).
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  // Whether the bubble menu plugin currently has the card on screen. Its `onShow`/`onHide` are the
+  // only place that answer exists — see the highlight effect below for why asking `shouldShow`
+  // instead is wrong. State rather than a ref, because the effect that reads it has to re-run when
+  // it changes, and nothing else would make that happen: a blur produces no transaction.
+  const [menuVisible, setMenuVisible] = useState(false);
   const editingRef = useRef(false);
   // Escape closes the card while the caret stays put; without this it would come straight back on
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
@@ -184,9 +189,20 @@ export function LinkBubble({
     editingRef.current = false;
     setEditing(false);
     // Cancelling an assignment leaves no link under the caret, so the card has nothing left to show.
-    // When there *is* a link the card stays, in display mode — and if the caret is on its way out of
-    // it, the transaction that moves it is what hides the card.
-    if (!editor.isActive('link')) signal('hide');
+    if (!editor.isActive('link')) {
+      signal('hide');
+      return;
+    }
+    // Otherwise the card falls back to display mode — but only if the author is still in the
+    // editor. The field can be left for somewhere that is not (the post's title, say), and the blur
+    // rule below cannot answer that: the editor lost focus when the field took it, so leaving the
+    // field for a third place fires no blur of its own. Same test as that rule, a frame later and
+    // settled by `hasFocus`, so 保存 and やめる — which focus the editor back — keep the card.
+    requestAnimationFrame(() => {
+      if (editingRef.current || editor.view.hasFocus()) return;
+      dismissedRef.current = true;
+      signal('hide');
+    });
   }, [editor, signal]);
 
   const close = useCallback(() => {
@@ -214,8 +230,15 @@ export function LinkBubble({
   // on Escape, which hides the card while the caret stays inside the link. `setLinkHighlight`
   // no-ops when the range is unchanged, which is what stops this from putting a transaction into
   // every render and re-rendering itself forever.
+  //
+  // Gated on `menuVisible` — the plugin's own answer — and not on `shouldShow` alone, because
+  // `shouldShow` is only half of what decides whether the card is on screen. The plugin also hides
+  // it when the editor loses focus to nothing, and it asks `shouldShow` again only on a transaction
+  // that changes the selection or the document. Clicking the page margin is neither: it blurred the
+  // editor, the card went away, `shouldShow` still said true, and the tint sat on the link with no
+  // card above it until some later edit happened to clear it (measured 2026-08-16).
   useEffect(() => {
-    if (!shouldShow()) {
+    if (!menuVisible || !shouldShow()) {
       setLinkHighlight(editor, null);
       return;
     }
@@ -272,6 +295,41 @@ export function LinkBubble({
     return () => document.removeEventListener('focusout', onFocusOut);
   }, [abandonField, editing, editor]);
 
+  // The display card follows the editor's focus: if the author is not editing, a card describing
+  // what surrounds the caret has nothing to be about. Reported as buttons that leave the card up —
+  // the post's own form controls, and the link card NodeView's 変更 — and they share a shape: the
+  // click dispatches no transaction, so the plugin never re-asks `shouldShow`, and the card simply
+  // stays where it was.
+  //
+  // Deferred a frame and settled by `hasFocus()`, because blur alone does not mean the author left.
+  // Measured 2026-08-16: a toolbar button emits blur *and* focus (its command chain focuses the
+  // editor back), while the link card's 変更 emits blur alone. Hiding on the raw blur event would
+  // take the card away every time the author reached for 太字 — and the toolbar is the one place
+  // outside the editor that acts on the very selection the card is describing.
+  //
+  // `dismissedRef` rather than `signal('hide')` alone: the picker the 変更 button opens dispatches
+  // transactions of its own, and each would re-ask `shouldShow` and bring the card back. Focus
+  // returning to the editor clears it, so coming back to the link shows the card again — which is
+  // what separates this from Escape, whose dismissal is meant to outlast a click.
+  useEffect(() => {
+    const onBlur = () => {
+      requestAnimationFrame(() => {
+        if (editingRef.current || editor.view.hasFocus()) return;
+        dismissedRef.current = true;
+        signal('hide');
+      });
+    };
+    const onFocus = () => {
+      dismissedRef.current = false;
+    };
+    editor.on('blur', onBlur);
+    editor.on('focus', onFocus);
+    return () => {
+      editor.off('blur', onBlur);
+      editor.off('focus', onFocus);
+    };
+  }, [editor, signal]);
+
   const appendTo = useCallback(() => document.body, []);
   const getReferencedVirtualElement = useCallback(() => {
     const anchor = linkElementAt(editor);
@@ -289,9 +347,23 @@ export function LinkBubble({
       offset: 8,
       flip: true,
       shift: true,
-      onShow: () => document.body.classList.add(SUPPRESS_TABLE_MENU),
-      onHide: () => document.body.classList.remove(SUPPRESS_TABLE_MENU),
-      onDestroy: () => document.body.classList.remove(SUPPRESS_TABLE_MENU),
+      // These three are the only report of whether the card is actually on screen. The class they
+      // set suppresses the table toolbar; `setMenuVisible` hands the same fact to the highlight,
+      // which otherwise has no way to learn that a blur took the card away. Setting state here is
+      // safe — the plugin calls them from its view update, not from a render — and it is what makes
+      // the effect re-run, since a blur dispatches no transaction to re-render us.
+      onShow: () => {
+        document.body.classList.add(SUPPRESS_TABLE_MENU);
+        setMenuVisible(true);
+      },
+      onHide: () => {
+        document.body.classList.remove(SUPPRESS_TABLE_MENU);
+        setMenuVisible(false);
+      },
+      onDestroy: () => {
+        document.body.classList.remove(SUPPRESS_TABLE_MENU);
+        setMenuVisible(false);
+      },
     }),
     [],
   );

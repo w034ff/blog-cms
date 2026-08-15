@@ -282,6 +282,25 @@ test('the link the card is about is tinted, and only while the card is up', asyn
   await expect(highlight(page)).toHaveCount(0);
 });
 
+test('a blur that takes the card away takes the tint with it', async ({ page }) => {
+  // The plugin hides the card when the editor loses focus to nothing, and it re-asks `shouldShow`
+  // only on a selection- or document-changing transaction. Clicking the page margin is neither, so
+  // a tint derived from `shouldShow` alone stayed lit under no card at all until some later edit
+  // cleared it — measured before the fix. The tint follows the plugin's own onShow/onHide instead.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await expect(highlight(page)).toHaveText('リンク');
+  await page.locator('body').click({ position: { x: 5, y: 400 } });
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+  // And coming back lights it again, rather than leaving the card over untinted text.
+  await page.locator('.ProseMirror').click();
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await expect(highlight(page)).toHaveText('リンク');
+});
+
 test('the tint is present with the caret at the link right edge', async ({ page }) => {
   // Where a click most often lands, and where `getMarkRange` resolves to nothing (§5.5.2's table)
   // while `isActive` still reads true. A range taken from a single `getMarkRange` would leave the
@@ -403,10 +422,65 @@ test('the favicon follows the caret from one link to the next', async ({ page })
   await expect(favicon(page)).toBeHidden();
 });
 
+test('a control outside the editor takes the display card away, and coming back restores it', async ({
+  page,
+}) => {
+  // Reported as buttons that leave the card floating: the click dispatches no transaction, so the
+  // plugin never re-asks `shouldShow` and the card simply stays. The post's own form controls are
+  // one half of the report (§5.5.9).
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await page
+    .getByRole('textbox', { name: /タイトル/ })
+    .first()
+    .click();
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+  // Not a permanent dismissal — unlike Escape, this one is cleared by focus returning.
+  await page.locator('.ProseMirror').click();
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await expect(highlight(page)).toHaveText('リンク');
+});
+
+test('a link card button inside the editor takes the display card away too', async ({ page }) => {
+  // The other half of the report, and the reason the rule is about focus rather than about being
+  // outside the editor's DOM: this button is inside it.
+  await openEditor(page);
+  await loadMarkdown(
+    page,
+    '<div class="link-card" data-href="/posts/hello"></div>\n\n前[リンク](https://example.com)後\n',
+  );
+  await setRange(page, 4); // inside the link, one block after the card
+  await expect(card(page)).toBeVisible();
+  await page.locator('.ProseMirror').getByRole('button', { name: /変更/ }).first().click();
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+});
+
+test('a toolbar button leaves the display card alone', async ({ page }) => {
+  // The exemption, and the case that would regress if the rule were "hide on blur". A toolbar
+  // command emits blur *and* focus — it chains `.focus()` — while the reported buttons emit blur
+  // alone. The toolbar is also the one place outside the editor that acts on the very selection
+  // the card is describing, so keeping the card is right rather than merely tolerable.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await page.getByRole('button', { name: /太字/ }).click();
+  await settle(page);
+  await expect(card(page)).toBeVisible();
+  await expect(highlight(page)).toHaveText('リンク');
+});
+
 test('leaving the card for the page around it closes the URL field', async ({ page }) => {
-  // Not every departure is a click into the document: the toolbar and the post's own fields are
-  // outside both the editor and the card. The card itself stays — the caret is still in the link,
-  // so display mode is the right thing to fall back to — and the tint stays with it.
+  // Not every departure is a click into the document: the post's own fields are outside both the
+  // editor and the card. The whole card goes, not just the field — leaving the display card behind
+  // would be the complaint §5.5.9 answers, reached by another route. It cannot ride on the blur
+  // rule either: the editor lost focus when the field took it, so leaving the field for a third
+  // place fires no blur of its own.
   await openEditor(page);
   await setRange(page, IN_LINK);
   await card(page).getByRole('button', { name: '編集' }).click();
@@ -416,9 +490,13 @@ test('leaving the card for the page around it closes the URL field', async ({ pa
     .first()
     .click();
   await settle(page);
-  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toHaveCount(0);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+  // Returning to the link brings it back, in display mode.
+  await page.locator('.ProseMirror').click();
+  await setRange(page, IN_LINK);
   await expect(card(page)).toBeVisible();
-  await expect(highlight(page)).toHaveText('リンク');
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toHaveCount(0);
 });
 
 test('tabbing out of the card closes the URL field', async ({ page }) => {
