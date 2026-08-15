@@ -319,6 +319,33 @@ body.link-menu-open .table-toolbar {
   display: none !important;
 }
 
+/* Editor-only chrome: the text the link card is currently about (docs/link-requirements.md §5.5.7).
+   Pushed in as a decoration by link-highlight-extension.ts, never as a class on the rendered <a>.
+   Docs tints the linked text the same way, and it answers a real ambiguity — the card is anchored
+   under the <a>, but with two links on one line, or with the URL field open over a selection that
+   is not a link yet, nothing else says which text the buttons are aimed at.
+
+   The tint sits *behind link-coloured text*, so its strength is bounded by contrast, not by taste.
+   §7.1 settled `#0969da` / `#4493f8` against the two surfaces and neither had much room left:
+   darkening the light surface and lightening the dark one both eat the ratio from the wrong side.
+   Measured 2026-08-16 against the real surfaces (#fff and #0a0a0a): light 6% → 4.54:1, dark 10% →
+   5.10:1, both over the 4.5:1 AA floor. Dark is the tighter of the two despite the healthier
+   number — it fails at 14% (4.49:1), where light still holds. Raise either only with the ratio
+   recomputed. `border-radius` and the negative side margins let it read as a chip around the words
+   rather than a rectangle butting the neighbouring text. */
+.ProseMirror .link-bubble-target {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 2px;
+  margin-inline: -1px;
+  padding-inline: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ProseMirror .link-bubble-target {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
 /* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
    (block-drag-handle.ts) — useful (Delete then removes it) but invisible on its own. ProseMirror
    tags the selected node's DOM with `.ProseMirror-selectednode`; this rings it so the selection —

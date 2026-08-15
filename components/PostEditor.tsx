@@ -16,6 +16,7 @@ import {
 } from './editor/details-extension';
 import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
+import { LinkHighlight } from './editor/link-highlight-extension';
 import { Blockquote } from './editor/blockquote-extension';
 import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
@@ -290,6 +291,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // first-wins), and it must stay in this array at all, so its keys beat the core Keymap
       // extension's baseKeymap deleteSelection.
       IsolatingBoundary,
+      // A decoration-only store: it paints whatever range the link card pushes into it, so the text
+      // the card is about is visibly the text the card is about. No keys, no commands, no schema —
+      // order among the others doesn't matter. See link-highlight-extension.ts.
+      LinkHighlight,
       // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
       // the block, so a quote/fence right after an image isn't glued onto the image's line —
       // see image-extension.ts.

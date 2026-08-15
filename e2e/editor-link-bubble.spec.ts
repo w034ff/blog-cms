@@ -103,10 +103,12 @@ test('編集 changes the href and keeps the title', async ({ page }) => {
   expect(await markdown(page)).toBe('前[リンク](https://changed.example "タイトル")後');
 });
 
-test('開く opens the href in a new tab', async ({ page }) => {
+test('the href itself opens the link in a new tab', async ({ page }) => {
+  // The href display *is* the open button (§5.5.6), so this asks for it by the accessible name the
+  // card sets on it rather than by its visible text, which is the URL.
   await openEditor(page);
   await setRange(page, IN_LINK);
-  await card(page).getByRole('button', { name: '開く' }).click();
+  await card(page).getByRole('button', { name: 'リンク先を開く' }).click();
   expect(
     await page.evaluate(() => (window as Window & { __opened?: string[] }).__opened ?? []),
   ).toEqual(['https://example.com']);
@@ -261,6 +263,129 @@ test('a link inside a table cell hides the table toolbar', async ({ page }) => {
   await page.locator('.ProseMirror td', { hasText: 'y' }).click();
   await expect(card(page)).toBeHidden();
   await expect(page.locator('.table-toolbar')).toBeVisible();
+});
+
+// The tint that says which text the card is about (§5.5.7). `highlight` is the decoration
+// link-highlight-extension.ts paints; it exists only while the card is up.
+function highlight(page: Page) {
+  return page.locator('.link-bubble-target');
+}
+
+test('the link the card is about is tinted, and only while the card is up', async ({ page }) => {
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await expect(highlight(page)).toHaveText('リンク');
+  // Escape is the case a document-derived highlight would get wrong: the caret is still inside the
+  // link, so the mark is still active — what changed is only that the card is gone.
+  await page.locator('.ProseMirror').press('Escape');
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+});
+
+test('the tint is present with the caret at the link right edge', async ({ page }) => {
+  // Where a click most often lands, and where `getMarkRange` resolves to nothing (§5.5.2's table)
+  // while `isActive` still reads true. A range taken from a single `getMarkRange` would leave the
+  // card showing over untinted text at exactly the position authors reach first.
+  await openEditor(page);
+  await setRange(page, LINK_RIGHT_EDGE);
+  await expect(card(page)).toBeVisible();
+  await expect(highlight(page)).toHaveText('リンク');
+});
+
+test('the tint follows the caret from one link to the next', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, '[AAA](https://a.example)と[BBB](https://b.example)。\n');
+  await setRange(page, 2);
+  await expect(highlight(page)).toHaveText('AAA');
+  await setRange(page, 6);
+  await expect(highlight(page)).toHaveText('BBB');
+  // One tint at a time — the previous link's must be taken down, not merely added to.
+  await expect(highlight(page)).toHaveCount(1);
+});
+
+test('Mod-k tints the selection that is about to become a link', async ({ page }) => {
+  // No link exists yet here, so the range cannot come from the mark. Focus is in the URL field, so
+  // ProseMirror is not drawing its own selection either — without this the author is typing a URL
+  // with nothing on screen saying what it will be attached to.
+  await openEditor(page);
+  await loadMarkdown(page, 'ここを見出しにつなぐ\n');
+  await setRange(page, 1, 3);
+  await page.keyboard.press('Control+k');
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeFocused();
+  await expect(highlight(page)).toHaveText('ここ');
+});
+
+test('clicking elsewhere closes the URL field and applies nothing', async ({ page }) => {
+  // §5.5.7. Before this, the open field stayed up and re-anchored to wherever the caret had gone —
+  // it slid down the line while still claiming to be editing the link it was opened on.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  const field = card(page).getByRole('textbox', { name: 'リンク先' });
+  await field.fill('https://not-applied.example');
+  // Far along the same paragraph, well outside the link.
+  await page
+    .locator('.ProseMirror p')
+    .first()
+    .click({ position: { x: 300, y: 8 } });
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+  expect(await markdown(page)).toBe('前[リンク](https://example.com "タイトル")後');
+});
+
+test('clicking inside the card does not close the URL field', async ({ page }) => {
+  // The dismissal listener is on the document and the card is portalled to <body>, so it sees the
+  // card's own clicks too. Reaching for the field after clicking its label-side padding must not
+  // count as leaving.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  const field = card(page).getByRole('textbox', { name: 'リンク先' });
+  await field.fill('https://kept.example');
+  await field.click();
+  await expect(field).toBeFocused();
+  await field.press('Enter');
+  await settle(page);
+  expect(await markdown(page)).toBe('前[リンク](https://kept.example "タイトル")後');
+});
+
+test('leaving the card for the page around it closes the URL field', async ({ page }) => {
+  // Not every departure is a click into the document: the toolbar and the post's own fields are
+  // outside both the editor and the card. The card itself stays — the caret is still in the link,
+  // so display mode is the right thing to fall back to — and the tint stays with it.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeFocused();
+  await page
+    .getByRole('textbox', { name: /タイトル/ })
+    .first()
+    .click();
+  await settle(page);
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toHaveCount(0);
+  await expect(card(page)).toBeVisible();
+  await expect(highlight(page)).toHaveText('リンク');
+});
+
+test('tabbing out of the card closes the URL field', async ({ page }) => {
+  // The card is portalled to the end of <body>, so there is no next control after its last button:
+  // focus leaves for nothing. Measured before the fix — the field stayed mounted and unfocused
+  // until some later click happened to close it.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  const field = card(page).getByRole('textbox', { name: 'リンク先' });
+  await expect(field).toBeFocused();
+  await page.keyboard.press('Tab'); // 保存
+  await page.keyboard.press('Tab'); // やめる
+  await page.keyboard.press('Tab'); // out
+  await settle(page);
+  await expect(field).toHaveCount(0);
+  // Opening the field is itself a focusout — the 編集 button focus was on is unmounted by it — so
+  // an implementation reading the event's relatedTarget instead of the settled focus would close
+  // the field the instant it opened. That this test had a field to tab out of is that assertion.
+  expect(await markdown(page)).toBe('前[リンク](https://example.com "タイトル")後');
 });
 
 test('the URL field survives an autosave', async ({ page }) => {

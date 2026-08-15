@@ -50,6 +50,7 @@ export function ToolbarButton({
   destructive,
   tooltipHidden,
   compact,
+  round,
   children,
 }: {
   onClick: () => void;
@@ -76,6 +77,10 @@ export function ToolbarButton({
   // Tighter hit area (px-1.5 py-0.5 instead of px-2 py-1) for the tightly-packed
   // inline-mark cluster (B/I/S/code), where the default padding reads oversized.
   compact?: boolean;
+  // Circular hover target instead of the rounded rectangle, for icon-only buttons that
+  // sit in a floating card rather than in a row of the toolbar (LinkBubble). The square
+  // hover fill reads as a segmented control when only three buttons share a card.
+  round?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
@@ -96,7 +101,9 @@ export function ToolbarButton({
       disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      className={`group/tt relative rounded text-xs ${compact ? 'px-1 py-1' : 'px-2 py-1'} ${tone} ${
+      className={`group/tt relative text-xs ${
+        round ? 'rounded-full p-1.5' : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
+      } ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>
       {children}

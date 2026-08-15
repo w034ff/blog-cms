@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
+import { getMarkRange } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { setLinkHighlight, type LinkHighlightRange } from './link-highlight-extension';
 import { ToolbarButton } from './ToolbarButton';
+import { CopyIcon } from './svg/CopyIcon';
+import { PencilIcon } from './svg/PencilIcon';
+import { UnlinkIcon } from './svg/UnlinkIcon';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -55,6 +60,23 @@ function linkElementAt(editor: Editor): HTMLAnchorElement | null {
   return null;
 }
 
+// The document range of the link the caret is in, for the highlight. Two positions again, and for
+// the same reason `linkElementAt` needs two: at a link's right edge `getMarkRange` resolves to
+// nothing (`childAfter` there is the non-link text that follows, so the walk stops before it
+// starts), while the mark still reads as active. Asking at `from - 1` as well is what keeps the
+// tint present at the position a click most often lands on.
+function linkRangeAt(editor: Editor): LinkHighlightRange {
+  const type = editor.schema.marks.link;
+  if (!type) return null;
+  const { from } = editor.state.selection;
+  for (const pos of [from, from - 1]) {
+    if (pos < 0) continue;
+    const range = getMarkRange(editor.state.doc.resolve(pos), type);
+    if (range) return { from: range.from, to: range.to };
+  }
+  return null;
+}
+
 function currentHref(editor: Editor): string {
   const href = editor.getAttributes('link').href;
   return typeof href === 'string' ? href : '';
@@ -99,13 +121,22 @@ export function LinkBubble({
     [signal],
   );
 
-  const close = useCallback(() => {
+  // Leave the URL field without applying it, and without touching focus — for the paths where
+  // something else is already claiming it (the click that dismisses the card is also the click that
+  // places the caret somewhere new).
+  const abandonField = useCallback(() => {
     editingRef.current = false;
     setEditing(false);
-    editor.commands.focus();
     // Cancelling an assignment leaves no link under the caret, so the card has nothing left to show.
+    // When there *is* a link the card stays, in display mode — and if the caret is on its way out of
+    // it, the transaction that moves it is what hides the card.
     if (!editor.isActive('link')) signal('hide');
   }, [editor, signal]);
+
+  const close = useCallback(() => {
+    abandonField();
+    editor.commands.focus();
+  }, [abandonField, editor]);
 
   // The card is for a link the caret is inside, plus the moment the URL field is open (during an
   // assignment there is no link yet). `isActive` covers a caret at the link's right edge as well as
@@ -120,6 +151,70 @@ export function LinkBubble({
     }
     return !dismissedRef.current;
   }, [editor]);
+
+  // Which text the card is about, tinted while the card is up (§5.5.7). Recomputed on every render,
+  // and this component re-renders on every transaction (`shouldRerenderOnTransaction`), so the tint
+  // follows the caret from one link to the next and goes out the moment the card does — including
+  // on Escape, which hides the card while the caret stays inside the link. `setLinkHighlight`
+  // no-ops when the range is unchanged, which is what stops this from putting a transaction into
+  // every render and re-rendering itself forever.
+  useEffect(() => {
+    if (!shouldShow()) {
+      setLinkHighlight(editor, null);
+      return;
+    }
+    const link = linkRangeAt(editor);
+    if (link) {
+      setLinkHighlight(editor, link);
+      return;
+    }
+    // `Mod-k` over a selection: no link exists yet, so light the text that is about to become one.
+    const { from, to } = editor.state.selection;
+    setLinkHighlight(editor, editingRef.current && from < to ? { from, to } : null);
+  });
+
+  // Clicking elsewhere closes the URL field, the way Docs' card behaves. Without this the field
+  // stays open and re-anchors to wherever the caret went — measured before the change: it slid
+  // 284px along the line while still claiming to be editing the link it was opened on. Display mode
+  // needs no equivalent, because the caret leaving the link is already what hides the card.
+  //
+  // `mousedown`, not `click`: the same gesture places the caret, and by `click` the selection has
+  // already moved, so `abandonField`'s `isActive` test would be asking about the new position
+  // rather than the one being left. The card is portaled to <body>, so "outside" is a `closest()`
+  // test against its own class and not a ref containment check.
+  useEffect(() => {
+    if (!editing) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.link-bubble')) return;
+      abandonField();
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [abandonField, editing]);
+
+  // The same departure by keyboard. Tab past the card's last button and focus leaves it for nothing
+  // at all — the card is portalled to the end of <body>, so there is no next control to land on —
+  // and without this the field stayed open, unfocused, until some later click happened to close it
+  // (measured: focus on <body>, the field still mounted).
+  //
+  // Deferred a frame and answered from `document.activeElement` rather than from the event's
+  // `relatedTarget`, because the two gestures that must *not* close look identical to the event.
+  // Opening the field unmounts the 編集 button that focus is on, which is a focusout with a null
+  // relatedTarget; so is tabbing away. A frame later they differ, because by then the effect above
+  // has moved focus into the URL field.
+  useEffect(() => {
+    if (!editing) return;
+    const onFocusOut = () => {
+      requestAnimationFrame(() => {
+        const active = document.activeElement;
+        if (active?.closest('.link-bubble') || (active && editor.view.dom.contains(active))) return;
+        abandonField();
+      });
+    };
+    document.addEventListener('focusout', onFocusOut);
+    return () => document.removeEventListener('focusout', onFocusOut);
+  }, [abandonField, editing, editor]);
 
   const appendTo = useCallback(() => document.body, []);
   const getReferencedVirtualElement = useCallback(() => {
@@ -274,7 +369,11 @@ export function LinkBubble({
         editor.commands.focus();
         signal('hide');
       }}
-      className='link-bubble z-20 flex items-center gap-1 rounded border border-zinc-300 bg-white px-1.5 py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      // Docs' own card shape: a tall-ish rounded pill, a soft drop shadow rather than a hard
+      // border, and enough padding that the three round hover targets don't touch each other. The
+      // border is kept for the dark scheme, where a shadow alone leaves the card's edge invisible
+      // against the editor surface.
+      className='link-bubble z-20 flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
       {editing ? (
         // Deliberately not a <form>: PostEditor wraps the whole page in one, and a nested form is
         // dropped by the browser, so its submit silently does nothing (the shape TableGridMenu
@@ -300,40 +399,52 @@ export function LinkBubble({
             placeholder='https://… / /posts/… / #見出し'
             spellCheck={false}
             autoComplete='off'
-            className='w-64 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs text-zinc-900 focus:border-zinc-500 focus:outline-none dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100'
+            className='w-72 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]'
           />
           <ToolbarButton onClick={applyDraft}>保存</ToolbarButton>
           <ToolbarButton onClick={close}>やめる</ToolbarButton>
         </>
       ) : (
         <>
-          {/* The href in full view is half the point of the card: with openOnClick off, the browser's
-              hover status bar was the only way to see where a link went. */}
-          <span
-            className='max-w-64 truncate px-1 text-xs text-zinc-600 dark:text-zinc-400'
-            title={href}>
+          {/* The href in full view is half the point of the card: with openOnClick off, the
+              browser's hover status bar was the only way to see where a link went. It is also the
+              button that opens it, the way Docs' card works — which is why the three remaining
+              controls can be icons: the one action that needs its target spelled out already
+              spells it out. `title` carries the untruncated href for a long URL.
+
+              A <button>, not an <a>: the open goes through `window.open` so that noopener/noreferrer
+              are passed by hand (this is the editor's own DOM, not the published page, so the
+              anchor rel attributes the sanitizer adds are not involved). The accessible name is set
+              explicitly, since the visible text is a URL and "https://…" read aloud says nothing
+              about what the control does. */}
+          <button
+            type='button'
+            aria-label='リンク先を開く'
+            title={href}
+            onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
+            className='max-w-72 truncate rounded px-1.5 py-0.5 text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
             {href}
-          </span>
+          </button>
           <span
-            className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600'
+            className='mx-1 h-5 w-px self-center bg-zinc-200 dark:bg-zinc-600'
             aria-hidden='true'
           />
-          <ToolbarButton
-            onClick={() => {
-              // noopener/noreferrer by hand: this is the editor's own DOM, not the published page,
-              // so the anchor's rel attributes are not involved.
-              window.open(href, '_blank', 'noopener,noreferrer');
-            }}>
-            開く
-          </ToolbarButton>
-          <ToolbarButton onClick={copyHref}>コピー</ToolbarButton>
-          <ToolbarButton shortcut={OPEN_SHORTCUT} onClick={() => openField(href)}>
-            編集
+          <ToolbarButton round title='コピー' onClick={copyHref}>
+            <CopyIcon />
           </ToolbarButton>
           <ToolbarButton
+            round
+            title='編集'
+            shortcut={OPEN_SHORTCUT}
+            onClick={() => openField(href)}>
+            <PencilIcon />
+          </ToolbarButton>
+          <ToolbarButton
+            round
             destructive
+            title='解除'
             onClick={() => editor.chain().focus().extendMarkRange('link').unsetLink().run()}>
-            解除
+            <UnlinkIcon />
           </ToolbarButton>
         </>
       )}
