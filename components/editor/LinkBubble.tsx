@@ -134,6 +134,18 @@ function linkRangeAt(editor: Editor): LinkHighlightRange {
   return null;
 }
 
+// How an href is drawn on the card. `https://` comes off and nothing else does — not `http://`,
+// which is the point: with only the default scheme hidden, the one that is not encrypted is the one
+// that shows, which is the same trade Chrome's address bar makes and the reason this is safe rather
+// than merely tidier. Relative paths, fragments and `mailto:` are untouched, having no scheme to
+// drop or a meaningful one.
+//
+// Display only. What the card opens, copies and stores is the raw href, and the hover tooltip shows
+// that raw form — the stripped line is for reading, the tooltip is for checking (§5.5.10).
+function displayHref(href: string): string {
+  return href.replace(/^https:\/\//i, '');
+}
+
 function currentHref(editor: Editor): string {
   const href = editor.getAttributes('link').href;
   return typeof href === 'string' ? href : '';
@@ -625,7 +637,7 @@ export function LinkBubble({
                 aria-label='リンク先を開く'
                 onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
                 className='block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
-                {title ?? href}
+                {title ?? displayHref(href)}
               </button>
               <EditorTooltip label={title ?? href} />
             </span>
@@ -634,7 +646,7 @@ export function LinkBubble({
               // for the one thing anyone would want to do with it as text.
               <span className='group/tt relative w-full'>
                 <span className='link-bubble-href block w-full truncate px-1.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400'>
-                  {href}
+                  {displayHref(href)}
                 </span>
                 <EditorTooltip label={href} />
               </span>

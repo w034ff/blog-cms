@@ -62,7 +62,11 @@ test('the card appears with the href when the caret is in a link', async ({ page
   await setRange(page, IN_LINK);
   await expect(card(page)).toBeVisible();
   // Seeing where a link points is the half of this the `openOnClick: false` trade took away.
-  await expect(card(page)).toContainText('https://example.com');
+  // Asserted on the line itself rather than on the card: the hover tooltip holds the raw href, so
+  // `toContainText` against the whole card would go on passing however the line was drawn.
+  await expect(card(page).getByRole('button', { name: 'リンク先を開く' })).toContainText(
+    'example.com',
+  );
 });
 
 test('the card stays away when the caret is outside a link', async ({ page }) => {
@@ -509,6 +513,35 @@ test('the top line is what opens the link, and the URL line under it is only tex
   expect(
     await page.evaluate(() => (window as Window & { __opened?: string[] }).__opened ?? []),
   ).toEqual([]);
+});
+
+test('https:// is dropped from the line but from nothing else', async ({ page }) => {
+  // Display only. Chrome's address bar makes the same trade, and the tooltip is where the raw form
+  // stays reachable — so this asserts both halves, since a strip that also reached the href would
+  // be a silent edit of what the post stores.
+  await openEditor(page);
+  await loadMarkdown(page, '前[リンク](https://example.com/a/b)後\n');
+  await setRange(page, 3);
+  const open = card(page).getByRole('button', { name: 'リンク先を開く' });
+  await expect(open).toHaveText('example.com/a/b');
+  await expect(card(page).locator('.editor-tooltip').first()).toHaveText('https://example.com/a/b');
+  // What it opens, and what the document keeps, are the href untouched.
+  await open.click();
+  expect(
+    await page.evaluate(() => (window as Window & { __opened?: string[] }).__opened ?? []),
+  ).toEqual(['https://example.com/a/b']);
+  expect(await markdown(page)).toBe('前[リンク](https://example.com/a/b)後');
+});
+
+test('http:// is left where it is', async ({ page }) => {
+  // The reason dropping the scheme is safe at all: with only the default one hidden, a link that
+  // is not encrypted is the one that shows its scheme. A strip that took both would invert that.
+  await openEditor(page);
+  await loadMarkdown(page, '前[リンク](http://example.com/a/b)後\n');
+  await setRange(page, 3);
+  await expect(card(page).getByRole('button', { name: 'リンク先を開く' })).toHaveText(
+    'http://example.com/a/b',
+  );
 });
 
 test('a link with no obtainable title is the card as it was', async ({ page }) => {
