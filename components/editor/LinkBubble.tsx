@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { setLinkHighlight, type LinkHighlightRange } from './link-highlight-extension';
+import { EditorTooltip } from './EditorTooltip';
 import { ToolbarButton } from './ToolbarButton';
 import { CopyIcon } from './svg/CopyIcon';
 import { PencilIcon } from './svg/PencilIcon';
@@ -155,6 +156,11 @@ export function LinkBubble({
   // instead is wrong. State rather than a ref, because the effect that reads it has to re-run when
   // it changes, and nothing else would make that happen: a blur produces no transaction.
   const [menuVisible, setMenuVisible] = useState(false);
+  // The linked page's title, stored with the href it belongs to and read back only for a matching
+  // one. Keeping the pair rather than a bare string is what makes the reset unnecessary: moving to
+  // another link makes the stored title stop matching, so there is no window in which one link's
+  // title is drawn under another's URL.
+  const [fetchedTitle, setFetchedTitle] = useState<{ href: string; title: string } | null>(null);
   const editingRef = useRef(false);
   // Escape closes the card while the caret stays put; without this it would come straight back on
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
@@ -162,6 +168,7 @@ export function LinkBubble({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const href = currentHref(editor);
+  const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
 
   const signal = useCallback(
     (meta: 'show' | 'hide') => {
@@ -342,10 +349,22 @@ export function LinkBubble({
 
   const options = useMemo(
     () => ({
-      // Below the link: above would cover the line being read, and a link is usually mid-sentence.
-      placement: 'bottom-start' as const,
+      // Above the link. The card was below until 2026-08-16, on the reasoning that above would
+      // cover the line being read — but the line being read is the link's own, and the card clears
+      // that one either way. What it actually covers is a neighbour, and once the card grew a title
+      // line it covered two whole paragraphs of them (measured: 47px tall). Above, those are
+      // paragraphs the author has already read; below, they are the ones coming next. See §5.5.10.
+      //
+      // `flip` sends it back below where there is no room above — but "room" has to mean the
+      // editor's own box, not the viewport. The toolbar is `sticky top-0 z-30` directly above the
+      // content, so a link in the first line has viewport space above it and none that is free:
+      // the card landed in the toolbar's band and, being `z-20`, went *under* it (measured — the
+      // card was on screen and invisible). Giving flip the editor's element as its boundary states
+      // that in the terms floating-ui already has, with no pixel constant to drift when the
+      // toolbar's height changes.
+      placement: 'top-start' as const,
       offset: 8,
-      flip: true,
+      flip: { boundary: editor.view.dom },
       shift: true,
       // These three are the only report of whether the card is actually on screen. The class they
       // set suppresses the table toolbar; `setMenuVisible` hands the same fact to the highlight,
@@ -365,7 +384,10 @@ export function LinkBubble({
         setMenuVisible(false);
       },
     }),
-    [],
+    // `editor` only, and it never changes for the life of this component — the reference stays as
+    // stable as the empty list it replaced, which is what keeps the plugin from re-rendering us in
+    // a loop.
+    [editor],
   );
 
   // Focus the URL field as it opens, with its contents selected so retyping a wrong URL is one
@@ -411,6 +433,37 @@ export function LinkBubble({
     dom.addEventListener('keydown', onKeyDown, { capture: true });
     return () => dom.removeEventListener('keydown', onKeyDown, { capture: true });
   }, [editor, onNotice, openField, signal]);
+
+  // The title of the page the link points at, asked for once per href while the card is up
+  // (§5.5.10). Absent until it arrives and absent forever if it does not, which is the common
+  // enough case — a Cloudflare-fronted site answers 403 — that the card has to read correctly
+  // without it. It does: without a title the card is exactly what it was before this existed.
+  //
+  // Keyed on the href and aborted when that changes, so a slow answer for a link the caret has
+  // already left cannot land on the next one. Only http(s) is asked about; a fragment or a
+  // `mailto:` has no page to have a title.
+  useEffect(() => {
+    if (!menuVisible || editing) return;
+    let absolute: URL;
+    try {
+      absolute = new URL(href, window.location.origin);
+    } catch {
+      return;
+    }
+    if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return;
+    const controller = new AbortController();
+    fetch(`/api/link-title?url=${encodeURIComponent(absolute.toString())}`, {
+      signal: controller.signal,
+    })
+      .then((res) => (res.ok ? res.json() : { title: null }))
+      .then((data: { title?: unknown }) => {
+        if (typeof data.title === 'string') setFetchedTitle({ href, title: data.title });
+      })
+      // Including AbortError: there is nothing to say and nothing to fall back to, because not
+      // showing a title is already the resting state.
+      .catch(() => {});
+    return () => controller.abort();
+  }, [editing, href, menuVisible]);
 
   const applyDraft = useCallback(() => {
     const next = draft.trim();
@@ -546,14 +599,47 @@ export function LinkBubble({
               explicitly, since the visible text is a URL and "https://…" read aloud says nothing
               about what the control does. */}
           <LinkFavicon key={href} href={href} />
-          <button
-            type='button'
-            aria-label='リンク先を開く'
-            title={href}
-            onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
-            className='max-w-72 truncate rounded px-1.5 py-0.5 text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
-            {href}
-          </button>
+          {/* Two lines when a title is known, one when it is not (§5.5.10). The URL line never
+              leaves: §5.5.1-1 makes "where does this go" the reason this card exists — it is what
+              repaid `openOnClick: false` — and a title answers what a page *is*, not where it
+              goes. So the title is added above rather than substituted in.
+
+              The rule for what is clickable is positional, not "the URL is": the top line opens the
+              link and is drawn in the link colour, and that is the title when there is one and the
+              URL when there is not. Written the other way — URL never clickable — a link whose
+              title cannot be fetched (a Cloudflare-fronted site: 2 of 10 measured) would have no
+              way to open it at all, which is exactly the trade §3 made and §5.5 repaid. */}
+          <div className='flex min-w-0 max-w-72 flex-col items-start'>
+            {/* Each line shows what it has, untruncated, on hover — both the title and a long URL
+                are cut off by `max-w-72`. The editor's own tooltip rather than the native `title`
+                attribute, for the reason ToolbarButton records: `title` renders near the cursor,
+                on the browser's own delay, and cannot be styled to match anything. `group/tt
+                relative` is what EditorTooltip positions against. */}
+            {/* The tooltip is a sibling of the line rather than a child of it, in a wrapper that
+                covers the same area. Inside, it would put a second copy of the line's own text
+                into the element — invisible, but real, and the first thing to read the button's
+                text back got both. ToolbarButton can nest it because its buttons hold an icon. */}
+            <span className='group/tt relative w-full'>
+              <button
+                type='button'
+                aria-label='リンク先を開く'
+                onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
+                className='block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
+                {title ?? href}
+              </button>
+              <EditorTooltip label={title ?? href} />
+            </span>
+            {title && (
+              // Display only. The href is here to be read, and the card already carries a button
+              // for the one thing anyone would want to do with it as text.
+              <span className='group/tt relative w-full'>
+                <span className='link-bubble-href block w-full truncate px-1.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400'>
+                  {href}
+                </span>
+                <EditorTooltip label={href} />
+              </span>
+            )}
+          </div>
           <span
             className='mx-1 h-5 w-px self-center bg-zinc-200 dark:bg-zinc-600'
             aria-hidden='true'

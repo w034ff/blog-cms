@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { EditorTooltip } from './EditorTooltip';
 
 // Client-only component (the toolbar mounts after the client editor exists), so
 // navigator is available; the guard just keeps any SSR pass from throwing.
@@ -107,19 +108,7 @@ export function ToolbarButton({
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>
       {children}
-      {hasTip && (
-        // Centered below (left-1/2 + -translate-x-1/2, top-full). pointer-events-none
-        // so it never blocks hover/click; z-50 clears the sticky header's own content.
-        // A short delay on appearance mimics a native tooltip; it hides immediately.
-        <span
-          aria-hidden='true'
-          className='pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-1 text-[10px] leading-none text-white opacity-0 shadow-sm transition-opacity duration-100 group-hover/tt:opacity-100 group-hover/tt:delay-300 dark:bg-zinc-700'>
-          {title}
-          {shortcutLabel && (
-            <span className={title ? 'ml-1.5 text-white/60' : undefined}>{shortcutLabel}</span>
-          )}
-        </span>
-      )}
+      {hasTip && <EditorTooltip label={title} shortcut={shortcutLabel} />}
     </button>
   );
 }

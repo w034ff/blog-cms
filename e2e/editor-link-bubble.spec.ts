@@ -422,6 +422,131 @@ test('the favicon follows the caret from one link to the next', async ({ page })
   await expect(favicon(page)).toBeHidden();
 });
 
+// Where the card sits (§5.5.10). It is above the link, so what it covers is text already read
+// rather than text coming next — which only became worth deciding once the title line made the
+// card tall enough to cover a whole paragraph.
+async function rects(page: Page) {
+  return page.evaluate(() => {
+    const box = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom };
+    };
+    return {
+      cardBox: box(document.querySelector('.link-bubble')),
+      linkBox: box(document.querySelector('.ProseMirror a')),
+      toolbarBox: box(document.querySelector('.sticky')),
+    };
+  });
+}
+
+test('the card sits above the link it is about', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(
+    page,
+    '一行目。\n\n二行目。\n\n前[リンク](https://example.com)後\n\n四行目。\n',
+  );
+  await setRange(page, 15); // inside the link in the third paragraph
+  await expect(card(page)).toBeVisible();
+  await settle(page);
+  const { cardBox, linkBox } = await rects(page);
+  expect(cardBox && linkBox && cardBox.bottom).toBeLessThanOrEqual(linkBox!.top);
+});
+
+test('a link in the first line puts the card clear of the toolbar', async ({ page }) => {
+  // Above-placement's one hazard, and `flip` alone does not answer it: the toolbar is
+  // `sticky top-0 z-30` right over the content, so the first line has viewport room above it and
+  // none that is free. Measured before the boundary was set — the card was placed there and, at
+  // z-20, rendered underneath the toolbar: on screen and invisible.
+  await openEditor(page);
+  await loadMarkdown(page, '前[リンク](https://example.com)後の一行目。\n\n二行目。\n');
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await settle(page);
+  const { cardBox, toolbarBox } = await rects(page);
+  expect(toolbarBox).not.toBeNull();
+  expect(cardBox!.top).toBeGreaterThanOrEqual(toolbarBox!.bottom);
+});
+
+// The card's title line (§5.5.10). Only the internal case is measurable offline: a link to this
+// blog is answered from the database rather than fetched, which is what makes it deterministic —
+// and is also the security property that keeps the server from requesting its own public URL.
+test('a link to this blog shows the post title above the URL', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, '前[記事](/posts/hello-world)後\n');
+  await setRange(page, 3);
+  await expect(card(page)).toBeVisible();
+  await expect(card(page)).toContainText('ブログ開設のお知らせ');
+  // The URL never leaves: §5.5.1-1 makes "where does this go" the reason the card exists, and a
+  // title answers what a page is, not where it goes.
+  await expect(card(page)).toContainText('/posts/hello-world');
+});
+
+test('the top line is what opens the link, and the URL line under it is only text', async ({
+  page,
+}) => {
+  // The rule is positional. With a title the URL becomes display text, and the title takes over as
+  // the control — so the card still has exactly one thing to press, and it is still drawn in the
+  // link colour.
+  await openEditor(page);
+  await loadMarkdown(page, '前[記事](/posts/hello-world)後\n');
+  await setRange(page, 3);
+  await expect(card(page)).toContainText('ブログ開設のお知らせ');
+  const open = card(page).getByRole('button', { name: 'リンク先を開く' });
+  await expect(open).toHaveText('ブログ開設のお知らせ');
+  // The URL is present, and pressing where it sits opens nothing — there is no control there.
+  await expect(card(page)).toContainText('/posts/hello-world');
+  await expect(card(page).getByRole('button')).toHaveCount(4); // open + copy + edit + unlink
+  // Each line's hover tooltip carries its own line untruncated, and only its own: the URL is not
+  // repeated onto the title's, because it has a line and a tooltip of its own right below. These
+  // are the editor's own tooltips, not the native `title` attribute — which is why they can be
+  // read here at all, and why they look like the toolbar's.
+  const tips = card(page).locator('.editor-tooltip');
+  await expect(tips.nth(0)).toHaveText('ブログ開設のお知らせ');
+  await expect(tips.nth(1)).toHaveText('/posts/hello-world');
+  await expect(card(page).locator('[title]')).toHaveCount(0);
+  await card(page).locator('.link-bubble-href').click();
+  expect(
+    await page.evaluate(() => (window as Window & { __opened?: string[] }).__opened ?? []),
+  ).toEqual([]);
+});
+
+test('a link with no obtainable title is the card as it was', async ({ page }) => {
+  // A dead port, so this runs offline. The failure has to be quiet: no title is the resting state,
+  // not an error state.
+  await openEditor(page);
+  await loadMarkdown(page, '前[記事](http://127.0.0.1:1/x)後\n');
+  await setRange(page, 3);
+  await expect(card(page)).toBeVisible();
+  await expect(card(page)).toContainText('http://127.0.0.1:1/x');
+  await settle(page);
+  await expect(card(page).getByRole('button', { name: 'リンク先を開く' })).toHaveText(
+    'http://127.0.0.1:1/x',
+  );
+});
+
+test('a scheme with no page behind it asks for no title', async ({ page }) => {
+  // Measured as a difference rather than as "no requests were seen": an empty list is also what a
+  // listener attached to the wrong thing produces, and this file has been bitten by an assertion
+  // that held because nothing was happening at all. So an http link is visited first to prove the
+  // instrument reports something, and the mailto is then asserted to add nothing to it.
+  const asked: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/link-title')) asked.push(r.url());
+  });
+  await openEditor(page);
+  await loadMarkdown(page, '前[記事](/posts/hello-world)後\n');
+  await setRange(page, 3);
+  await expect(card(page)).toContainText('ブログ開設のお知らせ');
+  expect(asked).toHaveLength(1);
+
+  await loadMarkdown(page, '前[宛先](mailto:a@example.com)後\n');
+  await setRange(page, 3);
+  await expect(card(page)).toBeVisible();
+  await settle(page);
+  expect(asked).toHaveLength(1);
+});
+
 test('a control outside the editor takes the display card away, and coming back restores it', async ({
   page,
 }) => {
