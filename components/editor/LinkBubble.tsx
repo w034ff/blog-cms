@@ -60,6 +60,62 @@ function linkElementAt(editor: Editor): HTMLAnchorElement | null {
   return null;
 }
 
+// The favicon of the origin a link resolves to, or null where there is no origin to ask (`tel:`,
+// `mailto:`). A site-relative path and a bare fragment resolve against this blog's own origin, so
+// an internal link shows this blog's icon — which is the honest answer rather than a special case.
+//
+// Root `/favicon.ico` and nothing else. Reading a `<link rel="icon">` would mean fetching and
+// parsing the target's HTML, and that is the whole of the external-card project that
+// link-card-requirements.md §8.1 defers — the cost this deliberately does not pay. The price is
+// that the icon is simply absent on a site that declares its icon only in HTML.
+//
+// Both hosts in the corpus do serve the root path to a real browser (measured 2026-08-16 in the
+// harness, zenn.dev and wikiwiki.jp). Worth knowing because a `curl` probe of the same two says
+// otherwise — wikiwiki.jp answers 403 to it — so the browser is the instrument here, not a shell.
+function faviconSrc(href: string): string | null {
+  try {
+    const url = new URL(href, window.location.origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return `${url.origin}/favicon.ico`;
+  } catch {
+    return null;
+  }
+}
+
+// Shown only once it has actually loaded. Failure is the common case (see above), and a reserved
+// box that stays empty reads as a broken image, so nothing is drawn until the load succeeds — the
+// card is anchored at its left edge, so the icon's arrival grows it rightwards rather than moving
+// what the author is already reading.
+//
+// `no-referrer`: the request goes from the author's browser to the third-party origin, and the
+// origin has no business knowing which page of this blog is being edited. It learns that someone
+// asked for its favicon, which is the smallest thing that can be leaked and still show an icon.
+//
+// Mounted under a `key` of the href by its caller, so moving to another link resets `loaded` by
+// remounting rather than by an effect that writes state back during render.
+function LinkFavicon({ href }: { href: string }) {
+  const src = faviconSrc(href);
+  const [loaded, setLoaded] = useState(false);
+  if (!src) return null;
+  return (
+    // A plain <img>, silenced the same way ThumbnailField and PostCard silence it: next/image
+    // would need every origin an author might link to configured in advance, and this is a 16px
+    // piece of editor chrome that never reaches the published page.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=''
+      aria-hidden='true'
+      width={16}
+      height={16}
+      referrerPolicy='no-referrer'
+      onLoad={() => setLoaded(true)}
+      onError={() => setLoaded(false)}
+      className={`${loaded ? 'block' : 'hidden'} ml-1 h-4 w-4 shrink-0 rounded-sm`}
+    />
+  );
+}
+
 // The document range of the link the caret is in, for the highlight. Two positions again, and for
 // the same reason `linkElementAt` needs two: at a link's right edge `getMarkRange` resolves to
 // nothing (`childAfter` there is the non-link text that follows, so the walk stops before it
@@ -417,6 +473,7 @@ export function LinkBubble({
               anchor rel attributes the sanitizer adds are not involved). The accessible name is set
               explicitly, since the visible text is a URL and "https://…" read aloud says nothing
               about what the control does. */}
+          <LinkFavicon key={href} href={href} />
           <button
             type='button'
             aria-label='リンク先を開く'

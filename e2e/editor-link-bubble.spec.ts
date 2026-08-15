@@ -350,6 +350,59 @@ test('clicking inside the card does not close the URL field', async ({ page }) =
   expect(await markdown(page)).toBe('前[リンク](https://kept.example "タイトル")後');
 });
 
+// The favicon of the origin a link points at (§5.5.8). None of these reaches the internet: the
+// success case asks this blog's own origin, which serves `app/favicon.ico`, and the failure case
+// asks a port nothing is listening on.
+function favicon(page: Page) {
+  return page.locator('.link-bubble img');
+}
+
+test('an internal link shows this blog own favicon', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, '[記事](/posts/hello)へ。\n');
+  await setRange(page, 2);
+  await expect(card(page)).toBeVisible();
+  await expect(favicon(page)).toBeVisible();
+  await expect(favicon(page)).toHaveAttribute('src', /^https?:\/\/[^/]+\/favicon\.ico$/);
+});
+
+test('a favicon that will not load leaves the card as it was', async ({ page }) => {
+  // A reserved-but-empty box would read as a broken image, so on failure nothing is drawn at all
+  // and the href keeps the left of the card. Both corpus hosts do in fact serve their icon to a
+  // browser, so this is pinned against a dead port rather than a real site — and pinned at all
+  // because the failure path is the one that decides how the card behaves for the sites that
+  // declare an icon only in HTML, which no offline test can supply.
+  await openEditor(page);
+  await loadMarkdown(page, '[落ちる](http://127.0.0.1:1/x)へ。\n');
+  await setRange(page, 2);
+  await expect(card(page)).toBeVisible();
+  await expect(favicon(page)).toBeHidden();
+  await expect(card(page)).toContainText('http://127.0.0.1:1/x');
+});
+
+test('a scheme with no origin asks for no favicon at all', async ({ page }) => {
+  // `mailto:` has no host to ask, so there must be no <img> at all — not a hidden one that has
+  // already fired a request at something. (`tel:` would be the other example, but §2.4 refuses it:
+  // it dies on publish, so no link forms and there is no card to look at.)
+  await openEditor(page);
+  await loadMarkdown(page, '[宛先](mailto:a@example.com)へ。\n');
+  await setRange(page, 2);
+  await expect(card(page)).toBeVisible();
+  await expect(favicon(page)).toHaveCount(0);
+});
+
+test('the favicon follows the caret from one link to the next', async ({ page }) => {
+  // `loaded` is per-link state, reset by remounting under a key rather than by an effect. Without
+  // that, a link whose icon loaded would lend its "shown" state to the next link's failure.
+  await openEditor(page);
+  await loadMarkdown(page, '[内側](/posts/hello)と[外側](http://127.0.0.1:1/x)。\n');
+  await setRange(page, 2);
+  await expect(favicon(page)).toBeVisible();
+  await setRange(page, 6);
+  await expect(card(page)).toContainText('127.0.0.1');
+  await expect(favicon(page)).toBeHidden();
+});
+
 test('leaving the card for the page around it closes the URL field', async ({ page }) => {
   // Not every departure is a click into the document: the toolbar and the post's own fields are
   // outside both the editor and the card. The card itself stays — the caret is still in the link,
