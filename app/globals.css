@@ -1374,11 +1374,15 @@ body.link-menu-open .table-toolbar {
    `color` and `text-decoration` are reset deliberately, and the selector's specificity is the
    reason this works. `.prose a { color: #0969da }` above is (0,1,1) and Tailwind Typography's
    own underline comes in through a `:where()` wrapper at (0,0,0); `.prose a.link-card` is (0,2,1)
-   and outranks both. Without the reset the whole card — title, description and date alike —
-   renders blue and underlined, because the `<a>` wraps all of it (that wrapping is what makes the
-   card one click target). This is the same trap the footnote jump link is in, one rule up. */
+   and outranks both. Without the reset the whole card — title and description alike — renders
+   blue and underlined, because the `<a>` wraps all of it (that wrapping is what makes the card one
+   click target). This is the same trap the footnote jump link is in, one rule up. */
 .prose a.link-card {
-  display: block;
+  /* A row, so the target's image can sit beside the text. A card without one has
+     a single flex child and lays out exactly as the old block card did. */
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
   margin: 1.25em 0;
   padding: 0.75em 1em;
   border: 1px solid #d0d7de;
@@ -1387,6 +1391,25 @@ body.link-menu-open .table-toolbar {
   text-decoration: none;
   transition: background-color 0.12s ease;
 }
+/* `min-width: 0` is what lets the text column shrink: a flex item's floor is its
+   content's min-content width, so without it a long unbroken title (a URL, a
+   code identifier) pushes the image off the card's edge instead of ellipsing. */
+.prose .link-card-text {
+  min-width: 0;
+  flex: 1;
+}
+/* Fixed box, cropped to fill: uploads arrive at whatever shape the author had,
+   and a card whose height follows its picture would make a list of cards ragged.
+   `align-self` keeps it at the top so a two-line card does not stretch it. */
+.prose .link-card-image {
+  flex-shrink: 0;
+  align-self: flex-start;
+  width: 8rem;
+  height: 5rem;
+  margin: 0;
+  border-radius: 4px;
+  object-fit: cover;
+}
 .prose a.link-card:hover {
   background: #f6f8fa;
 }
@@ -1394,38 +1417,43 @@ body.link-menu-open .table-toolbar {
   display: block;
   font-weight: 600;
 }
-/* Both secondary lines: smaller and dimmed rather than given a colour, so the card needs no dark
-   counterpart for them — `opacity` rides whatever the body colour is on either surface. */
-.prose .link-card-description,
-.prose .link-card-meta {
+/* The secondary line: smaller and dimmed rather than given a colour, so the card needs no dark
+   counterpart for it — `opacity` rides whatever the body colour is on either surface. */
+.prose .link-card-description {
   display: block;
   font-size: 0.875em;
   opacity: 0.7;
-}
-.prose .link-card-description {
   margin-top: 0.25em;
   /* Two lines at most: a description is free text and a long one would turn the card into a
-     paragraph with a border. */
+     paragraph with a border. `display` is restated below and wins; the `block` above is what the
+     span falls back to if the clamp is ever dropped, so it does not rejoin the title's line. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   overflow: hidden;
 }
-.prose .link-card-meta {
-  margin-top: 0.5em;
-}
 
 /* The editor's card (link-card-extension.ts's NodeView). Same box as the published one above, but
    it is a <div> rather than an <a> — there is nothing to click through to while editing — so the
    border and radius are restated here instead of being inherited from that rule. Everything inside
-   is chrome: the title/meta rules above already reach it, since they are keyed on the class rather
-   than on the anchor. */
+   is chrome: the title rule above already reaches it, since it is keyed on the class rather than on
+   the anchor. */
 .prose .link-card-view {
   margin: 1.25em 0;
   padding: 0.75em 1em;
   border: 1px solid #d0d7de;
   border-radius: 6px;
+}
+/* The href line under the title, editor-only. `.link-card-meta` used to be shared with the
+   published card, which spent it on the target's date until that was dropped 2026-08-15
+   (lib/rehype-link-card.ts says why); the NodeView shows the href there instead, so the class
+   survives scoped to the editor. */
+.prose .link-card-view .link-card-meta {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+  margin-top: 0.5em;
 }
 /* The whole card is one drag/selection target (it is an atom), so the selected state is drawn on
    the box rather than by the browser's text highlight, which has nothing to paint inside a node

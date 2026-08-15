@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { getPostBySlug } from '@/lib/posts';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
+import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
@@ -24,15 +25,18 @@ export const dynamic = 'force-dynamic';
 // The href has already been validated as `/posts/<slug>` by the stage before it gets here, so this
 // only has to take the slug off the end. `getPostBySlug` returns null for a draft as well as for a
 // slug that doesn't exist; both mean "no card", and the stage renders a plain link for either
-// (§6.1). The date is formatted here because that is where this site's UTC-store / JST-display
-// rule already lives.
+// (§6.1).
 async function resolveCard(href: string): Promise<CardTarget | null> {
   const target = await getPostBySlug(href.slice('/posts/'.length));
   if (!target) return null;
+  // resolveThumbnail, not `target.thumbnail`: the card shows the same image the
+  // post list does, including the body-derived fallback. It is also the only
+  // thing standing between a bad stored value and an `<img src>`, since the
+  // rehype stage trusts what this returns.
   return {
     title: target.title,
-    date: formatPostDate(target.date),
     description: target.description,
+    thumbnail: resolveThumbnail(target),
   };
 }
 
@@ -40,6 +44,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const { slug } = await params;
   const post = await getPostBySlug(slug);
   if (!post) return {};
+  const thumbnail = resolveThumbnail(post);
   return {
     title: post.title,
     description: post.description,
@@ -48,6 +53,15 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       // object wholesale, so siteName and locale have to come along or this one
       // page quietly loses them (see app/shared-metadata.ts).
       ...sharedOpenGraph,
+      // The post's own image when it has one, otherwise the site card the spread
+      // above supplies. Declared without width/height, unlike /og.png: these are
+      // author uploads of unknown dimensions, and a wrong declared size is worse
+      // than none — a consumer laying the card out from it gets a distorted box.
+      //
+      // A relative path, resolved against metadataBase like `url` below. og:image
+      // must be absolute in the emitted tag, and metadataBase is what makes that
+      // one host, from SITE_ORIGIN, rather than something baked in here.
+      ...(thumbnail ? { images: [{ url: thumbnail, alt: post.title }] } : {}),
       type: 'article',
       title: post.title,
       description: post.description,

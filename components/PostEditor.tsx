@@ -20,6 +20,7 @@ import { Blockquote } from './editor/blockquote-extension';
 import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
 import { LinkCard } from './editor/link-card-extension';
+import { ThumbnailField } from './editor/ThumbnailField';
 import { AccentEmphasis } from './editor/accent-emphasis-extension';
 import { FootnoteLiteral } from './editor/footnote-literal-extension';
 import {
@@ -63,6 +64,7 @@ export type PostEditorInitial = {
   category: string;
   tags: string[];
   body: string;
+  thumbnail: string;
 };
 
 type Props = {
@@ -96,6 +98,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
+  // The author's explicit card image ('' = none chosen). Held in React rather
+  // than left uncontrolled like the text fields, because the picker writes it
+  // and the preview reads it back.
+  const [thumbnail, setThumbnail] = useState(initial.thumbnail);
   // The opaque public slug, only needed to build the 表示 link. Empty in create
   // mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
@@ -499,6 +505,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         <Field label='説明'>
           <input name='description' defaultValue={initial.description} className={inputClass} />
         </Field>
+        <ThumbnailField value={thumbnail} onChange={setThumbnail} body={body} />
       </div>
 
       <div className='space-y-2'>

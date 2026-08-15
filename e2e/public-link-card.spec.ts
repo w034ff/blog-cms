@@ -7,8 +7,8 @@ import { loadMarkdown } from './editor-authoring';
 // Two things only exist beyond that string, and this file is where they are:
 //
 //   1. `resolveCard` itself. The real one lives in app/posts/[slug]/page.tsx, closes over
-//      getPostBySlug and formatPostDate, and is the only route a card's data takes in production.
-//      Every vitest case hands over a literal instead, so nothing else executes it.
+//      getPostBySlug, and is the only route a card's data takes in production. Every vitest case
+//      hands over a literal instead, so nothing else executes it.
 //   2. The CSS. The card is one big `<a>`, and `.prose a { color: #0969da }` (0,1,1) would paint the
 //      whole of it blue and underlined. `.prose a.link-card` (0,2,1) is what stops that — a
 //      specificity argument read off the stylesheet, which is exactly the kind of claim that is
@@ -17,6 +17,7 @@ import { loadMarkdown } from './editor-authoring';
 // `second-post` is seeded from the real data/blog.db copy (e2e/prepare-db.mts).
 const TARGET_SLUG = 'second-post';
 const TARGET_TITLE = 'React Server Components を学ぶよ';
+const TARGET_DESCRIPTION = 'Next.js App Router の中核機能 RSC についてのメモ。';
 
 const BLUE_LIGHT = 'rgb(9, 105, 218)'; // #0969da — the `.prose a` colour this must not inherit
 
@@ -50,10 +51,12 @@ test('a published card resolves against the real posts table (1c/2a)', async ({ 
   // The title is in neither the body nor the stylesheet — it can only have come through
   // resolveCard → getPostBySlug, which nothing else in the suite runs.
   await expect(card.locator('.link-card-title')).toHaveText(TARGET_TITLE);
+  await expect(card.locator('.link-card-description')).toHaveText(TARGET_DESCRIPTION);
   await expect(card).toHaveAttribute('href', `/posts/${TARGET_SLUG}`);
-  // The date is formatted by the resolver (lib/format.ts), so a raw ISO timestamp here would mean
-  // the UTC-store / JST-display rule was skipped on this path.
-  await expect(card.locator('.link-card-meta')).toHaveText(/年.*月.*日/);
+  // Title and description are the whole card — the target's date was dropped 2026-08-15
+  // (lib/rehype-link-card.ts carries the reason). Asserted rather than assumed because
+  // `.link-card-meta` is still a live class: the editor's NodeView shows the href in it.
+  await expect(card.locator('.link-card-meta')).toHaveCount(0);
 
   // 2a, from the other end: had `class` or `data-href` been stripped by sanitize, the stage would
   // never have seen the div and this would be an empty `<div>` on the page.

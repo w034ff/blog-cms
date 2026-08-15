@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
+import { isUploadPath } from '@/lib/thumbnail';
 import { generateUniqueSlug } from '@/lib/slug';
 
 // Autosave is intentionally lenient: it must persist partial, half-written work
@@ -19,6 +20,14 @@ const autosaveSchema = z.object({
     category: z.string().catch(''),
     tags: z.array(z.string()).catch([]),
     body: z.string().catch(''),
+    // Normalized rather than rejected, so a bad value can never be the reason a
+    // draft fails to save. '' is the column's "author chose none" state and the
+    // reader-facing image falls back to the body (lib/thumbnail.ts), so dropping
+    // an unusable path costs nothing an author would notice.
+    thumbnail: z
+      .string()
+      .transform((value) => (isUploadPath(value) ? value : ''))
+      .catch(''),
   }),
 });
 

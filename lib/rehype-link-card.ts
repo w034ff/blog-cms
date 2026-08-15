@@ -5,7 +5,7 @@ import { visit } from 'unist-util-visit';
 // What a card resolves to. Deliberately the shape the card renders, not a `Post`: lib/render.ts
 // must not import the DB or its types (docs/link-card-requirements.md §6), so the caller —
 // app/posts/[slug]/page.tsx — is what knows about `posts`, and a test can hand over a literal.
-export type CardTarget = { title: string; date: string; description: string };
+export type CardTarget = { title: string; description: string; thumbnail: string | null };
 export type ResolveCard = (href: string) => Promise<CardTarget | null>;
 
 declare module 'vfile' {
@@ -40,11 +40,30 @@ function hasClass(node: Element, name: string): boolean {
   return Array.isArray(className) && className.includes(name);
 }
 
-// The resolved card. Every class here is invented by this stage, which runs after sanitize, so
-// none of it needs allow-listing — the same position (and the same reason) rehype-pretty-code's
-// own spans rely on. `<a>` wraps the whole card so the entire block is one click target.
+// The resolved card: a text column (title, and a description when there is one) and, beside it, the
+// target's image when it has one. Every class here is invented by this stage, which runs after
+// sanitize, so none of it needs allow-listing — the same position (and the same reason)
+// rehype-pretty-code's own spans rely on. `<a>` wraps the whole card so the entire block is one
+// click target.
+//
+// A third line carrying the target's date was dropped 2026-08-15. The bottom line of a link card
+// conventionally carries provenance — which site, which author — and that is what earns it the
+// click. Every card here points at this same blog while external cards are deferred (§8), so the
+// provenance slot has nothing to say, and a date shown on the way in mostly makes an older post
+// look stale. The image took the space instead (2026-08-15).
+//
+// `thumbnail` is NOT re-validated here, unlike `data-href` below, and the difference is where each
+// one comes from. The href is written into the body by an author and reaches this stage having
+// skipped sanitize's protocol check; the thumbnail comes from the injected resolver, which builds
+// it with `resolveThumbnail` (lib/thumbnail.ts) and returns only `/uploads/…` paths. Re-checking
+// the shape here would be checking this project against itself; what matters is that no future
+// resolver hands over a value it did not put through that function.
+//
+// The text column exists even when there is no image: it is what keeps the description clamped to
+// the column's width rather than the card's, so a card gains and loses its picture without the
+// text re-flowing into a different shape.
 function cardElement(href: string, target: CardTarget): Element {
-  const parts: Element[] = [
+  const lines: Element[] = [
     {
       type: 'element',
       tagName: 'span',
@@ -53,22 +72,29 @@ function cardElement(href: string, target: CardTarget): Element {
     },
   ];
   if (target.description) {
-    parts.push({
+    lines.push({
       type: 'element',
       tagName: 'span',
       properties: { className: ['link-card-description'] },
       children: [{ type: 'text', value: target.description }],
     });
   }
-  if (target.date) {
-    // `date` arrives already formatted for display — the resolver runs it through
-    // formatPostDate (lib/format.ts), which is where this site's UTC-store / JST-display rule
-    // lives. This stage does no timezone work and writes whatever string it is handed.
-    parts.push({
+  const parts: Element[] = [
+    {
       type: 'element',
       tagName: 'span',
-      properties: { className: ['link-card-meta'] },
-      children: [{ type: 'text', value: target.date }],
+      properties: { className: ['link-card-text'] },
+      children: lines,
+    },
+  ];
+  if (target.thumbnail) {
+    // `alt=''` deliberately: the title is right beside it inside the same anchor, so naming the
+    // image would make a screen reader read the card twice.
+    parts.push({
+      type: 'element',
+      tagName: 'img',
+      properties: { className: ['link-card-image'], src: target.thumbnail, alt: '' },
+      children: [],
     });
   }
   return {

@@ -9,6 +9,7 @@ import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
 import { getPostForEdit } from '@/lib/posts';
+import { isUploadPath } from '@/lib/thumbnail';
 import type { DraftContent } from '@/lib/types';
 
 // Editable content (no slug, no visibility flag). Strict: this runs only when
@@ -20,6 +21,12 @@ const contentSchema = z.object({
   category: z.string().min(1),
   tags: z.array(z.string()),
   body: z.string(),
+  // Not strict, unlike its neighbours here: an unusable path normalizes to ''
+  // (the "author chose none" state) rather than refusing the publish. The image
+  // is decoration on a card, and no picture is a normal outcome — failing the
+  // whole publish over one would be the wrong trade. `isUploadPath` is what
+  // keeps an off-site URL out of `<img src>` and `og:image`.
+  thumbnail: z.string().transform((value) => (isUploadPath(value) ? value : '')),
 });
 
 export type PostFormState = {
@@ -56,6 +63,7 @@ function parseContent(formData: FormData): DraftContent | null {
     category: field(formData, 'category') || DEFAULT_CATEGORY,
     tags: parseTags(field(formData, 'tags')),
     body: field(formData, 'body'),
+    thumbnail: field(formData, 'thumbnail'),
   });
   return parsed.success ? parsed.data : null;
 }

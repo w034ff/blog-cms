@@ -62,7 +62,7 @@ test('toolbar image upload inserts an uploaded image', async ({ page }) => {
 
   // The 画像 toolbar control wraps a hidden <input type=file>; setInputFiles works
   // on hidden inputs and triggers the same upload path as the picker.
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-pixel.png',
     mimeType: 'image/png',
     buffer: PNG_1x1,
@@ -87,7 +87,7 @@ test('the image picker is disabled inside a table cell', async ({ page }) => {
   await page.getByRole('button', { name: '表', exact: true }).click();
   await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
 
-  const picker = page.locator('input[type="file"]');
+  const picker = page.getByTestId('image-picker');
   await editor.locator('td').first().click();
   await expect(picker).toBeDisabled();
 
@@ -116,7 +116,7 @@ test('the image picker is disabled inside a code block', async ({ page }) => {
   await page.keyboard.type('const a = 1;');
   await expect(editor.locator('.code-block')).toBeVisible();
 
-  await expect(page.locator('input[type="file"]')).toBeDisabled();
+  await expect(page.getByTestId('image-picker')).toBeDisabled();
   // The code block is untouched: one block, still holding the whole line.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   expect(await page.locator('input[name="body"]').inputValue()).toContain('const a = 1;');
@@ -136,7 +136,7 @@ test('a block right after an image is not glued onto the image line', async ({ p
   await editor.click();
   await page.keyboard.type('前の段落');
   await page.keyboard.press('Enter');
-  await page.locator('input[type="file"]').setInputFiles({
+  await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-pixel.png',
     mimeType: 'image/png',
     buffer: PNG_1x1,
@@ -194,7 +194,7 @@ for (const { label, markdown, typeName, expected } of [
     expect(await docString(page)).toBe(expected);
 
     await selectAcross(page, typeName);
-    const picker = page.locator('input[type="file"]');
+    const picker = page.getByTestId('image-picker');
     await expect(picker).toBeDisabled();
 
     // The picker being greyed out only covers the toolbar; paste reaches uploadImages directly,

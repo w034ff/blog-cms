@@ -228,7 +228,7 @@ describe('renderMdxToHtml — link cards', () => {
   // this is the whole reason the resolver is injected rather than imported (§6, criterion 5a).
   const resolveCard = async (href: string) =>
     href === '/posts/abc123'
-      ? { title: '参照先の記事', date: '2026年8月12日', description: '説明文' }
+      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
       : null;
 
   it('resolves a stored reference into a card (2a)', async () => {
@@ -236,19 +236,53 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<a class="link-card" href="/posts/abc123">');
     expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
     expect(html).toContain('<span class="link-card-description">説明文</span>');
-    expect(html).toContain('<span class="link-card-meta">2026年8月12日</span>');
+    // Title and description are the card's text: the target's date was dropped 2026-08-15
+    // (lib/rehype-link-card.ts carries the reason). `.link-card-meta` still exists in the
+    // stylesheet for the editor's NodeView, so its absence is asserted here rather than assumed.
+    expect(html).not.toContain('link-card-meta');
+    // This target has no image, and a card without one carries no <img> at all rather than an
+    // empty box — the text column is the whole card.
+    expect(html).not.toContain('link-card-image');
+  });
+
+  it('puts the target’s image beside the text when it has one', async () => {
+    const withImage = async () => ({
+      title: '絵のある記事',
+      description: '説明文',
+      thumbnail: '/uploads/8c3a2ce41540e56801a3.png',
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
+    expect(html).toContain('<img class="link-card-image" src="/uploads/8c3a2ce41540e56801a3.png"');
+    // Empty alt: the title sits inside the same <a>, so a described image would be read twice.
+    expect(html).toContain('alt=""');
+    // The text is wrapped in its own column, which is what keeps the description clamped to the
+    // column rather than the card. Both with and without an image, so the shape does not shift.
+    expect(html).toContain('<span class="link-card-text">');
+  });
+
+  it('survives sanitize with the image intact (2a)', async () => {
+    // The stage runs after rehype-sanitize, so nothing it emits meets the schema — this pins that
+    // the ordering still holds for the <img>, which is the one element here a schema would care
+    // about. If the stage were ever moved before sanitize, this is what goes red.
+    const withImage = async () => ({
+      title: 'T',
+      description: '',
+      thumbnail: '/uploads/a.png',
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
+    expect(html).toContain('src="/uploads/a.png"');
+    expect(html).toContain('class="link-card-image"');
   });
 
   it('reads the title from the resolver, not from the stored markdown (1b/1c)', async () => {
     // The stored form holds no display text at all, so a renamed post shows its new title with
     // no rewrite of any body that links to it. Same source, a different resolver, a different
     // title — which is the round-trip claim §4.2 makes, measured at the only place it can be.
-    const renamed = async () => ({ title: '改題後', date: '', description: '' });
+    const renamed = async () => ({ title: '改題後', description: '', thumbnail: null });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: renamed });
     expect(html).toContain('改題後');
     expect(CARD).not.toContain('改題後');
-    // Empty date/description contribute no empty spans.
-    expect(html).not.toContain('link-card-meta');
+    // An empty description contributes no empty span — the card is its title alone.
     expect(html).not.toContain('link-card-description');
   });
 

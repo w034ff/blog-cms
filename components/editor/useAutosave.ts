@@ -25,6 +25,7 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
     category: get('category'),
     tags: parseTags(get('tags')),
     body: get('body'),
+    thumbnail: get('thumbnail'),
   };
 }
 

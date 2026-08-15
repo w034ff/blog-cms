@@ -31,6 +31,14 @@ export const posts = sqliteTable('posts', {
   // never touch this — only the editor and publish/unpublish flows do.
   // Appended last so drizzle-kit push can ALTER TABLE ADD COLUMN in place.
   draftContent: text('draft_content', { mode: 'json' }).$type<DraftContent>(),
+  // The post's card image, as a site-relative `/uploads/<name>` path. Empty
+  // means "not set by the author", which is not the same as "no image": the
+  // reader-facing value is resolved by lib/thumbnail.ts, which falls back to the
+  // first upload referenced in the body. Kept as a path rather than an absolute
+  // URL so it stays valid across the origin changes SITE_ORIGIN exists for.
+  // Also appended at the tail — see the note above; on this table that is the
+  // only shape of schema change that reaches a populated DB in place.
+  thumbnail: text('thumbnail').notNull().default(''),
 });
 
 // Failed-login bookkeeping, so a public `/login` can't be tried at the speed the

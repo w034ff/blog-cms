@@ -25,6 +25,7 @@ function toPost(row: PostRow): Post {
     tags: tagsSchema.parse(row.tags),
     draft: row.draft,
     body: row.body,
+    thumbnail: row.thumbnail,
   };
 }
 
@@ -49,10 +50,27 @@ export async function listAllPosts(): Promise<Post[]> {
   return rows.map(toPost);
 }
 
+// `draft_content` is JSON, and `$type<DraftContent>()` only asserts its shape — nothing validates
+// what is actually in the column. Every row written before a field existed is missing that field,
+// and the assertion hides it: `thumbnail` came in 2026-08-15, so a post that had pending edits
+// before then hands back `undefined` where the type promises a string. That reached the editor as a
+// field showing 「なし」 while its label claimed an image had been chosen, with the body fallback
+// skipped, because `undefined === ''` is false.
+//
+// Normalized here rather than at each reader, which is the same call `toPost` makes one function up
+// for `tags` (`tagsSchema … .catch([])`). A field added to DraftContent later needs its default
+// added here too.
+function toDraftContent(stored: DraftContent): DraftContent {
+  return { ...stored, thumbnail: stored.thumbnail ?? '' };
+}
+
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
   const row = db.select().from(posts).where(eq(posts.id, id)).get();
   if (!row) return null;
-  return { ...toPost(row), draftContent: row.draftContent ?? null };
+  return {
+    ...toPost(row),
+    draftContent: row.draftContent ? toDraftContent(row.draftContent) : null,
+  };
 }
 
 export async function getPostsByTag(tag: string): Promise<Post[]> {

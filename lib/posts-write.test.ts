@@ -34,6 +34,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     tags: [],
     draft: true,
     body: 'body',
+    thumbnail: '',
     ...overrides,
   });
 }
@@ -43,6 +44,7 @@ const content: DraftContent = {
   description: 'desc',
   category: 'cat',
   tags: ['a', 'b'],
+  thumbnail: '',
   body: 'edited body',
 };
 

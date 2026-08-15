@@ -5,6 +5,10 @@ export type PostFrontmatter = {
   tags: string[];
   category: string;
   draft: boolean;
+  // The card image the author chose, as a `/uploads/<name>` path; '' when they
+  // chose none. Not the image a reader sees — that is `resolveThumbnail`
+  // (lib/thumbnail.ts), which falls back to the body's first upload.
+  thumbnail: string;
 };
 
 export type Post = PostFrontmatter & {

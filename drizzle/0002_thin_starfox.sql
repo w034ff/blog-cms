@@ -1,0 +1,1 @@
+ALTER TABLE `posts` ADD `thumbnail` text DEFAULT '' NOT NULL;

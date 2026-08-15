@@ -169,7 +169,11 @@ export function Toolbar({
         }`}>
         <ImageIcon />
         {uploading ? 'アップロード中…' : '画像'}
+        {/* The editor page now has two file pickers — this one and the
+            thumbnail field's — so both carry a testid. Without it a spec's
+            `input[type="file"]` matches two elements and fails strict mode. */}
         <input
+          data-testid='image-picker'
           type='file'
           accept={ALLOWED_IMAGE_ACCEPT}
           className='hidden'
