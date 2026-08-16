@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { caret, docString } from './editor-probe';
+import { caretAtStartOf } from './editor-authoring';
 
 // A keyboard `Home` moves the caret natively: the DOM selection updates at once, but ProseMirror
 // only learns of it from `selectionchange`, whose handler flushes on a 20ms debounce
@@ -236,8 +237,19 @@ test('Backspace at the start of a non-empty callout keeps it', async ({ page }) 
   await page.getByRole('button', { name: '囲み枠' }).click();
   await page.getByRole('button', { name: '情報', exact: true }).click();
   await page.keyboard.type('消えない本文');
-  await page.keyboard.press('Home'); // caret to the start of the callout body
-  await caretAtLineStart(page);
+  // The caret is placed by command, not by a native `Home`. A Home pressed inside the ~20ms
+  // selection-sync window that follows the typing above is swallowed — ProseMirror re-asserts its
+  // own pre-Home selection onto the DOM — and `caretAtLineStart` then polls an offset that never
+  // changes: measured 2026-08-16 in a full-suite run, anchorOffset sat at 6 (the typed text's
+  // length) for the whole 10s budget, while the same case is green in isolation. Home is setup
+  // here, not the subject; the Backspace below is.
+  await caretAtStartOf(page, 'callout');
+  // Stated rather than assumed, because the wait this replaced was also buying protection from the
+  // native path (file header): a Backspace fired while `state.selection` is stale matches no keymap
+  // and the browser edits the DOM itself. What makes that impossible here is the selection being
+  // *known* to be at offset 0 before the press — a placement that silently landed elsewhere would
+  // otherwise reach the Backspace as an ordinary in-text deletion.
+  expect(await caret(page)).toBe('消えない本文@0');
 
   await page.keyboard.press('Backspace');
   const callout = editor.locator('div.markdown-alert');

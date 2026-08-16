@@ -82,6 +82,38 @@ export function caretPos(page: Page): Promise<number> {
   });
 }
 
+// As much of prosemirror-history's plugin state as these tests need: `undoDepth`'s
+// `hist.done.eventCount`, and the grouping clock (`this.prevTime = prevTime`) that decides whether
+// the next change joins the event before it or starts its own — `newGroup = history.prevTime == 0 ||
+// (… history.prevTime < (tr.time || 0) - options.newGroupDelay …)`.
+//
+// Reading the depth is how a spec says "this gesture cost exactly one undo" without waiting out
+// `newGroupDelay: config.newGroupDelay || 500`. A pause can only *hope* the grouping window has
+// closed, and a slow-enough test passes such an assertion for the wrong reason; the count states it.
+// closeHistory() in editor-authoring.ts is the write-side companion, and prevTime is what it checks.
+//
+// The plugin is matched by its exact key. `historyKey = new PluginKey("history")`, and
+// prosemirror-state's `createKey` turns that name into the string "history$" (`return name + "$"`).
+// Exact, not a prefix: "history$1" would be a *second* key of that name, i.e. not this one.
+export function historyState(page: Page): Promise<{ undoDepth: number; prevTime: number }> {
+  return page.evaluate(() => {
+    type HistoryPluginState = { done: { eventCount: number }; prevTime: number };
+    type Plugin = { key: string; getState(state: object): HistoryPluginState | undefined };
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { state: { plugins: Plugin[] } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const { state } = el.editor;
+    const plugin = state.plugins.find((p) => p.key === 'history$');
+    if (!plugin) {
+      throw new Error(`no history plugin; keys: ${state.plugins.map((p) => p.key).join(' ')}`);
+    }
+    const history = plugin.getState(state);
+    if (!history) throw new Error('the history plugin holds no state');
+    return { undoDepth: history.done.eventCount, prevTime: history.prevTime };
+  });
+}
+
 // Let ProseMirror's 20ms selection-sync debounce (DOMObserver.flushSoon) settle WITHOUT recreating
 // the selection — a page-side timeout, never an arrow/click (those take the DOM-readback path and
 // would paper over a stuck/foreign selection).

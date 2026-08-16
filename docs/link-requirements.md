@@ -594,12 +594,14 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 
 **分かったこと、分からないこと。** 変更を stash したベースラインは 3 回とも緑だったが、変更ありでも 17 回連続で緑なので、**この比較はもう何も言っていない。** 残っている材料は 2 つだけである:
 
-- あの spec は `loadMarkdown` のあと 700ms 待って prosemirror-history のグルーピングから抜ける作りで、`newGroupDelay` の既定は 500（`prosemirror-history/dist/index.js`、`newGroupDelay: config.newGroupDelay || 500`）。**余裕は 200ms しかない。**
+- 失敗した当時のあの spec は `loadMarkdown` のあと 700ms 待って prosemirror-history のグルーピングから抜ける作りで、`newGroupDelay` の既定は 500（`prosemirror-history/dist/index.js`、`newGroupDelay: config.newGroupDelay || 500`）。**余裕は 200ms しかなかった**（この待ちは現在ない — 下記）。
 - 2 回の失敗はどちらも**他の作業を並行させている最中**に起きており、17 回の成功はほぼ無人で回している。負荷で 200ms が閉じる、という説明と矛盾しない。
 
 **機構としては繋がっていない。** あの spec に出てくるのはリンクカードであってテキストリンクのバブルではなく、タイトル取得は走っていない（実行ログで確認）。
 
-**余裕を広げて緑にすることはしていない。** 原因が分からないまま待ち時間を伸ばすのは、回帰があった場合にそれを隠す操作である。**時間依存そのものを外す手はある** — `closeHistory(tr)` が履歴の区切りを明示的に入れられるし、`undoDepth` で履歴イベントの数を直接測れる（どちらも prosemirror-history が公開）。これは余裕を広げるのとは別で、undo の本物の回帰は依然として捕まる。**未着手のまま残す。**
+**余裕を広げて緑にすることはしていない。** 原因が分からないまま待ち時間を伸ばすのは、回帰があった場合にそれを隠す操作である。**代わりに時間依存そのものを外した（2026-08-16）。** 700ms の待ちの位置に `closeHistory` の meta を入れて履歴の区切りを明示し（`closeHistoryKey = new PluginKey("closeHistory")`、prosemirror-state の `createKey` が `name + "$"` で名付ける文字列を `setMeta` にそのまま渡す。プラグインは `if (tr.steps.length == 0) { return history; }` の手前で meta を読むので空のトランザクションで足りる）、削除が独立した 1 イベントであることと、undo が戻すのがその 1 イベントだけであることを `done.eventCount` で数える。判定は強くなっている — 待ちは「実行が遅ければ通ってしまう」形だったが、イベント数は遅くても速くても同じ答えを返す。区切りが入ったこと自体も `prevTime` の読み戻しで確かめており（`e2e/editor-authoring.ts` の `closeHistory`）、@tiptap の更新で meta の名前が変わればその場で落ちる。誤った名前を渡す実験で、この読み戻しが実際に落とすことを確認した。同じ待ちは `details-slice-guard` / `table-pipe-form` / `editor-isolating-boundary`（こちらは 600ms、余裕 100ms）にもあり、同じ手で同時に外している。
+
+**これは原因の説明ではない。** 説明のつく唯一の機構だった 200ms の余裕が無くなっただけで、2 回の失敗が何だったかは分かっていない。トレースの取り扱い（落ちた時点で止める）は上記のまま有効である。
 
 ---
 

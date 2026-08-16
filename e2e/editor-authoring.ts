@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { historyState } from './editor-probe';
 
 // Write-side companions to editor-probe.ts: they *change* the live editor rather than read it, and
 // exist for documents and selections the UI can't reach. Two cases keep coming up:
@@ -10,6 +11,11 @@ import type { Page } from '@playwright/test';
 //   - selections spanning more than one block, which a guard reading `editor.isActive(...)` sees
 //     differently from a caret (see components/editor/selection-scan.ts). Playwright can drag one,
 //     but the exact endpoints matter to these tests, and setTextSelection states them outright.
+//
+// closeHistory is the odd one out: it changes nothing in the document, only the undo history's
+// grouping, and it is here because it is a dispatch rather than a read.
+
+type Transaction = { setMeta(key: string, value: boolean): Transaction };
 
 type EditorProbe = Element & {
   editor?: {
@@ -18,7 +24,8 @@ type EditorProbe = Element & {
       setTextSelection(range: { from: number; to: number }): boolean;
       setNodeSelection(pos: number): boolean;
     };
-    state: { doc: { descendants(f: (node: unknown, pos: number) => void): void } };
+    state: { doc: { descendants(f: (node: unknown, pos: number) => void): void }; tr: Transaction };
+    view: { dispatch(tr: Transaction): void };
   };
 };
 
@@ -30,6 +37,37 @@ export function loadMarkdown(page: Page, markdown: string): Promise<void> {
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     el.editor.commands.setContent(md);
   }, markdown);
+}
+
+// Put an explicit break in the undo history: whatever changes next starts its own event instead of
+// joining the one before it. This is what a test needs after loadMarkdown — setContent is a single
+// history event, so a gesture that groups with it is undone *together with the whole document*, and
+// the undo then proves nothing about what the gesture cost.
+//
+// The break is stated, not waited for. prosemirror-history exports `closeHistory`, but nothing
+// exports it into a page that only has the bundled editor, so the meta it sets is set directly:
+// `closeHistory(tr)` is `tr.setMeta(closeHistoryKey, true)` with
+// `closeHistoryKey = new PluginKey("closeHistory")`, which prosemirror-state's `createKey` names
+// "closeHistory$" (`return name + "$"`), and `setMeta` takes that string as readily as the key.
+//
+// An empty transaction carries it, and that is deliberate: the plugin reads the meta *before* its
+// `if (tr.steps.length == 0) { return history; }` early return, and that return hands back the state
+// the meta already replaced — so `prevTime` becomes 0 while the document stays untouched.
+//
+// Checked, not assumed. A renamed key (a @tiptap family bump is a recurring operation here) or a
+// filterTransaction swallowing the empty transaction would drop every caller back onto time-based
+// grouping silently, where a test slow enough to outlast `newGroupDelay` still passes — which is the
+// vacuity this helper exists to remove, so it must not be able to reintroduce it quietly.
+export async function closeHistory(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as EditorProbe | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    el.editor.view.dispatch(el.editor.state.tr.setMeta('closeHistory$', true));
+  });
+  const { prevTime } = await historyState(page);
+  if (prevTime !== 0) {
+    throw new Error(`closeHistory did not take: prevTime is ${prevTime}, expected 0`);
+  }
 }
 
 // Select a range by raw document position. The blunt one, for tests whose whole point is *where*
@@ -92,6 +130,16 @@ function innerRange(page: Page, typeName: string): Promise<{ from: number; to: n
 export async function selectInside(page: Page, typeName: string): Promise<void> {
   const { from, to } = await innerRange(page, typeName);
   await setRange(page, from, to);
+}
+
+// Put a collapsed caret at the start of the first node of `typeName`'s inline content — what a
+// native `Home` pressed in there is meant to produce, except that this one cannot be swallowed.
+// A `Home` sent inside the ~20ms selection-sync window (DOMObserver.flushSoon) that follows typing
+// is discarded: ProseMirror re-asserts its own pre-Home selection onto the DOM, the caret never
+// moves, and a poll watching the DOM offset waits for a value that will never arrive.
+export async function caretAtStartOf(page: Page, typeName: string): Promise<void> {
+  const { from } = await innerRange(page, typeName);
+  await setRange(page, from);
 }
 
 // Collapse the current selection to its end — the deterministic counterpart to pressing End after a

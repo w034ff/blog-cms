@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { caret, docString, markdown, settle } from './editor-probe';
-import { loadMarkdown, setRange } from './editor-authoring';
+import { caret, docString, historyState, markdown, settle } from './editor-probe';
+import { closeHistory, loadMarkdown, setRange } from './editor-authoring';
 import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
 // `isolating` blocks placement, not ranged replacement. prosemirror-transform's isolating checks
@@ -423,15 +423,19 @@ test('one undo restores a clamped deletion', async ({ page }) => {
     { line: '囲みの中身です', at: 2 },
     { line: '後の段落です', at: 2 },
   );
-  // prosemirror-history groups edits made within newGroupDelay (500ms) of each other, and the
-  // setContent above is itself an edit — without this wait the undo would step over both and the
-  // test would read a grouping artefact as a defect.
-  await page.waitForTimeout(600);
+  // The setContent above is an edit like any other, and an undo that steps over both it and the
+  // deletion would read a grouping artefact as a defect. The break is stated rather than waited out
+  // — it was a 600ms pause against a 500ms `newGroupDelay`, i.e. 100ms of margin.
+  await closeHistory(page);
+  const before = (await historyState(page)).undoDepth;
 
   await page.keyboard.press('Backspace');
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("段落です"))');
+  // One transaction, not one per piece — the claim this test exists to keep from regressing, and
+  // the count is what states it. The document check alone cannot tell one step from two.
+  expect((await historyState(page)).undoDepth).toBe(before + 1);
 
   await page.keyboard.press('Control+z');
   await expect
@@ -439,6 +443,7 @@ test('one undo restores a clamped deletion', async ({ page }) => {
     .toBe(
       'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))',
     );
+  expect((await historyState(page)).undoDepth).toBe(before);
 });
 
 // Paste replaces the selected range too, so Ctrl+V reached the same corruption as Backspace. This
@@ -547,10 +552,10 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     await posInText(page, '後の段落です', 2),
   );
 
-  // prosemirror-history groups edits made within newGroupDelay (500ms) of each other, and the
-  // setContent above is itself an edit — wait it out so the undo below can only be undoing the
-  // composition.
-  await page.waitForTimeout(600);
+  // The setContent above is an edit like any other; break the history here so the undos below can
+  // only be undoing the composition (this was a 600ms pause against a 500ms `newGroupDelay`).
+  await closeHistory(page);
+  const before = (await historyState(page)).undoDepth;
 
   // Playwright's keyboard cannot compose, so the IME is driven over CDP directly: set a
   // composition, then commit it.
@@ -576,6 +581,9 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     await settle(page);
   }
   expect(await docString(page)).toBe(original);
+  // Whichever of the two it cost, the undos stopped there rather than eating the load as well —
+  // stated as a count, since a document that matches `original` cannot distinguish the two.
+  expect((await historyState(page)).undoDepth).toBe(before);
 });
 
 // The control for the above: composing at a plain caret, and over a selection that crosses nothing,

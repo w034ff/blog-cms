@@ -1,6 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { collapseToEnd, loadMarkdown, selectInside, setRange } from './editor-authoring';
-import { docString, markdown, settle } from './editor-probe';
+import {
+  closeHistory,
+  collapseToEnd,
+  loadMarkdown,
+  selectInside,
+  setRange,
+} from './editor-authoring';
+import { docString, historyState, markdown, settle } from './editor-probe';
 
 // The link card in the live editor (docs/link-card-requirements.md §9). Browser-only for the usual
 // reason plus one of its own: the card's NodeView fetches its title over `/api/posts/search`, so
@@ -139,17 +145,28 @@ for (const gesture of ['Backspace', 'Delete'] as const) {
       await collapseToEnd(page);
     }
 
-    // prosemirror-history groups changes made within 500ms into one event, and `loadMarkdown` is a
-    // single one of them (setContent). Without this pause the deletion joins it and the undo below
-    // rolls back the whole document, which would say nothing about what the deletion cost.
-    await page.waitForTimeout(700);
+    // `loadMarkdown` is one history event (setContent), and a deletion that groups with it is undone
+    // together with the whole document — an undo that says nothing about what the deletion cost.
+    // The break is stated outright and the events are counted, so the case no longer depends on any
+    // duration: this used to be a 700ms pause waiting out `newGroupDelay` (default 500), which left
+    // 200ms of margin and is the one mechanism that could explain the unexplained double failure of
+    // 2026-08-16 (docs/link-requirements.md §5.5.10).
+    await closeHistory(page);
+    const before = (await historyState(page)).undoDepth;
+
     await page.keyboard.press(gesture);
     expect(await docString(page)).not.toContain('linkCard');
+    // One event of its own — the assertion the pause used to buy, except that a slow test cannot
+    // satisfy this one by accident.
+    expect((await historyState(page)).undoDepth).toBe(before + 1);
 
     await page.keyboard.press('Control+z');
     expect(await docString(page)).toContain('linkCard');
     // The reference, not just the node: this is what makes the one-press deletion acceptable.
     expect(await markdown(page)).toContain(CARD_MD);
+    // Exactly one event undone. A stray transaction joining the deletion's group would leave the
+    // document looking right here while the press had in fact cost more than the deletion.
+    expect((await historyState(page)).undoDepth).toBe(before);
   });
 }
 

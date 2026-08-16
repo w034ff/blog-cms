@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { docString } from './editor-probe';
-import { loadMarkdown, selectNode, setRange } from './editor-authoring';
+import { docString, historyState } from './editor-probe';
+import { closeHistory, loadMarkdown, selectNode, setRange } from './editor-authoring';
 
 // The accordion's slice rules (docs/accordion-requirements.md §6.2, §6.3). Two of them, and
 // neither is the callout's:
@@ -108,17 +108,23 @@ test('a folded accordion is selected, deleted and restored by one undo', async (
   await expect(page.locator('.ProseMirror [data-type="detailsContent"]')).toBeHidden();
   expect(await docString(page)).toBe(built);
 
-  // prosemirror-history groups changes made within 500ms of each other into one undo event, and a
-  // scripted test types far faster than that — without this pause the deletion joins the
-  // authoring and a single undo rolls back both, which would say nothing about the deletion.
-  await page.waitForTimeout(700);
+  // A scripted test types far faster than prosemirror-history's grouping window, so the deletion
+  // would join the authoring above and a single undo would roll back both — saying nothing about
+  // the deletion. The break is stated rather than waited out, and the events counted (this used to
+  // be a 700ms pause against a 500ms `newGroupDelay`, which a loaded machine can close).
+  await closeHistory(page);
+  const before = (await historyState(page)).undoDepth;
 
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
   expect(await docString(page)).not.toContain('details');
+  // The deletion is one event of its own — which is what makes the single undo below meaningful.
+  expect((await historyState(page)).undoDepth).toBe(before + 1);
 
   await page.keyboard.press('Control+z');
   expect(await docString(page)).toBe(built);
+  // And it undid only that event: the authoring is still on the stack.
+  expect((await historyState(page)).undoDepth).toBe(before);
 });
 
 test('the accordion has a drag handle while folded', async ({ page }) => {
