@@ -189,6 +189,24 @@ export function LinkBubble({
     [editor],
   );
 
+  // Has the author left the card behind? The two rules that take it away — the editor's blur and
+  // focus leaving for somewhere else entirely — both have to ask this, and asking it two different
+  // ways is what broke the card's own buttons (§5.5.9).
+  //
+  // The card counts as a place the author can be. It is portalled to <body>, so pressing one of its
+  // buttons moves focus out of the editor exactly as leaving for the page around it does; the blur
+  // rule read only `hasFocus()`, hid the card a frame after mousedown, and the click never landed
+  // because its target was gone by mouseup (measured 2026-08-16).
+  //
+  // `hasFocus()` rather than `view.dom.contains(active)` for the editor half: ProseMirror's answer
+  // is about its own element, so a focusable control *inside* the document — the link card
+  // NodeView's 変更 — counts as having left, which is the case §5.5.9 was written for.
+  const focusLeft = useCallback(() => {
+    const active = document.activeElement;
+    if (active?.closest('.link-bubble')) return false;
+    return !editor.view.hasFocus();
+  }, [editor]);
+
   const openField = useCallback(
     (initial: string) => {
       setDraft(initial);
@@ -215,14 +233,14 @@ export function LinkBubble({
     // Otherwise the card falls back to display mode — but only if the author is still in the
     // editor. The field can be left for somewhere that is not (the post's title, say), and the blur
     // rule below cannot answer that: the editor lost focus when the field took it, so leaving the
-    // field for a third place fires no blur of its own. Same test as that rule, a frame later and
-    // settled by `hasFocus`, so 保存 and やめる — which focus the editor back — keep the card.
+    // field for a third place fires no blur of its own. Same test as that rule, a frame later, so
+    // 保存 and やめる — which focus the editor back — keep the card.
     requestAnimationFrame(() => {
-      if (editingRef.current || editor.view.hasFocus()) return;
+      if (editingRef.current || !focusLeft()) return;
       dismissedRef.current = true;
       signal('hide');
     });
-  }, [editor, signal]);
+  }, [editor, focusLeft, signal]);
 
   const close = useCallback(() => {
     abandonField();
@@ -301,18 +319,23 @@ export function LinkBubble({
   // Opening the field unmounts the 編集 button that focus is on, which is a focusout with a null
   // relatedTarget; so is tabbing away. A frame later they differ, because by then the effect above
   // has moved focus into the URL field.
+  //
+  // Runs in display mode too, and that is the other half of letting the card keep focus. Once a
+  // press has parked focus on one of the card's own buttons, the editor is already blurred, so
+  // leaving the page from there fires no blur of its own — the card would sit on a document nobody
+  // is editing, which is the very state §5.5.9 exists to prevent. Registered while the card is on
+  // screen at all; the `editing` term keeps it mounted for the field's own departures regardless.
   useEffect(() => {
-    if (!editing) return;
+    if (!editing && !menuVisible) return;
     const onFocusOut = () => {
       requestAnimationFrame(() => {
-        const active = document.activeElement;
-        if (active?.closest('.link-bubble') || (active && editor.view.dom.contains(active))) return;
+        if (!focusLeft()) return;
         abandonField();
       });
     };
     document.addEventListener('focusout', onFocusOut);
     return () => document.removeEventListener('focusout', onFocusOut);
-  }, [abandonField, editing, editor]);
+  }, [abandonField, editing, focusLeft, menuVisible]);
 
   // The display card follows the editor's focus: if the author is not editing, a card describing
   // what surrounds the caret has nothing to be about. Reported as buttons that leave the card up —
@@ -320,11 +343,15 @@ export function LinkBubble({
   // click dispatches no transaction, so the plugin never re-asks `shouldShow`, and the card simply
   // stays where it was.
   //
-  // Deferred a frame and settled by `hasFocus()`, because blur alone does not mean the author left.
+  // Deferred a frame and settled by `focusLeft()`, because blur alone does not mean the author left.
   // Measured 2026-08-16: a toolbar button emits blur *and* focus (its command chain focuses the
   // editor back), while the link card's 変更 emits blur alone. Hiding on the raw blur event would
   // take the card away every time the author reached for 太字 — and the toolbar is the one place
   // outside the editor that acts on the very selection the card is describing.
+  //
+  // Focus landing on the card itself is not leaving either, and asking `hasFocus()` alone here was
+  // the bug that made コピー・編集・解除 unpressable: mousedown moved focus to the button, this
+  // hid the card a frame later, and the click had no target left by mouseup.
   //
   // `dismissedRef` rather than `signal('hide')` alone: the picker the 変更 button opens dispatches
   // transactions of its own, and each would re-ask `shouldShow` and bring the card back. Focus
@@ -333,7 +360,7 @@ export function LinkBubble({
   useEffect(() => {
     const onBlur = () => {
       requestAnimationFrame(() => {
-        if (editingRef.current || editor.view.hasFocus()) return;
+        if (editingRef.current || !focusLeft()) return;
         dismissedRef.current = true;
         signal('hide');
       });
@@ -347,7 +374,7 @@ export function LinkBubble({
       editor.off('blur', onBlur);
       editor.off('focus', onFocus);
     };
-  }, [editor, signal]);
+  }, [editor, focusLeft, signal]);
 
   const appendTo = useCallback(() => document.body, []);
   const getReferencedVirtualElement = useCallback(() => {

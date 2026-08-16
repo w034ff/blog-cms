@@ -690,3 +690,67 @@ test('the URL field survives an autosave', async ({ page }) => {
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await expect(field).toHaveValue('https://slowly-typed.example');
 });
+
+// A press held for longer than one frame — which is every press a person makes, and none that
+// `.click()` makes: Playwright dispatches mousedown and mouseup inside a single task, so the whole
+// file above could stay green while the three icon buttons were unreachable by hand (reported
+// 2026-08-16). Mousedown moves focus out of the editor and onto the button; the display card's blur
+// rule then hid the card before mouseup, and a click whose target left the page never lands.
+//
+// The link is placed well down the document on purpose. A card near the first line could be
+// unreachable for an unrelated reason — it is `z-20` under a `sticky z-30` toolbar — and asserting
+// the card is still *visible* mid-press, rather than only that the click worked, is what tells the
+// two apart.
+const DEEP_MD = `あ\n\nい\n\nう\n\n${MD}`;
+const DEEP_IN_LINK = 12;
+
+async function pressSlowly(page: Page, name: string): Promise<void> {
+  const button = card(page).getByRole('button', { name });
+  await expect(button).toBeVisible();
+  await button.hover();
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  // The mechanism, not just the outcome: the card must still be on screen under the finger.
+  await expect(card(page)).toBeVisible();
+  await page.mouse.up();
+}
+
+test('a slowly pressed 編集 still opens the URL field', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, DEEP_MD);
+  await setRange(page, DEEP_IN_LINK);
+  await pressSlowly(page, '編集');
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeFocused();
+});
+
+test('a slowly pressed 解除 still removes the link', async ({ page }) => {
+  await openEditor(page);
+  await loadMarkdown(page, DEEP_MD);
+  await setRange(page, DEEP_IN_LINK);
+  await pressSlowly(page, '解除');
+  await settle(page);
+  expect(await markdown(page)).toBe('あ\n\nい\n\nう\n\n前リンク後');
+});
+
+test('コピー reaches the clipboard, and the card goes when the author leaves from it', async ({
+  page,
+  context,
+}) => {
+  // The third button, and the state the fix above creates: after a press, focus is parked on a card
+  // button with the editor already blurred. Leaving from *there* fires no editor blur, so the rule
+  // that hides the card has to be reachable from the card as well — otherwise the fix would trade
+  // the reported bug for the one §5.5.9 was written to kill.
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openEditor(page);
+  await loadMarkdown(page, DEEP_MD);
+  await setRange(page, DEEP_IN_LINK);
+  await pressSlowly(page, 'コピー');
+  await expect(page.getByText('リンク先をコピーしました')).toBeVisible();
+  // The raw href, not the line's stripped form (§5.5.10).
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://example.com');
+  await expect(card(page)).toBeVisible();
+  await page.locator('body').click({ position: { x: 5, y: 400 } });
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await expect(highlight(page)).toHaveCount(0);
+});
