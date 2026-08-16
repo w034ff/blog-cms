@@ -130,9 +130,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // a one-time address-bar sync once they gain an identity.
   const urlSyncedRef = useRef(mode === 'edit');
   const publishedRef = useRef(isPublished);
-  // The editor's onUpdate handler (set once at editor creation) reaches the
-  // latest markEdited through this ref, avoiding a stale capture without
-  // re-creating the editor.
+  // A hedge, not a requirement: nothing here can capture a stale markEdited today.
+  // @tiptap/react wraps every option callback at editor creation, so the onUpdate
+  // below is invoked through `this.options.current.onUpdate` — re-read on each
+  // render ("Always call the most recent version of the callback function by
+  // default", @tiptap/react's own words) — and markEdited is identity-stable
+  // regardless, its useCallback deps all being stable. Kept because the failure it
+  // guards against is silent: were markEdited to stop being stable, a stale closure
+  // would leave autosave quietly no longer recording edits.
   const markEditedRef = useRef<() => void>(() => {});
   // The live editor instance, handed to the image-upload hook (set from an
   // effect once useEditor delivers it).
