@@ -18,6 +18,7 @@ import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
 import { LinkHighlight } from './editor/link-highlight-extension';
 import { LinkInputRule } from './editor/link-input-rule';
+import { Link } from './editor/link-extension';
 import { Blockquote } from './editor/blockquote-extension';
 import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
@@ -248,21 +249,24 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         // document is replaced by ours: the same top node, but its content expression admits the
         // footnote definitions' section as an optional last child — see footnote-extension.ts.
         document: false,
-        // link is kept (it is what makes a pasted URL a link) but must not open on click: the
-        // default sends a left click to window.open, so a link inside the editor could not be
-        // clicked into and the caret could never be placed in it — the text was uneditable and,
-        // with no toolbar control for links either, unremovable. Only this option is overridden,
-        // so autolink/linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
-        // What this gave up — "open this link" from inside the editor — is handed back by the link
-        // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
-        //
-        // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
-        // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
-        // is closed at this end.
-        link: {
-          openOnClick: false,
-          isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
-        },
+        // link is replaced by ours below: the same extension with the mark made non-inclusive, so
+        // the 。 typed after a link stays out of it — see editor/link-extension.ts.
+        link: false,
+      }),
+      // Kept (it is what makes a pasted URL a link) but must not open on click: the default sends a
+      // left click to window.open, so a link inside the editor could not be clicked into and the
+      // caret could never be placed in it — the text was uneditable and, with no toolbar control
+      // for links either, unremovable. Only these two options are overridden, so autolink and
+      // linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
+      // What this gave up — "open this link" from inside the editor — is handed back by the link
+      // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
+      //
+      // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
+      // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
+      // is closed at this end.
+      Link.configure({
+        openOnClick: false,
+        isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
       }),
       Document,
       // Directly under Document because it exists to answer for Document's content expression:

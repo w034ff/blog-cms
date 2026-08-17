@@ -64,9 +64,10 @@ export const LinkInputRule = Extension.create({
           tr.delete(textEnd, range.to);
           tr.delete(range.from, textStart);
           tr.addMark(range.from, range.from + text.length, type.create({ href, title }));
-          // The link mark is inclusive whenever `autolink` is on (`inclusive()` in extension-link),
-          // and it is (§4). Without this, everything typed after the `)` joins the link.
-          tr.removeStoredMark(type);
+          // (A `tr.removeStoredMark(type)` stood here until 2026-08-17: the mark was inclusive, so
+          // everything typed after the `)` joined the link. It is not inclusive any more —
+          // link-extension.ts — and the line is dead, measured by removing it and typing on.)
+
           // What `setLink` sets for itself. The link text can be a URL — `[https://a](/posts/b)` —
           // and autolink would otherwise reconsider it and overwrite the href just written.
           tr.setMeta('preventAutolink', true);

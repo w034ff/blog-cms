@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
+import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { setLinkHighlight, type LinkHighlightRange } from './link-highlight-extension';
+import { setLinkHighlight } from './link-highlight-extension';
 import { EditorTooltip } from './EditorTooltip';
 import { ToolbarButton } from './ToolbarButton';
 import { CopyIcon } from './svg/CopyIcon';
@@ -43,6 +45,12 @@ const OPEN_SHORTCUT = 'Mod-k';
 // re-evaluates shouldShow on a transaction that changes the selection or the document, and entering
 // the URL field changes neither — the same reason the block drag suppresses it this way.
 const SUPPRESS_TABLE_MENU = 'link-menu-open';
+
+// Both fields of the edit mode wear this. One constant rather than two copies because the pair has
+// to line up: they sit one above the other and any difference in width or padding reads as a
+// mistake.
+const FIELD_CLASS =
+  'w-72 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]';
 
 // The <a> the caret is in, to anchor the card to. Two positions are tried because a caret sitting at
 // a link's right edge still reports the mark (it is inclusive — see below) while `domAtPos` there
@@ -117,21 +125,75 @@ function LinkFavicon({ href }: { href: string }) {
   );
 }
 
-// The document range of the link the caret is in, for the highlight. Two positions again, and for
-// the same reason `linkElementAt` needs two: at a link's right edge `getMarkRange` resolves to
-// nothing (`childAfter` there is the non-link text that follows, so the walk stops before it
-// starts), while the mark still reads as active. Asking at `from - 1` as well is what keeps the
-// tint present at the position a click most often lands on.
-function linkRangeAt(editor: Editor): LinkHighlightRange {
+// The link the card is about — its range and its href — or null where there is none. Every question
+// the card asks about the current link goes through here, which is the whole reason it exists.
+//
+// The card used to ask the caret directly (`isActive('link')`, `getAttributes('link')`), and those
+// answered because the mark was inclusive. It is not any more (link-extension.ts): at a link's
+// right edge — the position a caret-placing click most often lands on — `isActive` is false and
+// `getAttributes` is `{}` (both measured 2026-08-17), so a card built on them would vanish exactly
+// where authors reach it first, or show an empty href. §5.5.2 wrote this coupling down in advance;
+// this function is the rewrite it asked for.
+//
+// **The probe is the text before the caret, and that is what reproduces the card's old reach.**
+// `childBefore` carries the link both inside the link and at its right edge, and does not at its
+// left edge — which is exactly where the card did and did not appear while the mark was inclusive.
+// `getMarkRange` alone would not do: it falls back from `childAfter` to `childBefore` (@tiptap/core
+// `getMarkRange`), so it resolves at the left edge too and would put the card somewhere it has
+// never been. It is still what widens the answer to the mark's full range, once the probe has said
+// there is one.
+//
+// A selection is a different question and keeps its old answer: `isActive` asks whether the whole
+// range carries the mark, which inclusiveness never entered into.
+function linkAtCaret(editor: Editor): { from: number; to: number; href: string } | null {
   const type = editor.schema.marks.link;
   if (!type) return null;
-  const { from } = editor.state.selection;
-  for (const pos of [from, from - 1]) {
-    if (pos < 0) continue;
-    const range = getMarkRange(editor.state.doc.resolve(pos), type);
-    if (range) return { from: range.from, to: range.to };
+  const { $from, from, empty } = editor.state.selection;
+  if (empty) {
+    const before = $from.parent.childBefore($from.parentOffset).node;
+    if (!before?.marks.some((mark) => mark.type === type)) return null;
+  } else if (!editor.isActive('link')) {
+    return null;
   }
-  return null;
+  const range = getMarkRange(editor.state.doc.resolve(from), type);
+  if (!range) return null;
+  // The attributes off the first text node of the resolved range, rather than off the caret: at the
+  // right edge the caret carries no link mark at all, which is the same fact that retired
+  // `getAttributes` here.
+  const href = editor.state.doc.nodeAt(range.from)?.marks.find((mark) => mark.type === type)
+    ?.attrs.href;
+  return { from: range.from, to: range.to, href: typeof href === 'string' ? href : '' };
+}
+
+// The link's text, when the card is allowed to rewrite it, and null when it is not (§5.5.13).
+//
+// **Allowed means the text is a plain run**: text nodes carrying the link mark and nothing else.
+// The field replaces the range with a single text node, so anything else inside would be flattened
+// — 強調 nested in a link (reachable, because `accentEmphasis.excludes` omits `link`, §14), a
+// footnote reference, an inline image. Rather than silently destroying it, the field is not offered
+// for those links and the card stays what it was: a URL field alone.
+//
+// The predicate is over the nodes, not over their count. A link's text can be split into several
+// text nodes carrying identical marks for reasons that have nothing to do with structure, so "is it
+// one text node" would refuse links that are perfectly plain — the failure §10's last item names.
+function editableLinkText(editor: Editor, from: number, to: number): string | null {
+  const type = editor.schema.marks.link;
+  if (!type) return null;
+  let plain = true;
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (!plain) return false;
+    if (node.isText) {
+      if (node.marks.length !== 1 || node.marks[0].type !== type) plain = false;
+      return false;
+    }
+    // An inline node that is not text — a footnote reference, an image — is structure by itself.
+    if (node.isInline) {
+      plain = false;
+      return false;
+    }
+    return true;
+  });
+  return plain ? editor.state.doc.textBetween(from, to) : null;
 }
 
 // How an href is drawn on the card. `https://` comes off and nothing else does — not `http://`,
@@ -147,8 +209,7 @@ function displayHref(href: string): string {
 }
 
 function currentHref(editor: Editor): string {
-  const href = editor.getAttributes('link').href;
-  return typeof href === 'string' ? href : '';
+  return linkAtCaret(editor)?.href ?? '';
 }
 
 export function LinkBubble({
@@ -173,11 +234,18 @@ export function LinkBubble({
   // another link makes the stored title stop matching, so there is no window in which one link's
   // title is drawn under another's URL.
   const [fetchedTitle, setFetchedTitle] = useState<{ href: string; title: string } | null>(null);
+  // The link's text while the field is open, and the value it was opened with. `textInitial` is
+  // null for the links the text field is not offered for (§5.5.13) and while a link is being made,
+  // so it doubles as "is there a text field", and comparing against it is what keeps an untouched
+  // field from costing a replacement step.
+  const [textDraft, setTextDraft] = useState('');
+  const [textInitial, setTextInitial] = useState<string | null>(null);
   const editingRef = useRef(false);
   // Escape closes the card while the caret stays put; without this it would come straight back on
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
   const dismissedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
   const href = currentHref(editor);
   const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
@@ -207,17 +275,25 @@ export function LinkBubble({
     return !editor.view.hasFocus();
   }, [editor]);
 
-  const openField = useCallback(
-    (initial: string) => {
-      setDraft(initial);
-      editingRef.current = true;
-      setEditing(true);
-      // Nothing about opening the field changes the selection or the document, so the plugin would
-      // not otherwise re-check: say it outright.
-      signal('show');
-    },
-    [signal],
-  );
+  // Open the edit mode over the link under the caret, or with empty fields when there is none yet
+  // (`Mod-k` over a selection). The text field is seeded here rather than during render because it
+  // has to be the text as it was when the field opened — that is what the author is editing, and
+  // what a later save compares against.
+  const openField = useCallback(() => {
+    const link = linkAtCaret(editor);
+    setDraft(link?.href ?? '');
+    // No text field while a link is being made: `Mod-k` requires a non-empty selection, so the text
+    // already exists and the author has just chosen it — a field there would only offer to replace
+    // what they picked (§5.5.13).
+    const text = link ? editableLinkText(editor, link.from, link.to) : null;
+    setTextInitial(text);
+    setTextDraft(text ?? '');
+    editingRef.current = true;
+    setEditing(true);
+    // Nothing about opening the field changes the selection or the document, so the plugin would
+    // not otherwise re-check: say it outright.
+    signal('show');
+  }, [editor, signal]);
 
   // Leave the URL field without applying it, and without touching focus — for the paths where
   // something else is already claiming it (the click that dismisses the card is also the click that
@@ -226,7 +302,7 @@ export function LinkBubble({
     editingRef.current = false;
     setEditing(false);
     // Cancelling an assignment leaves no link under the caret, so the card has nothing left to show.
-    if (!editor.isActive('link')) {
+    if (!linkAtCaret(editor)) {
       signal('hide');
       return;
     }
@@ -247,14 +323,13 @@ export function LinkBubble({
     editor.commands.focus();
   }, [abandonField, editor]);
 
-  // The card is for a link the caret is inside, plus the moment the URL field is open (during an
-  // assignment there is no link yet). `isActive` covers a caret at the link's right edge as well as
-  // within it: the mark is inclusive because `inclusive()` in the link extension returns
-  // `this.options.autolink`, which §4 decided to keep true. Were autolink ever turned off, this
-  // would have to resolve the link's range by hand instead.
+  // The card is for a link the caret is inside or at the right edge of, plus the moment the URL
+  // field is open (during an assignment there is no link yet). `linkAtCaret` is what covers the
+  // right edge now that the mark is not inclusive — see its comment for why the probe is the text
+  // *before* the caret and not `getMarkRange` on its own.
   const shouldShow = useCallback(() => {
     if (editingRef.current) return true;
-    if (!editor.isActive('link')) {
+    if (!linkAtCaret(editor)) {
       dismissedRef.current = false;
       return false;
     }
@@ -279,9 +354,9 @@ export function LinkBubble({
       setLinkHighlight(editor, null);
       return;
     }
-    const link = linkRangeAt(editor);
+    const link = linkAtCaret(editor);
     if (link) {
-      setLinkHighlight(editor, link);
+      setLinkHighlight(editor, { from: link.from, to: link.to });
       return;
     }
     // `Mod-k` over a selection: no link exists yet, so light the text that is about to become one.
@@ -384,7 +459,7 @@ export function LinkBubble({
     // and pressing Mod-k found that link's `<a>` and put the card over it, on the line above the
     // text being linked (measured 2026-08-17, §5.5.11). There is no link under the selection yet,
     // so there is nothing for the card to anchor to but the selection itself.
-    if (editingRef.current && !editor.isActive('link')) return null;
+    if (editingRef.current && !linkAtCaret(editor)) return null;
     const anchor = linkElementAt(editor);
     // Null falls back to the plugin's own selection rect.
     return anchor
@@ -494,18 +569,14 @@ export function LinkBubble({
         event.preventDefault();
         if (editingRef.current) return;
         dismissedRef.current = false;
-        if (editor.isActive('link')) {
-          openField(currentHref(editor));
-          return;
-        }
-        if (editor.state.selection.empty) {
+        if (!linkAtCaret(editor) && editor.state.selection.empty) {
           onNotice('リンクにするテキストを選択してください');
           return;
         }
-        openField('');
+        openField();
         return;
       }
-      if (event.key === 'Escape' && !editingRef.current && editor.isActive('link')) {
+      if (event.key === 'Escape' && !editingRef.current && linkAtCaret(editor)) {
         if (dismissedRef.current) return;
         dismissedRef.current = true;
         signal('hide');
@@ -551,20 +622,26 @@ export function LinkBubble({
     if (next === '') {
       // An emptied field means "this should not be a link" when there is one, and nothing at all
       // when the author was in the middle of making one.
-      if (editor.isActive('link')) editor.chain().extendMarkRange('link').unsetLink().run();
+      if (linkAtCaret(editor)) editor.chain().extendMarkRange('link').unsetLink().run();
       close();
       return;
     }
-    // setLink runs the href through the extension's isAllowedUri, which PostEditor narrowed to the
-    // schemes the public sanitizer will actually publish (editor/link-protocols.ts). A refused
-    // scheme returns false and changes nothing, so the refusal is the whole of the feedback unless
-    // it is said out loud.
-    //
-    // No `.focus()` in this chain: a chain dispatches the commands that did succeed even when a
-    // later one refuses, so focus would jump back to the editor while the field is still open,
-    // leaving the author looking at a URL they can no longer type into.
-    const applied = editor.chain().extendMarkRange('link').setLink({ href: next }).run();
-    if (!applied) {
+    // A link with no text cannot be seen, let alone clicked. Refused rather than treated as a
+    // removal: emptying the *URL* is already what removes a link, and giving the adjacent field the
+    // same meaning would make one gesture answer two questions (§5.5.13).
+    if (textInitial !== null && textDraft.trim() === '') {
+      onNotice('リンクのテキストは空にできません');
+      textInputRef.current?.focus();
+      return;
+    }
+    // Asked before anything is changed, rather than by applying and reading the answer back. That
+    // used to be safe when the whole save was one `setLink`, but a text replacement now runs in
+    // front of it, and **a chain dispatches the commands that did succeed even when a later one
+    // refuses** — a rejected href would have left the text rewritten and the link pointing where it
+    // always did. `can().setLink` runs the same two gates in a dry run: the extension's
+    // `isAllowedUri`, which PostEditor narrowed to the schemes the public sanitizer will actually
+    // publish (editor/link-protocols.ts), and `canSetMark` for the place.
+    if (!editor.can().setLink({ href: next })) {
       // Two unrelated refusals land here and they need different words. The scheme was refused
       // (`isAllowedUri`, above), or the *place* cannot hold a link mark at all: an accordion title
       // and a code block both declare `marks: ''`, and the inline `code` mark excludes every other
@@ -580,10 +657,55 @@ export function LinkBubble({
       inputRef.current?.focus();
       return;
     }
+    // Text and href in one chain, so the whole edit is one transaction and one undo. No `.focus()`
+    // in it: focus would jump back to the editor while the field is still open if anything later
+    // refused.
+    const link = linkAtCaret(editor);
+    const chain = editor.chain();
+    if (link && textInitial !== null && textDraft !== textInitial) {
+      chain.command(({ tr }) => {
+        // The mark as it stands, so the replacement text carries the link's other attributes over
+        // (`title`, which §5.3-3 requires not to be lost); `setLink` below merges the new href into
+        // it rather than replacing the set.
+        const mark = tr.doc
+          .nodeAt(link.from)
+          ?.marks.find((m) => m.type === editor.schema.marks.link);
+        if (!mark) return false;
+        tr.replaceWith(link.from, link.to, editor.schema.text(textDraft, [mark]));
+        // Leave the new text selected, which is what `setLink` then applies to — and what keeps the
+        // card describing the link afterwards, since the caret would otherwise land wherever the
+        // replacement left it.
+        tr.setSelection(TextSelection.create(tr.doc, link.from, link.from + textDraft.length));
+        return true;
+      });
+    } else {
+      chain.extendMarkRange('link');
+    }
+    if (!chain.setLink({ href: next }).run()) {
+      onNotice('リンクを変更できませんでした');
+      inputRef.current?.focus();
+      return;
+    }
     editingRef.current = false;
     setEditing(false);
     editor.commands.focus();
-  }, [close, draft, editor, onNotice]);
+  }, [close, draft, editor, onNotice, textDraft, textInitial]);
+
+  // Enter saves and Escape cancels, from either field — the card has no <form> to do it (a nested
+  // one is dropped by the browser, the shape TableGridMenu documents), so both keys are handled by
+  // hand and both fields answer the same way.
+  const fieldKeys = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyDraft();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    },
+    [applyDraft, close],
+  );
 
   const copyHref = useCallback(() => {
     // navigator.clipboard exists only in a secure context. Production is HTTPS and dev is
@@ -640,32 +762,42 @@ export function LinkBubble({
         // Deliberately not a <form>: PostEditor wraps the whole page in one, and a nested form is
         // dropped by the browser, so its submit silently does nothing (the shape TableGridMenu
         // documents). Enter and the button call the same function instead.
-        <>
-          <input
-            ref={inputRef}
-            // Not type='url': a fragment (#見出し) or a site-relative path (/posts/foo) is exactly
-            // what this field exists to accept, and neither is a URL by that input's rules.
-            type='text'
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                applyDraft();
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                close();
-              }
-            }}
-            aria-label='リンク先'
-            placeholder='https://… / /posts/… / #見出し'
-            spellCheck={false}
-            autoComplete='off'
-            className='w-72 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]'
-          />
-          <ToolbarButton onClick={applyDraft}>保存</ToolbarButton>
-          <ToolbarButton onClick={close}>やめる</ToolbarButton>
-        </>
+        // The text field sits above, so the card reads in the order Docs' does — what the link says,
+        // then where it goes. It is absent for a link whose text is not a plain run and while a
+        // link is being made (§5.5.13), and then this is exactly the single row it has always been.
+        <div className={textInitial === null ? 'contents' : 'flex flex-col gap-1'}>
+          {textInitial !== null && (
+            <input
+              ref={textInputRef}
+              type='text'
+              value={textDraft}
+              onChange={(e) => setTextDraft(e.target.value)}
+              onKeyDown={fieldKeys}
+              aria-label='テキスト'
+              spellCheck={false}
+              autoComplete='off'
+              className={FIELD_CLASS}
+            />
+          )}
+          <div className={textInitial === null ? 'contents' : 'flex items-center gap-0.5'}>
+            <input
+              ref={inputRef}
+              // Not type='url': a fragment (#見出し) or a site-relative path (/posts/foo) is exactly
+              // what this field exists to accept, and neither is a URL by that input's rules.
+              type='text'
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={fieldKeys}
+              aria-label='リンク先'
+              placeholder='https://… / /posts/… / #見出し'
+              spellCheck={false}
+              autoComplete='off'
+              className={FIELD_CLASS}
+            />
+            <ToolbarButton onClick={applyDraft}>保存</ToolbarButton>
+            <ToolbarButton onClick={close}>やめる</ToolbarButton>
+          </div>
+        </div>
       ) : (
         <>
           {/* The href in full view is half the point of the card: with openOnClick off, the
@@ -734,11 +866,7 @@ export function LinkBubble({
           <ToolbarButton round title='コピー' onClick={copyHref}>
             <CopyIcon />
           </ToolbarButton>
-          <ToolbarButton
-            round
-            title='編集'
-            shortcut={OPEN_SHORTCUT}
-            onClick={() => openField(href)}>
+          <ToolbarButton round title='編集' shortcut={OPEN_SHORTCUT} onClick={openField}>
             <PencilIcon />
           </ToolbarButton>
           <ToolbarButton
