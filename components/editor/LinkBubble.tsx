@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
@@ -51,6 +51,17 @@ const SUPPRESS_TABLE_MENU = 'link-menu-open';
 // mistake.
 const FIELD_CLASS =
   'w-72 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]';
+
+// And the name of each, to its left. Reported 2026-08-17: with both fields up, which one is the
+// link's text and which is its destination could not be told apart — an existing link fills both,
+// and a filled field shows no placeholder. So the name has to be something that stays put, which is
+// a label and not a placeholder.
+//
+// Left rather than above, because height is the card's expensive axis and width is the cheap one:
+// the card sits over the link and every line it grows covers another paragraph the author is
+// reading (the measurement that moved it above the line — see `placement` below), while widening it
+// costs nothing but the space beside a `w-72` field.
+const LABEL_CLASS = 'shrink-0 text-xs text-zinc-500 dark:text-zinc-400';
 
 // The <a> the caret is in, to anchor the card to. Two positions are tried because a caret sitting at
 // a link's right edge still reports the mark (it is inclusive — see below) while `domAtPos` there
@@ -246,6 +257,9 @@ export function LinkBubble({
   const dismissedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
+  // The two fields' ids, which exist only to join each label to its input. Generated rather than
+  // written down so that nothing has to keep a hand-picked constant unique.
+  const fieldId = useId();
 
   const href = currentHref(editor);
   const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
@@ -383,16 +397,34 @@ export function LinkBubble({
   // already moved, so `abandonField`'s `isActive` test would be asking about the new position
   // rather than the one being left. The card is portaled to <body>, so "outside" is a `closest()`
   // test against its own class and not a ref containment check.
+  //
+  // A press inside the document also decides, here and now, whether the card is going away at all —
+  // and that is what keeps it from being seen collapsing. Without the `signal('hide')` below, the
+  // field folded into the display card synchronously while the decision to hide waited for the
+  // caret's own transaction, so **the display card sat over the link the author had just left for
+  // 3 frames** (measured 2026-08-17; 1 frame when the press was outside the editor). The press
+  // knows the answer already: it is about to place the caret wherever it landed, so anywhere but
+  // this link's own `<a>` the card is on its way out. Hiding synchronously lands before the paint,
+  // and the plugin brings the card back by itself if the caret ends up in another link
+  // (`updateHandler` runs `show()` before `updatePosition()`, so it returns placed, not stale).
+  //
+  // Only for a press inside the editable area. Outside it the answer is genuinely not known yet —
+  // the toolbar's buttons focus the editor back and the card is meant to survive them (§5.5.9) —
+  // so those keep the deferred rule in `abandonField`, and its one frame with it.
   useEffect(() => {
     if (!editing) return;
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest('.link-bubble')) return;
+      const anchor = linkElementAt(editor);
+      const staying = target instanceof Node && anchor?.contains(target);
+      const inDocument = target instanceof Node && editor.view.dom.contains(target);
       abandonField();
+      if (inDocument && !staying) signal('hide');
     };
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
-  }, [abandonField, editing]);
+  }, [abandonField, editing, editor, signal]);
 
   // The same departure by keyboard. Tab past the card's last button and focus leaves it for nothing
   // at all — the card is portalled to the end of <body>, so there is no next control to land on —
@@ -774,31 +806,49 @@ export function LinkBubble({
         // documents). Enter and the button call the same function instead.
         // The text field sits above, so the card reads in the order Docs' does — what the link says,
         // then where it goes. It is absent for a link whose text is not a plain run and while a
-        // link is being made (§5.5.13), and then this is exactly the single row it has always been.
-        <div className={textInitial === null ? 'contents' : 'flex flex-col gap-1'}>
+        // link is being made (§5.5.13), and then this is a single row — a labelled one, since a
+        // field's name is not something that should come and go with the field beside it.
+        //
+        // A grid rather than two flex rows: its first column is as wide as the wider label, so the
+        // two fields start at the same x with no width written down anywhere. The labels happen to
+        // be the same four characters today, which is exactly the kind of coincidence that stops
+        // being true the moment either word is reworded.
+        //
+        // Real <label for=…>, not text beside the field: it is what gives each input its accessible
+        // name (the `aria-label` these carried until 2026-08-17), so the name and the visible word
+        // cannot drift apart, and clicking the word focuses the field.
+        <div className='grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1'>
           {textInitial !== null && (
-            <input
-              ref={textInputRef}
-              type='text'
-              value={textDraft}
-              onChange={(e) => setTextDraft(e.target.value)}
-              onKeyDown={fieldKeys}
-              aria-label='テキスト'
-              spellCheck={false}
-              autoComplete='off'
-              className={FIELD_CLASS}
-            />
+            <>
+              <label htmlFor={`${fieldId}-text`} className={LABEL_CLASS}>
+                テキスト
+              </label>
+              <input
+                ref={textInputRef}
+                id={`${fieldId}-text`}
+                type='text'
+                value={textDraft}
+                onChange={(e) => setTextDraft(e.target.value)}
+                onKeyDown={fieldKeys}
+                spellCheck={false}
+                autoComplete='off'
+                className={FIELD_CLASS}
+              />
+            </>
           )}
-          <div className={textInitial === null ? 'contents' : 'flex items-center gap-0.5'}>
+          <label htmlFor={`${fieldId}-href`} className={LABEL_CLASS}>
+            リンク先
+          </label>
+          <div className='flex items-center gap-0.5'>
             <input
               ref={inputRef}
+              id={`${fieldId}-href`}
               // Not type='url': a fragment (#見出し) or a site-relative path (/posts/foo) is exactly
               // what this field exists to accept, and neither is a URL by that input's rules.
               type='text'
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={fieldKeys}
-              aria-label='リンク先'
               placeholder='https://… / /posts/… / #見出し'
               spellCheck={false}
               autoComplete='off'

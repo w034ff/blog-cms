@@ -58,6 +58,11 @@ test('the field opens carrying the link text', async ({ page }) => {
   await openEdit(page, IN_LINK);
   await expect(textField(page)).toHaveValue('リンク');
   await expect(hrefField(page)).toHaveValue('https://example.com');
+  // Each field says which one it is, in text the author can see (§5.5.13). Every selector in this
+  // file resolves a field by that name, so without this assertion the labels could be taken away
+  // and the whole file would fail as "the card never opened" instead.
+  await expect(textField(page)).toHaveAccessibleName('テキスト');
+  await expect(hrefField(page)).toHaveAccessibleName('リンク先');
 });
 
 test('a new text is written into the document, and the href and title survive', async ({

@@ -357,6 +357,56 @@ test('clicking elsewhere closes the URL field and applies nothing', async ({ pag
   expect(await markdown(page)).toBe('前[リンク](https://example.com "タイトル")後');
 });
 
+test('the card is not seen collapsing on the way out', async ({ page }) => {
+  // §5.5.15. The field folds into the display card synchronously, and the card used to be taken
+  // away only when the caret's own transaction arrived — so the display card was painted over the
+  // link the author had just left. Reported as a flash, and it was 3 frames of one (measured).
+  //
+  // Sampled per frame from inside the page, because that is the only place the intermediate state
+  // exists: it is gone long before any assertion could be evaluated over the protocol.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+  const samples = page.evaluate(async () => {
+    const seen: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const el = document.querySelector<HTMLElement>('.link-bubble');
+      if (!el || getComputedStyle(el).visibility === 'hidden') seen.push('gone');
+      else seen.push(el.querySelector('input') ? 'field' : 'display');
+    }
+    return seen;
+  });
+  await page
+    .locator('.ProseMirror p')
+    .first()
+    .click({ position: { x: 300, y: 8 } });
+  const seen = await samples;
+  expect(seen).not.toContain('display');
+  // The window has to contain the departure itself, or the assertion above is about nothing: a
+  // sampler that ran out before `click()` dispatched its mousedown would see the open field for
+  // all 30 frames and pass. Both ends being present is what proves it watched the transition.
+  expect(seen).toContain('field');
+  expect(seen).toContain('gone');
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+});
+
+test('a press inside the same link keeps the card', async ({ page }) => {
+  // The other side of the rule above: the press that closes the field decides whether the card is
+  // going away, and a press inside the link the card is about is not one of those. Nothing here
+  // may hide it, since the caret lands back inside the very link it describes.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+  await page.locator('.ProseMirror a').first().click();
+  await settle(page);
+  await expect(card(page)).toBeVisible();
+  await expect(card(page).getByRole('button', { name: '編集' })).toBeVisible();
+});
+
 test('clicking inside the card does not close the URL field', async ({ page }) => {
   // The dismissal listener is on the document and the card is portalled to <body>, so it sees the
   // card's own clicks too. Reaching for the field after clicking its label-side padding must not
