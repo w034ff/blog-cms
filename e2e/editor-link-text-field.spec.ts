@@ -7,8 +7,9 @@ import { closeHistory, loadMarkdown, setRange } from './editor-authoring';
 //
 // The body was always able to do it — the link text is marked text, not an atom — but that is not
 // the route an author takes to a link they are already editing from the card. What the field buys
-// is that route; what it must not do is flatten a link whose text has structure inside it, which is
-// why it is absent for those links rather than refusing on save.
+// is that route; what it must not do is flatten a link whose text has structure inside it. A mark
+// that holds over the whole range is carried through the replacement instead, so the absence is
+// narrower than it was: it is for text whose marks change partway, and for text that is not text.
 
 const MD = '前[リンク](https://example.com "タイトル")後\n';
 const IN_LINK = 3;
@@ -154,12 +155,69 @@ test('a refused href leaves the text alone', async ({ page }) => {
   expect(await markdown(page)).toBe('前[リンク](https://example.com "タイトル")後');
 });
 
-test('the field is absent for a link whose text carries another mark', async ({ page }) => {
+test('a uniformly bold link keeps its bold through the rewrite', async ({ page }) => {
+  // The reported case (2026-08-18): a link pasted from another site as `[**打率.077**](…)` opened
+  // with no テキスト field at all. The bold never made the replacement unsafe — the replacement was
+  // carrying the link mark alone — so the whole mark set travels with the new text now.
+  await openEditor(page, '前[**リンク**](https://example.com "タイトル")後\n');
+  await openEdit(page, IN_LINK);
+  await expect(textField(page)).toHaveValue('リンク');
+  await textField(page).fill('新しいリンク');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  // The markdown is what says the bold is still there and still inside the link: a replacement that
+  // dropped it would round-trip as `[新しいリンク](…)` and read as a success everywhere else.
+  expect(await markdown(page)).toBe('前[**新しいリンク**](https://example.com "タイトル")後');
+});
+
+test('a uniformly 強調 link keeps its mark through the rewrite', async ({ page }) => {
   // 強調 nests inside a link — `accentEmphasis.excludes` omits `link` (§14) — so this is reachable
-  // rather than hypothetical. Replacing the range with one text node would flatten it, so the card
-  // does not offer to.
-  // The mark round-trips as raw inline HTML — it has no markdown syntax of its own
-  // (accent-emphasis-extension.ts) — so the fixture is written the way the serializer writes it.
+  // rather than hypothetical, and it is the mark with no markdown syntax of its own: it round-trips
+  // as raw inline HTML (accent-emphasis-extension.ts), so the fixture is written the way the
+  // serializer writes it. Worth its own case because that is a different path back into the
+  // document than bold's `**`.
+  await openEditor(
+    page,
+    '前[<span class="accent-emphasis">強調リンク</span>](https://example.com)後\n',
+  );
+  await openEdit(page, IN_LINK);
+  await expect(textField(page)).toHaveValue('強調リンク');
+  await textField(page).fill('新しい強調');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  expect(await markdown(page)).toBe(
+    '前[<span class="accent-emphasis">新しい強調</span>](https://example.com)後',
+  );
+});
+
+test('a bold link inside a footnote definition is editable too', async ({ page }) => {
+  // The shape the report actually arrived in (2026-08-18): the link was in a `[^fn]:` definition,
+  // and the author's first guess was that the paste, or the footnote, was the cause. Neither was —
+  // but `editableLinkText` walks `nodesBetween` from the doc root, and the footnote section is the
+  // one place in this schema whose parent is not an ordinary block (`block+ footnoteSection?`), so
+  // "the block context cannot matter" is exactly the argument that has been wrong here before.
+  //
+  // Reached by clicking the link rather than by a position, which is also how the report was made:
+  // the definitions live at the end of the document and their positions are the footnote
+  // extension's business, not this file's.
+  await openEditor(
+    page,
+    '本文[^fn-a]\n\n[^fn-a]: 注[**打率.077**](https://example.com "グロ")後\n',
+  );
+  await page.locator('.ProseMirror a', { hasText: '打率.077' }).click();
+  await expect(card(page)).toBeVisible();
+  await card(page).getByRole('button', { name: '編集' }).click();
+  await expect(textField(page)).toHaveValue('打率.077');
+  await textField(page).fill('打率.100');
+  await page.keyboard.press('Enter');
+  await settle(page);
+  expect(await markdown(page)).toContain('注[**打率.100**](https://example.com "グロ")後');
+});
+
+test("the field is absent when the text's marks change partway", async ({ page }) => {
+  // Half the link 強調, half not. This is the case the replacement genuinely cannot carry — one
+  // text node has one mark set — so the card does not offer the field rather than flattening the
+  // link into whichever set came first.
   await openEditor(
     page,
     '前[<span class="accent-emphasis">強調</span>リンク](https://example.com)後\n',

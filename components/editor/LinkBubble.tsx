@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
+import { Mark } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { autoUpdate, computePosition, flip, offset, size } from '@floating-ui/dom';
@@ -195,11 +196,15 @@ function linkAtCaret(editor: Editor): { from: number; to: number; href: string }
 
 // The link's text, when the card is allowed to rewrite it, and null when it is not (§5.5.13).
 //
-// **Allowed means the text is a plain run**: text nodes carrying the link mark and nothing else.
-// The field replaces the range with a single text node, so anything else inside would be flattened
-// — 強調 nested in a link (reachable, because `accentEmphasis.excludes` omits `link`, §14), a
-// footnote reference, an inline image. Rather than silently destroying it, the field is not offered
-// for those links and the card stays what it was: a URL field alone.
+// **Allowed means one mark set over the whole range**: every text node in it carries the same marks
+// as the first. The field replaces the range with a single text node, and `applyDraft` gives that
+// node the marks it found here — so a link whose text is uniformly 太字 / 斜体 / 取り消し線 / 強調
+// keeps its mark, and only a set that *changes* partway through would be flattened by the
+// replacement. Those links are refused, along with anything that is not text at all.
+//
+// It used to be narrower — the link mark and nothing else — which is why a link pasted as
+// `[**打率.077**](…)` opened with the field missing (reported 2026-08-18). Nothing about the
+// bold made the replacement unsafe; the replacement simply was not carrying it.
 //
 // The predicate is over the nodes, not over their count. A link's text can be split into several
 // text nodes carrying identical marks for reasons that have nothing to do with structure, so "is it
@@ -208,10 +213,16 @@ function editableLinkText(editor: Editor, from: number, to: number): string | nu
   const type = editor.schema.marks.link;
   if (!type) return null;
   let plain = true;
+  let marks: readonly Mark[] | null = null;
   editor.state.doc.nodesBetween(from, to, (node) => {
     if (!plain) return false;
     if (node.isText) {
-      if (node.marks.length !== 1 || node.marks[0].type !== type) plain = false;
+      // The range comes from `getMarkRange`, which only extends over children carrying the link
+      // mark *with the same attrs* (`isMarkInSet([...$pos.parent.child(endIndex).marks], type,
+      // attributes)`), so that much is settled for every text node here — the only question left is
+      // whether the rest of the set is the same everywhere.
+      if (marks === null) marks = node.marks;
+      else if (!Mark.sameSet(marks, node.marks)) plain = false;
       return false;
     }
     // An inline node that is not text — a footnote reference, an image — is structure by itself.
@@ -739,14 +750,15 @@ export function LinkBubble({
     const chain = editor.chain();
     if (link && textInitial !== null && textDraft !== textInitial) {
       chain.command(({ tr }) => {
-        // The mark as it stands, so the replacement text carries the link's other attributes over
-        // (`title`, which §5.3-3 requires not to be lost); `setLink` below merges the new href into
-        // it rather than replacing the set.
-        const mark = tr.doc
-          .nodeAt(link.from)
-          ?.marks.find((m) => m.type === editor.schema.marks.link);
-        if (!mark) return false;
-        tr.replaceWith(link.from, link.to, editor.schema.text(textDraft, [mark]));
+        // The whole mark set as it stands, not the link mark alone. It carries the link's other
+        // attributes over (`title`, which §5.3-3 requires not to be lost) — `setLink` below merges
+        // the new href into it rather than replacing the set — and it is also what lets a uniformly
+        // 太字 / 強調 link keep its emphasis through the replacement. `editableLinkText` has already
+        // established that this one set holds for the whole range, which is the same fact that
+        // decided the field would be offered at all.
+        const marks = tr.doc.nodeAt(link.from)?.marks;
+        if (!marks?.some((m) => m.type === editor.schema.marks.link)) return false;
+        tr.replaceWith(link.from, link.to, editor.schema.text(textDraft, marks));
         // Leave the new text selected, which is what `setLink` then applies to — and what keeps the
         // card describing the link afterwards, since the caret would otherwise land wherever the
         // replacement left it.
@@ -1083,7 +1095,16 @@ export function LinkBubble({
                   setSuggestIndex(0);
                 }}
                 onKeyDown={hrefKeys}
-                placeholder='https://… / /posts/… / #見出し'
+                // **No placeholder, deliberately** (2026-08-18). It listed the accepted forms
+                // (`https://… / /posts/… / #見出し`) back when this field was the only way to make
+                // an internal link — §5.5's opening records that as the reason the field exists at
+                // all. It is not any more: the `[]()` input rule takes `#見出し` too (§5.4), and
+                // that rule and a paste over a selection are how links actually get made here, so
+                // the forms this line was teaching are learned somewhere else entirely. What is
+                // left for it to say is the field's name, and the `<label>` beside it already says
+                // that. The one thing the card still has that nothing else does — the heading
+                // picker computes a slug the author would otherwise reproduce by hand — is
+                // announced by typing `#`, not by grey text sitting in an empty box.
                 spellCheck={false}
                 autoComplete='off'
                 // `aria-activedescendant` is how the highlight is announced at all — a screen

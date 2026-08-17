@@ -978,6 +978,36 @@ body.link-menu-open .table-toolbar {
   color: #0969da;
 }
 
+/* 強調 inside a link keeps its weight and gives up its hue (2026-08-18, reversing the "it stays
+   red" half of §14's audit — reported as the text and the underline being different colours).
+
+   The mismatch is not a specificity accident and no rule on the span can fix it. The underline is
+   the `<a>`'s (@tailwindcss/typography's `a: { … textDecoration: 'underline' … }`), and a
+   text-decoration is painted in the colour of the element that *declared* it, not of the descendant
+   it flows over — so the span's `color: #cf222e` reaches the glyphs and can never reach the line
+   under them. Only two things line up: the underline turns red, or the text turns blue.
+
+   Blue, because on a link the colour is the affordance — it is what says "this is pressable" on
+   both surfaces — while the red is one of two cues 強調 carries, and the other one (700 weight)
+   survives intact here. This is the same trade the mark already makes elsewhere: it replaces
+   bold/italic/strike rather than stacking with them (accent-emphasis-extension.ts), on the same
+   reasoning that a mark may lose part of itself where keeping it would cost more.
+
+   `inherit` rather than the blue written twice: it takes whichever colour `.prose a` resolved to,
+   so the dark scheme needs no counterpart and the pair cannot drift. At (0,2,1) it outranks the
+   unscoped `.accent-emphasis` in both schemes, which is the point — the dark rule (0,1,0) would
+   otherwise keep painting #f85149 here.
+
+   The cost, stated: on a link, 強調 and 太字 look the same. Accepted — 強調 on a link is rare, and
+   a link that is not link-coloured is a worse thing to ship than two marks that coincide inside
+   one. Pinned by 基準 5f・5g of §14's table — the letters restart per feature group there, so the
+   card's own 5f/5g are different rows. The toolbar's 強調 glyph is unreached by design: it is a
+   `<span class="accent-emphasis">` inside a `<button>` (Toolbar.tsx), outside `.prose` entirely,
+   which is what the unscoped rule above exists for. */
+.prose a .accent-emphasis {
+  color: inherit;
+}
+
 /* Table of contents (components/TocNav.tsx), post page only — not `.prose`-scoped since it
    sits outside the article body. `scroll-mt` gives a jumped-to heading a little breathing room
    from the viewport edge; there's no fixed site header to clear, so a small value is enough.

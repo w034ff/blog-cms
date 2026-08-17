@@ -124,12 +124,18 @@ test('the footnote reference and backref keep their own rule', async ({ page }) 
 // accent-emphasis-extension.ts's `excludes` lists bold/italic/strike/code but NOT link, so a link
 // carrying the 強調 mark is reachable rather than hypothetical.
 //
-// Measured: it does not lose, and specificity is not why. The mark renders its span INSIDE the `<a>`
-// (both surfaces), so the two rules land on two different elements and never arbitrate — the span's
-// own declaration beats what it would inherit, exactly as it did before this change. That is what
-// makes this worth a test rather than a comment: the reasoning depends on the nesting order, and
-// nothing else in the repo pins it.
-test('a link carrying the 強調 mark stays red, on both surfaces', async ({ page }) => {
+// It loses now, deliberately (2026-08-18; until then it kept its red and this test measured that).
+// **The reason is the underline, not the text.** The line under a link is the `<a>`'s own
+// (@tailwindcss/typography's `a: { … textDecoration: 'underline' … }`) and a text-decoration is
+// painted in the colour of the element that declared it — so a red span inside a blue `<a>` puts red
+// glyphs over a blue line, which is what was reported. No rule on the span can reach that line, so
+// the two available answers were "underline turns red" and "text turns blue"; globals.css records
+// why blue won.
+//
+// Still worth a test rather than a comment, and for the same reason as before: the outcome depends
+// on the nesting order — the mark renders its span INSIDE the `<a>` on both surfaces — and nothing
+// else in the repo pins it. What changed is which way the nesting is made to resolve.
+test('a link carrying the 強調 mark is one colour, text and underline', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
@@ -141,10 +147,15 @@ test('a link carrying the 強調 mark stays red, on both surfaces', async ({ pag
   await page.getByRole('button', { name: '強調' }).click();
 
   const inEditor = page.locator('.ProseMirror a .accent-emphasis');
-  await expect(inEditor).toHaveCSS('color', ACCENT_LIGHT);
-  // The `<a>` around it does take the new blue — it just has no text of its own to paint here. A
-  // partly-accented link is the case where both colours show at once, and that is intended.
+  await expect(inEditor).toHaveCSS('color', BLUE_LIGHT);
+  // The line itself, asked of the element that draws it. This is the assertion the report was
+  // about: without it the test would pass on a build that turned the text blue and left the
+  // underline free to be anything.
+  await expect(page.locator('.ProseMirror a')).toHaveCSS('text-decoration-color', BLUE_LIGHT);
   await expect(page.locator('.ProseMirror a')).toHaveCSS('color', BLUE_LIGHT);
+  // The half of the mark that survives. Giving up the hue is the trade; giving up the weight too
+  // would leave 強調 doing nothing at all on a link, and that is a different (unintended) change.
+  await expect(inEditor).toHaveCSS('font-weight', '700');
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
@@ -154,8 +165,25 @@ test('a link carrying the 強調 mark stays red, on both surfaces', async ({ pag
 
   // The published side rebuilds the nesting from markdown (`[<span …>…</span>](…)`) rather than
   // copying the editor's DOM, so it is a second measurement, not the same one twice.
-  await expect(page.locator('#post-body a .accent-emphasis')).toHaveCSS('color', ACCENT_LIGHT);
+  await expect(page.locator('#post-body a .accent-emphasis')).toHaveCSS('color', BLUE_LIGHT);
+  await expect(page.locator('#post-body a').first()).toHaveCSS('text-decoration-color', BLUE_LIGHT);
   await expect(page.locator('#post-body a').first()).toHaveCSS('color', BLUE_LIGHT);
+});
+
+// The other side of the same rule: 強調 outside a link is untouched. The new declaration is scoped
+// to `.prose a`, but it is the only thing in this file that takes a colour *away* from a mark, so
+// "it only applies inside a link" is worth measuring rather than reading off the selector — the
+// mark's red is the site's general emphasis hue and it appears in ordinary prose far more often
+// than it appears on a link.
+test('強調 outside a link keeps its red', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '強調テキスト\n');
+  await page.keyboard.press('Control+a');
+  await page.getByRole('button', { name: '強調' }).click();
+  await expect(page.locator('.ProseMirror .accent-emphasis')).toHaveCSS('color', ACCENT_LIGHT);
 });
 
 test('the table of contents sits outside .prose and is untouched', async ({ page }) => {
@@ -200,6 +228,26 @@ test.describe('dark', () => {
       'text-decoration-line',
       'none',
     );
+  });
+
+  test('強調 on a link takes the dark blue, not the dark red', async ({ page }) => {
+    // `color: inherit` is what lets one declaration serve both schemes — but what it has to outrank
+    // here is a *different* rule from the light case: `.accent-emphasis` is redeclared inside the
+    // dark @media block (#f85149), and only (0,2,1) beating (0,1,0) keeps that out. A dark
+    // counterpart written as a literal blue would have been the thing to forget, so this is the
+    // assertion that says it was not needed.
+    //
+    // Editor only, and no publish: the rule is the same `.prose` stack on both surfaces and the
+    // light test already measured both, so what is unmeasured here is the scheme, not the surface.
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await loadMarkdown(page, '[強調リンク](https://example.com)\n');
+    await page.keyboard.press('Control+a');
+    await page.getByRole('button', { name: '強調' }).click();
+    await expect(page.locator('.ProseMirror a .accent-emphasis')).toHaveCSS('color', BLUE_DARK);
+    await expect(page.locator('.ProseMirror a')).toHaveCSS('text-decoration-color', BLUE_DARK);
   });
 });
 
