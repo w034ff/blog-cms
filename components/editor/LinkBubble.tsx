@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { autoUpdate, computePosition, flip, offset, size } from '@floating-ui/dom';
 import { setLinkHighlight } from './link-highlight-extension';
 import { collectHeadings, matchHeadings, type DocumentHeading } from './document-headings';
 import { EditorTooltip } from './EditorTooltip';
@@ -63,6 +64,16 @@ const FIELD_CLASS =
 // reading (the measurement that moved it above the line — see `placement` below), while widening it
 // costs nothing but the space beside a `w-72` field.
 const LABEL_CLASS = 'shrink-0 text-xs text-zinc-500 dark:text-zinc-400';
+
+// The heading list's own two numbers (§5.5.17). The height it wants is about six rows — enough that
+// scrolling is the exception, short enough that the list does not become the page. `size` caps it to
+// whatever the chosen side actually has, so this is a want and not a promise.
+//
+// The gap is what separates the list from the card and from the viewport edge it stops at. One
+// constant for both: they are the same gesture, and the card's own `offset: 8` is where the figure
+// comes from.
+const LIST_MAX_HEIGHT_PX = 192;
+const LIST_GAP_PX = 8;
 
 // The <a> the caret is in, to anchor the card to. Two positions are tried because a caret sitting at
 // a link's right edge still reports the mark (it is inclusive — see below) while `domAtPos` there
@@ -264,6 +275,7 @@ export function LinkBubble({
   const dismissedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   // The two fields' ids, which exist only to join each label to its input. Generated rather than
   // written down so that nothing has to keep a hand-picked constant unique.
   const fieldId = useId();
@@ -774,6 +786,58 @@ export function LinkBubble({
     return { headings, matches: matchHeadings(headings, draft.slice(1)) };
   }, [draft, editing, editor, suggestDismissed]);
 
+  // Where the list goes, from the same library that places the card (§5.5.17). Below the card by
+  // default; above it when the space below cannot hold it; on the roomier side, cut down to fit,
+  // when neither side can. Measured 2026-08-18 before this existed: a link 90px from the bottom of a
+  // 720px window put 70px of the list off screen, where the pointer cannot reach it and the page
+  // cannot be scrolled to it — the card is chrome, so it scrolls with the view.
+  //
+  // The reference is the **card**, not the field. Flipping against the field would put the list over
+  // the card's own テキスト row, and half a covered card reads as broken; against the card there is
+  // no placement that can overlap it. The `crossAxis` offset is what keeps the list under the field
+  // regardless — it is the distance the label column takes, read at position time rather than
+  // written down.
+  //
+  // `flip` before `size`, and that order is the behaviour: `size` shrinks the list to whatever is
+  // there, so a `size` that ran first would leave `flip` with nothing that does not fit, and the
+  // list would stay below, permanently short. The boundary is the editor's element for the reason
+  // the card's options record — the sticky toolbar's band is space that exists and cannot be used —
+  // and floating-ui intersects it with the viewport, which is the edge that matters here.
+  //
+  // No `shift`: the list is narrower than the card, starts at the field's left edge, and the card
+  // has already been shifted into view by its own plugin, so there is no horizontal case left to
+  // answer. Adding it would only give the crossAxis offset something to fight with.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const field = inputRef.current;
+    const card = list?.closest('.link-bubble');
+    if (!suggestions || !list || !field || !(card instanceof HTMLElement)) return;
+    return autoUpdate(card, list, () => {
+      void computePosition(card, list, {
+        placement: 'bottom-start',
+        middleware: [
+          offset(() => ({
+            mainAxis: LIST_GAP_PX,
+            crossAxis: field.getBoundingClientRect().left - card.getBoundingClientRect().left,
+          })),
+          flip({ boundary: editor.view.dom, fallbackStrategy: 'bestFit' }),
+          size({
+            boundary: editor.view.dom,
+            apply({ availableHeight, elements }) {
+              elements.floating.style.maxHeight = `${Math.max(
+                0,
+                Math.min(LIST_MAX_HEIGHT_PX, availableHeight - LIST_GAP_PX),
+              )}px`;
+            },
+          }),
+        ],
+      }).then(({ x, y }) => {
+        list.style.left = `${x}px`;
+        list.style.top = `${y}px`;
+      });
+    });
+  }, [editor, suggestions]);
+
   // Writing the slug is the whole point of the list: the author picks the heading they can see, and
   // the fragment that reaches it — lowercased, punctuation dropped, `-1` where a heading repeats —
   // is filled in for them (document-headings.ts records what those rules cost by hand).
@@ -984,13 +1048,18 @@ export function LinkBubble({
               />
               {suggestions && (
                 <div
+                  ref={listRef}
                   id={`${fieldId}-headings`}
                   role='listbox'
                   aria-label='見出しの候補'
                   // Same popup language as the `/` menu (SlashList) — this is the editor's second
                   // list of things to pick, and it should not be its own idea of what one looks
-                  // like. Height-capped because a long post has more headings than the screen.
-                  className='absolute left-0 top-full z-10 mt-1 flex max-h-48 w-72 flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+                  // like.
+                  //
+                  // No `top`/`left`/`max-height` here: the layout effect above owns all three, since
+                  // where this fits is a question about the viewport rather than about the card. It
+                  // runs before paint, so there is no first frame at the static position.
+                  className='absolute z-10 flex w-72 flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
                   {suggestions.matches.length === 0 ? (
                     // Two different facts, and the author does something different about each: write
                     // the heading first, or fix what they typed. This is also the whole of "does

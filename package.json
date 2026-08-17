@@ -22,6 +22,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@floating-ui/dom": "1.7.6",
     "@tailwindcss/typography": "^0.5.19",
     "@tiptap/extension-code-block": "3.28.0",
     "@tiptap/extension-details": "3.28.0",

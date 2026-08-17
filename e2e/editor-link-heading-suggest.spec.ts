@@ -206,6 +206,67 @@ test('picking a heading fills an empty テキスト field with its text', async 
   expect(await markdown(page)).toContain('[API と CLI（詳細）](#api-と-cli詳細)');
 });
 
+// A document long enough to put its last line near the bottom of the window, with enough headings
+// for the list to want its full height. Both halves matter: measured 2026-08-18, three headings made
+// a list short enough to fit below with 52px to spare, so a spec built on that fixture would have
+// passed against the broken build.
+const TALL_MD = [
+  ...Array.from({ length: 9 }, (_, i) => `## 見出し ${i + 1}\n`),
+  ...Array.from({ length: 14 }, (_, i) => `段落 ${i + 1} — 本文の行がここに続きます。\n`),
+  '前[リンク](https://example.com)後',
+  '',
+].join('\n');
+
+// Opens the picker over that last link with the link's line `gap` px above the bottom edge.
+async function openNearBottom(page: Page, gap: number) {
+  await openEditor(page, TALL_MD);
+  const link = page.locator('.ProseMirror a', { hasText: 'リンク' });
+  await link.click();
+  await expect(card(page)).toBeVisible();
+  const linkBox = (await link.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  await page.evaluate(
+    (dy) => window.scrollBy(0, dy),
+    linkBox.y + linkBox.height - (viewport.height - gap),
+  );
+  await card(page).getByRole('button', { name: '編集' }).click();
+  await hrefField(page).fill('#');
+  await expect(suggestions(page)).toBeVisible();
+}
+
+test('a list that will not fit below the card goes above it', async ({ page }) => {
+  await openNearBottom(page, 90);
+  const list = (await suggestions(page).boundingBox())!;
+  const field = (await hrefField(page).boundingBox())!;
+  const viewport = page.viewportSize()!;
+
+  // On screen at all, which is the whole report: the card is chrome and scrolls with the view, so a
+  // row below the bottom edge cannot be reached by pointer or brought into view by scrolling.
+  expect(list.y).toBeGreaterThanOrEqual(0);
+  expect(list.y + list.height).toBeLessThanOrEqual(viewport.height);
+  // Above the card rather than merely shifted: its bottom edge clears the field it belongs to.
+  expect(list.y + list.height).toBeLessThanOrEqual(field.y);
+  // And it did not have to give up height to get there — that side had room (§5.5.17: flip and the
+  // cap answer different cases, and this is flip's).
+  expect(list.height).toBeGreaterThan(150);
+});
+
+test('a list that fits on neither side is cut down to the roomier one', async ({ page }) => {
+  // Neither side can hold the full list in a window this short, which is the case flip alone leaves
+  // broken. 420px was not short enough — the space above the card was still 250px, so flip answered
+  // it on its own and nothing was cut.
+  await page.setViewportSize({ width: 1280, height: 320 });
+  await openNearBottom(page, 90);
+  const list = (await suggestions(page).boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(list.y).toBeGreaterThanOrEqual(0);
+  expect(list.y + list.height).toBeLessThanOrEqual(viewport.height);
+  expect(list.height).toBeLessThan(192);
+  // Still worth opening: a list cut to nothing would satisfy the two bounds above.
+  expect(await rows(page).count()).toBeGreaterThan(0);
+  expect(list.height).toBeGreaterThan(40);
+});
+
 test('a text the author wrote is left alone', async ({ page }) => {
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
