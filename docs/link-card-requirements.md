@@ -309,7 +309,7 @@ renderMdxToHtml(source, { resolveCard });
 | 5a  | `renderMdxToHtml` が DB を import していない（§6）                                           | `lib/render.ts` は DB を import しない（注入のみ）                                               |
 | 5b  | 解決段が目次・ページ内リンク・コード整形と順序で衝突しない                                   | `render.test.ts`。見出し・`#…`・fence を同じ文書で測る                                           |
 | 5c  | `resolveCard` の実物（`getPostBySlug`）が動く                                                | `public-link-card.spec.ts`。stub ではない唯一の経路。タイトルと説明が DB から届く                |
-| 5d  | カードが `.prose a` の青と下線をかぶらない                                                   | 同上。リセットを外すと落ちる（§14 の一般規則の巻き添え）                                         |
+| 5d  | カードが `.prose a` の青と下線をかぶらない                                                   | 同上。リセットを外すと落ちる（`link-requirements.md` §7.1 の一般規則の巻き添え）                 |
 | 5e  | 公開カードが日付の行を持たない（§12）                                                        | `render.test.ts` + `public-link-card.spec.ts`。`.link-card-meta` の不在を名指しで測る            |
 | 5f  | 対象記事の画像がカードに出る／持たない記事は `<img>` ごと出ない（§8.2）                      | `render.test.ts` + `thumbnail.spec.ts`。両方向を測る                                             |
 | 6a  | アコーディオンのタイトルへのペースト／ドロップがアコーディオンを割らない                     | `link-card-placement.test.ts` + E2E。ガードを潰すと落ちる                                        |

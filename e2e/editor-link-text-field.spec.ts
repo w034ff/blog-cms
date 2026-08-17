@@ -171,7 +171,7 @@ test('a uniformly bold link keeps its bold through the rewrite', async ({ page }
 });
 
 test('a uniformly 強調 link keeps its mark through the rewrite', async ({ page }) => {
-  // 強調 nests inside a link — `accentEmphasis.excludes` omits `link` (§14) — so this is reachable
+  // 強調 nests inside a link — `accentEmphasis.excludes` omits `link` (§7.1) — so this is reachable
   // rather than hypothetical, and it is the mark with no markdown syntax of its own: it round-trips
   // as raw inline HTML (accent-emphasis-extension.ts), so the fixture is written the way the
   // serializer writes it. Worth its own case because that is a different path back into the

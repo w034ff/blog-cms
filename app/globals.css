@@ -979,7 +979,7 @@ body.link-menu-open .table-toolbar {
 }
 
 /* 強調 inside a link keeps its weight and gives up its hue (2026-08-18, reversing the "it stays
-   red" half of §14's audit — reported as the text and the underline being different colours).
+   red" half of §7.1's audit — reported as the text and the underline being different colours).
 
    The mismatch is not a specificity accident and no rule on the span can fix it. The underline is
    the `<a>`'s (@tailwindcss/typography's `a: { … textDecoration: 'underline' … }`), and a
@@ -1000,7 +1000,7 @@ body.link-menu-open .table-toolbar {
 
    The cost, stated: on a link, 強調 and 太字 look the same. Accepted — 強調 on a link is rare, and
    a link that is not link-coloured is a worse thing to ship than two marks that coincide inside
-   one. Pinned by 基準 5f・5g of §14's table — the letters restart per feature group there, so the
+   one. Pinned by 基準 5f・5g of §7.1's group — the letters restart per feature group there, so the
    card's own 5f/5g are different rows. The toolbar's 強調 glyph is unreached by design: it is a
    `<span class="accent-emphasis">` inside a `<button>` (Toolbar.tsx), outside `.prose` entirely,
    which is what the unscoped rule above exists for. */

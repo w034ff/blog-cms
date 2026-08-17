@@ -64,7 +64,7 @@ test('a published card resolves against the real posts table (1c/2a)', async ({ 
   await expect(page.locator('.prose div.link-card')).toHaveCount(0);
 });
 
-test('the card is not painted like an ordinary link (§14 regression)', async ({ page }) => {
+test('the card is not painted like an ordinary link (§7.1 regression)', async ({ page }) => {
   const href = await publish(
     page,
     'Public link card colour spec',
