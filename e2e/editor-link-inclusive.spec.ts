@@ -28,6 +28,10 @@ test.afterEach(() => {
   expect(pageErrors).toEqual([]);
 });
 
+function card(page: Page) {
+  return page.getByRole('group', { name: 'リンク' });
+}
+
 async function openEditor(page: Page, md?: string): Promise<void> {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -84,6 +88,44 @@ test('the []() input rule still leaves the text after it unlinked', async ({ pag
   await settle(page);
   expect(await docString(page)).toBe('doc(paragraph(link("断片"), "つづき"))');
   expect(await markdown(page)).toBe('[断片](#見出し)つづき');
+});
+
+test('the card goes away when an IME keystroke moves the caret out of the link', async ({
+  page,
+}) => {
+  // Reported 2026-08-17: typing at a link's right edge left the card standing over a caret that
+  // was no longer in a link. Only through an IME, which is why nothing above catches it —
+  // `@tiptap/extension-bubble-menu`'s `updateHandler` opens with `const { composing } = view;` and
+  // returns, and the transaction carrying the composed text arrives while that flag is still set.
+  // The plugin re-evaluates only on a transaction that moves the selection or changes the
+  // document, so there is no later one to ask. Before the mark stopped being inclusive the typed
+  // character stayed inside the link and the card was right to stay, which is why this surfaced
+  // with §5.5.12 rather than before it.
+  //
+  // Composition is synthesized over CDP; `keyboard.type` never sets `view.composing`, and a spec
+  // written with it passes against the broken build (measured).
+  await openEditor(page, MD);
+  await setRange(page, LINK_RIGHT_EDGE);
+  await expect(card(page)).toBeVisible();
+  const client = await page.context().newCDPSession(page);
+  await client.send('Input.imeSetComposition', { text: 'あ', selectionStart: 1, selectionEnd: 1 });
+  await client.send('Input.insertText', { text: 'あ' });
+  await settle(page);
+  expect(await docString(page)).toBe('doc(paragraph("前", link("リンク"), "あ後"))');
+  await expect(card(page)).toBeHidden();
+});
+
+test('a composition inside the link keeps the card', async ({ page }) => {
+  // The other half, so the repair above is not "hide whenever anything is composed".
+  await openEditor(page, MD);
+  await setRange(page, LINK_RIGHT_EDGE - 1);
+  await expect(card(page)).toBeVisible();
+  const client = await page.context().newCDPSession(page);
+  await client.send('Input.imeSetComposition', { text: 'あ', selectionStart: 1, selectionEnd: 1 });
+  await client.send('Input.insertText', { text: 'あ' });
+  await settle(page);
+  expect(await docString(page)).toBe('doc(paragraph("前", link("リンあク"), "後"))');
+  await expect(card(page)).toBeVisible();
 });
 
 test('the caret at a right edge no longer reads as being in a link', async ({ page }) => {

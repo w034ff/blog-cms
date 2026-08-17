@@ -680,6 +680,18 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 
 フォーカスは今までどおり URL 欄に入る（内容を選択した状態で）。テキスト欄へは Shift+Tab かクリックで届く。「編集」ボタンがこれまで意味していたのは「URL を直す」であり、そこは黙って動かしていない。
 
+#### 5.5.14 IME で右端に打つとカードが残る（2026-08-17 報告・修正）
+
+**報告**: リンクの右端に文字を足してもカードが閉じない。**再現するのは IME 経由の入力だけで**、`keyboard.type` で書いた spec は壊れたビルドでも通る（実測）。
+
+**機構**: `@tiptap/extension-bubble-menu` の `updateHandler` は `const { composing } = view;` を読んで `if (composing || isSame) { return; }` で始まる。**変換で入った文字を運ぶ transaction は、そのフラグが立っている間に届く。** プラグインが訊き直す経路は「選択か文書が動く transaction・resize・scroll」だけなので、変換が確定したあとに訊く者がいない。カードはキャレットがリンクを出たあとも、出たままになる。
+
+**§5.5.12 が表に出した欠陥である。** マークが inclusive だった頃は打った文字がリンクの中に入っていたので、カードは残っていて正しかった。
+
+**直し方**: 塗りを決めている効果（§5.5.7）に 1 行足した。**プラグインが出しているのに `shouldShow` が断るなら、`hide` の meta を送る。** この不一致が起きる経路は上の 1 つだけなので、`compositionend` を直接聴くより狭くならずに済む — 変換の途中でも成り立ち（右端で変換を始めた時点でキャレットは既にリンクの外にある）、`compositionend` から `state` が更新されるまでの遅れ（prosemirror-view の `flushSoon`）を数える必要もない。
+
+基準 7h・7i がこれを固定している。**7i は「変換したら閉じる」ではないことを測る側で**、リンクの中で変換したときにカードが残ることを見ている。合成は CDP の `Input.imeSetComposition` → `Input.insertText` で行う（`keyboard.type` は `view.composing` を立てない）。
+
 ---
 
 ## 7. 変えないもの
@@ -815,6 +827,8 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 | 7e  | `[]()` の入力ルールの後に打った文字がリンクの外                                                  | 同 spec（`removeStoredMark` を外したあと）                            |
 | 7f  | 右端のキャレットは `isActive` も `getAttributes` も「リンクではない」と答える                    | 同 spec（カードが `linkAtCaret` に移った理由そのもの）                |
 | 7g  | 本文の置換は**右端に届けばリンクを外し、届かなければ残す**                                       | `editor-link-text-edit.spec.ts`（4 通り。§5.5.12 の代金）             |
+| 7h  | IME で右端に打つとカードが**閉じる**                                                             | `editor-link-inclusive.spec.ts`（CDP で変換を合成。§5.5.14）          |
+| 7i  | リンクの中で変換したときはカードが残る                                                           | 同 spec（7h が「変換したら閉じる」ではないこと）                      |
 | 8a  | 「編集」を開くとテキスト欄にそのリンクの文字が入っている                                         | `editor-link-text-field.spec.ts`                                      |
 | 8b  | テキストを直すと文書に入り、href と `title` が残る                                               | 同 spec（`title` はマーク側にある。§5.3-3）                           |
 | 8c  | テキストと href を同時に直しても **undo 1 回**                                                   | 同 spec（`historyState` の `undoDepth`。押して見るのではない）        |

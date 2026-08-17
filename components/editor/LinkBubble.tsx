@@ -352,6 +352,16 @@ export function LinkBubble({
   useEffect(() => {
     if (!menuVisible || !shouldShow()) {
       setLinkHighlight(editor, null);
+      // A card the plugin is showing while its own predicate refuses it. That divergence has one
+      // cause and it is composition: `updateHandler` opens with `const { composing } = view;` and
+      // returns, and the transaction carrying the composed text arrives while that flag is still
+      // set — so the plugin never asks again, and nothing later does either (it re-evaluates only
+      // on a transaction that moves the selection or changes the document). An IME keystroke at a
+      // link's right edge leaves the caret outside the link with the card still over it, which is
+      // reachable for every author writing Japanese and was reported as such (2026-08-17). The
+      // mark being inclusive used to hide this: the typed character stayed in the link, so the
+      // card was right to stay.
+      if (menuVisible) signal('hide');
       return;
     }
     const link = linkAtCaret(editor);
