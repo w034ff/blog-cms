@@ -7,6 +7,7 @@ import { getMarkRange } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { setLinkHighlight } from './link-highlight-extension';
+import { collectHeadings, matchHeadings, type DocumentHeading } from './document-headings';
 import { EditorTooltip } from './EditorTooltip';
 import { ToolbarButton } from './ToolbarButton';
 import { CopyIcon } from './svg/CopyIcon';
@@ -251,6 +252,12 @@ export function LinkBubble({
   // field from costing a replacement step.
   const [textDraft, setTextDraft] = useState('');
   const [textInitial, setTextInitial] = useState<string | null>(null);
+  // The heading picker (§5.5.17). `suggestDismissed` is what closes the list while the field still
+  // holds a `#…` value — after a heading is chosen, and on Escape — since the value alone cannot
+  // say whether the author is still choosing. Typing re-opens it, so dismissing is never a mode the
+  // author can get stuck in.
+  const [suggestDismissed, setSuggestDismissed] = useState(false);
+  const [suggestIndex, setSuggestIndex] = useState(0);
   const editingRef = useRef(false);
   // Escape closes the card while the caret stays put; without this it would come straight back on
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
@@ -302,6 +309,9 @@ export function LinkBubble({
     const text = link ? editableLinkText(editor, link.from, link.to) : null;
     setTextInitial(text);
     setTextDraft(text ?? '');
+    // An existing `#…` link opens with its list showing, which is the same offer as typing the `#`.
+    setSuggestDismissed(false);
+    setSuggestIndex(0);
     editingRef.current = true;
     setEditing(true);
     // Nothing about opening the field changes the selection or the document, so the plugin would
@@ -735,7 +745,8 @@ export function LinkBubble({
 
   // Enter saves and Escape cancels, from either field — the card has no <form> to do it (a nested
   // one is dropped by the browser, the shape TableGridMenu documents), so both keys are handled by
-  // hand and both fields answer the same way.
+  // hand and both fields answer the same way. The URL field reaches this through `hrefKeys` below,
+  // which takes the same two keys away from it while the heading list is up.
   const fieldKeys = useCallback(
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
       if (event.key === 'Enter') {
@@ -747,6 +758,86 @@ export function LinkBubble({
       }
     },
     [applyDraft, close],
+  );
+
+  // The heading picker's contents, or null while the field is not asking for a fragment (§5.5.17).
+  // The trigger is a `#` in the *first* position and nothing else: a `#` further along belongs to a
+  // URL that happens to carry a fragment (`https://example.com/#section`), and offering this
+  // document's headings there would be noise on every external link that has one.
+  //
+  // The document is read here rather than kept in state because it cannot change while this is on
+  // screen: the field has the focus, so every keystroke goes to the input and none of them reaches
+  // the editor.
+  const suggestions = useMemo(() => {
+    if (!editing || suggestDismissed || !draft.startsWith('#')) return null;
+    const headings = collectHeadings(editor.state.doc);
+    return { headings, matches: matchHeadings(headings, draft.slice(1)) };
+  }, [draft, editing, editor, suggestDismissed]);
+
+  // Writing the slug is the whole point of the list: the author picks the heading they can see, and
+  // the fragment that reaches it — lowercased, punctuation dropped, `-1` where a heading repeats —
+  // is filled in for them (document-headings.ts records what those rules cost by hand).
+  const chooseHeading = useCallback(
+    (headingChoice: DocumentHeading) => {
+      setDraft(`#${headingChoice.slug}`);
+      setSuggestDismissed(true);
+      // Only into an empty text field, and only where there is one: a link being made from a
+      // selection has its text already, and an existing link's text is the author's to keep.
+      if (textInitial !== null && textDraft.trim() === '') setTextDraft(headingChoice.text);
+      inputRef.current?.focus();
+    },
+    [textDraft, textInitial],
+  );
+
+  // The URL field's keys. While the list is up it takes the four keys a list owns, and the rest of
+  // the time this is exactly `fieldKeys`.
+  //
+  // Escape is the one that matters: it closes the list and stops there, because the card's own
+  // Escape closes the whole card and would take an unapplied edit with it — the loss the 取り消し
+  // button was removed over (§5.5.13). The card's handler is on the menu element, so a bubbling
+  // Escape reaches it too; it returns early while `editingRef` is set, which is exactly this case.
+  const hrefKeys = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      const matches = suggestions?.matches ?? [];
+      if (suggestions) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setSuggestDismissed(true);
+          return;
+        }
+        if (matches.length > 0) {
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setSuggestIndex((index) => (index + 1) % matches.length);
+            return;
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setSuggestIndex((index) => (index + matches.length - 1) % matches.length);
+            return;
+          }
+          // Enter with a row highlighted takes it — unless the field already holds exactly that
+          // fragment, in which case there is nothing to take and Enter means 適用. Without that
+          // second half, an author who types a fragment out in full presses Enter twice for the
+          // same result, and every existing keystroke sequence that ends `#…` + Enter grows a step.
+          //
+          // Nothing to take at all — a fragment this document has no heading for — falls through
+          // for the same reason: a link to a heading that does not exist yet is the author's call
+          // to make and not this list's to refuse.
+          if (
+            event.key === 'Enter' &&
+            matches[suggestIndex] &&
+            draft !== `#${matches[suggestIndex].slug}`
+          ) {
+            event.preventDefault();
+            chooseHeading(matches[suggestIndex]);
+            return;
+          }
+        }
+      }
+      fieldKeys(event);
+    },
+    [chooseHeading, draft, fieldKeys, suggestIndex, suggestions],
   );
 
   const copyHref = useCallback(() => {
@@ -845,20 +936,119 @@ export function LinkBubble({
               gap the grid puts between a label and its field, so the field has equal air on both
               sides — change one and the other has to move with it. */}
           <div className='flex items-center gap-2'>
-            <input
-              ref={inputRef}
-              id={`${fieldId}-href`}
-              // Not type='url': a fragment (#見出し) or a site-relative path (/posts/foo) is exactly
-              // what this field exists to accept, and neither is a URL by that input's rules.
-              type='text'
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={fieldKeys}
-              placeholder='https://… / /posts/… / #見出し'
-              spellCheck={false}
-              autoComplete='off'
-              className={FIELD_CLASS}
-            />
+            {/* `relative` so the heading list can hang below the field. It is allowed out of the
+                card rather than laid out inside it: the card's expensive axis is its height (see
+                the label comment above), and a list that pushed the 適用 row down would move the
+                button out from under a pointer already on its way to it. */}
+            <div className='relative'>
+              <input
+                ref={inputRef}
+                id={`${fieldId}-href`}
+                // Not type='url': a fragment (#見出し) or a site-relative path (/posts/foo) is
+                // exactly what this field exists to accept, and neither is a URL by that input's
+                // rules.
+                type='text'
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  // Typing is what re-opens a dismissed list — including the keystroke right after
+                  // a heading was chosen, which is the author correcting the choice.
+                  setSuggestDismissed(false);
+                  // The query changed, so the highlight goes back to the top rather than staying on
+                  // a row number that now names a different heading. Here rather than in an effect
+                  // keyed on the value: this is the event that changes it.
+                  setSuggestIndex(0);
+                }}
+                onKeyDown={hrefKeys}
+                placeholder='https://… / /posts/… / #見出し'
+                spellCheck={false}
+                autoComplete='off'
+                // `aria-activedescendant` is how the highlight is announced at all — a screen
+                // reader is told which row is current, not shown a background tint. Both of these
+                // are states a `textbox` supports, which is what this field stays.
+                //
+                // Not `role='combobox'` (with `aria-expanded`), although that is the pattern this
+                // list is otherwise built to: the role would sit on the field permanently, and this
+                // field is a URL box that raises a list for one kind of value. Announcing every
+                // author who opens it into a combobox is the same trade the card's own `role='group'
+                // ` refused — do not promise a model that is not there. A flipping role would be
+                // worse than either. The cost is that the list's *appearance* is not announced,
+                // only its rows as they are reached.
+                aria-controls={suggestions ? `${fieldId}-headings` : undefined}
+                aria-activedescendant={
+                  suggestions?.matches[suggestIndex]
+                    ? `${fieldId}-heading-${suggestIndex}`
+                    : undefined
+                }
+                className={FIELD_CLASS}
+              />
+              {suggestions && (
+                <div
+                  id={`${fieldId}-headings`}
+                  role='listbox'
+                  aria-label='見出しの候補'
+                  // Same popup language as the `/` menu (SlashList) — this is the editor's second
+                  // list of things to pick, and it should not be its own idea of what one looks
+                  // like. Height-capped because a long post has more headings than the screen.
+                  className='absolute left-0 top-full z-10 mt-1 flex max-h-48 w-72 flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+                  {suggestions.matches.length === 0 ? (
+                    // Two different facts, and the author does something different about each: write
+                    // the heading first, or fix what they typed. This is also the whole of "does
+                    // this fragment go anywhere" — the question nothing else on either surface
+                    // answers, since a fragment that misses just renders as a link that lands
+                    // nowhere.
+                    <p className='px-2 py-1.5 text-xs text-zinc-500 dark:text-zinc-400'>
+                      {suggestions.headings.length === 0
+                        ? 'この文書には見出しがありません'
+                        : '一致する見出しがありません'}
+                    </p>
+                  ) : (
+                    suggestions.matches.map((headingChoice, index) => (
+                      <button
+                        key={headingChoice.slug}
+                        id={`${fieldId}-heading-${index}`}
+                        type='button'
+                        role='option'
+                        aria-selected={index === suggestIndex}
+                        // The press is split across the two events on purpose. mousedown only
+                        // refuses the focus change, so the field keeps the caret and the card does
+                        // not read the press as the author leaving it (§5.5.9). The choice itself
+                        // waits for the click, because taking it on mousedown unmounts this row
+                        // between the press and the release — measured 2026-08-18: the mouseup then
+                        // landed on the document underneath, put the caret there, and the card and
+                        // the unapplied edit went with it.
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => chooseHeading(headingChoice)}
+                        // `px-2`, matching the field's own padding rather than the `/` menu's
+                        // `px-3`: the list hangs directly under the field and shares its left edge,
+                        // so the row's first character sits under the one being typed (1px out, for
+                        // the field's border — an exact figure here would be a hard-coded pixel
+                        // fitted to a border width). At `px-3` the offset was 3px and read as a
+                        // mistake precisely because the two boxes line up.
+                        //
+                        // Every row starts at the same x, h3 included. The list is filtered, so an
+                        // indent that meant "under the heading above" would keep saying it after
+                        // the filter took that heading away — and read as a badge instead, a whole
+                        // list of h3 rows is just a list with an odd left margin (2026-08-18, the
+                        // indent was there for a few hours). Level goes back in as something a row
+                        // carries on its own, if a real case ever needs it.
+                        className={`flex w-full items-baseline gap-2 px-2 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                          index === suggestIndex ? 'bg-zinc-200 dark:bg-zinc-700' : ''
+                        }`}>
+                        <span className='min-w-0 flex-1 truncate'>{headingChoice.text}</span>
+                        {/* The fragment this row writes, shown rather than hidden: it is where the
+                            author learns that `API と CLI（詳細）` is reached as `api-と-cli詳細`.
+                            It gives up width last — the heading text truncates first — because a
+                            half-shown slug teaches the wrong string. */}
+                        <span className='max-w-[55%] shrink-0 truncate text-[10px] text-zinc-500 dark:text-zinc-400'>
+                          #{headingChoice.slug}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             {/* One button, and it is 適用 rather than 保存 (2026-08-17). Nothing here is saved: it
                 writes the edit into the document, and the post reaches the database on its own a
                 moment later. This UI already spends the word 保存 on that — `PostEditor`'s

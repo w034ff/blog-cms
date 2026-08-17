@@ -35,6 +35,7 @@
     "bcryptjs": "3.0.3",
     "better-sqlite3": "12.11.1",
     "drizzle-orm": "0.45.2",
+    "github-slugger": "2.0.0",
     "gray-matter": "^4.0.3",
     "hast-util-to-string": "3.0.1",
     "jose": "6.2.3",
