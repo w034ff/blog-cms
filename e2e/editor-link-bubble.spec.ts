@@ -434,12 +434,26 @@ async function rects(page: Page) {
     const box = (el: Element | null) => {
       if (!el) return null;
       const r = el.getBoundingClientRect();
-      return { top: r.top, bottom: r.bottom };
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
     };
+    // Where the selection is on screen, asked of the editor rather than of the DOM selection: the
+    // card is placed against `state.selection`, so the assertions have to be about the same thing.
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & {
+          editor?: {
+            state: { selection: { from: number } };
+            view: { coordsAtPos(pos: number): { top: number; bottom: number; left: number } };
+          };
+        })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const { top, bottom, left } = el.editor.view.coordsAtPos(el.editor.state.selection.from);
     return {
       cardBox: box(document.querySelector('.link-bubble')),
       linkBox: box(document.querySelector('.ProseMirror a')),
       toolbarBox: box(document.querySelector('.sticky')),
+      selectionBox: { top, bottom, left },
+      scrollY: window.scrollY,
     };
   });
 }
@@ -470,6 +484,83 @@ test('a link in the first line puts the card clear of the toolbar', async ({ pag
   const { cardBox, toolbarBox } = await rects(page);
   expect(toolbarBox).not.toBeNull();
   expect(cardBox!.top).toBeGreaterThanOrEqual(toolbarBox!.bottom);
+});
+
+// Where the card sits when `Mod-k` is what opened it (§5.5.11). That path does not go through the
+// plugin's own show-and-place; it asks by meta, and the meta places the card *before* it is on
+// screen, which is one instruction too early. All three cases below were the same card in the wrong
+// place, and none of them is visible to an assertion about the document.
+//
+// A document tall enough that its own first line goes off screen. The text to be linked is a heading
+// so the selection can be taken by node type instead of by counting positions through the filler.
+const TALL = (lead: string) => `${lead}${'埋め草の段落。\n\n'.repeat(20)}## ここをリンクにする\n`;
+
+test('Mod-k after the card has been at another link opens the field on the selection', async ({
+  page,
+}) => {
+  // The card keeps its coordinates when it is hidden (only visibility and opacity are cleared), and
+  // `meta === 'show'` runs `updatePosition()` — which begins `if (!this.isVisible) return` — before
+  // `show()`. So the card came back at the link it was last at, a screenful above the text the
+  // author had selected.
+  await openEditor(page);
+  await loadMarkdown(page, TALL('前[リンク](https://example.com)後\n\n'));
+  await setRange(page, IN_LINK);
+  await expect(card(page)).toBeVisible();
+  await settle(page);
+  await selectInside(page, 'heading');
+  await settle(page);
+  await expect(card(page)).toBeHidden();
+  await page.keyboard.press('Control+k');
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeFocused();
+  await settle(page);
+  const { cardBox, selectionBox } = await rects(page);
+  expect(cardBox!.bottom).toBeLessThanOrEqual(selectionBox.top);
+  // Against the selection's own rect, not a pixel constant: what is being pinned is that the card
+  // is *at* the selection — one offset away — rather than wherever it happened to be before.
+  expect(selectionBox.top - cardBox!.bottom).toBeLessThan(24);
+});
+
+test('the first Mod-k of a session leaves the scroll where it was', async ({ page }) => {
+  // The same fault with nothing to be stale: a card that has never been placed has no `left`/`top`
+  // at all, so `position: absolute` left it at the document's top-left — and focusing the URL field
+  // there sent the whole page to the top, away from what the author was editing.
+  //
+  // No link anywhere in this document, which is what keeps the case honest: one earlier caret in a
+  // link and this would be measuring the stale-coordinates case above instead.
+  await openEditor(page);
+  await loadMarkdown(page, TALL(''));
+  await selectInside(page, 'heading');
+  await page.locator('.ProseMirror h2').scrollIntoViewIfNeeded();
+  await settle(page);
+  const before = await rects(page);
+  expect(before.scrollY).toBeGreaterThan(0); // otherwise there is no scroll position to lose
+  await page.keyboard.press('Control+k');
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeFocused();
+  await settle(page);
+  const after = await rects(page);
+  expect(after.scrollY).toBe(before.scrollY);
+  expect(after.cardBox!.bottom).toBeLessThanOrEqual(after.selectionBox.top);
+});
+
+test('Mod-k on the text right after a link places the card on the selection, not on that link', async ({
+  page,
+}) => {
+  // `linkElementAt` asks `from - 1` first, which is what makes a caret at a link's right edge show
+  // the card. A selection that *starts* at that edge is a different thing entirely — there is no
+  // link on it yet — and the card was anchored to the neighbouring link all the same.
+  await openEditor(page);
+  await loadMarkdown(page, '前[リンク](https://example.com)後の段落。\n');
+  await setRange(page, LINK_RIGHT_EDGE, LINK_RIGHT_EDGE + 4); // 「後の段落」
+  await page.keyboard.press('Control+k');
+  const field = card(page).getByRole('textbox', { name: 'リンク先' });
+  await expect(field).toBeFocused();
+  // Empty, i.e. this is an assignment and not the neighbouring link being edited. Were the mark
+  // active over this range, anchoring to that link would be the right answer rather than the bug.
+  await expect(field).toHaveValue('');
+  await settle(page);
+  const { cardBox, linkBox, selectionBox } = await rects(page);
+  expect(cardBox!.left).toBeGreaterThanOrEqual(linkBox!.right - 2);
+  expect(Math.abs(cardBox!.left - selectionBox.left)).toBeLessThan(2);
 });
 
 // The card's title line (§5.5.10). Only the internal case is measurable offline: a link to this

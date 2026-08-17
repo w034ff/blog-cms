@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import { getMarkRange } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -183,7 +183,7 @@ export function LinkBubble({
   const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
 
   const signal = useCallback(
-    (meta: 'show' | 'hide') => {
+    (meta: 'show' | 'hide' | 'updatePosition') => {
       editor.view.dispatch(editor.state.tr.setMeta(MENU_KEY, meta));
     },
     [editor],
@@ -378,9 +378,15 @@ export function LinkBubble({
 
   const appendTo = useCallback(() => document.body, []);
   const getReferencedVirtualElement = useCallback(() => {
+    // An assignment is answered by the selection and not by the DOM, and it has to be answered
+    // before `linkElementAt` is asked at all. That function tries `from - 1` first — which is what
+    // makes a caret at a link's right edge work — so selecting the text *immediately after* a link
+    // and pressing Mod-k found that link's `<a>` and put the card over it, on the line above the
+    // text being linked (measured 2026-08-17, §5.5.11). There is no link under the selection yet,
+    // so there is nothing for the card to anchor to but the selection itself.
+    if (editingRef.current && !editor.isActive('link')) return null;
     const anchor = linkElementAt(editor);
-    // Null falls back to the plugin's own selection rect, which is what an assignment (no link yet)
-    // wants anyway.
+    // Null falls back to the plugin's own selection rect.
     return anchor
       ? { getBoundingClientRect: () => anchor.getBoundingClientRect(), contextElement: anchor }
       : null;
@@ -429,12 +435,48 @@ export function LinkBubble({
     [editor],
   );
 
+  // Where the card is, every time it changes shape. The plugin positions the card *before* it puts
+  // it on screen — `meta === "show"` runs `updatePosition()` and then `show()`, and `updatePosition`
+  // opens with `if (!this.isVisible) {` and a return — so a card the plugin is not already showing
+  // is attached at the coordinates it last held. `hide()` clears visibility and opacity and leaves
+  // `left`/`top` where they were, so Mod-k after a visit to any link put the card back at *that*
+  // link, however far away the caret had moved (measured 2026-08-17, §5.5.11).
+  //
+  // Nothing brought it back either: the plugin recomputes on a transaction that moves the selection,
+  // on a resize and on a scroll, and opening the field is none of those. On the first Mod-k of a
+  // session there are no coordinates at all — `position: absolute` with no offsets leaves the card
+  // at the document's top-left, and focusing the URL field there scrolled the page to the top.
+  //
+  // A layout effect so the correction lands in the same frame as the attach: floating-ui's
+  // `computePosition` settles in microtasks, and those run before the paint that would otherwise
+  // show the card at the stale place.
+  //
+  // Keyed on `editing` in both directions, though only the opening edge is measured. The card and
+  // the URL field are different heights and `top-start` measures the card's own, so collapsing back
+  // needs the same correction in principle — but every path that collapses the field also focuses
+  // the editor, and that makes the plugin place the card itself (`focusHandler` runs `update` with
+  // no `oldState`, which reads as a changed selection). Measured: the closing edge changes nothing
+  // today. It is kept because the rule is "re-place the card whenever it changes shape", and a
+  // future path that collapses the field without refocusing would need it.
+  useLayoutEffect(() => {
+    if (!menuVisible) return;
+    signal('updatePosition');
+  }, [editing, menuVisible, signal]);
+
   // Focus the URL field as it opens, with its contents selected so retyping a wrong URL is one
   // gesture. Focus leaving the editor does not hide the card: the plugin's blur handler ignores a
   // focus move into its own element.
   useEffect(() => {
     if (!editing) return;
-    inputRef.current?.focus();
+    // `preventScroll`, because this focus happens while the card is still being placed: the effect
+    // above has asked for the position, but floating-ui answers in a microtask and this runs first.
+    // Without it, the first Mod-k of a session focused a card still sitting at the document's
+    // top-left and the browser scrolled the whole page there to reveal it (measured 2026-08-17,
+    // §5.5.11). Refusing the scroll is safe because its destination is a place the card is about to
+    // leave: a microtask later it is placed against the selection, and a selection the author is
+    // looking at is on screen. Scrolling a selection out of view before pressing Mod-k would leave
+    // the field focused off screen, which is not measured — it was worse before this (the top).
+    inputRef.current?.focus({ preventScroll: true });
     inputRef.current?.select();
   }, [editing]);
 
