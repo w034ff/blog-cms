@@ -8,7 +8,12 @@ import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { autoUpdate, computePosition, flip, offset, size } from '@floating-ui/dom';
 import { setLinkHighlight } from './link-highlight-extension';
-import { collectHeadings, matchHeadings, type DocumentHeading } from './document-headings';
+import {
+  collectHeadings,
+  headingForFragment,
+  matchHeadings,
+  type DocumentHeading,
+} from './document-headings';
 import { EditorTooltip } from './EditorTooltip';
 import { ToolbarButton } from './ToolbarButton';
 import { CopyIcon } from './svg/CopyIcon';
@@ -660,6 +665,12 @@ export function LinkBubble({
   // `mailto:` has no page to have a title.
   useEffect(() => {
     if (!menuVisible || editing) return;
+    // A fragment names a place in this document, not a page, so there is no title to ask for. The
+    // guard below cannot see that: resolving `#導入` against the origin yields an `https:` URL for
+    // the site root, which passes the protocol test and asks the route about the blog's front page.
+    // The answer has always been null — `ownTitle` only knows `/posts/<slug>` — so this removes a
+    // round trip per caret placement rather than changing what the card shows (2026-08-18).
+    if (href.startsWith('#')) return;
     let absolute: URL;
     try {
       absolute = new URL(href, window.location.origin);
@@ -903,6 +914,54 @@ export function LinkBubble({
     },
     [chooseHeading, draft, fieldKeys, suggestIndex, suggestions],
   );
+
+  // What the top line does, which depends on where the link points (§5.5.18). A fragment names a
+  // heading in this same document, so "open it" has nothing to open: `window.open('#導入')` resolves
+  // against the current document and opens a second copy of the editor, at a fragment no element in
+  // it answers to — the editor's headings carry no ids, those are the published page's (reported and
+  // measured 2026-08-18). Going there is the operation that exists.
+  //
+  // It doubles as the only check on a fragment that has gone stale. The picker stops a bad one being
+  // written, but renaming a heading breaks every link already pointing at it, silently and on both
+  // surfaces — this is where the author finds out.
+  const jump = useCallback(() => {
+    const heading = headingForFragment(collectHeadings(editor.state.doc), href);
+    if (!heading) {
+      onNotice('この文書にその見出しはありません');
+      return;
+    }
+    // A heading inside a folded accordion is a legitimate target — the published page's `<details>`
+    // opens itself for a reader following the fragment — but the caret cannot usefully go somewhere
+    // `display: none`, and the press would look like nothing happening. Asked of the rendered
+    // element rather than of the accordion, so any future folded container answers the same way, and
+    // deliberately without opening anything: unfolding what the author folded is not this button's
+    // business (§5.5.18).
+    const dom = editor.view.nodeDOM(heading.pos);
+    if (dom instanceof HTMLElement && dom.offsetParent === null) {
+      onNotice('折りたたまれた中にあるため移動できません');
+      return;
+    }
+    // `pos + 1` is inside the heading. The caret leaving the link is what takes the card away — the
+    // plugin asks `shouldShow` again on the selection change and answers no — so nothing here has to
+    // close it.
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(heading.pos + 1)
+      .scrollIntoView()
+      .run();
+    // And then the heading is put in the middle of the window, which the transaction's own scroll
+    // does not do. prosemirror-view scrolls the minimum (`scrollRectIntoView`, 5px of margin), and
+    // it has no way to know that this editor's toolbar is `sticky top-0` and painted over the top of
+    // the scrollport: measured 2026-08-18, the heading landed at y=5 with the toolbar's lower edge
+    // at y=29, so the caret was where it was asked to go and the author could not read the line it
+    // was on. Centring answers that without a number for the toolbar's height — the constant that
+    // would go stale the next time a button wraps — and it is also the better place for a line you
+    // have jumped to, since the paragraphs on both sides come with it.
+    if (dom instanceof HTMLElement) dom.scrollIntoView({ block: 'center' });
+  }, [editor, href, onNotice]);
+
+  const isFragment = href.startsWith('#');
 
   const copyHref = useCallback(() => {
     // navigator.clipboard exists only in a secure context. Production is HTTPS and dev is
@@ -1180,8 +1239,13 @@ export function LinkBubble({
             <span className='group/tt relative w-full'>
               <button
                 type='button'
-                aria-label='リンク先を開く'
-                onClick={() => window.open(href, '_blank', 'noopener,noreferrer')}
+                // The name changes with what the press does (§5.5.18). "開く" promises a new tab, and
+                // for a fragment there is no tab to open — leaving the word there would describe the
+                // behaviour this replaced.
+                aria-label={isFragment ? '見出しへ移動' : 'リンク先を開く'}
+                onClick={
+                  isFragment ? jump : () => window.open(href, '_blank', 'noopener,noreferrer')
+                }
                 className='block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
                 {title ?? displayHref(href)}
               </button>

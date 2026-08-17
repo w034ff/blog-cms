@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { renderMdxToHtml } from '@/lib/render';
-import { collectHeadings, matchHeadings, slugsFor } from './document-headings';
+import {
+  collectHeadings,
+  headingForFragment,
+  matchHeadings,
+  slugsFor,
+} from './document-headings';
 
 // The link card offers these slugs as fragments to write down (§5.5.17), so the only thing that
 // makes them worth anything is that they are the same strings the published page puts on its
@@ -72,10 +77,11 @@ describe('collectHeadings', () => {
       schema.node('paragraph', null, schema.text('本文')),
       heading(3, 'Hello World'),
     ]);
-    // The level itself is not carried: nothing displays it (§5.5.17).
+    // The level itself is not carried: nothing displays it (§5.5.17). `pos` is the heading node's
+    // own position — the paragraph between these two is 4 wide — and `pos + 1` is what a caret uses.
     expect(collectHeadings(doc)).toEqual([
-      { text: '導入', slug: '導入' },
-      { text: 'Hello World', slug: 'hello-world' },
+      { text: '導入', slug: '導入', pos: 0 },
+      { text: 'Hello World', slug: 'hello-world', pos: 8 },
     ]);
   });
 
@@ -93,6 +99,35 @@ describe('collectHeadings', () => {
       schema.node('blockquote', null, heading(3, '引用の中')),
     ]);
     expect(collectHeadings(doc).map((h) => h.text)).toEqual(['導入', '引用の中']);
+  });
+});
+
+describe('headingForFragment', () => {
+  const headings = collectHeadings(
+    schema.node('doc', null, [heading(2, '導入'), heading(2, 'Hello World'), heading(2, '導入')]),
+  );
+
+  it('finds the heading a fragment names', () => {
+    expect(headingForFragment(headings, '#導入')?.pos).toBe(headings[0].pos);
+    expect(headingForFragment(headings, '#導入-1')?.pos).toBe(headings[2].pos);
+  });
+
+  // What the markdown round trip produces (§2.2.2), and what a browser decodes before it compares.
+  it('decodes a percent-encoded fragment', () => {
+    expect(headingForFragment(headings, '#%E5%B0%8E%E5%85%A5')?.text).toBe('導入');
+  });
+
+  // Not a convenience: a browser matches an id without folding case, so a fragment this refuses is
+  // one that lands nowhere for a reader as well. Saying "no such heading" is the true answer.
+  it('does not fold case', () => {
+    expect(headingForFragment(headings, '#Hello-World')).toBeNull();
+    expect(headingForFragment(headings, '#hello-world')?.text).toBe('Hello World');
+  });
+
+  it('answers null for a broken escape, and for what is not a fragment at all', () => {
+    expect(headingForFragment(headings, '#%E5%B0')).toBeNull();
+    expect(headingForFragment(headings, 'https://example.com/#導入')).toBeNull();
+    expect(headingForFragment(headings, '/posts/foo')).toBeNull();
   });
 });
 

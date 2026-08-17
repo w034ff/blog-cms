@@ -25,6 +25,9 @@ export type DocumentHeading = {
   // an author who writes it themselves gets `user-content-user-content-…` and a link to nowhere
   // (measured). So the editor stores what the author would have typed, and nothing more.
   slug: string;
+  // Where the heading node starts. `pos + 1` is inside it, which is where a caret goes to reach it
+  // (§5.5.18 — the card walks a fragment back to the heading it names).
+  pos: number;
 };
 
 // The level is deliberately not carried. Nothing shows it: the picker draws every row at the same
@@ -44,19 +47,41 @@ export function slugsFor(texts: readonly string[]): string[] {
 // included deliberately: they are not in the table of contents (docs/toc-requirements.md §4.1) but
 // they do get ids and a fragment does reach them, so they are legitimate targets.
 export function collectHeadings(doc: ProseMirrorNode): DocumentHeading[] {
-  const texts: string[] = [];
-  doc.descendants((node) => {
+  const found: { text: string; pos: number }[] = [];
+  doc.descendants((node, pos) => {
     if (node.type.name !== 'heading') return true;
-    texts.push(node.textContent);
+    found.push({ text: node.textContent, pos });
     // Nothing inside a heading is a heading.
     return false;
   });
   // Slugged before the empty ones are dropped, not after: an empty heading still consumes a turn of
   // the slugger upstream, and skipping it here would shift every duplicate counter that follows.
-  const slugs = slugsFor(texts);
-  return texts
-    .map((text, index) => ({ text, slug: slugs[index] }))
+  const slugs = slugsFor(found.map((heading) => heading.text));
+  return found
+    .map((heading, index) => ({ ...heading, slug: slugs[index] }))
     .filter((heading) => heading.text.trim() !== '');
+}
+
+// The heading a fragment names, or null. Matched exactly, and that is the point rather than a
+// convenience: a browser matches `#…` against an id without folding case, so a fragment this refuses
+// is a fragment that lands nowhere for a reader too. Being generous here would make the card say a
+// link works when it does not.
+//
+// Percent-encoding is undone first, because that is what a browser does before comparing (a fragment
+// written by the markdown round trip arrives as `#%E5%B0%8E%E5%85%A5`, §2.2.2). A malformed escape
+// decodes to nothing and simply finds no heading.
+export function headingForFragment(
+  headings: readonly DocumentHeading[],
+  href: string,
+): DocumentHeading | null {
+  if (!href.startsWith('#')) return null;
+  let target = href.slice(1);
+  try {
+    target = decodeURIComponent(target);
+  } catch {
+    return null;
+  }
+  return headings.find((heading) => heading.slug === target) ?? null;
 }
 
 // The headings a `#…` query is offering. Both the visible text and the slug are matched, because
