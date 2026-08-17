@@ -51,6 +51,7 @@ export function ToolbarButton({
   destructive,
   tooltipHidden,
   compact,
+  accent,
   round,
   children,
 }: {
@@ -72,6 +73,12 @@ export function ToolbarButton({
   // Red tint for a destructive action (e.g. delete the whole table), so it reads as
   // "danger" and isn't mistaken for the neutral controls beside it.
   destructive?: boolean;
+  // The same shape in the link blue, for the one control in a surface that commits what the
+  // author typed there (the link card's 適用). The label carries the colour and the background
+  // stays clear until hover — a filled button was tried and taken back out, because nothing else
+  // in this editor's chrome is filled. Measured against the surfaces it sits on: 5.19 at rest and
+  // 6.26 on hover in the light scheme, 4.81 and 6.50 in the dark one.
+  accent?: boolean;
   // Suppress the visible tooltip while keeping the accessible name. Dropdown triggers
   // set this when open so the tooltip doesn't collide with the panel directly below.
   tooltipHidden?: boolean;
@@ -86,7 +93,9 @@ export function ToolbarButton({
 }) {
   const tone = destructive
     ? 'text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300'
-    : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
+    : accent
+      ? 'text-[#0969da] hover:bg-blue-50 hover:text-[#0757ba] dark:text-[#4493f8] dark:hover:bg-blue-950 dark:hover:text-[#6cb0ff]'
+      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
   const mac = isMac();
   const shortcutLabel = shortcut ? formatShortcut(shortcut, mac) : undefined;
   const hasTip = Boolean(title || shortcutLabel) && !tooltipHidden;

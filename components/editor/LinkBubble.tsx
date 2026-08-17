@@ -324,7 +324,7 @@ export function LinkBubble({
     // editor. The field can be left for somewhere that is not (the post's title, say), and the blur
     // rule below cannot answer that: the editor lost focus when the field took it, so leaving the
     // field for a third place fires no blur of its own. Same test as that rule, a frame later, so
-    // 保存 and やめる — which focus the editor back — keep the card.
+    // 適用 — which focuses the editor back — keeps the card.
     requestAnimationFrame(() => {
       if (editingRef.current || !focusLeft()) return;
       dismissedRef.current = true;
@@ -839,7 +839,12 @@ export function LinkBubble({
           <label htmlFor={`${fieldId}-href`} className={LABEL_CLASS}>
             リンク先
           </label>
-          <div className='flex items-center gap-0.5'>
+          {/* 8px between the field and 適用, not the card's own 2px. That gap is for buttons that
+              sit in a row together, where it is what keeps their hover fills apart; here the
+              button's neighbour is a field, and it read as attached to it. The 8px is the same
+              gap the grid puts between a label and its field, so the field has equal air on both
+              sides — change one and the other has to move with it. */}
+          <div className='flex items-center gap-2'>
             <input
               ref={inputRef}
               id={`${fieldId}-href`}
@@ -854,8 +859,28 @@ export function LinkBubble({
               autoComplete='off'
               className={FIELD_CLASS}
             />
-            <ToolbarButton onClick={applyDraft}>保存</ToolbarButton>
-            <ToolbarButton onClick={close}>やめる</ToolbarButton>
+            {/* One button, and it is 適用 rather than 保存 (2026-08-17). Nothing here is saved: it
+                writes the edit into the document, and the post reaches the database on its own a
+                moment later. This UI already spends the word 保存 on that — `PostEditor`'s
+                indicator reads 保存済み ✓ / 未保存… / 保存に失敗 — so a card button reading 保存
+                named the wrong layer, and named it while the indicator beside it still said 未保存….
+
+                The cancel button is gone. It was 取り消し with a ✕ for a few hours, and the ✕ could
+                not be told from the display card's 解除, which removes the link — the one misread
+                on this card that costs an author their link rather than their edit. A word would
+                have fixed that and put the card back at 448px, so the button went instead: leaving
+                without applying is still Escape, a press elsewhere, or moving the focus away, and
+                none of those was what made the button worth its width.
+
+                The label carries the link colour and the background arrives on hover — the same
+                shape 解除 wears in red, one surface over. A filled button was tried the same day
+                and taken back out: this is the only press that commits anything here, but nothing
+                else in the editor's chrome is filled, so the fill read as a weight this card does
+                not carry. Colouring the label says the same thing at the weight the rest of the
+                chrome is drawn at. */}
+            <ToolbarButton accent onClick={applyDraft}>
+              適用
+            </ToolbarButton>
           </div>
         </div>
       ) : (

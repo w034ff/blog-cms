@@ -107,6 +107,22 @@ test('編集 changes the href and keeps the title', async ({ page }) => {
   expect(await markdown(page)).toBe('前[リンク](https://changed.example "タイトル")後');
 });
 
+test('適用 is the only button of the edit mode, and pressing it applies', async ({ page }) => {
+  // §5.5.16. The edit mode carries one button and it commits; every way of leaving without
+  // applying is a gesture, not a control (Escape and the two cases above). The count is asserted
+  // because that is the decision — a second button here was 取り消し, and its ✕ could not be told
+  // from the display card's 解除.
+  await openEditor(page);
+  await setRange(page, IN_LINK);
+  await card(page).getByRole('button', { name: '編集' }).click();
+  const field = card(page).getByRole('textbox', { name: 'リンク先' });
+  await expect(card(page).getByRole('button')).toHaveCount(1);
+  await field.fill('https://applied.example');
+  await card(page).getByRole('button', { name: '適用' }).click();
+  await settle(page);
+  expect(await markdown(page)).toBe('前[リンク](https://applied.example "タイトル")後');
+});
+
 test('the href itself opens the link in a new tab', async ({ page }) => {
   // The href display *is* the open button (§5.5.6), so this asks for it by the accessible name the
   // card sets on it rather than by its visible text, which is the URL.
@@ -807,8 +823,7 @@ test('tabbing out of the card closes the URL field', async ({ page }) => {
   await card(page).getByRole('button', { name: '編集' }).click();
   const field = card(page).getByRole('textbox', { name: 'リンク先' });
   await expect(field).toBeFocused();
-  await page.keyboard.press('Tab'); // 保存
-  await page.keyboard.press('Tab'); // やめる
+  await page.keyboard.press('Tab'); // 適用
   await page.keyboard.press('Tab'); // out
   await settle(page);
   await expect(field).toHaveCount(0);
