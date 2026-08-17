@@ -186,7 +186,14 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
                       insert(rows, cols);
                       close();
                     }}
-                    className={`h-4 w-4 rounded-sm border ${
+                    // The one exception to the pointer every button gets in app/globals.css, and it
+                    // overrides that rule as a utility rather than by editing it (`@layer base` is
+                    // what makes that work). A cell is a <button> so the grid can be swept by
+                    // keyboard as well, but 64 of them are read as one sizing surface, not as 64
+                    // controls — the size comes off the 「行 × 列」 readout below rather than from
+                    // aiming at a particular square. The 行数・列数を入力… button under it is an
+                    // ordinary control and keeps the pointer.
+                    className={`h-4 w-4 cursor-default rounded-sm border ${
                       selected
                         ? 'border-blue-400 bg-blue-200 dark:border-blue-500 dark:bg-blue-500/40'
                         : 'border-zinc-300 dark:border-zinc-600'

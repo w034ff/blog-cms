@@ -31,6 +31,33 @@ html {
   }
 }
 
+/* Every button gets the hand, including the ones written after this. Tailwind v4's preflight
+   leaves `<button>` on the UA's own `auto` — the arrow — and that is how the editor's chrome came
+   to answer this question two different ways: the controls written in this file said
+   `cursor: pointer` by hand (the accordion toggle, the link card's buttons, the code block's diff
+   toggle, the public page's copy button) while every control built from ToolbarButton's Tailwind
+   classes silently kept the arrow. The split ran along which file a control happened to be written
+   in, which is nothing a reader can see, so it is answered once here instead of per component —
+   and those hand-written declarations are gone, this rule being the only one left to change.
+
+   `:not(:disabled)`, because a control that cannot be pressed should not advertise a press.
+   ToolbarButton's disabled branch also sets `pointer-events-none`, so the cursor there comes from
+   whatever is underneath either way.
+
+   In `@layer base` rather than unlayered, which is what keeps it *losable*: unlayered CSS outranks
+   every Tailwind layer regardless of specificity, so a `cursor-*` utility on a button would stop
+   working. What still carries a cursor of its own below is every time an element this rule cannot
+   reach has to state one: the language `<select>`, the accordion's `<summary>` (pointer on the
+   public page, `text` in the editor, where the click places the caret rather than folding
+   anything), the block drag handle's `grab`, and the footnote reference's `default` — an atom, not
+   a link. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -462,7 +489,6 @@ body.link-menu-open .table-toolbar {
   border: 0;
   background: transparent;
   padding: 0.125rem;
-  cursor: pointer;
 }
 .prose .code-block-header .code-block-diff-toggle-track {
   display: inline-flex;
@@ -681,7 +707,6 @@ body.link-menu-open .table-toolbar {
   color: #8b949e;
   font-size: 0.72rem;
   line-height: 1;
-  cursor: pointer;
   transition: background-color 0.12s ease;
 }
 /* Enlarge the tap target without growing the visible box: an invisible halo extends the
@@ -1302,7 +1327,6 @@ body.link-menu-open .table-toolbar {
      they would resolve against the UA's own smaller button font-size and the marker would sit
      off-centre from the public one. */
   font: inherit;
-  cursor: pointer;
   transition: background-color 0.12s ease;
 }
 .prose [data-type='details'] > button::before {
@@ -1520,7 +1544,6 @@ body.link-menu-open .table-toolbar {
   color: inherit;
   font: inherit;
   font-size: 0.875em;
-  cursor: pointer;
 }
 .prose .link-card-results button {
   display: block;

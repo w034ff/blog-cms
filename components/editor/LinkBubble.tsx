@@ -678,7 +678,8 @@ export function LinkBubble({
               are passed by hand (this is the editor's own DOM, not the published page, so the
               anchor rel attributes the sanitizer adds are not involved). The accessible name is set
               explicitly, since the visible text is a URL and "https://…" read aloud says nothing
-              about what the control does. */}
+              about what the control does. Nothing here has to restate the pointer cursor the line's
+              link colouring implies: app/globals.css gives every button one. */}
           <LinkFavicon key={href} href={href} />
           {/* Two lines when a title is known, one when it is not (§5.5.10). The URL line never
               leaves: §5.5.1-1 makes "where does this go" the reason this card exists — it is what
@@ -713,8 +714,13 @@ export function LinkBubble({
             {title && (
               // Display only. The href is here to be read, and the card already carries a button
               // for the one thing anyone would want to do with it as text.
+              //
+              // `cursor-default` is the one cursor on this card that has to be said out loud. Every
+              // button here takes the pointer from the base rule in app/globals.css, and this line
+              // is not a button — it is plain text, which the browser gives the I-beam. That would
+              // leave the only inert thing on the card wearing the cursor for text you work with.
               <span className='group/tt relative w-full'>
-                <span className='link-bubble-href block w-full truncate px-1.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400'>
+                <span className='link-bubble-href block w-full cursor-default truncate px-1.5 text-[10px] leading-tight text-zinc-500 dark:text-zinc-400'>
                   {displayHref(href)}
                 </span>
                 <EditorTooltip label={href} />

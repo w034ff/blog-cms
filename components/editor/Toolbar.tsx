@@ -160,7 +160,11 @@ export function Toolbar({
           default) for the rare case someone wants an in-section break. */}
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
           than an editor command, so it's a <label>-wrapped hidden input styled to
-          match ToolbarButton. Paste and drag-and-drop also insert images. */}
+          match ToolbarButton. Paste and drag-and-drop also insert images.
+
+          It keeps `cursor-pointer` of its own where the buttons beside it no longer
+          need one: app/globals.css's base rule reaches `button`, and a <label> is
+          not one — without this, the label's own text would hand back the I-beam. */}
       <label
         className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
           imageBlocked
