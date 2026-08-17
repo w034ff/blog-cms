@@ -84,6 +84,72 @@ test('the card shows the current title, fetched rather than stored (1c)', async 
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
 });
 
+// The other half of criterion 4f. The published card omits the `<img>` entirely for a post with
+// no image rather than leaving an empty frame, and the editor's card has to agree — a placeholder
+// box here would be the editor showing a layout the reader never gets. `second-post` carries no
+// thumbnail and no image in its body, so `resolveThumbnail` answers null for it; the case where
+// there is one is measured in thumbnail.spec.ts, which can upload one first.
+test('a card to a post with no image shows no image frame (4f)', async ({ page }) => {
+  await openWithCard(page);
+  // Wait for the lookup to land first: asserting on an empty card would pass before the answer
+  // arrives, which is the same vacuous pass whichever way the code behaves.
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await expect(card(page).locator('img')).toHaveCount(0);
+});
+
+// §13.1. The second line used to hold the reference itself, which said nothing a 20-hex slug can
+// say — so it now appears only when something about the target needs saying. A published post the
+// route matches is the state with nothing to report.
+test('a card whose target is fine has no second line (4g)', async ({ page }) => {
+  await openWithCard(page);
+  // The title first: asserting the absence of a line before the lookup lands would pass whatever
+  // the code does.
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  // Absent, not empty — an empty span still carries the line's top margin.
+  await expect(card(page).locator('.link-card-meta')).toHaveCount(0);
+});
+
+test('a reference the route cannot match says so (4g)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, '<div class="link-card" data-href="/posts/nosuchpost"></div>\n\n本文\n');
+
+  await expect(card(page).locator('.link-card-meta')).toHaveText('記事が見つかりません');
+  // And the title degrades to the reference (§5.3): the author has to be able to see *which*
+  // reference is the broken one.
+  await expect(card(page).locator('.link-card-title')).toHaveText('/posts/nosuchpost');
+});
+
+// The note §10 listed as unmeasured until 2026-08-18. Every seeded post is published, so the draft
+// is made here — an autosave is enough to create the row, and the slug it was given is reachable
+// only through the same route the card itself asks.
+test('a card to an unpublished post says so (4h)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const draftTitle = `未公開の参照先 ${Date.now()}`;
+  await page.getByLabel('タイトル').fill(draftTitle);
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+
+  const slug = await page.evaluate(async (query: string) => {
+    const res = await fetch(`/api/posts/search?q=${encodeURIComponent(query)}`);
+    const rows = (await res.json()) as { slug: string; draft: boolean }[];
+    const row = rows[0];
+    return row?.draft ? row.slug : '';
+  }, draftTitle);
+  expect(slug).not.toBe('');
+
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
+
+  await expect(card(page).locator('.link-card-title')).toHaveText(draftTitle);
+  // §5.2-4: on the published page this card falls back to a plain link, and this line is the only
+  // place the author is told before it happens.
+  await expect(card(page).locator('.link-card-meta')).toHaveText('未公開の記事');
+});
+
 test('the caret cannot enter a card, and the link bubble stays away (4a)', async ({ page }) => {
   await openWithCard(page);
 

@@ -1420,7 +1420,8 @@ body.link-menu-open .table-toolbar {
 
 /* Link card (docs/link-card-requirements.md). Same card as the accordion and the code block —
    1px #d0d7de border, 6px radius, #f6f8fa on hover — so a third block construct adds no palette
-   of its own. Text only: `posts` has no thumbnail column (§8.2).
+   of its own. A text column and, beside it, the target's image when it has one (§8.2) — the row
+   that places them is on the rule below.
 
    `color` and `text-decoration` are reset deliberately, and the selector's specificity is the
    reason this works. `.prose a { color: #0969da }` above is (0,1,1) and Tailwind Typography's
@@ -1451,7 +1452,10 @@ body.link-menu-open .table-toolbar {
 }
 /* Fixed box, cropped to fill: uploads arrive at whatever shape the author had,
    and a card whose height follows its picture would make a list of cards ragged.
-   `align-self` keeps it at the top so a two-line card does not stretch it. */
+   `align-self` keeps it at the top so a two-line card does not stretch it.
+   Keyed on the class, not on the anchor, so the editor's NodeView gets the same
+   box from this one rule — the two surfaces disagreeing about the size is the
+   thing showing the image in the editor was meant to rule out (§13). */
 .prose .link-card-image {
   flex-shrink: 0;
   align-self: flex-start;
@@ -1491,14 +1495,28 @@ body.link-menu-open .table-toolbar {
    is chrome: the title rule above already reaches it, since it is keyed on the class rather than on
    the anchor. */
 .prose .link-card-view {
+  /* The same row as the published card, for the same reason (§13): what the author is looking at
+     while editing should be what the reader gets. The picker state, and a card whose target has no
+     image, have a single child and lay out exactly as this card did before it became a row. */
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
   margin: 1.25em 0;
   padding: 0.75em 1em;
   border: 1px solid #d0d7de;
   border-radius: 6px;
 }
-/* The href line under the title, editor-only. `.link-card-meta` used to be shared with the
-   published card, which spent it on the target's date until that was dropped 2026-08-15
-   (lib/rehype-link-card.ts says why); the NodeView shows the href there instead, so the class
+/* The text column. `min-width: 0` is what lets it shrink — same floor problem as
+   `.link-card-text` on the published card, and the reason a long title does not push the image
+   out of the box. */
+.prose .link-card-view .link-card-body {
+  min-width: 0;
+  flex: 1;
+}
+/* The state line under the title, editor-only: present only when the target is a draft or cannot
+   be found (§13.1), absent otherwise — which is why the top margin lives here rather than on the
+   title. `.link-card-meta` used to be shared with the published card, which spent it on the
+   target's date until that was dropped 2026-08-15 (lib/rehype-link-card.ts says why), so the class
    survives scoped to the editor. */
 .prose .link-card-view .link-card-meta {
   display: block;

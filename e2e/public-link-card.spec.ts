@@ -55,7 +55,8 @@ test('a published card resolves against the real posts table (1c/2a)', async ({ 
   await expect(card).toHaveAttribute('href', `/posts/${TARGET_SLUG}`);
   // Title and description are the whole card — the target's date was dropped 2026-08-15
   // (lib/rehype-link-card.ts carries the reason). Asserted rather than assumed because
-  // `.link-card-meta` is still a live class: the editor's NodeView shows the href in it.
+  // `.link-card-meta` is still a live class: the editor's NodeView uses it for the line that says
+  // the target is a draft or cannot be found (§13.1).
   await expect(card.locator('.link-card-meta')).toHaveCount(0);
 
   // 2a, from the other end: had `class` or `data-href` been stripped by sanitize, the stage would

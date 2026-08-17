@@ -142,6 +142,49 @@ test('an explicit thumbnail reaches the list, the card and og:image', async ({ p
   expect(box).not.toBeNull();
   expect(box!.width).toBeCloseTo(128, 0);
   expect(box!.height).toBeCloseTo(80, 0);
+
+  // The editor's card shows the same image, in the same box (criterion 4f, §13). Measured from the
+  // post just published rather than from a seeded one, because the seeded posts have no image at
+  // all — this is the only place in the suite where a card in the editor has one to show.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
+
+  // The NodeView resolves over `/api/posts/search`, and loadMarkdown is back before that lands, so
+  // the wait is on the attribute rather than on the element merely existing.
+  const editorImage = page.locator('.ProseMirror .link-card-view img.link-card-image');
+  await expect(editorImage).toHaveAttribute('src', chosen, { timeout: 20_000 });
+  await expect(editorImage).toHaveAttribute('alt', '');
+
+  // The new layout rule is `.link-card-view` becoming a flex row; that the shared
+  // `.prose .link-card-image` reaches a NodeView it was not written for is the assumption worth
+  // measuring. Same 1x1 fixture, so the same two outcomes are unmistakable.
+  const editorBox = await editorImage.boundingBox();
+  expect(editorBox).not.toBeNull();
+  expect(editorBox!.width).toBeCloseTo(128, 0);
+  expect(editorBox!.height).toBeCloseTo(80, 0);
+
+  // Right of the text, not left: the editor teaching a layout the reader never sees is the one way
+  // this change could make things worse (§13).
+  const textBox = await page.locator('.ProseMirror .link-card-body').boundingBox();
+  expect(textBox).not.toBeNull();
+  expect(editorBox!.x).toBeGreaterThan(textBox!.x);
+
+  // A card drawn from the cache draws the same card. Loading the same source again builds a fresh
+  // NodeView for the same href, and `postCache` is warm by now, so the lookup is skipped and the
+  // cached answer is all the card has to draw from. That path drawing less than the fetch's did —
+  // the title but not the image — is the bug §13 fixes, and it is invisible on a first render.
+  // Measured by reverting `draw` to a title-only cache branch: this assertion goes red, the ones
+  // above stay green.
+  // Cleared first on purpose: reloading identical source leaves ProseMirror's own diffing nothing
+  // to redraw, so the NodeView is never rebuilt and the old DOM sits there passing the assertion
+  // whatever the code does (measured — that version of this test passed against a card that could
+  // not draw an image from the cache at all).
+  await loadMarkdown(page, '別の本文\n');
+  await expect(page.locator('.ProseMirror .link-card-view')).toHaveCount(0);
+  await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
+  await expect(editorImage).toHaveAttribute('src', chosen);
 });
 
 // The fallback half, on the published side. Nothing was chosen, so a picture here proves the list

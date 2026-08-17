@@ -237,8 +237,9 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
     expect(html).toContain('<span class="link-card-description">説明文</span>');
     // Title and description are the card's text: the target's date was dropped 2026-08-15
-    // (lib/rehype-link-card.ts carries the reason). `.link-card-meta` still exists in the
-    // stylesheet for the editor's NodeView, so its absence is asserted here rather than assumed.
+    // (lib/rehype-link-card.ts carries the reason). `.link-card-meta` still exists for the editor's
+    // NodeView, which says there that the target is a draft or cannot be found (§13.1), so its
+    // absence here is asserted rather than assumed.
     expect(html).not.toContain('link-card-meta');
     // This target has no image, and a card without one carries no <img> at all rather than an
     // empty box — the text column is the whole card.

@@ -132,7 +132,7 @@ export const LinkCard = Node.create({
               .deleteRange({ from, to: from + node.nodeSize })
               .run();
           }
-          const label = titleCache.get(href) ?? href;
+          const label = postCache.get(href)?.title ?? href;
           return chain()
             .insertContentAt(
               { from, to: from + node.nodeSize },
@@ -166,6 +166,23 @@ export const LinkCard = Node.create({
       body.className = 'link-card-body';
       dom.appendChild(body);
 
+      // The target's image, in the same place the published card puts it: a fixed box to the right
+      // of the text column (§13). It is a sibling of `body` rather than a child, so the picker's
+      // list and the card's lines can be rebuilt without disturbing it — which also means
+      // `body.replaceChildren()` does not take it down and `render` has to.
+      const image = document.createElement('img');
+      image.className = 'link-card-image';
+      // Decorative, for the published card's reason: the title it belongs to is right beside it.
+      image.alt = '';
+      const setImage = (src: string | null) => {
+        if (src === null) {
+          image.remove();
+          return;
+        }
+        image.src = src;
+        dom.appendChild(image);
+      };
+
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
 
       // Deferred by a frame so the DOM under the pointer is not rebuilt while the browser is still
@@ -193,6 +210,9 @@ export const LinkCard = Node.create({
 
       const render = (n: PMNode) => {
         body.replaceChildren();
+        // Both states start without one: the picker never has an image, and a resolved card puts
+        // it back only once the lookup says the target has one.
+        setImage(null);
         const href = currentHref(n);
         if (!href) renderPicker(body, editor, setHref);
         else
@@ -202,6 +222,7 @@ export const LinkCard = Node.create({
             editor,
             () => setHref(''),
             () => getPos(),
+            setImage,
           );
       };
       render(node);
@@ -235,23 +256,45 @@ export const LinkCard = Node.create({
   },
 });
 
-// Titles already looked up, keyed by href. A card holds only a reference (§4.2), so every render
-// would otherwise be a round trip — including the re-render that follows every keystroke elsewhere
-// in the document. Scoped to the page: a reload picks up a renamed post, and the published page
-// resolves independently (§6), so a stale entry here can never reach a reader.
-const titleCache = new Map<string, string>();
+// Lookups already made, keyed by href. A card holds only a reference (§4.2), so every NodeView
+// built for one would otherwise be a round trip — and the same card is built again whenever the
+// node is replaced rather than updated: re-parsing the document, undoing a delete, picking the same
+// post back in the picker. (An edit elsewhere in the document is not one of those — ProseMirror
+// leaves an untouched node's view alone, measured 2026-08-18.) Scoped to the page: a reload picks
+// up a renamed post, and the published page resolves independently (§6), so a stale entry here can
+// never reach a reader.
+//
+// The whole answer is kept, not just the title. With a title-only cache the second card drew less
+// than the first: the fetch is skipped once the entry exists, so everything derived from the rest
+// of the answer — the draft note, and now the image — was missing from every build after the one
+// that fetched (§13).
+const postCache = new Map<string, PostSearchResult>();
 
-async function fetchPost(href: string): Promise<PostSearchResult | null> {
+// What is known about a card's target. Three states rather than a nullable post, because "the
+// answer has not come back yet" and "the route says there is no such post" are the same `null` in
+// the data and must not be the same card on screen (§13.1): the second says so in the card's own
+// second line, and a card that said it for the ~10ms before its own answer arrives would call every
+// reference broken every time the document is opened. A failed request is `unknown` too — a lapsed
+// session is not a missing post, and the card has nothing to report about it.
+type Lookup =
+  | { status: 'unknown' }
+  | { status: 'found'; post: PostSearchResult }
+  | { status: 'missing' };
+
+async function fetchPost(href: string): Promise<Lookup> {
   const slug = href.startsWith('/posts/') ? href.slice('/posts/'.length) : '';
-  if (!slug) return null;
+  // A reference that cannot name a post at all. The published side refuses the same shapes (§4.4),
+  // so this is the editor saying the same thing while it can still be fixed.
+  if (!slug) return { status: 'missing' };
   try {
     const res = await fetch(`/api/posts/search?slug=${encodeURIComponent(slug)}`);
-    if (!res.ok) return null;
-    return (await res.json()) as PostSearchResult;
+    if (res.status === 404) return { status: 'missing' };
+    if (!res.ok) return { status: 'unknown' };
+    return { status: 'found', post: (await res.json()) as PostSearchResult };
   } catch {
     // Offline, or the session lapsed. The card keeps its reference either way — this only decides
     // what the editor draws, and §5.3's degradation is to show the path.
-    return null;
+    return { status: 'unknown' };
   }
 }
 
@@ -274,14 +317,16 @@ function head(): HTMLDivElement {
   return el;
 }
 
-// The resolved card: title, and a note when the target is a draft. `onClear` puts the card back
-// into its picker state so the author can point it somewhere else without deleting it.
+// The resolved card: the target's title and image, and a second line only when there is something
+// wrong to say about it. `onClear` puts the card back into its picker state so the author can point
+// it somewhere else without deleting it.
 function renderCard(
   body: HTMLElement,
   href: string,
   editor: { commands: { unsetLinkCard: (at?: number) => boolean } },
   onClear: () => void,
   pos: () => number | undefined,
+  setImage: (src: string | null) => void,
 ): void {
   const actions = head();
   actions.append(
@@ -291,20 +336,46 @@ function renderCard(
 
   const title = document.createElement('span');
   title.className = 'link-card-title';
-  title.textContent = titleCache.get(href) ?? href;
   const meta = document.createElement('span');
   meta.className = 'link-card-meta';
-  meta.textContent = href;
-  body.append(actions, title, meta);
+  body.append(actions, title);
 
-  if (!titleCache.has(href)) {
-    void fetchPost(href).then((post) => {
-      if (!post) return;
-      titleCache.set(href, post.title);
-      title.textContent = post.title;
-      // §5.2-4: a draft resolves to nothing on the published page and the card falls back to a
-      // plain link there (§6.1), so the one place to say so is here, while it can still be fixed.
-      if (post.draft) meta.textContent = `${href}（未公開の記事）`;
+  // The second line is put up and taken down rather than emptied: a card whose target is fine has
+  // no second line at all (§13.1), and an empty span still carries the line's top margin.
+  const setMeta = (text: string) => {
+    meta.textContent = text;
+    if (text === '') meta.remove();
+    else body.appendChild(meta);
+  };
+
+  // Everything the lookup decides, in one place, so the cache hit and the answer that has just
+  // arrived draw the same card. Splitting them is what let the two disagree (§13): a card drawn
+  // from the cache took the "not looked up yet" branch of each line and kept it forever.
+  const draw = (lookup: Lookup) => {
+    // The path is what §5.3 degrades to: until the title is known, what the card names is the
+    // reference the author wrote, which is the thing they can act on.
+    title.textContent = lookup.status === 'found' ? lookup.post.title : href;
+    // The two things worth interrupting for. A draft resolves to nothing on the published page and
+    // the card falls back to a plain link there (§5.2-4, §6.1); a reference the route cannot match
+    // does the same, and both are fixable only from here.
+    if (lookup.status === 'missing') setMeta('記事が見つかりません');
+    else if (lookup.status === 'found' && lookup.post.draft) setMeta('未公開の記事');
+    else setMeta('');
+    setImage(lookup.status === 'found' ? lookup.post.thumbnail : null);
+  };
+
+  const cached = postCache.get(href);
+  draw(cached ? { status: 'found', post: cached } : { status: 'unknown' });
+  if (!cached) {
+    void fetchPost(href).then((lookup) => {
+      if (lookup.status === 'found') postCache.set(href, lookup.post);
+      // The card this answer was for may be gone: 「変更」 detaches these spans while the lookup is
+      // still in flight. Harmless while `draw` only wrote into them — they were unreachable — but
+      // `setImage` reaches the NodeView's own `dom`, which by then belongs to the picker, so a late
+      // answer would hang a thumbnail beside its search box. (False on the way in as well, since
+      // ProseMirror inserts `dom` after the NodeView is built; only this path can be late.)
+      if (!title.isConnected) return;
+      draw(lookup);
     });
   }
 }

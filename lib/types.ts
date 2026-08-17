@@ -50,4 +50,15 @@ export type PostSearchResult = {
   title: string;
   date: string;
   draft: boolean;
+  // The image the card draws, already resolved by `resolveThumbnail` — the
+  // column when the author set one, else the body's first upload. `null` is the
+  // normal answer for a text-only post, not an error, so it stays nullable
+  // rather than collapsing to '' like `slug` does.
+  //
+  // This is the one thing here derived from the body, which the rule above
+  // otherwise keeps out. It is a single `/uploads/…` path that the target
+  // post's own page already shows to anyone, the route is admin-only (401
+  // without a session), and what crosses is the resolver's answer rather than
+  // the text it read — so a search still cannot be used to read a post.
+  thumbnail: string | null;
 };

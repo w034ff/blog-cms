@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { listAllPosts } from '@/lib/posts';
+import { resolveThumbnail } from '@/lib/thumbnail';
 import type { PostSearchResult } from '@/lib/types';
 
 // The one client-reachable route the link card needs (docs/link-card-requirements.md §5.3).
@@ -61,6 +62,8 @@ function toResult(post: {
   title: string;
   date: string;
   draft: boolean;
+  thumbnail: string;
+  body: string;
 }): PostSearchResult {
   return {
     // Non-null by the filter above for the search path, and by having been found by slug for the
@@ -69,5 +72,11 @@ function toResult(post: {
     title: post.title,
     date: post.date,
     draft: post.draft,
+    // Resolved here rather than in the editor: `resolveThumbnail` is the one function that decides
+    // what a post's image is, and the post list, the public card and `og:image` all read it
+    // (lib/thumbnail.ts). The editor's card asking the same question of the body itself is how the
+    // editor and the published page would come to disagree. `listAllPosts` already selects every
+    // column, so this costs no second query.
+    thumbnail: resolveThumbnail(post),
   };
 }
