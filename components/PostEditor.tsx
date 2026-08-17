@@ -17,6 +17,7 @@ import {
 import { DropCursorGuard } from './editor/drop-cursor-guard';
 import { IsolatingBoundary } from './editor/isolating-boundary';
 import { LinkHighlight } from './editor/link-highlight-extension';
+import { LinkInputRule } from './editor/link-input-rule';
 import { Blockquote } from './editor/blockquote-extension';
 import { TrailingNode } from './editor/trailing-node-extension';
 import { Image } from './editor/image-extension';
@@ -300,6 +301,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // the card is about is visibly the text the card is about. No keys, no commands, no schema —
       // order among the others doesn't matter. See link-highlight-extension.ts.
       LinkHighlight,
+      // `[text](url)` typed in the editor becomes a link. Sits outside the Link configuration above
+      // because extension-link has no input rules of its own — see link-input-rule.ts and
+      // docs/link-requirements.md §5.4.
+      LinkInputRule,
       // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
       // the block, so a quote/fence right after an image isn't glued onto the image's line —
       // see image-extension.ts.
