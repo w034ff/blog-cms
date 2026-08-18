@@ -4,12 +4,12 @@ import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
 // specialised per box. `callout-slice-guard.ts` and `details-slice-guard.ts` each hold one of these
 // and the rules about *where* their box may go; those rules do not generalise and are not here.
 //
-// The two guards had these ninety lines twice. `docs/accordion-requirements.md` §6.2 recorded why
-// they could not be shared — the callout splices a box's children up one level, which is valid for
-// its `block+` content, while an accordion's `[detailsSummary, detailsContent]` may not live at the
-// top level — and that was true of the code as written. It stopped being an obstacle once the
-// accordion's answer became `detailsUnwrapped()`: the difference is now a function, which is to say
-// a parameter.
+// The two guards had these ninety lines twice, and `docs/accordion-requirements.md` §6.2 is where
+// the four ways they differ are written down. The one that kept them apart for so long is `unwrap`:
+// the callout splices a box's children up one level, valid for its `block+` content, while an
+// accordion's `[detailsSummary, detailsContent]` may not live at the top level. That stopped being
+// an obstacle once the accordion's answer became `detailsUnwrapped()` — the difference is a
+// function now, which is to say a parameter.
 //
 // What is *not* a parameter, though it looked like one: where `dropOpenWrappers` sits relative to
 // these. The callout guard composes it into its own `transformPasted` and the accordion guard never

@@ -37,10 +37,12 @@ export function wouldNestDetails($pos: ResolvedPos, slice: Slice): boolean {
 // meant to move — the same problem halfSelectedEdges settles for the callout, and the same answer:
 // the box comes off, its contents come over.
 //
-// The repair itself cannot be shared, and this is the trap the design document calls out. The
-// callout's version splices `child.content` one level into the parent fragment, which is valid
-// because a callout is `block+`. An accordion's children are `[detailsSummary, detailsContent]`,
-// and neither may live at the top level: splicing them up produces a document ProseMirror refuses.
+// This is the half that does not generalise, and it is what `unwrap` carries into
+// box-slice-repair.ts. The callout's answer splices `child.content` one level into the parent
+// fragment, which is valid because a callout is `block+`. An accordion's children are
+// `[detailsSummary, detailsContent]`, and neither may live at the top level: splicing them up
+// produces a document ProseMirror refuses. §6.2 records this as the reason the two guards took
+// this long to share anything.
 //
 // So the unwrap goes two levels — the *body's* children are what survive — and the title has to be
 // answered separately, since it is text that would otherwise vanish. It becomes a paragraph ahead
@@ -187,8 +189,9 @@ export function detailsSliceGuard(notify: (message: string) => void): Plugin {
         const $target = resolveDropTarget(view, coords.pos, slice, moved);
         // Same rule as the paste above, asked of where the pointer is rather than of the caret —
         // at drop time `state.selection` is still the *dragged* range. A drag whose selection
-        // crossed a paragraph boundary is the reachable form of this (verified by hand in a real
-        // browser; the harness cannot start an in-editor drag, see §6.8).
+        // crossed a paragraph boundary is the reachable form of this. Drivable end to end, despite
+        // what §6.8 used to say: `dragSelect` + `cdpNativeDrag` in e2e/native-drag.ts complete the
+        // gesture, and what `page.mouse` alone cannot deliver is the `drop`, not the `dragstart`.
         if (isInDetailsTitle($target) && !titleAcceptsSlice(slice)) {
           notify(DETAILS_TITLE_NO_BLOCKS);
           event.preventDefault();

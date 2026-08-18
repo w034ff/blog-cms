@@ -183,9 +183,22 @@ prosemirror-markdown には「生 HTML ブロックで Markdown の子を包む�
 
 **`isolating-boundary.ts` は「無償で効く」に入れない。** スキーマの `isolating` を読む実装なので `details` は自動的に対象になるが、`details` と `detailsSummary` の**両方が `isolating: true`** であり、これは issue #7（テーブルが 2 階層で isolating であるためクランプが内側を取り違えた件）とまったく同じ形をしている。現在のクランプは内側を取るよう直っているので恐らく問題ないが、一度実バグを出した形を「確認せず効くもの」に分類してはならない。§9 の 18・19 で明示的に確認する。
 
-**落とし穴: 半選択の展開処理は callout から流用できない。** `unwrapHalfSelectedCallouts` と `flattenCallouts` は、箱の子を 1 階層そのまま親のフラグメントに差し込む。callout の子は `block+` なのでトップレベルで妥当だが、`details` の子は `[detailsSummary, detailsContent]` であり、これを差し込むとスキーマ不正になる。
+**半選択の展開処理は callout と共有している。** `components/editor/box-slice-repair.ts` の `createBoxSliceRepair` が `unwrapHalfSelected` と `flattenClosed` を 1 つ持ち、両ガードがそれぞれの指定で呼ぶ（2026-08-18、`16cece4`）。共有できるようになった理由は、箱をほどく操作が関数として切り出されたことにある — かつてはここに「流用できない」と書いてあり、コードがそう書かれていた間はそれが正しかった。
 
-details の展開は 2 階層になる。`detailsContent` の子を取り出したうえで、タイトル（summary）をどうするかを別途決める必要がある（破棄する / 本文先頭の段落として残す）。`BOX_TYPES` のような形で共通化するなら、展開の深さは型ごとに持たせること。
+差は 4 つで、すべて名前の付いた引数になっている。
+
+| 引数                 | callout                 | details              |
+| -------------------- | ----------------------- | -------------------- |
+| `nodeName`           | `callout`               | `details`            |
+| `unwrap`             | 子をそのまま 1 階層上へ | `detailsUnwrapped()` |
+| `depthDrop`          | 1                       | 2                    |
+| `recurseIntoRemoved` | `true`                  | `false`              |
+
+`unwrap` が分かれている理由はここに書いてあったとおりである。callout の子は `block+` なのでトップレベルに差し込んで妥当だが、`details` の子は `[detailsSummary, detailsContent]` であり、同じ差し込み方をするとスキーマ不正になる。`detailsUnwrapped()` は `detailsContent` の子を取り出し、タイトルを本文先頭の段落として残す（空タイトルは捨てる。§7.5 と歩調を合わせること）。`depthDrop` が 2 なのも同じ理由で、設計時に「展開の深さは型ごとに持たせること」と書いた予測はそのまま当たっている。
+
+**予測できていなかったのは `recurseIntoRemoved` である。** `flattenClosed` が取り除いた箱の中身を再走査するかどうかで、callout は再走査する（`> > [!NOTE]` が囲み枠の入れ子として読み込めるので、外側だけ剥がしても足りない）。アコーディオンは再走査しない — アコーディオンはアコーディオンの中に入らないため、差が出るのは持ち上げた本文の中に別の箱がある形だけで、そこは触らないのが従来からの挙動である。
+
+合成順は引数ではない。`dropOpenWrappers` の位置は両ガードで違う（callout は自分の `transformPasted` に畳み込み、details は呼ばない）が、結果は変わらない — `dropOpenWrappers` が働く条件は「子が 1 つで両端が深さ 1 を超えて開いている」であり、それはちょうど `halfSelectedEdges` が手を出さない形だからである。到達可能な 10 形すべてで実測した（`components/editor/slice-guard-composition.test.ts`）。
 
 ### 6.3 配置の規則 — 新規作成はトップレベル限定
 
@@ -321,7 +334,9 @@ after:  details(detailsSummary("目の段落"),  detailsContent(paragraph)),
 
 **ノード選択で取った 1 ブロックの扱いだけ、挙動が変わっている。** ガード以前これは破壊的ではなく、アコーディオンの手前に落ちていた。壊れてはいなかったが、タイトルに入れようとした内容が箱の外に出るのは説明のつかない着地であり、規則を 1 つにするほうがよい。
 
-**測り方に 1 つ制約がある。** エディタ内のテキスト選択のドラッグは **E2E で駆動できない**（CDP では `dragstart` が発火しない）。そのため貼り付け側は `e2e/editor-details-title-guard.spec.ts` で、**両者が共有する述語は `components/editor/details-title-slice.test.ts`（vitest）** で押さえてある。ドロップそのものは実ブラウザでの手動確認に頼る。ここはハーネスで測れないと分かっている数少ない場所なので、次に触るときも同じ分担にすること。
+**エディタ内のテキスト選択のドラッグは E2E で駆動できる。** `e2e/native-drag.ts` の `dragSelect` と `cdpNativeDrag` がその手段で、ドロップまで完走する（`e2e/callout-drop-guard.spec.ts` が囲み枠の境界をまたぐ選択で実際に使っている）。ここにはかつて「駆動できない、CDP では `dragstart` が発火しない」と書いてあった。発火しないのは `dragstart` ではなく **`drop`** のほうである — 素のマウス操作（選択の内側で mousedown して少し動かす）は本物の `dragstart` を出し、`view.dragging` も立つ。ヘッドレス Chromium がテキスト選択のドラッグに対して `Input.dragIntercepted` を出さないだけなので、待たずに `DragData` を組み立てて `Input.dispatchDragEvent` で dragEnter / dragOver / drop を送る。落ちるスライスは `view.dragging` から来るため、実際のテキスト移動に忠実である。
+
+分担そのものは変えていない。貼り付け側は `e2e/editor-details-title-guard.spec.ts`、**両者が共有する述語は `components/editor/details-title-slice.test.ts`（vitest）** で押さえてある。手動確認に頼る必要はもう無いので、ドロップ側を詰めるならこの手段を使うこと。
 
 **なおブロックドラッグハンドルでタイトルへ落とす経路は最初から塞がっている**（ハンドルは HTML5 drag ではなく自前の mousedown ドラッグで、タイトル上では落とし先の指標が出ない）。この経路を CDP の drag イベントで測ると壊れていないものが壊れて見えるので、素のマウスで測ること。
 
@@ -655,7 +670,7 @@ E2E（`e2e/`）で確認する。エディタはブラウザ専用なので、ts
 41. 段落を跨いだ選択の貼り付けがタイトルで拒否され、通知が出て文書が無傷のまま残る（§6.8。文書全体で比べること — 症状は「増えたアコーディオン」なので部分一致では見えない）
 42. 段落内の選択の貼り付けは今までどおり文字として入る（§6.8。ガードがスライスを見ていて位置を見ていないことの確認。ここが緩むと、著者が使う普通のジェスチャーを奪うことになる）
 43. ノード選択で取った 1 ブロックの貼り付けもタイトルでは拒否される（§6.8。ガード以前は箱の手前に落ちていた挙動を、規則 1 つに揃えた側）
-44. `titleAcceptsSlice` が §6.8 の表の各形を正しく判定する（**ユニットテスト**（`components/editor/details-title-slice.test.ts`）で持つこと — ドロップ経路は CDP で `dragstart` が発火せず E2E で駆動できないので、両経路が共有するこの述語が、ブラウザで演じられないジェスチャーの裏付けになる）。インラインの atom を通すこと、およびそれが段落を跨いだ場合は拒否することを対で押さえる — 前者は §6.5 への委譲、後者は委譲しても穴が開かないことの確認であり、片方だけでは担当の線が引けているか分からない
+44. `titleAcceptsSlice` が §6.8 の表の各形を正しく判定する（**ユニットテスト**（`components/editor/details-title-slice.test.ts`）で持つこと — §6.8 の表は形を網羅する問いなので、1 形につきブラウザのドラッグを 1 回演じるより、両経路が共有するこの述語を直接尋ねるほうが安い。ドロップ経路そのものは `e2e/native-drag.ts` で駆動できるので、個別に押さえたくなったらそちらを使う）。インラインの atom を通すこと、およびそれが段落を跨いだ場合は拒否することを対で押さえる — 前者は §6.5 への委譲、後者は委譲しても穴が開かないことの確認であり、片方だけでは担当の線が引けているか分からない
 
 ---
 
