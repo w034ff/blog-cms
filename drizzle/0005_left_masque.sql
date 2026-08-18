@@ -1,0 +1,1 @@
+ALTER TABLE `link_previews` ADD `version` integer DEFAULT 0 NOT NULL;

@@ -123,3 +123,74 @@ test('a hand-written javascript: reference produces no link at all (2c)', async 
   await expect(body.locator('a')).toHaveCount(0);
   await expect(body.locator('div.link-card')).toHaveCount(0);
 });
+
+// The external card on the published page (docs/link-card-requirements.md §14.9). `example.com` and
+// `unreachable.example` have seeded `link_previews` rows (e2e/prepare-db.mts) — which is not a
+// convenience but the claim itself: the published page reads the table and never fetches (§14.1),
+// so a spec that had to reach the network would be measuring the wrong design.
+const EXTERNAL_HREF = 'https://example.com/article';
+
+test('a published external card is built from the stored row (14i/14j)', async ({ page }) => {
+  const href = await publish(
+    page,
+    'Public external card spec',
+    `前。\n\n<div class="link-card" data-href="${EXTERNAL_HREF}"></div>\n\n後。\n`,
+  );
+  await page.goto(href);
+
+  const card = page.locator('.prose a.link-card');
+  await expect(card).toHaveCount(1);
+  // Neither string is in the body — both came out of `link_previews` through resolveCard.
+  await expect(card.locator('.link-card-title')).toHaveText('外部ページの見出し');
+  await expect(card.locator('.link-card-description')).toHaveText('外部ページの説明文');
+  // The provenance line, which is the slot §12 left empty while every card pointed at this blog.
+  await expect(card.locator('.link-card-domain')).toHaveText('example.com');
+  await expect(card).toHaveAttribute('href', EXTERNAL_HREF);
+  // Where the picture comes from is its own test below — this one is about the text.
+});
+
+test('an external reference with no stored row falls back to a plain link (14d)', async ({
+  page,
+}) => {
+  // Nothing has ever resolved this URL, so there is no row — and the page does not go looking for
+  // one. Same fallback a draft or an unknown slug gets (§6.1): the reader still has the link.
+  const unknown = 'https://never-resolved.example/x';
+  const href = await publish(
+    page,
+    'Public external fallback spec',
+    `<div class="link-card" data-href="${unknown}"></div>\n`,
+  );
+  await page.goto(href);
+
+  await expect(page.locator('.prose a.link-card')).toHaveCount(0);
+  const link = page.locator('.prose a', { hasText: unknown });
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute('href', unknown);
+});
+
+test('a published external card serves its picture through this site (14j)', async ({ page }) => {
+  // §14.4. The reader's browser must never be pointed at the target's CDN, so what matters is the
+  // `src` this page emits — a same-origin signed path — rather than whether the bytes arrive. The
+  // seeded image URL is a loopback literal (e2e/prepare-db.mts), which the address guard refuses
+  // without asking a resolver: no network, and nothing about the assertion changes.
+  const href = await publish(
+    page,
+    'Public external card image spec',
+    `<div class="link-card" data-href="${EXTERNAL_HREF}"></div>\n`,
+  );
+  await page.goto(href);
+
+  const img = page.locator('.prose a.link-card img.link-card-image');
+  await expect(img).toHaveCount(1);
+  const src = await img.getAttribute('src');
+  expect(src).toMatch(/^\/api\/link-image\?url=/);
+  expect(src).toContain(encodeURIComponent('http://127.0.0.1/og.png'));
+
+  // The signature is the whole gate on that route — it cannot be admin-gated, since readers load
+  // it. A tampered one is refused before anything is fetched.
+  const tampered = src!.replace(/sig=.*$/, 'sig=00000000000000000000');
+  expect((await page.request.get(tampered)).status()).toBe(404);
+  // And a URL nobody signed, which is the open-proxy case.
+  const unsigned = '/api/link-image?url=' + encodeURIComponent('https://evil.example/x.png');
+  expect((await page.request.get(unsigned)).status()).toBe(404);
+});

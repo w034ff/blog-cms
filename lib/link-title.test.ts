@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
+import { isBlockedAddress } from './guarded-fetch';
 import {
+  DESCRIPTION_MAX_LENGTH,
+  extractDescription,
+  extractImage,
   extractTitle,
+  fetchLinkPreview,
   fetchLinkTitle,
-  isBlockedAddress,
   normalizeTitle,
   TITLE_MAX_LENGTH,
 } from './link-title';
@@ -196,5 +200,139 @@ describe('fetchLinkTitle', () => {
     ).resolves.toBeNull();
     expect(resolve).not.toHaveBeenCalled();
     expect(calls).toEqual([]);
+  });
+});
+
+// docs/link-card-requirements.md §14.9. The card wants one more line than the bubble does, and
+// where that line comes from was the measurement that decided it: og:description alone covers 4 of
+// the 10 sites measured 2026-08-18, the pair with `<meta name="description">` covers 6.
+describe('extractDescription', () => {
+  it('prefers og:description over the plain meta description (14h)', () => {
+    expect(
+      extractDescription(
+        '<meta property="og:description" content="OG のほう">' +
+          '<meta name="description" content="素のほう">',
+      ),
+    ).toBe('OG のほう');
+  });
+
+  it('falls back to `name="description"` (14h)', () => {
+    // Two of the ten sites measured carry only this one (developer.mozilla.org, wikiwiki.jp), so
+    // the fallback is what the majority of the coverage rests on rather than a nicety.
+    expect(extractDescription('<meta name="description" content="素のほう">')).toBe('素のほう');
+  });
+
+  it('reads either attribute order', () => {
+    expect(extractDescription('<meta content="逆順" property="og:description">')).toBe('逆順');
+    expect(extractDescription('<meta content="逆順" name="description">')).toBe('逆順');
+  });
+
+  it('returns null when the page describes itself nowhere (14h)', () => {
+    // zenn.dev is this case, measured. The card draws its title alone, which is the shape §12
+    // already gives an internal post with an empty description.
+    expect(extractDescription('<title>説明の無いページ</title>')).toBeNull();
+  });
+
+  it('truncates so one long description cannot become the card', () => {
+    const long = 'あ'.repeat(DESCRIPTION_MAX_LENGTH + 40);
+    const out = extractDescription(`<meta name="description" content="${long}">`);
+    expect(out).toHaveLength(DESCRIPTION_MAX_LENGTH);
+    expect(out?.endsWith('…')).toBe(true);
+  });
+});
+
+describe('fetchLinkPreview', () => {
+  const deps = (fetchImpl: typeof fetch) => ({
+    resolve: async () => ['93.184.216.34'],
+    fetchImpl,
+  });
+
+  it('reads the title and the description in one request', async () => {
+    // One fetcher, two extractors (§14.5): the preview must not cost a second round trip, and the
+    // call count is what says so rather than the returned value.
+    const { fetchImpl, calls } = stub([
+      { body: '<title>Hello</title><meta name="description" content="説明">' },
+    ]);
+    await expect(fetchLinkPreview('https://example.com/x', deps(fetchImpl))).resolves.toEqual({
+      title: 'Hello',
+      description: '説明',
+      image: '',
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('returns a preview with an empty description when the page has none', async () => {
+    const { fetchImpl } = stub([{ body: '<title>Hello</title>' }]);
+    await expect(fetchLinkPreview('https://example.com/x', deps(fetchImpl))).resolves.toEqual({
+      title: 'Hello',
+      description: '',
+      image: '',
+    });
+  });
+
+  it('returns null when there is no title to build a card on', async () => {
+    // The card's first line is the title. With none there is nothing to draw that the stored
+    // reference does not already say, so this is a `failed` row and the card shows the URL (§14.7).
+    const { fetchImpl } = stub([{ body: '<p>no head at all</p>' }]);
+    await expect(fetchLinkPreview('https://example.com/x', deps(fetchImpl))).resolves.toBeNull();
+  });
+
+  it('reads nothing off a page that did not answer 2xx (14g)', async () => {
+    // The Cloudflare challenge, measured on www.npmjs.com 2026-08-18: status 403 with a real
+    // `<title>Just a moment...</title>` in the body. Putting that on a card would be worse than
+    // showing the URL, which is what the status check exists for.
+    const { fetchImpl } = stub([
+      { status: 403, body: '<title>Just a moment...</title><meta name="description" content="x">' },
+    ]);
+    await expect(fetchLinkPreview('https://example.com/x', deps(fetchImpl))).resolves.toBeNull();
+  });
+
+  it('never connects when the name resolves to a private address (14f)', async () => {
+    // The whole guard is inherited from fetchLinkTitle — same loop, same resolver — and this is
+    // the assertion shape that says so: not "null came back" but "no request went out".
+    const { fetchImpl, calls } = stub([{ body: '<title>internal</title>' }]);
+    await expect(
+      fetchLinkPreview('https://intranet.example/x', {
+        resolve: async () => ['10.0.0.5'],
+        fetchImpl,
+      }),
+    ).resolves.toBeNull();
+    expect(calls).toEqual([]);
+  });
+});
+
+// docs/link-card-requirements.md §14.4. The card's picture is the target's og:image, served through
+// this site's own proxy — so what is read here is a reference that lib/link-image.ts later signs,
+// and every value measured 2026-08-18 was an absolute URL on a third party's CDN.
+describe('extractImage', () => {
+  const PAGE = 'https://example.com/articles/one';
+
+  it('reads an absolute og:image', () => {
+    expect(
+      extractImage('<meta property="og:image" content="https://cdn.example/a.png">', PAGE),
+    ).toBe('https://cdn.example/a.png');
+  });
+
+  it('resolves a relative one against the page it came from', () => {
+    // Not seen in the ten sites measured, but permitted — and a half-URL would simply never load,
+    // which on the published page is a broken picture nothing can react to.
+    expect(extractImage('<meta property="og:image" content="/img/a.png">', PAGE)).toBe(
+      'https://example.com/img/a.png',
+    );
+  });
+
+  it('reads either attribute order', () => {
+    expect(
+      extractImage('<meta content="https://cdn.example/b.png" property="og:image">', PAGE),
+    ).toBe('https://cdn.example/b.png');
+  });
+
+  it('returns null when there is no image, or none the proxy could ever fetch', () => {
+    expect(extractImage('<title>no picture</title>', PAGE)).toBeNull();
+    // The proxy only ever fetches http(s), so anything that cannot become one is stored as nothing
+    // rather than as a reference that fails later in another module.
+    expect(
+      extractImage('<meta property="og:image" content="data:image/png;base64,AA">', PAGE),
+    ).toBeNull();
   });
 });

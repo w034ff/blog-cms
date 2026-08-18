@@ -1,6 +1,7 @@
 import type { Root, Element, ElementContent } from 'hast';
 import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
+import { externalCardHost, isCardHref } from './link-card-href';
 
 // What a card resolves to. Deliberately the shape the card renders, not a `Post`: lib/render.ts
 // must not import the DB or its types (docs/link-card-requirements.md §6), so the caller —
@@ -13,27 +14,6 @@ declare module 'vfile' {
     resolveCard: ResolveCard;
   }
 }
-
-// The stored form carries a reference and nothing else (§4.2), so `data-href` is the whole of what
-// an author can write into a card — and it is NOT value-checked on the way in. `className` passes
-// rehype-sanitize as a value allowlist, but `data-href` is a bare property name, so once it is
-// allowed at all any value rides through; and this stage runs *after* sanitize, so the `<a href>`
-// built below never meets its protocol check either (§4.4). Hence the shape test here, and hence
-// it is a whitelist of one form rather than a blacklist of bad protocols.
-//
-// `/posts/<slug>`, matching the only thing a card may point at while external cards are deferred
-// (§8). Slugs are the 20 hex chars generateUniqueSlug() produces (lib/slug.ts), but the class is
-// left wider than that: the two posts predating the opaque-slug rework are still `hello-world` and
-// `second-post`, and a card pointing at one of those is a legitimate reference. What matters is
-// that no `:` can appear, so `javascript:` and every other scheme is unrepresentable, and that the
-// leading `/posts/` keeps it same-origin and relative — a `//evil.example` protocol-relative URL
-// fails the same test.
-//
-// The first character excludes `.` so the slug can't be `..` or `.`: those pass a plain
-// `[\w.~-]+` and resolve, in a browser, to somewhere other than a post (`/posts/..` is the site
-// root). Harmless — still same-origin — but a reference that doesn't name a post has no business
-// becoming a link that claims to.
-const CARD_HREF = /^\/posts\/[\w~-][\w.~-]*$/;
 
 function hasClass(node: Element, name: string): boolean {
   const className = node.properties.className;
@@ -48,16 +28,21 @@ function hasClass(node: Element, name: string): boolean {
 //
 // A third line carrying the target's date was dropped 2026-08-15. The bottom line of a link card
 // conventionally carries provenance — which site, which author — and that is what earns it the
-// click. Every card here points at this same blog while external cards are deferred (§8), so the
-// provenance slot has nothing to say, and a date shown on the way in mostly makes an older post
-// look stale. The image took the space instead (2026-08-15).
+// click. A card pointing at this blog has nothing to put there, and a date shown in its place
+// mostly makes an older post look stale; the image took the space instead (2026-08-15). On an
+// external card the slot means something and holds the target's host (§14.4), which is why the
+// line below is built from the href rather than from the resolver's answer — it says where the
+// click goes, and only the reference knows that.
 //
 // `thumbnail` is NOT re-validated here, unlike `data-href` below, and the difference is where each
 // one comes from. The href is written into the body by an author and reaches this stage having
 // skipped sanitize's protocol check; the thumbnail comes from the injected resolver, which builds
-// it with `resolveThumbnail` (lib/thumbnail.ts) and returns only `/uploads/…` paths. Re-checking
-// the shape here would be checking this project against itself; what matters is that no future
-// resolver hands over a value it did not put through that function.
+// it either with `resolveThumbnail` (lib/thumbnail.ts — a `/uploads/…` path, for a post) or with
+// `linkImageSrc` (lib/link-image.ts — a signed `/api/link-image?…` path, for an external card's
+// picture, §14.4). **Both are same-origin**, which is the property that matters: an external card
+// never points a reader at the target's CDN. Re-checking the shape here would be checking this
+// project against itself; what matters is that no future resolver hands over a value it did not
+// build with one of those two.
 //
 // The text column exists even when there is no image: it is what keeps the description clamped to
 // the column's width rather than the card's, so a card gains and loses its picture without the
@@ -77,6 +62,15 @@ function cardElement(href: string, target: CardTarget): Element {
       tagName: 'span',
       properties: { className: ['link-card-description'] },
       children: [{ type: 'text', value: target.description }],
+    });
+  }
+  const host = externalCardHost(href);
+  if (host) {
+    lines.push({
+      type: 'element',
+      tagName: 'span',
+      properties: { className: ['link-card-domain'] },
+      children: [{ type: 'text', value: host }],
     });
   }
   const parts: Element[] = [
@@ -127,7 +121,15 @@ function fallbackLink(href: string): Element {
 
 // Resolves `<div class="link-card" data-href="…">` into a card, a plain link, or nothing
 // (docs/link-card-requirements.md §6.1). Must run AFTER rehype-sanitize — see lib/render.ts for
-// the ordering and CARD_HREF above for what that costs.
+// the ordering, and this is what that position costs:
+//
+// The stored form carries a reference and nothing else (§4.2), so `data-href` is the whole of what
+// an author can write into a card — and it is NOT value-checked on the way in. `className` passes
+// rehype-sanitize as a value allowlist, but `data-href` is a bare property name, so once it is
+// allowed at all any value rides through; and running after sanitize means the `<a href>` built
+// below never meets its protocol check either (§4.4). Hence `isCardHref`, which the editor asks as
+// well so that both sides accept the same references, and hence it is an allowlist of two forms
+// rather than a blacklist of bad protocols (lib/link-card-href.ts).
 //
 // Two passes rather than one: `visit` is synchronous and resolution is not, so the nodes are
 // collected first and awaited after. Collecting the parent and index alongside each node is what
@@ -147,7 +149,7 @@ export function rehypeLinkCard() {
     const replacements = await Promise.all(
       found.map(async ({ node }): Promise<ElementContent | null> => {
         const href = node.properties.dataHref;
-        if (typeof href !== 'string' || !CARD_HREF.test(href)) return null;
+        if (typeof href !== 'string' || !isCardHref(href)) return null;
         // No resolver supplied — the caller renders without a DB (lib/render.test.ts, and any
         // future preview). The reference is still valid, so it degrades to the same plain link an
         // unresolvable one gets rather than vanishing.

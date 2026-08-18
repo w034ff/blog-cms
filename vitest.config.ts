@@ -6,6 +6,10 @@ const root = process.cwd();
 export default defineConfig({
   test: {
     environment: 'node',
+    // lib/link-image.ts refuses to load without one: the key it signs /api/link-image with is
+    // derived from it, and an empty key is one anybody can compute. Set here rather than read from
+    // .env so the tests do not depend on a file that is not checked in.
+    env: { SESSION_SECRET: 'vitest-session-secret-not-used-anywhere-else' },
     include: ['**/*.{test,spec}.ts'],
     // The Playwright E2E specs under e2e/ are also *.spec.ts, but must never run
     // under vitest (they import @playwright/test and drive a real browser). The

@@ -323,10 +323,14 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).not.toContain('<a');
   });
 
-  it('refuses references that are not same-origin `/posts/…` (2c/2d)', async () => {
+  it('refuses references that are neither shape the stage accepts (2c/2d)', async () => {
+    // Neither `/posts/<slug>` nor an absolute http(s) URL (§14.2). `https://evil.example` is NOT
+    // in this list any more: an external URL is a legitimate reference since 2026-08-18 and gets
+    // the fallback link when nothing has been stored about it — see the external-card block below.
     for (const href of [
+      // Protocol-relative, so `new URL()` cannot parse it without a base and the internal test
+      // refuses the leading `//` — it is the shape that looks same-origin and is not.
       '//evil.example/posts/x',
-      'https://evil.example',
       '/admin/posts/1',
       '/posts/../admin',
       // Passes a naive `[\w.~-]+` slug class and resolves to the site root, not a post.
@@ -390,5 +394,112 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html.match(/<a class="link-card"/g)).toHaveLength(2);
     expect(html.match(/<a href="\/posts\/gone">/g)).toHaveLength(1);
     expect(html).not.toContain('javascript:');
+  });
+});
+
+// docs/link-card-requirements.md §14.9, the rows this side can measure. An external card is the
+// same node, the same class and the same `data-href` (§14.2); what changes is that the reference
+// may be an absolute URL, that the resolver reads a stored row instead of `posts`, and that the
+// card gains a provenance line and loses the image.
+//
+// **The reader's request never fetches anything** (§14.1). Nothing in this file could tell the
+// difference on its own, so the criterion is pinned where it is decided instead: the resolver is
+// injected, and the published page hands over one that only reads (app/posts/[slug]/page.tsx).
+// What is measured here is that the stage asks the resolver and nothing else — a card whose URL
+// has no row renders the fallback link rather than reaching for the page.
+describe('renderMdxToHtml — external link cards', () => {
+  const CARD = '<div class="link-card" data-href="https://example.com/article"></div>';
+  const resolveCard = async (href: string) =>
+    href === 'https://example.com/article'
+      ? { title: '外部の記事', description: '外部の説明', thumbnail: null }
+      : null;
+
+  it('resolves an absolute URL into a card carrying the target’s host (14i)', async () => {
+    const { html } = await renderMdxToHtml(CARD, { resolveCard });
+    expect(html).toContain('<a class="link-card" href="https://example.com/article">');
+    expect(html).toContain('<span class="link-card-title">外部の記事</span>');
+    expect(html).toContain('<span class="link-card-description">外部の説明</span>');
+    // The provenance line §12 left empty while every card pointed at this blog (§14.4). It is
+    // built from the reference, not from the resolver's answer, so it cannot disagree with where
+    // the click actually goes.
+    expect(html).toContain('<span class="link-card-domain">example.com</span>');
+  });
+
+  it('drops a leading `www.` from the host line (14i)', async () => {
+    const withWww = async () => ({ title: 'T', description: '', thumbnail: null });
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="https://www.example.com/a"></div>',
+      { resolveCard: withWww },
+    );
+    expect(html).toContain('<span class="link-card-domain">example.com</span>');
+    // Only the display is shortened. The href is the reference as stored, which is what the
+    // author wrote and what was fetched.
+    expect(html).toContain('href="https://www.example.com/a"');
+  });
+
+  it('shows the target’s picture through this site, never from its CDN (14j)', async () => {
+    // §14.4: the card does show the target's og:image, but the `<img src>` is this site's own
+    // signed proxy path — the value the resolver hands over is what app/posts/[slug]/page.tsx
+    // builds with `linkImageSrc`. What must never appear here is the third party's URL: that would
+    // be hotlinking, which lib/thumbnail.ts refuses in the same words.
+    const withImage = async () => ({
+      title: '外部の記事',
+      description: '',
+      thumbnail: '/api/link-image?url=https%3A%2F%2Fcdn.example%2Fa.png&sig=0123456789abcdef0123',
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
+    expect(html).toContain('<img class="link-card-image" src="/api/link-image?url=');
+    // Same empty alt as the internal card: the title is inside the same anchor.
+    expect(html).toContain('alt=""');
+    // The target's own host appears only inside the encoded `url=` parameter — never as an src a
+    // browser would connect to.
+    expect(html).not.toContain('src="https://cdn.example');
+  });
+
+  it('carries no image when the target has none (14j)', async () => {
+    // A page with no og:image, or one the proxy could not fetch when the row was written. The card
+    // is the text column alone rather than an empty frame, which is what §12 settled.
+    const { html } = await renderMdxToHtml(CARD, { resolveCard });
+    expect(html).not.toContain('link-card-image');
+    expect(html).not.toContain('<img');
+  });
+
+  it('falls back to a plain link when nothing is stored about the URL (14d)', async () => {
+    // The row is missing — never resolved in the editor, or the fetch failed. Identical to a draft
+    // or an unknown slug on the internal side (§6.1): the reader still gets the link, and the
+    // author sees a link where they expected a card.
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: async () => null });
+    expect(html).toContain('<a href="https://example.com/article">https://example.com/article</a>');
+    expect(html).not.toContain('link-card-title');
+    expect(html).not.toContain('<div');
+  });
+
+  it('refuses a scheme that is not http(s) (14e)', async () => {
+    // The allowlist, from the other direction. These parse as URLs — `new URL()` accepts every one
+    // — so only the scheme test stands between them and an `<a href>` this stage builds after
+    // sanitize has already run (§4.4).
+    for (const href of [
+      'javascript:alert(1)',
+      'data:text/html,<script>1</script>',
+      'file:///etc',
+    ]) {
+      const { html } = await renderMdxToHtml(`<div class="link-card" data-href="${href}"></div>`, {
+        resolveCard,
+      });
+      expect(html, href).not.toContain('<a');
+      expect(html, href).not.toContain('link-card-domain');
+    }
+  });
+
+  it('keeps an internal card free of the host line (14i)', async () => {
+    // The two kinds share every mechanism but this: a card pointing at this blog has nothing to
+    // say about provenance, which is why §12 dropped the line rather than filling it with a date.
+    const internal = async () => ({ title: '内部の記事', description: '', thumbnail: null });
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="/posts/abc123"></div>',
+      { resolveCard: internal },
+    );
+    expect(html).toContain('link-card-title');
+    expect(html).not.toContain('link-card-domain');
   });
 });

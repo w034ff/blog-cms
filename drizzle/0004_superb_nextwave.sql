@@ -1,0 +1,1 @@
+ALTER TABLE `link_previews` ADD `image` text DEFAULT '' NOT NULL;

@@ -1,19 +1,24 @@
 import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
+import { externalCardHost, normalizeCardHref } from '@/lib/link-card-href';
 import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
-// The link card (docs/link-card-requirements.md): a block that shows an internal post as a card
-// rather than as a line of link text.
+// The link card (docs/link-card-requirements.md): a block that shows a post, or an external page,
+// as a card rather than as a line of link text.
 //
 // What is stored is a reference and nothing the reader sees:
 //
 //   <div class="link-card" data-href="/posts/f377f7a9a768a5b4d6f2"></div>
+//   <div class="link-card" data-href="https://example.com/article"></div>
 //
 // Empty on purpose (§4.2). The title, date and description are derived from the `posts` row at
 // render time — baking them in would leave a renamed post's old title sitting in every body that
-// linked to it. That is also the one place this differs from the accordion, whose serializer
+// linked to it. An external card's lines are derived too, from the `link_previews` row the editor
+// filled (§14.3); what differs is only which table answers.
+//
+// Storing a reference is also the one place this differs from the accordion, whose serializer
 // writes its `<summary>` text into the markdown: an accordion's content is the author's, a card's
 // belongs to another record.
 //
@@ -132,7 +137,7 @@ export const LinkCard = Node.create({
               .deleteRange({ from, to: from + node.nodeSize })
               .run();
           }
-          const label = postCache.get(href)?.title ?? href;
+          const label = cardCache.get(href)?.title ?? href;
           return chain()
             .insertContentAt(
               { from, to: from + node.nodeSize },
@@ -142,6 +147,40 @@ export const LinkCard = Node.create({
                   { type: 'text', marks: [{ type: 'link', attrs: { href } }], text: label },
                 ],
               },
+            )
+            .run();
+        },
+      // §14.6-2: turn the link the caret is in into a card, which is the second of the two
+      // entry points and the only one that starts from something already written.
+      //
+      // **Only when the link is the whole line.** A card occupies a block (§5.2-1), so making one
+      // out of a link inside a sentence would have to either take the sentence's words away or
+      // leave a copy of them behind. The range is passed in by the bubble, which resolved the mark
+      // to draw itself, and this refuses unless it covers the textblock exactly — the same shape
+      // §4.1 (d) described when it considered promoting a line-alone link at the parser instead.
+      //
+      // The whole textblock is replaced rather than emptied and followed by a card: an empty
+      // paragraph left above the card is invisible in markdown (it does not serialize) but real in
+      // the editor, which is the mismatch accordion-requirements.md §8.2 names.
+      linkToCard:
+        (range: { from: number; to: number }, href: string) =>
+        ({ chain, state }: CommandProps): boolean => {
+          const $from = state.doc.resolve(range.from);
+          if (!$from.parent.isTextblock || $from.depth < 1) return false;
+          if (range.from !== $from.start() || range.to !== $from.end()) return false;
+          // The placement question, asked about the link's own textblock rather than about the
+          // selection. **`canPlaceAfterCaret` is the wrong question here** and was used at first:
+          // it answers "may a block go *after* the caret's textblock", refuses a range outright
+          // (which is what the selection is right after 適用 — reported 2026-08-18), and would
+          // allow the first paragraph of a list item to be replaced, leaving the item headless.
+          // What this command does is replace one textblock with a card, so that is what is asked.
+          const parent = $from.node($from.depth - 1);
+          const index = $from.index($from.depth - 1);
+          if (!parent.canReplaceWith(index, index + 1, this.type)) return false;
+          return chain()
+            .insertContentAt(
+              { from: $from.before($from.depth), to: $from.after($from.depth) },
+              { type: this.name, attrs: { href } },
             )
             .run();
         },
@@ -256,6 +295,19 @@ export const LinkCard = Node.create({
   },
 });
 
+// The lines a resolved card draws, whichever kind of target answered. Both lookups below build
+// one of these, so `draw` is a single function that cannot treat the two kinds differently by
+// accident — the failure §13 records (a cached card taking the "not looked up yet" branch of every
+// line) was exactly a second drawing path getting out of step with the first.
+type CardFace = {
+  title: string;
+  // The second line, and '' when there is nothing wrong to say (§13.1).
+  note: string;
+  // The provenance line, and null on an internal card, whose target is this same blog (§14.4).
+  domain: string | null;
+  thumbnail: string | null;
+};
+
 // Lookups already made, keyed by href. A card holds only a reference (§4.2), so every NodeView
 // built for one would otherwise be a round trip — and the same card is built again whenever the
 // node is replaced rather than updated: re-parsing the document, undoing a delete, picking the same
@@ -268,32 +320,91 @@ export const LinkCard = Node.create({
 // than the first: the fetch is skipped once the entry exists, so everything derived from the rest
 // of the answer — the draft note, and now the image — was missing from every build after the one
 // that fetched (§13).
-const postCache = new Map<string, PostSearchResult>();
+const cardCache = new Map<string, CardFace>();
 
-// What is known about a card's target. Three states rather than a nullable post, because "the
-// answer has not come back yet" and "the route says there is no such post" are the same `null` in
+// What is known about a card's target. Three states rather than a nullable answer, because "the
+// answer has not come back yet" and "the route says there is nothing there" are the same `null` in
 // the data and must not be the same card on screen (§13.1): the second says so in the card's own
 // second line, and a card that said it for the ~10ms before its own answer arrives would call every
 // reference broken every time the document is opened. A failed request is `unknown` too — a lapsed
 // session is not a missing post, and the card has nothing to report about it.
+//
+// `missing` carries its own words because the two kinds fail differently and the author acts on
+// them differently: a reference naming no post is fixed by pointing the card somewhere else, an
+// external page that would not answer is often fixed by nothing at all (§14.7).
 type Lookup =
   | { status: 'unknown' }
-  | { status: 'found'; post: PostSearchResult }
-  | { status: 'missing' };
+  | { status: 'found'; card: CardFace }
+  | { status: 'missing'; note: string };
+
+// Which table answers is decided by the reference itself, the same way the published side decides
+// it (app/posts/[slug]/page.tsx), and there is exactly one shape that is not internal.
+//
+// The stored href is put through the same rewrite the two entry points apply (§14.5.1), because
+// this is the third door and it is open on purpose: `parseHTML` accepts any `data-href`, so a body
+// can arrive carrying `https://<this blog>/posts/<slug>` — hand-written, or pasted as raw HTML.
+// Without the rewrite that card asks the preview route about this server's own address, is refused
+// there, and reports that the author's own post could not be read.
+function lookupCard(href: string): Promise<Lookup> {
+  const reference = normalizeCardHref(href, window.location.origin) ?? href;
+  return externalCardHost(reference) === null ? fetchPost(reference) : fetchPreview(reference);
+}
 
 async function fetchPost(href: string): Promise<Lookup> {
   const slug = href.startsWith('/posts/') ? href.slice('/posts/'.length) : '';
   // A reference that cannot name a post at all. The published side refuses the same shapes (§4.4),
   // so this is the editor saying the same thing while it can still be fixed.
-  if (!slug) return { status: 'missing' };
+  if (!slug) return { status: 'missing', note: '記事が見つかりません' };
   try {
     const res = await fetch(`/api/posts/search?slug=${encodeURIComponent(slug)}`);
-    if (res.status === 404) return { status: 'missing' };
+    if (res.status === 404) return { status: 'missing', note: '記事が見つかりません' };
     if (!res.ok) return { status: 'unknown' };
-    return { status: 'found', post: (await res.json()) as PostSearchResult };
+    const post = (await res.json()) as PostSearchResult;
+    return {
+      status: 'found',
+      card: {
+        title: post.title,
+        // A draft resolves to nothing on the published page and the card falls back to a plain
+        // link there (§5.2-4, §6.1), which is only fixable from here.
+        note: post.draft ? '未公開の記事' : '',
+        domain: null,
+        thumbnail: post.thumbnail,
+      },
+    };
   } catch {
     // Offline, or the session lapsed. The card keeps its reference either way — this only decides
     // what the editor draws, and §5.3's degradation is to show the path.
+    return { status: 'unknown' };
+  }
+}
+
+// The external half (§14.5). The route decides whether this costs a SELECT or a fetch; the editor
+// only ever asks it, and asks it again on every render, which is what keeps the stored row warm
+// without a refresh button anyone has to remember to press (§14.3).
+async function fetchPreview(href: string): Promise<Lookup> {
+  const host = externalCardHost(href);
+  if (host === null) return { status: 'missing', note: 'タイトルを取得できませんでした' };
+  try {
+    const res = await fetch(`/api/link-preview?url=${encodeURIComponent(href)}`);
+    if (!res.ok) return { status: 'unknown' };
+    const { preview } = (await res.json()) as {
+      preview: { title: string; image: string } | null;
+    };
+    // The page answered nothing readable — a Cloudflare challenge, a timeout, a host that is
+    // this server itself (§14.5.1). The card keeps its reference and shows the URL instead.
+    if (!preview) return { status: 'missing', note: 'タイトルを取得できませんでした' };
+    // The description is not drawn here. The NodeView has never shown one — §13 added the image,
+    // not the description — and this card inherits that rather than introducing a second answer to
+    // "what does the editor show" (§14.7).
+    //
+    // The image is already the signed /api/link-image path when it arrives: the route signs it, so
+    // the editor and the published page put the identical `<img src>` on screen and the third
+    // party's own URL never reaches this browser.
+    return {
+      status: 'found',
+      card: { title: preview.title, note: '', domain: host, thumbnail: preview.image || null },
+    };
+  } catch {
     return { status: 'unknown' };
   }
 }
@@ -317,9 +428,9 @@ function head(): HTMLDivElement {
   return el;
 }
 
-// The resolved card: the target's title and image, and a second line only when there is something
-// wrong to say about it. `onClear` puts the card back into its picker state so the author can point
-// it somewhere else without deleting it.
+// The resolved card: the target's title and image, a line only when there is something wrong to say
+// about it, and — on an external card — the host it points at (§14.4). `onClear` puts the card back
+// into its picker state so the author can point it somewhere else without deleting it.
 function renderCard(
   body: HTMLElement,
   href: string,
@@ -338,37 +449,51 @@ function renderCard(
   title.className = 'link-card-title';
   const meta = document.createElement('span');
   meta.className = 'link-card-meta';
+  const domain = document.createElement('span');
+  domain.className = 'link-card-domain';
   body.append(actions, title);
 
-  // The second line is put up and taken down rather than emptied: a card whose target is fine has
-  // no second line at all (§13.1), and an empty span still carries the line's top margin.
-  const setMeta = (text: string) => {
-    meta.textContent = text;
-    if (text === '') meta.remove();
-    else body.appendChild(meta);
+  // The lines below the title are put up and taken down rather than emptied: a card whose target is
+  // fine has no second line at all (§13.1), and an empty span still carries the line's top margin.
+  //
+  // Both are detached first and appended in order, so the two cannot arrive in the order they
+  // happened to be set — the note is written by the answer and the host by the reference, which do
+  // not become known at the same moment.
+  const setLines = (note: string, host: string | null) => {
+    meta.remove();
+    domain.remove();
+    if (note !== '') {
+      meta.textContent = note;
+      body.appendChild(meta);
+    }
+    if (host !== null) {
+      domain.textContent = host;
+      body.appendChild(domain);
+    }
   };
 
   // Everything the lookup decides, in one place, so the cache hit and the answer that has just
   // arrived draw the same card. Splitting them is what let the two disagree (§13): a card drawn
   // from the cache took the "not looked up yet" branch of each line and kept it forever.
   const draw = (lookup: Lookup) => {
-    // The path is what §5.3 degrades to: until the title is known, what the card names is the
-    // reference the author wrote, which is the thing they can act on.
-    title.textContent = lookup.status === 'found' ? lookup.post.title : href;
-    // The two things worth interrupting for. A draft resolves to nothing on the published page and
-    // the card falls back to a plain link there (§5.2-4, §6.1); a reference the route cannot match
-    // does the same, and both are fixable only from here.
-    if (lookup.status === 'missing') setMeta('記事が見つかりません');
-    else if (lookup.status === 'found' && lookup.post.draft) setMeta('未公開の記事');
-    else setMeta('');
-    setImage(lookup.status === 'found' ? lookup.post.thumbnail : null);
+    // The reference is what §5.3 degrades to: until the title is known, what the card names is what
+    // the author wrote, which is the thing they can act on.
+    title.textContent = lookup.status === 'found' ? lookup.card.title : href;
+    // The things worth interrupting for, all decided by the lookup rather than here: a draft or a
+    // reference the route cannot match on one side, a page that would not answer on the other
+    // (§14.7). Both are fixable only from this card.
+    setLines(
+      lookup.status === 'found' ? lookup.card.note : lookup.status === 'missing' ? lookup.note : '',
+      lookup.status === 'found' ? lookup.card.domain : null,
+    );
+    setImage(lookup.status === 'found' ? lookup.card.thumbnail : null);
   };
 
-  const cached = postCache.get(href);
-  draw(cached ? { status: 'found', post: cached } : { status: 'unknown' });
+  const cached = cardCache.get(href);
+  draw(cached ? { status: 'found', card: cached } : { status: 'unknown' });
   if (!cached) {
-    void fetchPost(href).then((lookup) => {
-      if (lookup.status === 'found') postCache.set(href, lookup.post);
+    void lookupCard(href).then((lookup) => {
+      if (lookup.status === 'found') cardCache.set(href, lookup.card);
       // The card this answer was for may be gone: 「変更」 detaches these spans while the lookup is
       // still in flight. Harmless while `draw` only wrote into them — they were unreachable — but
       // `setImage` reaches the NodeView's own `dom`, which by then belongs to the picker, so a late
@@ -380,9 +505,16 @@ function renderCard(
   }
 }
 
-// The insert flow (§5.2-3): search your own posts and pick one. It lives in the card rather than in
+// The insert flow (§5.2-3): search your own posts and pick one — or paste a URL, which is the
+// first of the two entry points an external card has (§14.6-1). It lives in the card rather than in
 // a popup of its own so the slash menu needs no second UI framework, and so an author who inserts
 // and then wanders off is left with a visible unfinished card instead of a silent no-op.
+//
+// One field answers both because the two are told apart by what was typed, not by a mode the author
+// has to choose: anything that parses as an http(s) URL is a reference, everything else is a search
+// for a title. `normalizeCardHref` also rewrites a URL pointing at this blog's own post into the
+// internal reference, so pasting the published address of your own article makes the card that
+// reads `posts` live rather than a stored snapshot of it (§14.5.1).
 function renderPicker(
   body: HTMLElement,
   editor: { view: { dom: HTMLElement } },
@@ -391,7 +523,7 @@ function renderPicker(
   const input = document.createElement('input');
   input.type = 'search';
   input.className = 'link-card-search';
-  input.placeholder = '記事のタイトルで検索…';
+  input.placeholder = '記事のタイトルで検索、または URL を貼り付け…';
   // Same band the resolved card puts its buttons in — see head().
   const controls = head();
   controls.appendChild(input);
@@ -420,6 +552,16 @@ function renderPicker(
   };
 
   let latest = 0;
+
+  // The one row a URL produces. `latest` is bumped here too: a search sent before the author
+  // finished pasting must not land on top of this row when its answer arrives.
+  const showReference = (cardHref: string) => {
+    latest += 1;
+    list.replaceChildren();
+    const row = document.createElement('li');
+    row.appendChild(button('この URL をカードにする', () => onPick(cardHref)));
+    list.appendChild(row);
+  };
   const search = async (query: string) => {
     const ticket = (latest += 1);
     try {
@@ -434,7 +576,11 @@ function renderPicker(
     }
   };
 
-  input.addEventListener('input', () => void search(input.value));
+  input.addEventListener('input', () => {
+    const cardHref = normalizeCardHref(input.value, window.location.origin);
+    if (cardHref !== null) showReference(cardHref);
+    else void search(input.value);
+  });
   // Escape hands focus back to the document rather than closing anything — there is nothing to
   // close, and leaving focus in the box means the next keystroke is still swallowed by stopEvent.
   input.addEventListener('keydown', (event) => {
@@ -461,6 +607,7 @@ declare module '@tiptap/core' {
     linkCard: {
       setLinkCard: (href?: string) => ReturnType;
       unsetLinkCard: (at?: number) => ReturnType;
+      linkToCard: (range: { from: number; to: number }, href: string) => ReturnType;
     };
   }
 }

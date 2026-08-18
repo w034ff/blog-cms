@@ -55,7 +55,16 @@ function remember(key: string, title: string | null): void {
 async function ownTitle(target: URL): Promise<string | null> {
   const slug = /^\/posts\/([^/]+)\/?$/.exec(target.pathname)?.[1];
   if (!slug) return null;
-  const post = await getPostBySlug(decodeURIComponent(slug));
+  // A malformed escape (`%zz`) makes `decodeURIComponent` throw, and `new URL()` leaves one in the
+  // pathname. Same guard, same reason as normalizeCardHref (lib/link-card-href.ts): it names no
+  // post, so it is a miss rather than a 500.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(slug);
+  } catch {
+    return null;
+  }
+  const post = await getPostBySlug(decoded);
   return post ? normalizeTitle(post.title) : null;
 }
 

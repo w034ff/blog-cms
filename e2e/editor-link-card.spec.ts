@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import Database from 'better-sqlite3';
+import { TEST_DB_PATH } from './constants';
 import {
   closeHistory,
   collapseToEnd,
@@ -447,3 +449,227 @@ function pasteHtml(page: Page, html: string): Promise<void> {
       );
   }, html);
 }
+
+// The external card in the editor (docs/link-card-requirements.md §14.9). `example.com` and
+// `unreachable.example` have seeded `link_previews` rows (e2e/prepare-db.mts), so the route answers
+// them from the table and nothing here reaches the network — which is also what the route does in
+// production for any card drawn twice within a week (§14.3).
+const EXTERNAL_HREF = 'https://example.com/article';
+const EXTERNAL_TITLE = '外部ページの見出し';
+const EXTERNAL_MD = `<div class="link-card" data-href="${EXTERNAL_HREF}"></div>`;
+
+test('the picker takes a URL and makes an external card (14a)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+
+  await editor.click();
+  await page.keyboard.type('/リンクカード');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+
+  // One field for both kinds: what was typed decides which (§14.6-1). A URL replaces the post
+  // results with the single row that makes a reference out of it.
+  const search = page.locator('.link-card-search');
+  await search.fill(EXTERNAL_HREF);
+  await page
+    .locator('.link-card-results')
+    .getByRole('button', { name: 'この URL をカードにする' })
+    .click();
+
+  await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
+  // The provenance line, which an internal card does not have (§14.4).
+  await expect(card(page).locator('.link-card-domain')).toHaveText('example.com');
+  // The picture, and where it comes from: the editor draws the same signed same-origin path the
+  // published page does, so what the author sees is what the reader gets and neither browser is
+  // pointed at the target's CDN (§14.4).
+  await expect(card(page).locator('img')).toHaveAttribute('src', /^\/api\/link-image\?url=/);
+});
+
+test('an external card stores the URL and none of the fetched text (14b)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `${EXTERNAL_MD}\n\n本文\n`);
+  await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
+
+  const saved = await markdown(page);
+  expect(saved).toContain(EXTERNAL_MD);
+  expect(saved).not.toContain(EXTERNAL_TITLE);
+
+  // The round trip, the same way reopening the post arrives at it (§14.2 — the node, the class and
+  // the attribute are the internal card's, so this is what says an absolute href survives them).
+  await loadMarkdown(page, saved);
+  expect(await docString(page)).toContain('linkCard');
+  expect(await markdown(page)).toBe(saved);
+});
+
+test('an absolute href survives the round trip with its query and fragment (14a)', async ({
+  page,
+}) => {
+  // §14.2 bet that §4.1's answer holds for absolute URLs without measuring it, and
+  // `link-requirements.md` §2.2.2 is the reason to doubt the bet: a fragment-bearing markdown link
+  // comes back percent-encoded. This is the raw-HTML attribute path instead — `escapeHref` writes
+  // it and markdown-it parses it — so the `&` and the multibyte fragment are what to watch.
+  const messy = 'https://example.com/a?b=1&c=2#見出し';
+  const card = `<div class="link-card" data-href="${messy}"></div>`;
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `${card}\n\n本文\n`);
+
+  const saved = await markdown(page);
+  // `&` is written as `&amp;` inside the attribute and read back as `&` — the stored string is the
+  // reference, unchanged.
+  expect(saved).toContain('data-href="https://example.com/a?b=1&amp;c=2#見出し"');
+  await loadMarkdown(page, saved);
+  expect(await markdown(page)).toBe(saved);
+  expect(await docString(page)).toContain('linkCard');
+});
+
+test('a hand-written card to this blog’s own URL resolves as an internal card (14n)', async ({
+  page,
+}) => {
+  // The third door (§14.5.1): `parseHTML` takes any `data-href`, so a body can carry this blog's
+  // own published address even though neither entry point produces it. Without the rewrite in
+  // `lookupCard` the card asks the preview route about this server, is refused there, and tells the
+  // author their own post could not be read.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  const origin = await page.evaluate(() => window.location.origin);
+  await loadMarkdown(
+    page,
+    `<div class="link-card" data-href="${origin}${CARD_HREF}"></div>\n\n本文\n`,
+  );
+
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await expect(card(page).locator('.link-card-meta')).toHaveCount(0);
+  // The stored reference is untouched — the rewrite decides which table answers, not what the body
+  // says or where the card's link goes.
+  expect(await markdown(page)).toContain(`data-href="${origin}${CARD_HREF}"`);
+});
+
+test('a URL that could not be read says so, and shows the URL (14k)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(
+    page,
+    '<div class="link-card" data-href="https://unreachable.example/x"></div>\n\n本文\n',
+  );
+
+  await expect(card(page).locator('.link-card-meta')).toHaveText('タイトルを取得できませんでした');
+  // The title degrades to the reference (§5.3), which is the thing the author can act on. The host
+  // line is not drawn — there is no resolved card to draw it from, and the URL already names it.
+  await expect(card(page).locator('.link-card-title')).toHaveText('https://unreachable.example/x');
+});
+
+test('the bubble turns a line-alone link into a card (14.6-2)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `<${EXTERNAL_HREF}>\n\n本文\n`);
+
+  // Caret into the link, which is what brings the bubble up (§5.5).
+  await page.locator('.ProseMirror a').first().click();
+  await page.getByRole('button', { name: 'カードにする' }).click();
+
+  await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
+  // The paragraph is replaced, not emptied and followed: an empty paragraph left above the card
+  // would be invisible in the markdown and real in the editor. Asserted as the whole document
+  // rather than as a `toContain`, because what has to be absent is a line that serializes to
+  // nothing — only the exact string can say it is not there.
+  expect(await markdown(page)).toBe(`${EXTERNAL_MD}\n\n本文`);
+});
+
+test('the bubble offers no card for a link inside a sentence (14.6-2)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `詳しくは[この記事](${EXTERNAL_HREF})を参照。\n`);
+
+  await page.locator('.ProseMirror a').first().click();
+  // The bubble is up — otherwise the absence below would pass for the wrong reason.
+  await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
+  // A card is a block (§5.2-1), so there is no card to make out of a link the sentence needs.
+  await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
+});
+
+test('a bare URL alone on a line stays a plain link (14l)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+
+  // Typed, autolinked, and left alone: §4.1 (a) priced the loss of this form too high to take, and
+  // a paste-time conversion would have taken it (§14.6).
+  await page.keyboard.type(`${EXTERNAL_HREF} `);
+  await settle(page);
+  expect(await docString(page)).not.toContain('linkCard');
+  expect(await markdown(page)).not.toContain('link-card');
+});
+
+test('a row from an older version is not used, however fresh it is (14t)', async ({ page }) => {
+  // §14.3.1. The failure this pins was measured on 2026-08-18: rows written in the hours before
+  // the `image` column existed kept their week-long TTL, so the cards built from them had no
+  // picture and no amount of reopening the post could shake them loose. Age was never the whole
+  // question — what the row was written by is the other half.
+  //
+  // The seeded row (e2e/prepare-db.mts) is minutes old, `ok`, and carries a title. If age decided,
+  // the card would show 「古い版の行」. It is at version 0, so it does not.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(
+    page,
+    '<div class="link-card" data-href="http://127.0.0.1/stale-row"></div>\n\n本文\n',
+  );
+
+  await expect(card(page).locator('.link-card-meta')).toHaveText('タイトルを取得できませんでした');
+  await expect(card(page).locator('.link-card-title')).not.toHaveText('古い版の行');
+
+  // And it was rewritten rather than merely ignored — the next render must not repeat the work.
+  const db = new Database(TEST_DB_PATH, { readonly: true });
+  const row = db
+    .prepare('SELECT status, version FROM link_previews WHERE url = ?')
+    .get('http://127.0.0.1/stale-row') as { status: string; version: number };
+  db.close();
+  expect(row).toEqual({ status: 'failed', version: 1 });
+});
+
+test('the bubble still offers the card after 適用 (14u)', async ({ page }) => {
+  // Reported 2026-08-18: the button was there, the author edited the link, pressed 適用, and it was
+  // gone from the row it came back to. `applyDraft` leaves the selection covering the link — as a
+  // *range* — and the placement question being asked refused a range outright (§14.6-2). The
+  // command replaces a textblock, so the question is whether the parent can hold a card in its
+  // place, which a range answers as well as a caret does.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `[リンク](${EXTERNAL_HREF})\n\n本文\n`);
+
+  await page.locator('.ProseMirror a').first().click();
+  // The bubble is a floating card that arrives a frame or two later; counting before it is up
+  // measures nothing, whichever way the code behaves.
+  await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'カードにする' })).toBeVisible();
+
+  await page.getByRole('button', { name: '編集' }).click();
+  await page.getByRole('textbox', { name: 'リンク先' }).fill('https://example.com/other');
+  await page.getByRole('button', { name: '適用' }).click();
+
+  await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'カードにする' })).toBeVisible();
+});
+
+test('the first paragraph of a list item is not offered as a card (14u)', async ({ page }) => {
+  // `listItem` is `paragraph block*`, so replacing its first child with a card would leave the item
+  // headless. The old question (may a block go *after* this textblock) said yes to exactly that.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `- [リンク](${EXTERNAL_HREF})\n`);
+
+  await page.locator('.ProseMirror a').first().click();
+  await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
+});

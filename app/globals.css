@@ -1518,6 +1518,21 @@ body.link-menu-open .table-toolbar {
   line-clamp: 2;
   overflow: hidden;
 }
+/* The provenance line, on external cards only (docs/link-card-requirements.md §14.4). Keyed on the
+   class rather than on the anchor, like .link-card-image and for the same reason: the editor's
+   NodeView draws the same line and the two surfaces must not disagree about it.
+
+   One line, ellipsed: a host name that does not fit is a host name that has already told the
+   reader which site this is. The description above it is the part allowed to wrap. */
+.prose .link-card-domain {
+  display: block;
+  font-size: 0.8125em;
+  opacity: 0.6;
+  margin-top: 0.35em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* The editor's card (link-card-extension.ts's NodeView). Same box as the published one above, but
    it is a <div> rather than an <a> — there is nothing to click through to while editing — so the

@@ -20,6 +20,8 @@ import { ToolbarButton } from './ToolbarButton';
 import { CopyIcon } from './svg/CopyIcon';
 import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
+import { CardIcon } from './svg/CardIcon';
+import { normalizeCardHref } from '@/lib/link-card-href';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -103,9 +105,12 @@ function linkElementAt(editor: Editor): HTMLAnchorElement | null {
 // an internal link shows this blog's icon — which is the honest answer rather than a special case.
 //
 // Root `/favicon.ico` and nothing else. Reading a `<link rel="icon">` would mean fetching and
-// parsing the target's HTML, and that is the whole of the external-card project that
-// link-card-requirements.md §8.1 defers — the cost this deliberately does not pay. The price is
-// that the icon is simply absent on a site that declares its icon only in HTML.
+// parsing the target's HTML from the server, which is a cost this deliberately does not pay: the
+// `<img>` below is the author's own browser asking, so no request of ours is involved and the SSRF
+// question never arises (docs/link-requirements.md §5.5.8). The price is that the icon is simply
+// absent on a site that declares its icon only in HTML. That the server now does fetch some pages
+// — for an external card's title (link-card-requirements.md §14.5) — changes nothing here: that
+// path is the author pressing a button, not every caret placement.
 //
 // Both hosts in the corpus do serve the root path to a real browser (measured 2026-08-16 in the
 // harness, zenn.dev and wikiwiki.jp). Worth knowing because a `curl` probe of the same two says
@@ -298,6 +303,22 @@ export function LinkBubble({
 
   const href = currentHref(editor);
   const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
+
+  // Turning this link into a card (docs/link-card-requirements.md §14.6-2). Two questions, and both
+  // have to be asked here rather than inside the handler: a button that is present and does nothing
+  // is worse than one that is absent, and §5.2-1 is the rule it would appear to break.
+  //
+  // `normalizeCardHref` answers the first — a `mailto:` or a bare fragment has no card to become,
+  // and a URL pointing at one of this blog's own posts becomes the internal reference instead
+  // (§14.5.1). `can()` answers the second, which is the placement rule §5.4 already owns plus the
+  // requirement that the link be the whole line: a card is a block, so a link inside a sentence
+  // cannot become one without taking the sentence apart.
+  const link = linkAtCaret(editor);
+  const cardHref = link ? normalizeCardHref(link.href, window.location.origin) : null;
+  const toCard =
+    link && cardHref && editor.can().linkToCard({ from: link.from, to: link.to }, cardHref)
+      ? () => editor.chain().focus().linkToCard({ from: link.from, to: link.to }, cardHref).run()
+      : null;
 
   const signal = useCallback(
     (meta: 'show' | 'hide' | 'updatePosition') => {
@@ -1298,6 +1319,11 @@ export function LinkBubble({
           <ToolbarButton round title='編集' shortcut={OPEN_SHORTCUT} onClick={openField}>
             <PencilIcon />
           </ToolbarButton>
+          {toCard && (
+            <ToolbarButton round title='カードにする' onClick={toCard}>
+              <CardIcon />
+            </ToolbarButton>
+          )}
           <ToolbarButton
             round
             destructive

@@ -47,6 +47,46 @@ db.prepare(
   `INSERT INTO users (username, password_hash) VALUES (?, ?)
    ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash`,
 ).run(username, bcrypt.hashSync(password, 12));
+
+// Two rows for the external link card (docs/link-card-requirements.md §14.9). The published page
+// never fetches (§14.1) and the editor's route answers from this table while the row is fresh, so
+// seeding them is what lets the whole feature be measured without a single request leaving the
+// machine — `fetchedAt` is now, and the TTL is a week.
+//
+// A `failed` row is seeded as well because that state has its own card (§14.7) and is otherwise
+// reachable only by actually failing to reach a host.
+const now = Date.now();
+const preview = db.prepare(
+  `INSERT INTO link_previews (url, title, description, image, status, fetched_at, version)
+     VALUES (?, ?, ?, ?, ?, ?, 1)
+   ON CONFLICT(url) DO UPDATE SET title=excluded.title, description=excluded.description,
+     image=excluded.image, status=excluded.status, fetched_at=excluded.fetched_at,
+     version=excluded.version`,
+);
+// The image is a loopback literal, on purpose. The card's `<img>` is a real element and the browser
+// really requests it, so a reachable value would put an outbound fetch in every run — and what is
+// measured is the shape of the src and the signature check, neither of which depends on what comes
+// back (§14.9). An IP literal is refused by the address guard before any resolver is asked, so this
+// costs the run no DNS either.
+preview.run(
+  'https://example.com/article',
+  '外部ページの見出し',
+  '外部ページの説明文',
+  'http://127.0.0.1/og.png',
+  'ok',
+  now,
+);
+preview.run('https://unreachable.example/x', '', '', '', 'failed', now);
+// A row from an older version of the reader, which must not be used however fresh it is (§14.3.1).
+// `version` defaults to 0 and the current one is 1, so this row is stale by construction — and its
+// URL is a loopback literal, so re-reading it costs no network and lands on a known answer.
+db.prepare(
+  `INSERT INTO link_previews (url, title, description, image, status, fetched_at, version)
+     VALUES (?, ?, ?, ?, ?, ?, 0)
+   ON CONFLICT(url) DO UPDATE SET title=excluded.title, status=excluded.status,
+     fetched_at=excluded.fetched_at, version=excluded.version`,
+).run('http://127.0.0.1/stale-row', '古い版の行', '', '', 'ok', now);
+
 db.close();
 
 console.log(`[e2e] Prepared seeded test DB at ${dest} (admin '${username}').`);
