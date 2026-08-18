@@ -57,9 +57,15 @@ export function extractImage(html: string, pageUrl: string): string | null {
     /<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["']/i.exec(html)?.[1] ??
     /<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["']/i.exec(html)?.[1];
   if (!raw) return null;
+  // **Entity-decoded first, exactly as the title and the description are.** An HTML attribute
+  // carries `&amp;` where the URL has `&`, and a query string is where that bites: measured
+  // 2026-08-19, `qiita.com` (imgix, signed with `s=`) and `nextjs.org` (`/_next/image?url=&w=&q=`)
+  // both validate their parameters, so the undecoded form arrives as `amp;w`, `amp;s`, … and is
+  // refused. `ja.wikipedia.org` and `tiptap.dev` carry `&amp;` too and answer either way, which is
+  // what hid this: the failure is confined to the hosts that check what they were sent.
   let absolute: URL;
   try {
-    absolute = new URL(raw.trim(), pageUrl);
+    absolute = new URL(decodeEntities(raw).trim(), pageUrl);
   } catch {
     return null;
   }
@@ -73,16 +79,25 @@ export function normalizeTitle(raw: string): string | null {
   return normalizeText(raw, TITLE_MAX_LENGTH);
 }
 
-function normalizeText(raw: string, max: number): string | null {
-  const text = raw
+// Shared by the two text extractors and by `extractImage`, which is the reason it is its own
+// function: a URL must not meet the whitespace collapsing or the length cap below, but it does need
+// the same decode (docs/link-card-requirements.md §14.5.3).
+//
+// One pass per entity, and `&amp;` first, so a doubly-encoded `&amp;amp;` decodes exactly once to
+// `&amp;` — what an HTML parser hands its consumers, and what §14.4 measured `qiita.com` sending in
+// its og:description.
+function decodeEntities(raw: string): string {
+  return raw
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#0*39;|&apos;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/&nbsp;/g, ' ');
+}
+
+function normalizeText(raw: string, max: number): string | null {
+  const text = decodeEntities(raw).replace(/\s+/g, ' ').trim();
   if (text === '') return null;
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

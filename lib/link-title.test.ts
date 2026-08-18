@@ -335,4 +335,17 @@ describe('extractImage', () => {
       extractImage('<meta property="og:image" content="data:image/png;base64,AA">', PAGE),
     ).toBeNull();
   });
+
+  // §14.5.3. `&amp;` in the attribute is `&` in the URL, and the hosts that sign their query
+  // refuse anything else: measured 2026-08-19, the undecoded form reaches `qiita.com` (imgix) and
+  // `nextjs.org` as `amp;w`, `amp;s`, … and is refused, which leaves the row `partial` and the
+  // card without its picture while the title and the description arrive intact.
+  it('decodes entities, so a signed query string survives (14v)', () => {
+    expect(
+      extractImage(
+        '<meta property="og:image" content="https://qiita-user-contents.imgix.net/bg.png?ixlib=rb-4.1.1&amp;w=1200&amp;fm=jpg&amp;s=5119e7fe">',
+        PAGE,
+      ),
+    ).toBe('https://qiita-user-contents.imgix.net/bg.png?ixlib=rb-4.1.1&w=1200&fm=jpg&s=5119e7fe');
+  });
 });
