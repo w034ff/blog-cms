@@ -1,5 +1,6 @@
-import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
+import { Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { createBoxSliceRepair } from './box-slice-repair';
 import { resolveDropTarget } from './drop-target';
 import { replaceSelectionClamped } from './isolating-boundary';
 import { dropOpenWrappers } from './slice-placement';
@@ -64,132 +65,56 @@ export function wouldNestCallout($pos: ResolvedPos, slice: Slice): boolean {
 // already unanswerable as a *box*: half a box is not a box, and it is not plain text either.
 //
 // So the box is dropped and its contents kept, wherever the slice is headed — one question about
-// the slice, no question about position.
+// the slice, no question about position. `unwrapHalfSelected` below is that repair, and
+// `flattenClosed` the paste-side answer to a box the selection covered end-to-end; both are
+// box-slice-repair.ts's, specialised here. What stays in this file is where a callout may go, which
+// is nothing like the accordion's rule.
 //
-// "Half" is read off the open depths. openStart/openEnd say how deep the slice was cut at each end,
-// so a callout at the first (or last) child position with a non-zero depth on that side was entered
-// mid-way by the selection. What makes it *materialise* is being cut on one side only: the other
-// side is a real node boundary, so ProseMirror has to keep the box to close it. A callout open on
-// both sides — the whole slice for a selection made wholly inside one — is not this rule's business:
-// dropOpenWrappers has already taken that wrapper off by the time this runs. Neither is a callout
-// the selection covers end-to-end, including the block drag handle's NodeSelection (openStart =
-// openEnd = 0, see block-drag-handle.ts): that one really is a box being moved, and it is
-// wouldNestCallout above that decides where it may go.
+// A callout's children are `block+`, so taking one apart is one level and its blocks go straight
+// up. Splicing them into the parent stays schema-valid throughout: blockquote and callout are both
+// `block+`, listItem is `paragraph block*` so a callout can only ever sit at index ≥ 1 there, and
+// cells are paragraph-only so none lives in one.
 //
-// This used to refuse a *drop* carrying such a slice rather than repair it, and the source side was
-// what forced that: a move deletes the dragged range before inserting, and a ranged delete across
-// the callout's edge joined the box to the block below it despite `isolating: true`. So even a
-// perfectly normalised slice landed in a document the drop had already broken. That deletion is now
-// clamped to the edge for every gesture, drops included (isolating-boundary.ts), which is what
-// leaves drop and paste free to answer the same slice the same way.
-function halfSelectedEdges(slice: Slice): { start: boolean; end: boolean } {
-  const { content, openStart, openEnd } = slice;
-  const first = content.firstChild;
-  const last = content.lastChild;
-  if (!first || !last) return { start: false, end: false };
-  const start = openStart > 0 && first.type.name === CALLOUT_NAME;
-  const end = openEnd > 0 && last.type.name === CALLOUT_NAME;
-  // One callout, cut on both sides: nothing to close around, so nothing to answer for.
-  if (content.childCount === 1 && start && end) return { start: false, end: false };
-  return { start, end };
-}
+// `recurseIntoRemoved`, because a callout inside a callout is reachable: copy a quote that holds one
+// (`> > [!NOTE]`, which loads from stored markdown even though it can no longer be authored) and
+// both boxes have to come off, not just the outer one.
+//
+// The refusal this pair replaced: a *drop* carrying a half-selected slice used to be turned down
+// rather than repaired, because a move deletes the dragged range before inserting and a ranged
+// delete across the callout's edge joined the box to the block below it despite `isolating: true` —
+// so even a perfectly normalised slice landed in a document the drop had already broken. That
+// deletion is now clamped to the edge for every gesture, drops included (isolating-boundary.ts),
+// which is what leaves drop and paste free to answer the same slice the same way.
+const repair = createBoxSliceRepair({
+  nodeName: CALLOUT_NAME,
+  unwrap: (node) => {
+    const blocks: PMNode[] = [];
+    node.content.forEach((block) => blocks.push(block));
+    return blocks;
+  },
+  depthDrop: 1,
+  recurseIntoRemoved: true,
+});
 
-// The repair, and it is the same one for both gestures now. Copy or drag across a callout's edge
-// and the slice carries the box — over the clipboard `data-pm-slice` round-trips the open depths
-// that make it materialise — so both arrive needing the same thing: the text comes over, the box
-// does not.
-//
-// Each half-selected edge is replaced by that callout's own children, which drops exactly the one
-// level of depth the box occupied. Everything halfSelectedEdges leaves alone is left alone: a whole
-// callout in the middle of the slice, or one cut on both sides, still lands as it did.
 // Everything a slice needs before anybody judges *where* it may go: the half-selected box taken
 // off, then the wrappers that were never being moved at all (slice-placement.ts). Composed here
 // rather than registered as a second `transformPasted` prop — prosemirror-view runs every one of
-// them, so both would happen either way, but the order would then follow plugin order, and these
-// two are not commutative: unwrapping can leave a second child, which is exactly the shape
-// dropOpenWrappers must not step into.
+// them, so both would happen either way. The order turns out not to matter (the two act on
+// disjoint slice shapes; see box-slice-repair.ts and slice-guard-composition.test.ts), but stating
+// it here keeps the drop indicator's own composition in drop-cursor-guard.ts honest, since that one
+// has to reproduce whatever this does.
 export function repairIncomingSlice(slice: Slice): Slice {
   return dropOpenWrappers(unwrapHalfSelectedCallouts(slice));
 }
 
-export function unwrapHalfSelectedCallouts(slice: Slice): Slice {
-  const { start, end } = halfSelectedEdges(slice);
-  if (!start && !end) return slice;
-  const lastIndex = slice.content.childCount - 1;
-  const children: PMNode[] = [];
-  slice.content.forEach((child, _offset, index) => {
-    if ((start && index === 0) || (end && index === lastIndex)) {
-      child.content.forEach((grandChild) => children.push(grandChild));
-    } else {
-      children.push(child);
-    }
-  });
-  return new Slice(
-    Fragment.fromArray(children),
-    start ? slice.openStart - 1 : slice.openStart,
-    end ? slice.openEnd - 1 : slice.openEnd,
-  );
-}
+export const unwrapHalfSelectedCallouts = repair.unwrapHalfSelected;
 
 // The nesting case, on the paste side. A callout the selection covered end-to-end is a real box and
 // stays one — but pasted into either of CALLOUT_HOSTILE_ANCESTORS it is the same forbidden shape a
 // drop is refused for, and Ctrl+V reached both just as easily as a drag did. Here the box is dropped
 // and its contents kept, which is the paste-shaped answer: the caret is where the text was asked
 // for, and there is no second place it could go.
-//
-// Every depth, not just the slice's top level. A callout can sit one or more levels down — copy a
-// quote that holds one (`> > [!NOTE]`, which loads from stored markdown even though it can no
-// longer be authored) and the slice is blockquote(callout(…)). wouldNestCallout looks at every
-// descendant, so a shallow repair reported "this needs fixing" and then returned the slice
-// untouched, and the paste nested the box after all — while the same slice dropped was refused.
-//
-// The one thing that must not move is a node on an open edge. openStart/openEnd count levels down
-// the slice's first and last child, and removing a node on either path would leave those depths
-// describing content that is no longer there — ProseMirror throws on the mismatch. So the rule is:
-// a callout is removable only where both open counts have run out. `startOpen`/`endOpen` follow
-// the two paths down (a single child can be on both, which is the cut-on-both-sides case), and
-// anything off them is fair game however deep it is.
-//
-// Restructuring off-path subtrees is safe because `child.copy(inner)` keeps the node itself, so no
-// path ever gets shorter. Splicing a callout's `block+` children into its parent stays
-// schema-valid throughout: blockquote and callout are both `block+`, listItem is `paragraph block*`
-// so a callout can only ever sit at index ≥ 1 there, and cells are paragraph-only so none lives in
-// one. Text nodes end the recursion on their own — an empty content fragment comes back unchanged.
-//
-// Returns the same Fragment when nothing changed, which is what lets the caller keep its identity
-// check and skip dispatching a redundant transaction.
-function flattenCallouts(fragment: Fragment, openStart: number, openEnd: number): Fragment {
-  const lastIndex = fragment.childCount - 1;
-  const children: PMNode[] = [];
-  let changed = false;
-  fragment.forEach((child, _offset, index) => {
-    const startOpen = index === 0 ? openStart : 0;
-    const endOpen = index === lastIndex ? openEnd : 0;
-    if (startOpen === 0 && endOpen === 0 && child.type.name === CALLOUT_NAME) {
-      changed = true;
-      flattenCallouts(child.content, 0, 0).forEach((grandChild) => children.push(grandChild));
-      return;
-    }
-    const inner = flattenCallouts(
-      child.content,
-      Math.max(startOpen - 1, 0),
-      Math.max(endOpen - 1, 0),
-    );
-    if (inner === child.content) {
-      children.push(child);
-      return;
-    }
-    changed = true;
-    children.push(child.copy(inner));
-  });
-  return changed ? Fragment.fromArray(children) : fragment;
-}
-
-function flattenClosedCallouts(slice: Slice): Slice {
-  const { content, openStart, openEnd } = slice;
-  const flattened = flattenCallouts(content, openStart, openEnd);
-  return flattened === content ? slice : new Slice(flattened, openStart, openEnd);
-}
+export const flattenClosedCallouts = repair.flattenClosed;
 
 const calloutSliceGuardKey = new PluginKey('calloutSliceGuard');
 

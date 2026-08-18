@@ -4,8 +4,12 @@ import { TableKit } from '@tiptap/extension-table';
 import StarterKit from '@tiptap/starter-kit';
 import { Slice, type Node as PMNode, type Schema } from '@tiptap/pm/model';
 import { Callout } from './callout-extension';
-import { repairIncomingSlice, unwrapHalfSelectedCallouts } from './callout-slice-guard';
-import { unwrapHalfSelectedDetails } from './details-slice-guard';
+import {
+  flattenClosedCallouts,
+  repairIncomingSlice,
+  unwrapHalfSelectedCallouts,
+} from './callout-slice-guard';
+import { flattenClosedDetails, unwrapHalfSelectedDetails } from './details-slice-guard';
 import { dropOpenWrappers } from './slice-placement';
 import {
   MarkdownDetails,
@@ -224,6 +228,63 @@ describe('a selection that stays inside one accordion', () => {
     );
     expect(shape(asPasted(slice))).toBe(
       '<detailsSummary("イトル"), detailsContent(paragraph("abc"))> (1,2)',
+    );
+  });
+});
+
+// The other half of each guard, which the cases above never touch. `flattenClosed*` is the paste
+// answer to a *whole* box headed somewhere it may not go: the box is dropped and its contents kept,
+// at every depth rather than only at the slice's top level, because a box can arrive nested inside a
+// quote that loaded from stored markdown.
+//
+// Reached from `handlePaste` and only after `wouldNest*` has said yes, so these call it directly —
+// the position question is a separate one and belongs to specs that have a live editor. Pinned
+// because a shared factory has to keep the recursion, and the two versions of it differ today: the
+// callout recurses into the box it removes, the accordion does not.
+describe('what flattenClosed makes of a whole box in the slice', () => {
+  it('takes a callout out of a quote and keeps its blocks', () => {
+    const slice = new Slice(doc(quote(callout(p('中身')))).content, 0, 0);
+    expect(shape(flattenClosedCallouts(slice))).toBe('<blockquote(paragraph("中身"))> (0,0)');
+  });
+
+  it('takes a callout out of a callout, at every depth', () => {
+    const slice = new Slice(doc(callout(p('外'), callout(p('内')))).content, 0, 0);
+    expect(shape(flattenClosedCallouts(slice))).toBe('<paragraph("外"), paragraph("内")> (0,0)');
+  });
+
+  it('leaves a slice with no callout in it identical', () => {
+    const slice = new Slice(doc(quote(p('中身'))).content, 0, 0);
+    expect(flattenClosedCallouts(slice)).toBe(slice);
+  });
+
+  it('takes an accordion out of a quote, title first as a paragraph', () => {
+    const slice = new Slice(doc(quote(withTitle('本文'))).content, 0, 0);
+    expect(shape(flattenClosedDetails(slice))).toBe(
+      '<blockquote(paragraph("タイトル"), paragraph("本文"))> (0,0)',
+    );
+  });
+
+  it('drops an empty title rather than leaving an empty paragraph', () => {
+    const bare = details(schema.nodes.detailsSummary.create(), detailsBody(p('本文')));
+    const slice = new Slice(doc(quote(bare)).content, 0, 0);
+    expect(shape(flattenClosedDetails(slice))).toBe('<blockquote(paragraph("本文"))> (0,0)');
+  });
+
+  it('leaves a slice with no accordion in it identical', () => {
+    const slice = new Slice(doc(quote(p('中身'))).content, 0, 0);
+    expect(flattenClosedDetails(slice)).toBe(slice);
+  });
+
+  // Where the two differ today, and the case a factory has to make a decision about: the callout
+  // recurses into the box it just removed, so a callout nested in a callout comes out flat. The
+  // accordion's version pushes `detailsUnwrapped`'s result without recursing, so a box inside the
+  // body it lifts out is left as it was. An accordion cannot nest in an accordion, so the shape
+  // that shows the difference is one carried inside the body.
+  it('does not recurse into what it lifts out of an accordion body', () => {
+    const nested = details(summary('外'), detailsBody(quote(withTitle('内'))));
+    const slice = new Slice(doc(nested).content, 0, 0);
+    expect(shape(flattenClosedDetails(slice))).toBe(
+      '<paragraph("外"), blockquote(details(detailsSummary("タイトル"), detailsContent(paragraph("内"))))> (0,0)',
     );
   });
 });
