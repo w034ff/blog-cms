@@ -1467,6 +1467,9 @@ body.link-menu-open .table-toolbar {
   gap: 1em;
   margin: 1.25em 0;
   padding: 0.75em 1em;
+  /* The picture is positioned against this box, and the text column is held clear of it by the same
+     width — declared once here so the two cannot disagree (§16.3). */
+  position: relative;
   /* One height for every card, which is what makes a card read as a part rather than as a box that
      grows with its text (Zenn and Qiita both fix theirs; measured 2026-08-19, §16). `min-height`
      rather than `height`, so content nobody predicted grows the card instead of being cut by the
@@ -1490,6 +1493,21 @@ body.link-menu-open .table-toolbar {
   min-width: 0;
   flex: 1;
 }
+/* The width the picture occupies, and the room the text leaves for it. `min()` rather than a
+   breakpoint: 16rem is what keeps the box at the og:image's own ratio against the card's height
+   (§15), and the 40% is what stops a fixed 256px eating a phone's card whole.
+
+   Set on the cards rather than on `:root` so the two rules below read against the same box the
+   picture is positioned in. Cards with no picture leave the padding at 0 — the text has the whole
+   width, which is what §16.2's centred column is measured in. */
+.prose a.link-card,
+.prose .link-card-view {
+  --link-card-image-width: min(16rem, 40%);
+}
+.prose a.link-card:has(img) .link-card-text,
+.prose .link-card-view:has(img) .link-card-body {
+  padding-right: calc(var(--link-card-image-width) + 1em);
+}
 /* Fixed box, cropped to fill: uploads arrive at whatever shape the author had,
    and a card whose height follows its picture would make a list of cards ragged.
    `align-self` keeps it at the top so a two-line card does not stretch it.
@@ -1497,34 +1515,37 @@ body.link-menu-open .table-toolbar {
    box from this one rule — the two surfaces disagreeing about the size is the
    thing showing the image in the editor was meant to rule out (§13). */
 .prose .link-card-image {
-  flex-shrink: 0;
-  /* Full bleed down the card's right edge: `stretch` takes the height from the row, and the
-     negative margins cancel the card's own padding so the picture meets the border on three sides.
-     The two are one decision — stretching inside the padding would leave a 12px band above and
-     below that reads as a misplaced picture rather than as a smaller one. */
-  align-self: stretch;
-  /* The width follows from the height, not the other way round (§15). Against the card's fixed
-     136px the box is 256x134, and 1.91 is the og:image ratio itself — measured 2026-08-19, every
-     site carries ~1.9:1 — so nothing is cropped on either axis. Picking a width first and fixing
-     the height afterwards is what puts the crop back.
-
-     `max-width` rather than a breakpoint, because this stylesheet has none. It binds below about
-     640px of card, where the picture gives width back to the text and takes the crop instead. */
-  width: 16rem;
-  max-width: 40%;
-  /* The floor is for the editor's card, which has no fixed height of its own — the picker state
-     has to be free to grow (§16), so a short resolved card there could otherwise shrink the
-     picture with it. On the published card it never binds.
-
-     The ceiling is the card's height less its two borders, and the subtraction is load-bearing.
-     An author's upload is any shape (a 350x696 portrait is in the seed data, 397px tall at this
-     width), but so is a plain `8.5rem`: either one exceeds what the card would otherwise be, and
-     then the picture decides the height instead of `min-height`. Measured 2026-08-19, that put
-     three cards at 136.39 / 136.39 / 138 rather than at one number. */
-  min-height: 5rem;
-  max-height: calc(8.5rem - 2px);
-  margin: -0.75em -1em -0.75em 0;
+  /* Out of flow, pinned to the card's padding box — which is the inside of its border, so the
+     picture meets it on three sides without cancelling the padding by hand (§16.3).
+  
+     **Being out of flow is what makes one rule fit both surfaces.** As a flex item the picture's
+     own aspect ratio joined the row's height, so it needed a ceiling to stop a tall upload
+     inflating the card — and that ceiling was the published card's height, which the editor's card
+     (taller by its control band) then hit 7px short of its own border. Positioned, the picture
+     takes the height it is given and contributes none, so no ceiling, no floor, and nothing to keep
+     in step between the two. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* `height: 100%`, not `bottom: 0`. An `<img>` is a replaced element, so an auto height resolves
+     to the picture's own and `bottom` is then dropped as over-constrained — measured 2026-08-19,
+     that left the editor's card exactly the 7px short this rule exists to fix. A percentage
+     resolves against the containing block, which here is the card's padding box. */
+  height: 100%;
+  width: var(--link-card-image-width);
+  margin: 0;
   object-fit: cover;
+}
+/* A card whose target has no picture (§16.2). The fixed height is spent on three lines of text and
+   the rest falls to the bottom, which reads as a missing element rather than as room — so the
+   column is centred and the same slack sits above and below it instead. Nothing else moves: the
+   height, the clamps and the text are what they are on every other card.
+
+   Keyed on the anchor, so it does not reach the editor's NodeView. That card carries the control
+   band at its top, and centring what hangs below it would put the two states' controls back out of
+   line — §7.1 is what that costs. */
+.prose a.link-card:not(:has(img)) {
+  align-items: center;
 }
 .prose a.link-card:hover {
   background: #f6f8fa;
@@ -1590,6 +1611,7 @@ body.link-menu-open .table-toolbar {
   gap: 1em;
   margin: 1.25em 0;
   padding: 0.75em 1em;
+  position: relative;
   border: 1px solid #d0d7de;
   border-radius: 6px;
   /* Restated for the same reason the border is: the shared image rule bleeds to the edges here
