@@ -137,11 +137,17 @@ test('an explicit thumbnail reaches the list, the card and og:image', async ({ p
   // The box is the stylesheet's, not the file's. Uploads arrive at whatever size the author had,
   // and a card that sized itself to its picture would make a column of cards ragged — so this
   // measures the rendered box rather than trusting that the rule matched. The fixture is a 1x1
-  // PNG, which makes the two outcomes unmistakable: 128x80 is the rule, 1x1 is no rule at all.
-  const box = await card.locator('img.link-card-image').boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.width).toBeCloseTo(128, 0);
-  expect(box!.height).toBeCloseTo(80, 0);
+  // PNG, which makes the two outcomes unmistakable: a 256-wide box is the rule, 1x1 is no rule.
+  //
+  // The height is not a number any more. The picture runs the card's full height, so what pins it
+  // is that it meets the border on three sides — a fixed number here would have to be recomputed
+  // every time the text above it changes by a line.
+  const cardBox = (await card.boundingBox())!;
+  const box = (await card.locator('img.link-card-image').boundingBox())!;
+  expect(box.width).toBeCloseTo(256, 0);
+  expect(box.height).toBeCloseTo(cardBox.height - 2, 0);
+  expect(box.y - cardBox.y).toBeCloseTo(1, 0);
+  expect(cardBox.x + cardBox.width - (box.x + box.width)).toBeCloseTo(1, 0);
 
   // The editor's card shows the same image, in the same box (criterion 4f, §13). Measured from the
   // post just published rather than from a seeded one, because the seeded posts have no image at
@@ -160,10 +166,12 @@ test('an explicit thumbnail reaches the list, the card and og:image', async ({ p
   // The new layout rule is `.link-card-view` becoming a flex row; that the shared
   // `.prose .link-card-image` reaches a NodeView it was not written for is the assumption worth
   // measuring. Same 1x1 fixture, so the same two outcomes are unmistakable.
-  const editorBox = await editorImage.boundingBox();
-  expect(editorBox).not.toBeNull();
-  expect(editorBox!.width).toBeCloseTo(128, 0);
-  expect(editorBox!.height).toBeCloseTo(80, 0);
+  const editorCardBox = (await page.locator('.ProseMirror .link-card-view').boundingBox())!;
+  const editorBox = (await editorImage.boundingBox())!;
+  expect(editorBox.width).toBeCloseTo(256, 0);
+  expect(editorBox.height).toBeCloseTo(editorCardBox.height - 2, 0);
+  expect(editorBox.y - editorCardBox.y).toBeCloseTo(1, 0);
+  expect(editorCardBox.x + editorCardBox.width - (editorBox.x + editorBox.width)).toBeCloseTo(1, 0);
 
   // Right of the text, not left: the editor teaching a layout the reader never sees is the one way
   // this change could make things worse (§13).

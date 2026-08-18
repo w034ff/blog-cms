@@ -1467,8 +1467,18 @@ body.link-menu-open .table-toolbar {
   gap: 1em;
   margin: 1.25em 0;
   padding: 0.75em 1em;
+  /* One height for every card, which is what makes a card read as a part rather than as a box that
+     grows with its text (Zenn and Qiita both fix theirs; measured 2026-08-19, §16). `min-height`
+     rather than `height`, so content nobody predicted grows the card instead of being cut by the
+     `overflow` below — the clamps two rules down are what keep that from happening: title 2 lines
+     + description 1 + domain is 102.45px against the 110px this leaves inside. */
+  min-height: 8.5rem;
   border: 1px solid #d0d7de;
   border-radius: 6px;
+  /* The image runs to the card's edges, so the corners have to be cut by the box rather than by
+     the picture — an `<img>` with its own radius would still square off the 1px border it sits
+     against. Nothing else here overflows. */
+  overflow: hidden;
   color: inherit;
   text-decoration: none;
   transition: background-color 0.12s ease;
@@ -1488,19 +1498,49 @@ body.link-menu-open .table-toolbar {
    thing showing the image in the editor was meant to rule out (§13). */
 .prose .link-card-image {
   flex-shrink: 0;
-  align-self: flex-start;
-  width: 8rem;
-  height: 5rem;
-  margin: 0;
-  border-radius: 4px;
+  /* Full bleed down the card's right edge: `stretch` takes the height from the row, and the
+     negative margins cancel the card's own padding so the picture meets the border on three sides.
+     The two are one decision — stretching inside the padding would leave a 12px band above and
+     below that reads as a misplaced picture rather than as a smaller one. */
+  align-self: stretch;
+  /* The width follows from the height, not the other way round (§15). Against the card's fixed
+     136px the box is 256x134, and 1.91 is the og:image ratio itself — measured 2026-08-19, every
+     site carries ~1.9:1 — so nothing is cropped on either axis. Picking a width first and fixing
+     the height afterwards is what puts the crop back.
+
+     `max-width` rather than a breakpoint, because this stylesheet has none. It binds below about
+     640px of card, where the picture gives width back to the text and takes the crop instead. */
+  width: 16rem;
+  max-width: 40%;
+  /* The floor is for the editor's card, which has no fixed height of its own — the picker state
+     has to be free to grow (§16), so a short resolved card there could otherwise shrink the
+     picture with it. On the published card it never binds.
+
+     The ceiling is the card's height less its two borders, and the subtraction is load-bearing.
+     An author's upload is any shape (a 350x696 portrait is in the seed data, 397px tall at this
+     width), but so is a plain `8.5rem`: either one exceeds what the card would otherwise be, and
+     then the picture decides the height instead of `min-height`. Measured 2026-08-19, that put
+     three cards at 136.39 / 136.39 / 138 rather than at one number. */
+  min-height: 5rem;
+  max-height: calc(8.5rem - 2px);
+  margin: -0.75em -1em -0.75em 0;
   object-fit: cover;
 }
 .prose a.link-card:hover {
   background: #f6f8fa;
 }
 .prose .link-card-title {
-  display: block;
   font-weight: 600;
+  /* Two lines at most. Without a clamp a long title wraps as far as it likes, and against a fixed
+     height that is not a taller card any more — it is a title the `overflow` cuts silently. Two
+     rather than one because the title is what earns the click; the description below gives up its
+     second line instead. `block` is the fallback if the clamp is ever dropped. */
+  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 /* The secondary line: smaller and dimmed rather than given a colour, so the card needs no dark
    counterpart for it — `opacity` rides whatever the body colour is on either surface. */
@@ -1509,13 +1549,15 @@ body.link-menu-open .table-toolbar {
   font-size: 0.875em;
   opacity: 0.7;
   margin-top: 0.25em;
-  /* Two lines at most: a description is free text and a long one would turn the card into a
-     paragraph with a border. `display` is restated below and wins; the `block` above is what the
-     span falls back to if the clamp is ever dropped, so it does not rejoin the title's line. */
+  /* One line. It was two until the height was fixed (§16), and the line it gave up went to the
+     title: a description is free text, and on the sites measured it is as often the opening of the
+     body cut mid-sentence as it is a summary someone wrote. `display` is restated below and wins;
+     the `block` above is what the span falls back to if the clamp is ever dropped, so it does not
+     rejoin the title's line. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
   overflow: hidden;
 }
 /* The provenance line, on external cards only (docs/link-card-requirements.md §14.4). Keyed on the
@@ -1550,6 +1592,9 @@ body.link-menu-open .table-toolbar {
   padding: 0.75em 1em;
   border: 1px solid #d0d7de;
   border-radius: 6px;
+  /* Restated for the same reason the border is: the shared image rule bleeds to the edges here
+     too, and this is a <div>, so it inherits none of the anchor's rule. */
+  overflow: hidden;
 }
 /* The text column. `min-width: 0` is what lets it shrink — same floor problem as
    `.link-card-text` on the published card, and the reason a long title does not push the image
@@ -1655,6 +1700,33 @@ body.link-menu-open .table-toolbar {
   padding: 0.15em 0.6em;
   font-size: 0.875em;
   opacity: 0.7;
+}
+
+/* The card on a narrow screen (§16.1). The height that unifies the card on a wide one is mostly
+   text: at 390px the column is 165px, so title + description + domain stack to 102px and the card
+   is 136px — taller than either card measured on a phone (Zenn 122px, gadgeteer 88px).
+
+   The description is what goes. A one-line clamp in a 165px column shows a dozen characters, which
+   is not worth the 26px it costs, and dropping it takes the card to 104px. The title keeps both of
+   its lines: it is what earns the click, and cutting it to one buys 26px more at the price of a
+   title that ends after about ten characters.
+
+   The picture is not the reason for any of this, but it gets better anyway — a shorter card is a
+   less portrait box, so the crop measured on the phone goes from 43% of the og:image's width to
+   57%.
+
+   This is the first width breakpoint in this stylesheet. It is set where a one-line description
+   stops being worth its height, not at a device size. */
+@media (max-width: 30rem) {
+  .prose a.link-card {
+    min-height: 6.5rem;
+  }
+  .prose .link-card-description {
+    display: none;
+  }
+  .prose .link-card-image {
+    max-height: calc(6.5rem - 2px);
+  }
 }
 
 @media (prefers-color-scheme: dark) {
