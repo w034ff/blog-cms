@@ -14,6 +14,11 @@ import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
 import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
+import {
+  CALLOUT_DIV_CLASSES,
+  CALLOUT_TITLE_CLASS,
+  CALLOUT_TITLE_LABEL_CLASS,
+} from './callout-types';
 
 export type { TocEntry, CardTarget, ResolveCard };
 
@@ -25,20 +30,16 @@ export type { TocEntry, CardTarget, ResolveCard };
 // One tuple per (tag, attribute) — a second `['className', …]` on the same tag would be dead
 // rather than additive (see the <span> note below), so `link-card` joins the alert names here
 // instead of getting a list of its own.
-//   - markdown-alert-*: the GitHub-alert transform's container/title/content.
+//   - markdown-alert-*: the GitHub-alert transform's container/title/content. Spread from
+//     lib/callout-types.ts rather than listed, because this is the one place where a missing
+//     name fails *silently* — an unlisted class is stripped from the published HTML, so a new
+//     tier would author, save and reload correctly and simply render with no colour. Deriving
+//     it means adding a tier there is enough.
 //   - link-card: the stored form of a link card (docs/link-card-requirements.md §4.2), an empty
 //     `<div class="link-card" data-href="/posts/…">` that rehypeLinkCard resolves further down
 //     this pipeline. Without this the class is stripped and the card silently becomes an empty div.
-const divClasses: [string, ...string[]] = [
-  'className',
-  'markdown-alert',
-  'markdown-alert-note',
-  'markdown-alert-warning',
-  'markdown-alert-caution',
-  'markdown-alert-content',
-  'link-card',
-];
-const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
+const divClasses: [string, ...string[]] = ['className', ...CALLOUT_DIV_CLASSES, 'link-card'];
+const titleClass: [string, ...string[]] = ['className', CALLOUT_TITLE_CLASS];
 // Both allowed <span> classes, merged into one value-allowlist tuple: a schema attribute list
 // holds at most one usable tuple per attribute name — hast-util-sanitize's findDefinition
 // returns on the first entry whose name matches, so appending a second `['className', …]` for
@@ -53,7 +54,7 @@ const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
 // still stripped.
 const spanClasses: [string, ...string[]] = [
   'className',
-  'markdown-alert-title-label',
+  CALLOUT_TITLE_LABEL_CLASS,
   'accent-emphasis',
 ];
 const schema: SanitizeSchema = {

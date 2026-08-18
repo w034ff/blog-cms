@@ -3,7 +3,8 @@ import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import Suggestion, { exitSuggestion, type SuggestionProps } from '@tiptap/suggestion';
 import { SlashList, type SlashItem, type SlashListRef } from './SlashList';
-import { CALLOUT_TITLES, CALLOUT_TYPES, type CalloutType } from './callout-extension';
+import { CALLOUT_MENU_ORDER } from './callout-extension';
+import { CALLOUT_TITLES, type CalloutType } from '@/lib/callout-types';
 
 // Extra search terms per callout type, beyond the visible "囲み枠（…）" label (which already
 // matches `/囲み`) — so `/info`, `/danger`, `/callout`, `/コ` all filter sensibly. Aligned with
@@ -34,7 +35,7 @@ const CALLOUT_KEYWORDS: Record<CalloutType, string[]> = {
 type SlashEntry = SlashItem & { available?: (editor: Editor) => boolean };
 
 const ITEMS: SlashEntry[] = [
-  ...CALLOUT_TYPES.map<SlashEntry>((type) => ({
+  ...CALLOUT_MENU_ORDER.map<SlashEntry>((type) => ({
     id: `callout-${type}`,
     title: `囲み枠（${CALLOUT_TITLES[type]}）`,
     keywords: CALLOUT_KEYWORDS[type],
