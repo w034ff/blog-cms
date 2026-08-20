@@ -1612,6 +1612,16 @@ body.link-menu-open .table-toolbar {
   margin: 1.25em 0;
   padding: 0.75em 1em;
   position: relative;
+  /* §16's one height, on this surface too (§16.4). Restated rather than inherited, like the border
+     below: §16 keyed it on the anchor and this card is a <div>, so it went without a floor and sat
+     at whatever its lines came to — measured 90.78px with a title alone and 116.13px with a host
+     line, against the published 136px. Since §16.3 the picture takes its height from the card, so
+     that difference was a different crop of the same `<img src>`.
+
+     A floor, not a height: the control band adds ~35px that the reader never sees, so a card with
+     a note line still stands taller than the published one. What this removes is the editor's
+     cards differing from *each other*. */
+  min-height: 8.5rem;
   border: 1px solid #d0d7de;
   border-radius: 6px;
   /* Restated for the same reason the border is: the shared image rule bleeds to the edges here
@@ -1740,17 +1750,20 @@ body.link-menu-open .table-toolbar {
    less portrait box, so the crop measured on the phone goes from 43% of the og:image's width to
    57%.
 
+   The picture takes no ceiling of its own here. §16.3 moved it out of the flow, so it takes the
+   height it is given and contributes none — while a `max-height` derived from this tier's
+   *published* height held the editor's taller card 13.13px short of its own bottom border, the one
+   thing §16.3 exists to prevent (measured 2026-08-21, §16.4).
+
    This is the first width breakpoint in this stylesheet. It is set where a one-line description
    stops being worth its height, not at a device size. */
 @media (max-width: 30rem) {
-  .prose a.link-card {
+  .prose a.link-card,
+  .prose .link-card-view {
     min-height: 6.5rem;
   }
   .prose .link-card-description {
     display: none;
-  }
-  .prose .link-card-image {
-    max-height: calc(6.5rem - 2px);
   }
 }
 
