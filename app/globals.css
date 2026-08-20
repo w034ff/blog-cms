@@ -1666,6 +1666,7 @@ body.link-menu-open .table-toolbar {
   margin-top: 0.25em;
 }
 .prose .link-card-head button,
+.prose .embed-head button,
 .prose .link-card-results button {
   padding: 0.15em 0.6em;
   border: 1px solid #d0d7de;
@@ -1684,10 +1685,12 @@ body.link-menu-open .table-toolbar {
 /* Same hover tint and focus ring the editor's other chrome uses (the drag handle, the accordion
    toggle, the code block's diff toggle) — no colour of the card's own. */
 .prose .link-card-head button:hover,
+.prose .embed-head button:hover,
 .prose .link-card-results button:hover {
   background: rgba(113, 113, 122, 0.15);
 }
 .prose .link-card-head button:focus-visible,
+.prose .embed-head button:focus-visible,
 .prose .link-card-results button:focus-visible,
 .prose .link-card-search:focus-visible {
   outline: none;
@@ -1751,6 +1754,94 @@ body.link-menu-open .table-toolbar {
   }
 }
 
+/* Embed (docs/embed-requirements.md §9.5). The published block and the editor's NodeView build the
+   same two elements, so these rules serve both surfaces — which is what makes §7's "what the author
+   is looking at is what the reader gets" true of the box and not only of the player. Nothing here
+   is a colour of the embed's own: the unresolved state borrows the card's border, and the control
+   band borrows the card's chrome rules above. */
+.prose .embed {
+  margin: 1.25em 0;
+}
+/* The box that holds the ratio, and the reason the iframe is wrapped at all: an `<iframe>` given
+   `aspect-ratio` by itself still negotiates a size with its replaced-element defaults. The ratio
+   sits on the provider's class, so a provider with a different shape adds a rule beside this one
+   instead of changing how an embed is built (§4.3). */
+.prose .embed-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+  /* Behind the player until it paints, and behind the pillarbox of a video that is not 16:9 —
+     which a Shorts URL is, since its ratio cannot be known without a fetch (§9.6). */
+  background: #000;
+}
+.prose .embed-youtube .embed-frame {
+  aspect-ratio: 16 / 9;
+}
+.prose .embed-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  display: block;
+}
+/* The editor's embed (embed-extension.ts's NodeView): the published block, plus the control band
+   the card also keeps at its top (link-card-requirements.md §7.1) rather than at its foot — and a
+   box around the two.
+
+   **The box is for the band, not for the player.** Without it 「リンクに戻す」 floats above a
+   full-bleed black rectangle with no line saying which block it belongs to, and the block is an
+   atom: clicking anywhere in it selects the whole thing, so where it ends is something the author
+   has to be able to see. The border is the one every other block construct here already carries
+   (1px #d0d7de, 6px radius — the accordion, the code block card, the link card), so a fourth
+   construct still adds no palette of its own.
+
+   The published block has no border, and this is the one place the two surfaces differ on purpose:
+   the band is editor-only, so the box that holds it is too. The cost is that the player sits one
+   padding narrower than the published one — see docs/embed-requirements.md §7.2. */
+.prose .embed-view {
+  position: relative;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.5em 0.75em;
+}
+.prose .embed-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2.2em;
+}
+/* §7. An `<iframe>` swallows the pointer, and with it the drag handle's grab and any selection
+   dragged across the block. The player is inert until the block itself is the selection, which is
+   one click away — the click lands on the frame, which belongs to the NodeView, so ProseMirror
+   makes the NodeSelection that then hands the pointer to the player. */
+.prose .embed-view .embed-frame iframe {
+  pointer-events: none;
+}
+.ProseMirror-selectednode.embed-view .embed-frame iframe {
+  pointer-events: auto;
+}
+/* The block is an atom, so the selected state is drawn on the box: the browser's text highlight
+   has nothing to paint inside a node with no text of its own. The card's rule, restated because
+   the two classes are siblings rather than one. */
+.ProseMirror-selectednode.embed-view {
+  outline: 2px solid rgba(9, 105, 218, 0.5);
+  outline-offset: 1px;
+}
+/* A reference no provider claims, editor-side only. The published page degrades it to a plain link
+   (§6); here it says so, because this is the surface where the author can fix it.
+   The box is .embed-view's — both states are one block, and before the border moved there this
+   state was the only one that had an outline, which had it backwards: a block that draws its edges
+   only when it is broken. */
+.prose .embed-note {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+  word-break: break-all;
+}
+
 @media (prefers-color-scheme: dark) {
   /* Dark counterpart of the link card above — the accordion's and the code block card's dark
      values, for the same reason the light ones are shared. */
@@ -1762,7 +1853,9 @@ body.link-menu-open .table-toolbar {
   }
   .prose .link-card-view,
   .prose .link-card-search,
-  .prose .link-card-head button {
+  .prose .link-card-head button,
+  .prose .embed-head button,
+  .prose .embed-view {
     border-color: #30363d;
   }
 

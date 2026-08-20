@@ -21,7 +21,9 @@ import { CopyIcon } from './svg/CopyIcon';
 import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
 import { CardIcon } from './svg/CardIcon';
+import { PlayIcon } from './svg/PlayIcon';
 import { normalizeCardHref } from '@/lib/link-card-href';
+import { resolveEmbed } from '@/lib/embed-provider';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -314,7 +316,17 @@ export function LinkBubble({
   // requirement that the link be the whole line: a card is a block, so a link inside a sentence
   // cannot become one without taking the sentence apart.
   const link = linkAtCaret(editor);
-  const cardHref = link ? normalizeCardHref(link.href, window.location.origin) : null;
+  // Which of the two blocks this link can become, and the order is the decision
+  // (docs/embed-requirements.md §5). `normalizeCardHref` accepts every external http(s) URL, so
+  // asking it first would answer for a YouTube link too — and offer a card that publishes as a
+  // plain link, since the preview fetch cannot read that page (§9.1). One URL, one meaning: the
+  // provider is asked first and the card only gets what no provider claims.
+  const embedHref = link && resolveEmbed(link.href) ? link.href : null;
+  const toEmbed =
+    link && embedHref && editor.can().linkToEmbed({ from: link.from, to: link.to }, embedHref)
+      ? () => editor.chain().focus().linkToEmbed({ from: link.from, to: link.to }, embedHref).run()
+      : null;
+  const cardHref = link && !embedHref ? normalizeCardHref(link.href, window.location.origin) : null;
   const toCard =
     link && cardHref && editor.can().linkToCard({ from: link.from, to: link.to }, cardHref)
       ? () => editor.chain().focus().linkToCard({ from: link.from, to: link.to }, cardHref).run()
@@ -1319,6 +1331,11 @@ export function LinkBubble({
           <ToolbarButton round title='編集' shortcut={OPEN_SHORTCUT} onClick={openField}>
             <PencilIcon />
           </ToolbarButton>
+          {toEmbed && (
+            <ToolbarButton round title='埋め込みにする' onClick={toEmbed}>
+              <PlayIcon />
+            </ToolbarButton>
+          )}
           {toCard && (
             <ToolbarButton round title='カードにする' onClick={toCard}>
               <CardIcon />

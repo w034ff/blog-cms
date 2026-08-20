@@ -1,8 +1,9 @@
 # 埋め込み 要件定義
 
-- 状態: **未実装**。実装より先に書いた設計の記録である（`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§7、プロバイダ別は §9 以降。**YouTube は §9 で決めた。X は §10 で未決である**
+- 状態: **YouTube は実装済み**（2026-08-21）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§7、プロバイダ別は §9 以降。**X は §10 で未決のままである**
 - 作成: 2026-08-21（`docs/youtube-embed-requirements.md` として書き、同日 `embed-requirements.md` に改名した。プロバイダを足す前提が先に来たため）
-- 対象（予定）: `components/editor/embed-extension.ts`（ノード + NodeView）、`lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/rehype-embed.ts` と `lib/render.ts`、`components/editor/LinkBubble.tsx` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`app/globals.css`
+- 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/editor/embed-extension.ts`（ノード + NodeView + 3 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/PlayIcon.tsx`（入口 2）、`components/editor/link-card-extension.ts` のピッカー（入口 1）、`app/globals.css`
+- 測定: `lib/embed-provider.test.ts`（11 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（6 件）、`e2e/editor-embed.spec.ts`（7 件）、`e2e/public-embed.spec.ts`（3 件）
 - 関連: `docs/link-card-requirements.md`（本書はあちらの決定を 1 つも動かさない。借りるのはあちらの §4.2 の保存形式、§4.4 の検証の線、§6 の後段配置、§14.1 の「読者は取得しない」の 4 つで、§14.13 が本書の §3 を名指している）、`docs/link-requirements.md`（素のリンクのままにする形の行き先）
 
 行に単独で置かれた外部サービスの URL を、公開ページで再生・表示できるブロックとして出すための要件。
@@ -153,15 +154,51 @@
 
 `resolveEmbed` が null を返した参照は、公開側では**素のリンクに落ちる** — `link-card-requirements.md` §6.1 と同じ扱いで、行き先も同じである。
 
+### 6.1 素のリンクに落とす側も、公開されるマークアップである（2026-08-21、実装時に見つけた）
+
+**`resolveEmbed` が null を返したことは「安全な参照である」を意味しない。** 最初の実装は、どのプロバイダも名乗り出なかった参照をそのまま `fallbackLink` に渡していた。`javascript:alert(1)` はどのプロバイダも名乗り出ないので、**この段が `<a href="javascript:alert(1)">` を組み立てた** — sanitize の後ろで、誰の検査も受けずに。
+
+`lib/render.test.ts` の E2 を書いた最初の実行が赤にした。**出口は 2 つあり、両方が拒まなければならない**（iframe と、素のリンク）。塞いだのは `externalCardHost`（`lib/link-card-href.ts`）で、外部カードの参照が既に通っている検査そのものである — http(s)、解けること、資格情報を持たないこと。落ちたものはリンクにせず捨てる。`rehypeLinkCard` が同じ入力に対してやることと同じである。
+
+**教訓は §4.2 の言い直しではなく、その範囲である。** あそこは「`src` はこちらが組み立てる」と書いており、それは守られていた。守られていなかったのは、**同じ段が `src` 以外のものも公開している**という事実のほうである。
+
 ---
 
 ## 7. エディタでの見え方
 
 NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレースホルダ）を出すと、何を貼ったのかが編集中に分からない。
 
-**`iframe` はポインタイベントを飲む。** ドラッグハンドルも範囲選択も、`iframe` の上では反応しない。ノードが選択されていない間は `pointer-events: none` を掛け、クリックでノード選択に入ってから操作を許す形を採る。**これは未実測であり（§12）、`/verify` で確かめる対象である。**
+**`iframe` はポインタイベントを飲む。** ドラッグハンドルも範囲選択も、`iframe` の上では反応しない。ノードが選択されていない間は `pointer-events: none` を掛け、クリックでノード選択に入ってから操作を許す。**クリックは frame に当たり、frame は NodeView のものなので ProseMirror が NodeSelection を作る** — その選択がプレーヤーにポインタを渡す、という順序である（実測 2026-08-21、`e2e/editor-embed.spec.ts`）。
 
 操作ボタン（削除・リンクに戻す）はカードと同じくブロック上端の固定帯に置く（`link-card-requirements.md` §7.1）。カードと同じ理由でキャレットは中に入れない（`atom: true`）。
+
+### 7.1 アコーディオンのタイトルは拒む対象ですらない（2026-08-21、実装時に分かった）
+
+基準 E7 は当初「表のセル・アコーディオンのタイトルには挿入できない」と書いていた。**タイトルのほうは測れない。**
+
+`detailsSummary` の内容は `marks: ''` で定義されている（`components/editor/details-extension.ts`）ので、**タイトルにはリンクが存在しえない**。入口 2 はキャレットのあるリンクから始まるものなので、そこにバブルは出ず、拒むべき操作が発生しない。
+
+**したがって E7 が測るのは表のセルとリスト項目の先頭である。** どちらも `canReplaceWith` が答え、後者は `link-card-requirements.md` §14.6 が「リスト項目が頭を失う」として一度支払った形である。タイトルの側は、置ける場所の判定ではなく**スキーマがそこまで届かせない**という別の機構で閉じている。
+
+### 7.2 ブロックは枠に入る（2026-08-21 決定）
+
+**決定: エディタの埋め込みは 1px `#d0d7de`・6px の枠に入り、プレーヤーはその内側の padding の中に置く。公開側は枠を持たない。**
+
+**枠は帯のためであって、プレーヤーのためではない。** 枠が無いと「リンクに戻す」が全幅の黒い矩形の上に浮き、どのブロックのものかを言う線が 1 本も無い。埋め込みは atom で、クリックすればブロック全体が選択されるので、どこで終わるのかは著者が見えている必要がある。枠そのものは他の 3 つのブロック構造（アコーディオン、コードブロックのカード、リンクカード）が既に持っているものと同じで、4 つ目も自前の色を増やさない。
+
+**同じ枠を、解決できない参照の状態にも使う。** 以前は `.embed-unresolved` だけが枠を持っており、**ブロックが壊れているときにだけ輪郭を得る**という逆の形になっていた。今は 2 つの状態が 1 つの箱を共有する。
+
+非選択状態で 3 案を描いて比べた（2026-08-21）:
+
+| 案 | プレーヤーの幅 | 見え方 |
+| --- | --- | --- |
+| 枠なし | 公開と同じ | 帯が浮く |
+| **枠 + 内側 padding（採用）** | 公開より 1.5em 狭い | 帯とプレーヤーが 1 つの箱に入る |
+| 枠 + フレームが枠に接する | 公開と同じ | 帯が枠内の 1 行、その下にプレーヤー |
+
+**3 つ目は設計としては優れている** — プレーヤーの幅が公開ページと変わらず、角丸も二重にならず、`link-card-requirements.md` §15 が画像について下した判断（枠いっぱいに出す）と同じ形である。**採らなかったのは見た目の判断による**（2026-08-21）。
+
+**引き受ける代償**: エディタのプレーヤーは公開ページより padding 2 つぶん狭く、角丸は外枠とフレームで二重になる。§7 の「著者が見ているものが読者が得るもの」は、比率・中身・位置については保たれ、**幅については保たれない**。
 
 ---
 
@@ -302,43 +339,45 @@ URL の形（`/status/<ID>`・`/i/status/<ID>`・プロフィール URL）は決
 
 ---
 
-## 11. 受け入れ基準（実装時に測る）
+## 11. 受け入れ基準（実測 2026-08-21）
 
 **共通**:
 
-| id | 基準 |
-| --- | --- |
-| E1 | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む） |
-| E2 | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される |
-| E3 | `%zz` のような壊れた参照でページが 500 にならない |
-| E4 | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている |
-| E5 | ドラッグハンドルで埋め込みブロックを掴んで移動できる |
-| E6 | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動） |
-| E7 | 表のセル・アコーディオンのタイトルには挿入できない |
-| E8 | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い |
-| E9 | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない |
-| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①） |
+| id | 基準 | 測り方 |
+| --- | --- | --- |
+| E1 | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む） | `e2e/editor-embed.spec.ts` |
+| E2 | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される | `lib/render.test.ts` / `e2e/public-embed.spec.ts`（**2 つの出口の両方** — §6.1） |
+| E3 | `%zz` のような壊れた参照でページが 500 にならない | `lib/embed-provider.test.ts` / `lib/render.test.ts` |
+| E4 | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている | `lib/render.test.ts` |
+| E5 | ドラッグハンドルで埋め込みブロックを掴んで移動できる | `e2e/editor-embed.spec.ts`（ハンドルが 1 つ出る。段落には出ない） |
+| E6 | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動） | **未測** |
+| E7 | 表のセル・リスト項目の先頭には挿入できない | `e2e/editor-embed.spec.ts`（アコーディオンのタイトルはこの基準から外れる — §7.1） |
+| E8 | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い | `e2e/editor-embed.spec.ts`（動画 URL とプレイリスト URL の両方から） |
+| E9 | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない | `e2e/editor-embed.spec.ts` |
+| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①） | **未測**（取得の段が存在しないことは読めば分かるが、測ってはいない） |
 
 **YouTube**:
 
-| id | 基準 |
-| --- | --- |
-| Y1 | `watch?v=` / `youtu.be/` / `shorts/` / `live/` / `embed/` の 5 形が同じ `iframe src` になる |
-| Y2 | ホスト許可リストの外（`youtube-nocookie.com`・`music.youtube.com`・他サイト）は埋め込みにならず、カード側の判定に落ちる |
-| Y3 | `?t=90` / `?t=90s` / `?t=1h2m3s` が `start=` の同じ秒数になり、解釈できない `t` は `start=` 無しになる |
-| Y4 | `?list=` / `/playlist` / `/@handle` / `/channel/…` は埋め込みにならず、素のリンクのまま公開される |
-| Y5 | `watch?v=<ID>&list=…` は動画として埋め込まれ、`list` は `src` に入らない |
+| id | 基準 | 測り方 |
+| --- | --- | --- |
+| Y1 | `watch?v=` / `youtu.be/` / `shorts/` / `live/` / `embed/` の 5 形が同じ `iframe src` になる | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts` |
+| Y2 | ホスト許可リストの外（`youtube-nocookie.com`・`music.youtube.com`・他サイト）は埋め込みにならず、カード側の判定に落ちる | `lib/embed-provider.test.ts` |
+| Y3 | `?t=90` / `?t=90s` / `?t=1h2m3s` が `start=` の同じ秒数になり、解釈できない `t` は `start=` 無しになる | `lib/embed-provider.test.ts`（受ける 5 形と、受けない 6 形） |
+| Y4 | `?list=` / `/playlist` / `/@handle` / `/channel/…` は埋め込みにならず、素のリンクのまま公開される | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts` |
+| Y5 | `watch?v=<ID>&list=…` は動画として埋め込まれ、`list` は `src` に入らない | `lib/embed-provider.test.ts` |
 
 ---
 
 ## 12. 未実測のこと
 
-- **スライスガードが本当に不要か**（§5）。カードと同じ block atom だから覆うはず、という推論であって、ペースト・ドロップで測っていない
-- **NodeView の `pointer-events` の扱い**（§7）。`iframe` を挟んだドラッグと範囲選択は実ブラウザで測る必要がある
+- **スライスガードが本当に不要か**（§5）。カードと同じ block atom だから覆うはず、という推論のままである。ペースト・ドロップで測っていない
+- **Backspace 1 回で消えること**（基準 E6）
 - **X の埋め込みが実際に投稿を描画するか**（§10.3）
 - `youtu.be` 以外のホストで `t=` が付いた実例
 - Shorts の実 ID・ライブ配信の実 ID での `/embed/<ID>` の応答。§9.2 の表は通常動画の ID を 5 つのパスに当てて測っている
-- markdown 往復（E1）。絶対 URL を `data-href` に入れた往復は、外部カードでも `link-card-requirements.md` §14.10 で未実測のまま残っている
+- **公開ページの描画中にサーバが第三者へ要求を出さないこと**（基準 E10）。取得の段が存在しないことは読めば分かるが、測ってはいない
+
+markdown 往復（E1）はここから外れた — `e2e/editor-embed.spec.ts` が `&amp;` を含む形で測っている。**絶対 URL を `data-href` に入れた往復は、外部カードでは `link-card-requirements.md` §14.10 に未実測のまま残っている**。同じ経路を通るので、あちらの穴はこちらの測定では埋まらない。
 
 ---
 

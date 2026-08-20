@@ -503,3 +503,91 @@ describe('renderMdxToHtml — external link cards', () => {
     expect(html).not.toContain('link-card-domain');
   });
 });
+
+// docs/embed-requirements.md §6 and §9.5, the rows the published side can measure. An embed is
+// stored as a reference and nothing else — `<div class="embed" data-href="…">` — and the stage that
+// resolves it runs AFTER rehype-sanitize, which is what these pin: `<iframe>` is not in the schema,
+// so the element below can only exist because it is built where sanitize can no longer reach it,
+// and the `src` it carries therefore meets no protocol check anywhere (§4.2).
+describe('renderMdxToHtml / embed', () => {
+  const ID = 'hDPybQwAuVo';
+  const resolveCard = async (href: string) =>
+    href === '/posts/abc123'
+      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
+      : null;
+
+  it('turns a stored reference into a lazily-loaded nocookie iframe (Y1)', async () => {
+    const { html } = await renderMdxToHtml(
+      `<div class="embed" data-href="https://www.youtube.com/watch?v=${ID}&amp;t=90"></div>`,
+    );
+    expect(html).toContain('<div class="embed embed-youtube">');
+    expect(html).toContain(`src="https://www.youtube-nocookie.com/embed/${ID}?start=90"`);
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('allowfullscreen');
+    // No fetch runs, so the name is generic on purpose (§8-②) — but it is present.
+    expect(html).toContain('title="YouTube 動画"');
+  });
+
+  it('keeps the class through sanitize (E4)', async () => {
+    // `embed` shares the `div` className tuple with the alert classes and `link-card`; dropped from
+    // it, the class is stripped and the stage below sees an ordinary div. Asserting the iframe is
+    // not enough on its own, so the stored class is asserted where it survives: an unresolvable
+    // reference keeps the div nowhere, so this measures the resolved one reaching the stage at all.
+    const { html } = await renderMdxToHtml(
+      `<div class="embed" data-href="https://youtu.be/${ID}"></div>\n\n<div class="evil">x</div>`,
+    );
+    expect(html).toContain('<iframe');
+    expect(html).not.toContain('evil');
+  });
+
+  it('refuses a hand-written javascript: reference (E2)', async () => {
+    // The same §4.4 hole the card has, one step worse: what this stage builds is an iframe, and
+    // nothing downstream checks its src. **Both exits have to refuse it** — the iframe and the
+    // plain-link fallback, which is published markup built after sanitize as well. The fallback was
+    // the one that let it through until this test was written.
+    for (const href of ['javascript:alert(1)', 'data:text/html,x', '//evil.example/x']) {
+      const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+      expect(html, href).not.toContain('<iframe');
+      expect(html, href).not.toContain('<a');
+      expect(html, href).not.toContain('evil.example');
+    }
+  });
+
+  it('falls back to a plain link for what names no single video (Y4)', async () => {
+    for (const href of [
+      'https://www.youtube.com/playlist?list=PLabc',
+      'https://www.youtube.com/@handle',
+      'https://example.com/article',
+    ]) {
+      const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`, {});
+      expect(html, href).not.toContain('<iframe');
+      expect(html, href).toContain(`<a href="${href}">`);
+    }
+  });
+
+  it('does not take the page down on a broken percent-escape (E3)', async () => {
+    const { html } = await renderMdxToHtml(
+      '<div class="embed" data-href="https://www.youtube.com/watch?v=%zz"></div>',
+    );
+    expect(html).not.toContain('<iframe');
+  });
+
+  it("does not touch an author's own div that happens to carry the class", async () => {
+    // `embed` is an ordinary word. The stage claims only a div that carries `data-href`, because a
+    // hand-written `<div class="embed">` collected and then dropped would take its children with
+    // it — content vanishing from the published page with no trace.
+    const { html } = await renderMdxToHtml('<div class="embed">著者の本文</div>');
+    expect(html).toContain('著者の本文');
+  });
+
+  it('leaves the link card alone (§4)', async () => {
+    // The two stages read disjoint classes. A card in the same body must still be a card, which is
+    // what keeps "one node per class" more than a statement about the document format.
+    const { html } = await renderMdxToHtml(
+      `<div class="link-card" data-href="/posts/abc123"></div>\n\n<div class="embed" data-href="https://youtu.be/${ID}"></div>`,
+      { resolveCard },
+    );
+    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    expect(html).toContain('<iframe');
+  });
+});

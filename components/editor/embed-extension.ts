@@ -1,0 +1,258 @@
+import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
+import type { Node as PMNode } from '@tiptap/pm/model';
+import { resolveEmbed, type EmbedTarget } from '@/lib/embed-provider';
+import type { MarkdownSerializerState } from './markdown-serializer-state';
+
+// The embed (docs/embed-requirements.md): a block that plays or shows an external item in place,
+// rather than naming it with a line of link text.
+//
+// What is stored is the reference the author handed over and nothing else:
+//
+//   <div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo&amp;t=90"></div>
+//
+// One node and one class for every provider (§4). The provider, the src, and the accessible name
+// are all derived from that string by lib/embed-provider.ts, which both this file and the published
+// stage ask — so adding a provider touches neither the document format nor the sanitize schema.
+//
+// The URL is stored rather than an extracted id: the id alone would need a second attribute for the
+// start time, and 「リンクに戻す」 would hand the author back a URL they never wrote.
+//
+// **Nothing here fetches** (§3.2). That is what separates an embed from a link card, which holds a
+// reference into a table that a route has to fill and keep fresh.
+
+// HTML attribute escaping, not markdown escaping — the serializer writes this line as raw HTML, so
+// markdown-it parses it back, and an unescaped `"` would end the attribute early. The card's
+// serializer carries the same three replacements for the same reason, `&` first.
+function escapeHref(href: string): string {
+  return href.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+}
+
+function serializeEmbed(state: MarkdownSerializerState, node: PMNode): void {
+  const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
+  state.write(`<div class="embed" data-href="${escapeHref(href)}"></div>`);
+  // Closes the block for serializeLinkCard's reason: without it whatever follows is emitted onto
+  // this line and reaches the public pipeline glued to the div.
+  state.closeBlock(node);
+}
+
+export const Embed = Node.create({
+  name: 'embed',
+  group: 'block',
+  // A leaf the caret cannot enter, like the card. It is what lets the whole block be one drag
+  // target, and what keeps the link bubble away from a node that contains no link mark.
+  atom: true,
+  draggable: true,
+
+  addAttributes() {
+    return {
+      href: {
+        default: '',
+        parseHTML: (element) => element.getAttribute('data-href') ?? '',
+        renderHTML: (attributes) => ({ 'data-href': attributes.href }),
+      },
+    };
+  },
+
+  // Matches what the serializer writes, and therefore also what an author can paste as raw HTML.
+  // The reference is NOT validated here, for the card's reason (§4.2): an editor-side check covers
+  // one door only, and the published side has to answer for hand-written HTML regardless — so
+  // validation lives in one place, at resolution time. An unusable reference round-trips intact and
+  // renders as a plain link when published.
+  parseHTML() {
+    return [{ tag: 'div.embed' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { class: 'embed' })];
+  },
+
+  addStorage() {
+    return {
+      markdown: {
+        serialize: serializeEmbed,
+        // markdown-it's raw-HTML passthrough plus parseHTML above, the route accent emphasis and
+        // the link card both take. The stored form already is the DOM shape this node parses.
+        parse: {},
+      },
+    };
+  },
+
+  addCommands() {
+    return {
+      // §5-2: turn the link the caret is in into an embed. The bubble asks this, and it is the
+      // mirror of linkToCard — including the placement question, which is about replacing one
+      // textblock rather than about inserting after it, so a link inside a sentence and the first
+      // paragraph of a list item both refuse.
+      linkToEmbed:
+        (range: { from: number; to: number }, href: string) =>
+        ({ chain, state }: CommandProps): boolean => {
+          const $from = state.doc.resolve(range.from);
+          if (!$from.parent.isTextblock || $from.depth < 1) return false;
+          if (range.from !== $from.start() || range.to !== $from.end()) return false;
+          const parent = $from.node($from.depth - 1);
+          const index = $from.index($from.depth - 1);
+          if (!parent.canReplaceWith(index, index + 1, this.type)) return false;
+          return chain()
+            .insertContentAt(
+              { from: $from.before($from.depth), to: $from.after($from.depth) },
+              { type: this.name, attrs: { href } },
+            )
+            .run();
+        },
+
+      // §5-1: the card's picker takes URLs too, and a URL a provider claims should not have to
+      // become a card first. The card node at `at` is replaced outright, so the author gets one
+      // block for one paste rather than a card that has to be undone.
+      //
+      // Kept general — it replaces whatever block sits at `at` — because the question that matters
+      // is whether the parent can hold an embed there, not which node is being displaced.
+      nodeToEmbed:
+        (at: number, href: string) =>
+        ({ chain, state }: CommandProps): boolean => {
+          const node = state.doc.nodeAt(at);
+          if (!node) return false;
+          const $at = state.doc.resolve(at);
+          if (!$at.parent.canReplaceWith($at.index(), $at.index() + 1, this.type)) return false;
+          return chain()
+            .insertContentAt(
+              { from: at, to: at + node.nodeSize },
+              { type: this.name, attrs: { href } },
+            )
+            .setNodeSelection(at)
+            .run();
+        },
+
+      // Undo the embed without losing the reference — the caret cannot enter an atom, so without
+      // this the block is a one-way door. The link text is the URL itself: no fetch has run, so
+      // there is no title to put there, and the URL is what the author wrote in the first place.
+      //
+      // `at` is passed by the NodeView, which knows its own position, and falls back to the
+      // selection so an embed picked up by the block drag handle can be dissolved too. Clicking a
+      // button inside the block does not move the selection, which is what made the card's own
+      // fallback insufficient there.
+      unsetEmbed:
+        (at?: number) =>
+        ({ chain, state }: CommandProps): boolean => {
+          const from = at ?? state.selection.from;
+          const node = state.doc.nodeAt(from);
+          if (node?.type !== this.type) return false;
+          const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
+          if (!href) {
+            return chain()
+              .deleteRange({ from, to: from + node.nodeSize })
+              .run();
+          }
+          return chain()
+            .insertContentAt(
+              { from, to: from + node.nodeSize },
+              {
+                type: 'paragraph',
+                content: [{ type: 'text', marks: [{ type: 'link', attrs: { href } }], text: href }],
+              },
+            )
+            .run();
+        },
+    };
+  },
+
+  // The embed as the author sees it (§7): the same two elements and the same iframe the published
+  // page gets, because an editor that shows every block but this one has stopped being WYSIWYG.
+  //
+  // A plain-DOM NodeView with no contentDOM — the node is an atom, so everything here is chrome.
+  addNodeView() {
+    return ({ node, editor, getPos }) => {
+      const dom = document.createElement('div');
+      dom.setAttribute('contenteditable', 'false');
+
+      const actions = document.createElement('div');
+      actions.className = 'embed-head';
+      const unset = document.createElement('button');
+      // Not a submit button: PostEditor wraps the whole editor in one <form>, so a default-type
+      // button inside it submits the post.
+      unset.type = 'button';
+      unset.textContent = 'リンクに戻す';
+      unset.addEventListener('click', () => {
+        const pos = getPos();
+        editor.commands.unsetEmbed(typeof pos === 'number' ? pos : undefined);
+      });
+      actions.appendChild(unset);
+
+      // Built once and kept. **Detaching an `<iframe>` discards its browsing context**, so
+      // `replaceChildren` reloads the player whether or not `src` was touched — which is why the
+      // children are only swapped when the state actually changes below, and why re-pointing `src`
+      // is guarded separately. An update that changes neither must leave this DOM alone: a video
+      // the author is watching is not something an edit elsewhere gets to restart.
+      const frame = document.createElement('div');
+      frame.className = 'embed-frame';
+      const iframe = document.createElement('iframe');
+      iframe.loading = 'lazy';
+      iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+      iframe.allowFullscreen = true;
+      frame.appendChild(iframe);
+
+      // What a reference no provider claims looks like here. The published side degrades it to a
+      // plain link (§6); the editor says so instead, because this is the surface where it can be
+      // fixed and the author is the one holding the URL.
+      const note = document.createElement('span');
+      note.className = 'embed-note';
+
+      // Which of the two states is on screen, so the swap happens on a crossing rather than on
+      // every update. `null` until the first render puts something there.
+      let showing: 'player' | 'note' | null = null;
+
+      const render = (n: PMNode) => {
+        const href = typeof n.attrs.href === 'string' ? n.attrs.href : '';
+        const target: EmbedTarget | null = resolveEmbed(href);
+        dom.className = target
+          ? `embed embed-view embed-${target.provider}`
+          : 'embed embed-view embed-unresolved';
+        if (!target) {
+          note.textContent = href === '' ? '参照がありません' : `埋め込みにできない参照: ${href}`;
+          if (showing !== 'note') {
+            dom.replaceChildren(actions, note);
+            showing = 'note';
+          }
+          return;
+        }
+        if (iframe.src !== target.src) iframe.src = target.src;
+        iframe.title = target.title;
+        iframe.allow = target.allow;
+        if (showing !== 'player') {
+          dom.replaceChildren(actions, frame);
+          showing = 'player';
+        }
+      };
+      render(node);
+
+      return {
+        dom,
+        update: (updated: PMNode) => {
+          if (updated.type !== this.type) return false;
+          render(updated);
+          return true;
+        },
+        // Everything in here is chrome the NodeView owns; none of it is document content, so
+        // ProseMirror must never read a mutation back into the document.
+        ignoreMutation: () => true,
+        // Narrowed to the button rather than claimed for the whole block, the distinction the card
+        // paid for: swallowing every event inside `dom` also swallows the mousedown that makes a
+        // NodeSelection, and then clicking the block selects nothing. The iframe is not listed
+        // because events inside it never reach this document at all.
+        stopEvent: (event: Event) => {
+          const target = event.target;
+          return target instanceof HTMLElement && target.closest('button') !== null;
+        },
+      };
+    };
+  },
+});
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    embed: {
+      linkToEmbed: (range: { from: number; to: number }, href: string) => ReturnType;
+      nodeToEmbed: (at: number, href: string) => ReturnType;
+      unsetEmbed: (at?: number) => ReturnType;
+    };
+  }
+}

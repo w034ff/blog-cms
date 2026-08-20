@@ -18,6 +18,7 @@ import { Blockquote } from './blockquote-extension';
 import { TrailingNode } from './trailing-node-extension';
 import { Image } from './image-extension';
 import { LinkCard } from './link-card-extension';
+import { Embed } from './embed-extension';
 import { AccentEmphasis } from './accent-emphasis-extension';
 import { FootnoteLiteral } from './footnote-literal-extension';
 import {
@@ -165,6 +166,7 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     // Must be registered above Markdown for the same reason Image is: its serializer is what
     // keeps the card out of tiptap-markdown's raw-HTML fallback.
     LinkCard,
+    Embed,
     Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
     // The backstop under the footnote nodes below, not a leftover from before them. Every
     // definition markdown-it-footnote accepts is claimed before this is asked; what it still

@@ -2,6 +2,7 @@ import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, normalizeCardHref } from '@/lib/link-card-href';
+import { resolveEmbed } from '@/lib/embed-provider';
 import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -247,13 +248,25 @@ export const LinkCard = Node.create({
         });
       };
 
+      // The picker's second answer (docs/embed-requirements.md §5-1): a URL a provider claims
+      // replaces this card with an embed outright, so one paste makes one block rather than a card
+      // the author then has to undo. Deferred by a frame for setHref's reason, and more so — this
+      // one destroys the NodeView whose button is still dispatching the click.
+      const toEmbed = (href: string) => {
+        requestAnimationFrame(() => {
+          const pos = getPos();
+          if (typeof pos !== 'number') return;
+          editor.commands.nodeToEmbed(pos, href);
+        });
+      };
+
       const render = (n: PMNode) => {
         body.replaceChildren();
         // Both states start without one: the picker never has an image, and a resolved card puts
         // it back only once the lookup says the target has one.
         setImage(null);
         const href = currentHref(n);
-        if (!href) renderPicker(body, editor, setHref);
+        if (!href) renderPicker(body, editor, setHref, toEmbed);
         else
           renderCard(
             body,
@@ -519,6 +532,7 @@ function renderPicker(
   body: HTMLElement,
   editor: { view: { dom: HTMLElement } },
   onPick: (href: string) => void,
+  onEmbed: (href: string) => void,
 ): void {
   const input = document.createElement('input');
   input.type = 'search';
@@ -553,13 +567,14 @@ function renderPicker(
 
   let latest = 0;
 
-  // The one row a URL produces. `latest` is bumped here too: a search sent before the author
-  // finished pasting must not land on top of this row when its answer arrives.
-  const showReference = (cardHref: string) => {
+  // The one row a URL produces, whichever block it is going to become. `latest` is bumped here
+  // too: a search sent before the author finished pasting must not land on top of this row when its
+  // answer arrives.
+  const showReference = (label: string, apply: () => void) => {
     latest += 1;
     list.replaceChildren();
     const row = document.createElement('li');
-    row.appendChild(button('この URL をカードにする', () => onPick(cardHref)));
+    row.appendChild(button(label, apply));
     list.appendChild(row);
   };
   const search = async (query: string) => {
@@ -577,8 +592,16 @@ function renderPicker(
   };
 
   input.addEventListener('input', () => {
+    const value = input.value.trim();
+    // A URL a provider claims is an embed, not a card (docs/embed-requirements.md §5-1), and it is
+    // asked first for the bubble's reason: `normalizeCardHref` accepts every external http(s) URL,
+    // so it would answer for a YouTube link too and offer a card that publishes as a plain link.
+    if (resolveEmbed(value) !== null) {
+      showReference('この URL を埋め込みにする', () => onEmbed(value));
+      return;
+    }
     const cardHref = normalizeCardHref(input.value, window.location.origin);
-    if (cardHref !== null) showReference(cardHref);
+    if (cardHref !== null) showReference('この URL をカードにする', () => onPick(cardHref));
     else void search(input.value);
   });
   // Escape hands focus back to the document rather than closing anything — there is nothing to

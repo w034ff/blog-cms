@@ -14,6 +14,7 @@ import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
 import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
+import { rehypeEmbed } from './rehype-embed';
 import {
   CALLOUT_DIV_CLASSES,
   CALLOUT_TITLE_CLASS,
@@ -38,7 +39,16 @@ export type { TocEntry, CardTarget, ResolveCard };
 //   - link-card: the stored form of a link card (docs/link-card-requirements.md §4.2), an empty
 //     `<div class="link-card" data-href="/posts/…">` that rehypeLinkCard resolves further down
 //     this pipeline. Without this the class is stripped and the card silently becomes an empty div.
-const divClasses: [string, ...string[]] = ['className', ...CALLOUT_DIV_CLASSES, 'link-card'];
+//   - embed: the stored form of an embed (docs/embed-requirements.md §4.1), which fails the same
+//     silent way. One word for every provider, not one each: this tuple is exactly the place a
+//     forgotten name costs nothing at author time and everything at render time, so what a new
+//     provider adds is an entry in lib/embed-provider.ts and nothing here.
+const divClasses: [string, ...string[]] = [
+  'className',
+  ...CALLOUT_DIV_CLASSES,
+  'link-card',
+  'embed',
+];
 const titleClass: [string, ...string[]] = ['className', CALLOUT_TITLE_CLASS];
 // Both allowed <span> classes, merged into one value-allowlist tuple: a schema attribute list
 // holds at most one usable tuple per attribute name — hast-util-sanitize's findDefinition
@@ -134,6 +144,13 @@ const processor = unified()
   // rehypeClobberFragmentLinks only at `#…` hrefs — but the position is pinned by a test in
   // lib/render.test.ts rather than by this argument, since a card does emit an `<a href>`.
   .use(rehypeLinkCard)
+  // Turns each stored `<div class="embed" data-href>` into an iframe, a plain link, or nothing
+  // (docs/embed-requirements.md §6). After sanitize for a stronger version of rehypeLinkCard's
+  // reason: `<iframe>` is not in the schema and must not be added to it, so the element is built
+  // where sanitize can no longer reach it. Order against rehypeLinkCard does not matter — the two
+  // read disjoint classes and neither produces the other's — but it sits after so that "the two
+  // reference-resolving stages are last" stays one statement.
+  .use(rehypeEmbed)
   .use(rehypeStringify);
 
 // `resolveCard` is injected rather than imported so this module stays pure and `server-only`

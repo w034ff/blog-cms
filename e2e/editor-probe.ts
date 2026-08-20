@@ -149,3 +149,19 @@ export async function expectCanonicalSelection(
 ): Promise<void> {
   expect(await selectionClassName(page)).toBe(className);
 }
+
+// An optional screenshot, for *looking at* a change rather than asserting one. Writes nothing
+// unless `E2E_SHOT_DIR` names a directory, so an ordinary suite run is unaffected and a
+// verification pass can ask for exactly the frames it wants without a spec of its own — which is
+// what keeps a session-specific output path out of the tracked specs.
+export async function shot(page: Page, name: string): Promise<void> {
+  const dir = process.env.E2E_SHOT_DIR;
+  if (!dir) return;
+  // A frame worth looking at is a settled one: a third-party iframe photographed the instant an
+  // assertion passes is a black box, which says nothing about whether it works. Bounded and
+  // swallowed, because a page carrying an embedded player may never go quiet — and because this
+  // wait must never be able to fail a spec that is otherwise green. Nothing here runs unless the
+  // screenshots were asked for.
+  await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
+  await page.screenshot({ path: `${dir}/${name}.png` });
+}

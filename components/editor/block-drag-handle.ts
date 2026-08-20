@@ -16,6 +16,7 @@ const DRAGGABLE_TYPES = new Set([
   'table',
   'codeBlock',
   'linkCard',
+  'embed',
 ]);
 
 // Pointer movement (px) before a mousedown-on-handle counts as a drag rather than a plain click
