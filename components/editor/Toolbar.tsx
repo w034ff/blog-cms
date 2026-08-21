@@ -164,9 +164,14 @@ export function Toolbar({
 
           It keeps `cursor-pointer` of its own where the buttons beside it no longer
           need one: app/globals.css's base rule reaches `button`, and a <label> is
-          not one — without this, the label's own text would hand back the I-beam. */}
+          not one — without this, the label's own text would hand back the I-beam.
+
+          `toolbar-button` for the same reason, one rule further on: the touch-only ring
+          (table-requirements.md §12.2) is written against that class, and being the one control in
+          the row without a `<button>` under it left it as the one control in the row without an
+          outline — on the phone where the outline is what says "press here". */}
       <label
-        className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
+        className={`toolbar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
           imageBlocked
             ? 'pointer-events-none opacity-40'
             : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'

@@ -14,6 +14,26 @@ import type { CellAlign } from './table-extensions';
 // over the content instead of pushing it down. z-20 keeps it above the (unpositioned)
 // editor content but below the sticky main toolbar's z-30 stacking context — the
 // pinned toolbar and its dropdown panels/tooltips must never be covered by this menu.
+
+// The four row/column labels, in two lengths (docs/table-requirements.md §12.1). Below `sm` the
+// button reads `＋行`, above it `行を追加` — the phone gets the whole toolbar on one line, and the
+// desktop keeps the words it has room for. Two spans rather than a media-query hook: this decides
+// itself at layout time, so there is no first render with the wrong one and nothing to hydrate
+// against, and the width it answers to is the same `100vw` the container's cap is written in.
+//
+// The accessible name comes from `title` (as `aria-label`, which wins over the text inside), so it
+// stays 行を追加 at every width — `－行` read aloud is not an instruction. `tooltipHidden` with it,
+// because the label is visible on the desktop side and the tooltip would only repeat it, while on a
+// phone `hover: none` takes tooltips away anyway (link-requirements.md §5.5.19).
+function Label({ short, long }: { short: string; long: string }) {
+  return (
+    <>
+      <span className='sm:hidden'>{short}</span>
+      <span className='hidden sm:inline'>{long}</span>
+    </>
+  );
+}
+
 export function TableToolbar({ editor }: { editor: Editor }) {
   // BubbleMenu dispatches an editor transaction whenever shouldShow/appendTo/options/
   // getReferencedVirtualElement change by reference; with shouldRerenderOnTransaction
@@ -66,21 +86,38 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       // positioned box sizes shrink-to-fit against its containing block, which is wider than a phone,
       // so the row stayed on one line and ran off the screen — measured at 441px against 390px, with
       // `shift` already pinned to the left edge (docs/table-requirements.md, §5.5.19's twin).
-      className='table-toolbar z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      // `[&_button]:px-1.5` below `sm`: the full-width signs (§12.1) cost 16px over the four
+      // labels, which is what put the row back on two lines at 360px and 375px — 343px against a
+      // 328px cap. The 4px per button that this gives back is enough (315px, measured), and it is
+      // the padding rather than the labels because the labels are the part the author reads. The
+      // hit area stays 34x24, over the 24x24 WCAG 2.5.8 asks for; above `sm` nothing changes.
+      className='table-toolbar z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg [&_button]:px-1.5 sm:[&_button]:px-2 dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().addRowAfter().run()}>
-        行を追加
+      <ToolbarButton
+        title='行を追加'
+        tooltipHidden
+        onClick={() => editor.chain().focus().addRowAfter().run()}>
+        <Label short='＋行' long='行を追加' />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().deleteRow().run()}>
-        行を削除
+      <ToolbarButton
+        title='行を削除'
+        tooltipHidden
+        onClick={() => editor.chain().focus().deleteRow().run()}>
+        <Label short='－行' long='行を削除' />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().addColumnAfter().run()}>
-        列を追加
+      <ToolbarButton
+        title='列を追加'
+        tooltipHidden
+        onClick={() => editor.chain().focus().addColumnAfter().run()}>
+        <Label short='＋列' long='列を追加' />
       </ToolbarButton>
-      <ToolbarButton onClick={() => editor.chain().focus().deleteColumn().run()}>
-        列を削除
+      <ToolbarButton
+        title='列を削除'
+        tooltipHidden
+        onClick={() => editor.chain().focus().deleteColumn().run()}>
+        <Label short='－列' long='列を削除' />
       </ToolbarButton>
       <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
       {/* A single toggle: center the current column, or clear it back to the

@@ -210,6 +210,36 @@ body {
   }
 }
 
+/* Editor chrome, touch only: outline every toolbar button so its pressable area can be seen.
+   Where there is no hover there is no `hover:bg-zinc-100` either, and the buttons are then bare
+   text separated by 2px gaps — nothing on screen says where one control ends and the next begins
+   (reported 2026-08-22, after the table toolbar's labels became 「＋行」-sized).
+
+   `box-shadow`, not `border`: a border is 2px of layout per button, and the table toolbar has
+   seven — measured at 360px, that is 315px → 329px against a 328px cap, which puts the row back on
+   two lines (table-requirements.md §12.1 bought exactly that width back). An inset shadow draws the
+   same 1px and costs nothing, and it follows `border-radius`, so the link card's `round` buttons
+   come out as circles.
+
+   Not a background tint, which was the other candidate: `active` already means a filled button
+   (`bg-zinc-200`), and tinting every button at rest would put "pressable" and "currently on" on the
+   same axis. Compared on screen at 360px before choosing.
+
+   `hover: none` rather than a width: what is missing is the hover state itself, so the question is
+   the pointer, not the screen. A laptop with a touchscreen and a mouse reports `hover: hover` and
+   keeps the current look — the same test the tooltip rule above is written against. */
+@media (hover: none) {
+  .toolbar-button {
+    box-shadow: inset 0 0 0 1px #d4d4d8; /* zinc-300 */
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .toolbar-button {
+    box-shadow: inset 0 0 0 1px #52525b; /* zinc-600 */
+  }
+}
+
 /* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
    each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
 .ProseMirror {

@@ -44,6 +44,19 @@ async function margins(page: Page, selector: string): Promise<{ smallest: number
   }, selector);
 }
 
+// The toolbar's height in buttons: 1 while it is on one line, ~2 once `flex-wrap` has taken over.
+// A ratio rather than a pixel height, so a change in the button's own padding does not read as a
+// wrap (docs/table-requirements.md §12, §12.1).
+async function toolbarRows(page: Page): Promise<number> {
+  return page
+    .locator('.table-toolbar')
+    .evaluate(
+      (el) =>
+        el.getBoundingClientRect().height /
+        (el.querySelector('button') as HTMLElement).getBoundingClientRect().height,
+    );
+}
+
 async function openEditor(page: Page) {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -76,16 +89,19 @@ for (const width of [390, 320]) {
 
     const measured = await margins(page, '.table-toolbar');
     expect(measured.smallest).toBeGreaterThanOrEqual(EDGE);
-    // It fits by wrapping, which is the half a width assertion alone would not catch: the row is
-    // taller than one button because `flex-wrap` finally has a width to wrap against.
-    const rows = await page
-      .locator('.table-toolbar')
-      .evaluate(
-        (el) =>
-          el.getBoundingClientRect().height /
-          (el.querySelector('button') as HTMLElement).getBoundingClientRect().height,
-      );
-    expect(rows).toBeGreaterThan(1.5);
+    // Below `sm` the four row/column buttons carry the short labels (§12.1), which is what decides
+    // whether the toolbar needs a second line at all. Asserted from `innerText`, because the long
+    // label is in the DOM at every width — it is `display: none` that picks between them. The signs
+    // are full-width (`＋`, not `+`), which is the author's choice and costs 16px (§12.1).
+    await expect(
+      page.locator('.table-toolbar').getByRole('button', { name: '行を追加' }),
+    ).toHaveText('＋行', { useInnerText: true });
+    // How it fits is now a function of the width, and both halves matter. 390px is one line since
+    // the labels shortened (measured 327px against a cap of 358px); 320px still wraps, and that is
+    // what keeps `flex-wrap` load-bearing rather than vestigial — the cap there is 288px.
+    const rows = await toolbarRows(page);
+    if (width === 320) expect(rows).toBeGreaterThan(1.5);
+    else expect(rows).toBeLessThan(1.5);
   });
 }
 
@@ -157,12 +173,19 @@ test('a wide screen is left as it was (12c)', async ({ page }) => {
   await page.locator('.ProseMirror td').first().click();
   const toolbar = page.locator('.table-toolbar');
   await expect(toolbar).toBeVisible();
-  const oneRow = await toolbar.evaluate(
-    (el) =>
-      el.getBoundingClientRect().height /
-      (el.querySelector('button') as HTMLElement).getBoundingClientRect().height,
-  );
-  expect(oneRow).toBeLessThan(1.5);
+  expect(await toolbarRows(page)).toBeLessThan(1.5);
+  // No ring here: it is `hover: none` that asks for one, and this context has a mouse (§12.2).
+  expect(
+    await toolbar
+      .locator('button')
+      .first()
+      .evaluate((el) => getComputedStyle(el).boxShadow),
+  ).toBe('none');
+  // And the words come back above `sm` — the short labels are for the screen that cannot hold
+  // these, not a simplification of the toolbar (§12.1).
+  await expect(toolbar.getByRole('button', { name: '行を追加' })).toHaveText('行を追加', {
+    useInnerText: true,
+  });
 });
 
 // The report that produced the margin (2026-08-21): the overflow was visible **on a phone only**.
@@ -290,6 +313,71 @@ test.describe('on an emulated phone at 360px', () => {
     await page.locator('.ProseMirror td').first().click();
     await expect(page.locator('.table-toolbar')).toBeVisible();
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+  });
+
+  test('the table toolbar is one line, and its names are still words (12i)', async ({ page }) => {
+    // The width the short labels were asked for. Measured: 315px of toolbar against a 328px cap —
+    // one line, where the long labels needed 441px and two (§12.1). The margin is thin on purpose:
+    // full-width signs at the buttons' desktop padding come to 343px and wrap here, which is why
+    // the padding below `sm` is 6px and why this case is at 360px rather than at 390px.
+    await openEditor(page);
+    await loadMarkdown(page, TABLE_MD);
+    await page.locator('.ProseMirror td').first().click();
+    await expect(page.locator('.table-toolbar')).toBeVisible();
+
+    const toolbar = page.locator('.table-toolbar');
+    for (const [name, short] of [
+      ['行を追加', '＋行'],
+      ['行を削除', '－行'],
+      ['列を追加', '＋列'],
+      ['列を削除', '－列'],
+    ]) {
+      // Found by its accessible name and asserted on its visible text: the two differ here on
+      // purpose, because `－列` read aloud is not an instruction. That the query resolves at all is
+      // the half that protects screen readers — and the half the other table specs depend on.
+      await expect(toolbar.getByRole('button', { name })).toHaveText(short, { useInnerText: true });
+    }
+    expect(await toolbarRows(page)).toBeLessThan(1.5);
+    expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
+  });
+
+  test('every toolbar button is outlined, and the outline costs no width (12j)', async ({
+    page,
+  }) => {
+    // Without hover there is no `hover:bg-zinc-100`, so the buttons are bare text in a row and
+    // nothing shows where one ends (§12.2). Both halves are asserted here because they are one
+    // decision: a `border` would draw the same line and take the row back to two lines, which is
+    // the width §12.1 had just bought — so what is pinned is an inset shadow, and the row staying
+    // on one line is how a border would be caught.
+    await openEditor(page);
+    await loadMarkdown(page, TABLE_MD);
+    await page.locator('.ProseMirror td').first().click();
+    await expect(page.locator('.table-toolbar')).toBeVisible();
+
+    const shadows = await page
+      .locator('.table-toolbar button')
+      .evaluateAll((els) => els.map((el) => getComputedStyle(el).boxShadow));
+    expect(shadows.length).toBeGreaterThan(4);
+    expect(shadows.every((s) => s.includes('inset'))).toBe(true);
+    // The main toolbar takes the same rule from the same class, which is the point of putting it
+    // on `ToolbarButton` rather than on this menu — and every control there, not just the ones
+    // that are `<button>`s. 画像 is a `<label>` around a hidden file input, styled by hand to look
+    // like the buttons beside it, and it was the one control in the row left without an outline
+    // (§12.2). Asserted by tag, so a future control that copies the same shape has to opt in too.
+    const main = await page
+      .locator('.sticky .toolbar-button')
+      .evaluateAll((els) =>
+        els.map((el) => ({
+          tag: el.tagName,
+          ring: getComputedStyle(el).boxShadow.includes('inset'),
+        })),
+      );
+    expect(main.length).toBeGreaterThan(8);
+    expect(main.every((c) => c.ring)).toBe(true);
+    expect(main.some((c) => c.tag === 'LABEL')).toBe(true);
+
+    expect(await toolbarRows(page)).toBeLessThan(1.5);
+    expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 });
 

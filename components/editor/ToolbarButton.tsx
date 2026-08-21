@@ -111,7 +111,10 @@ export function ToolbarButton({
       disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      className={`group/tt relative text-xs ${
+      // `toolbar-button` carries no styling of its own here: it is the hook for the touch-only ring
+      // in globals.css (`@media (hover: none)`), which is where that rule can be written once for
+      // every menu that uses this button.
+      className={`toolbar-button group/tt relative text-xs ${
         round ? 'rounded-full p-1.5' : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
       } ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
