@@ -7,7 +7,7 @@ import { getMarkRange } from '@tiptap/core';
 import { Mark } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { autoUpdate, computePosition, flip, offset, size } from '@floating-ui/dom';
+import { autoUpdate, computePosition, flip, offset, shift, size } from '@floating-ui/dom';
 import { setLinkHighlight } from './link-highlight-extension';
 import {
   collectHeadings,
@@ -93,6 +93,9 @@ const LABEL_CLASS = 'shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-
 // comes from.
 const LIST_MAX_HEIGHT_PX = 192;
 const LIST_GAP_PX = 8;
+// What the list keeps between itself and the screen, the same 8px the card and the table toolbar
+// leave (§5.5.19).
+const LIST_EDGE_PX = 8;
 
 // The <a> the caret is in, to anchor the card to. Two positions are tried because a caret sitting at
 // a link's right edge still reports the mark (it is inclusive — see below) while `domAtPos` there
@@ -874,9 +877,14 @@ export function LinkBubble({
   // the card's options record — the sticky toolbar's band is space that exists and cannot be used —
   // and floating-ui intersects it with the viewport, which is the edge that matters here.
   //
-  // No `shift`: the list is narrower than the card, starts at the field's left edge, and the card
-  // has already been shifted into view by its own plugin, so there is no horizontal case left to
-  // answer. Adding it would only give the crossAxis offset something to fight with.
+  // **`shift` is needed after all** (2026-08-21). The argument against it — the list is narrower
+  // than the card, starts at the field's left edge, and the card is already in view — held while the
+  // card was as wide as it wanted to be. On a phone the card is capped (§5.5.19) and the list is
+  // not: 288px starting at the field's left edge ran 35px past a 320px screen, and since the list
+  // hangs off `<body>` that widened the *page*, which is the editor panning sideways while the
+  // author types. `max-w` on the element caps it and `shift` moves what is left; the crossAxis
+  // offset still decides where it starts, and shift only takes over when that would leave the
+  // screen.
   useLayoutEffect(() => {
     const list = listRef.current;
     const field = inputRef.current;
@@ -891,6 +899,7 @@ export function LinkBubble({
             crossAxis: field.getBoundingClientRect().left - card.getBoundingClientRect().left,
           })),
           flip({ boundary: editor.view.dom, fallbackStrategy: 'bestFit' }),
+          shift({ padding: LIST_EDGE_PX }),
           size({
             boundary: editor.view.dom,
             apply({ availableHeight, elements }) {
@@ -1202,7 +1211,10 @@ export function LinkBubble({
                   // No `top`/`left`/`max-height` here: the layout effect above owns all three, since
                   // where this fits is a question about the viewport rather than about the card. It
                   // runs before paint, so there is no first frame at the static position.
-                  className='absolute z-10 flex w-72 flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+                  // `max-w`: the width is what the list gives up on a phone, exactly as the card
+                  // does one level up (§5.5.19). Without it `shift` has nothing it can do — a box
+                  // wider than the screen cannot be moved into it.
+                  className='absolute z-10 flex w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
                   {suggestions.matches.length === 0 ? (
                     // Two different facts, and the author does something different about each: write
                     // the heading first, or fix what they typed. This is also the whole of "does

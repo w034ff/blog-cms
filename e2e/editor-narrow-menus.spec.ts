@@ -181,6 +181,51 @@ const PHONE = {
   hasTouch: PIXEL_7.hasTouch,
 };
 
+// **The page-level half of the same claim**: no menu may make the document wider than the screen.
+// Margins are measured per element above, and that leaves a gap — a tooltip, the heading list, or
+// anything else a menu hangs off itself is not in that sample, and any of them widening the page
+// turns the editor into a surface that pans sideways while the author types. `scrollWidth` answers
+// for all of them at once, which is why this is stated as its own criterion rather than folded into
+// the margins (§5.5.19).
+async function pageWidth(page: Page): Promise<{ scroll: number; client: number }> {
+  return page.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth,
+    client: document.documentElement.clientWidth,
+  }));
+}
+
+for (const width of [390, 320]) {
+  test(`no menu widens the page at ${width}px (12f)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openEditor(page);
+    await loadMarkdown(page, `${MD}\n${TABLE_MD}`);
+
+    // `<=`, not `===`: with a classic scrollbar the document is narrower than the viewport box, and
+    // what is being ruled out is only the other direction.
+    const clean = await pageWidth(page);
+    expect(clean.scroll).toBeLessThanOrEqual(clean.client);
+
+    // The card, in both of its shapes, and then with the heading list hanging off it.
+    await setRange(page, 3, 3);
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
+
+    await page.locator('.link-bubble').getByRole('button', { name: '編集' }).click();
+    await expect(page.getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
+
+    await page.getByRole('textbox', { name: 'リンク先' }).fill('#');
+    await expect(page.locator('.link-bubble')).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
+
+    // And the table's toolbar, the other menu that outgrew the screen.
+    await page.keyboard.press('Escape');
+    await page.locator('.ProseMirror td').first().click();
+    await expect(page.locator('.table-toolbar')).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
+  });
+}
+
 test.describe('on an emulated phone', () => {
   test.use(PHONE);
 
