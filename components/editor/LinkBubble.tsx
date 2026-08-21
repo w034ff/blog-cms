@@ -788,7 +788,13 @@ export function LinkBubble({
       // An emptied field means "this should not be a link" when there is one, and nothing at all
       // when the author was in the middle of making one.
       if (linkAtCaret(editor)) editor.chain().extendMarkRange('link').unsetLink().run();
-      close();
+      // Not `close()`, for the reason the focus below carries: this exit is a press of 適用 too, and
+      // on a phone it moved the page just as far (measured red before this line, §5.5.21). It is
+      // `abandonField` plus the same scroll-free focus — which is what `close()` is, minus the
+      // deferred focus that Escape's own card-hiding depends on. Nothing here depends on that
+      // timing: the link has just been removed, so `abandonField` takes its synchronous branch.
+      abandonField();
+      editor.view.focus();
       return;
     }
     // A link with no text cannot be seen, let alone clicked. Refused rather than treated as a
@@ -854,8 +860,21 @@ export function LinkBubble({
     }
     editingRef.current = false;
     setEditing(false);
-    editor.commands.focus();
-  }, [close, draft, editor, onNotice, textDraft, textInitial]);
+    // `view.focus()`, not `editor.commands.focus()`. On a phone the command's own branch runs
+    // `view.dom.focus()` with **no** `preventScroll` (`isiOS() || isAndroid()` in @tiptap/core's
+    // `focus.ts`) and then, a frame later, `scrollIntoView()` on the selection — two scrolls, and
+    // the first one is of the *editor element*, not of the link. Measured on an emulated Pixel 7:
+    // pressing 適用 took `scrollY` 1055 → 303 → 651, so the author's own line left the screen
+    // (§5.5.21). prosemirror-view's `focus()` is the same focus without either scroll — it takes
+    // the DOM focus through `focusPreventScroll` and syncs the selection itself — and nothing here
+    // wants to move the page: the link being edited is what the author is looking at.
+    //
+    // It also lands the focus synchronously rather than a frame later, which is what the card being
+    // kept afterwards rests on (§5.5.9): the field's own unmount fires `focusout`, and that rule
+    // asks `focusLeft()` a frame on. It answers no either way — earlier now — so 適用 still keeps
+    // the card.
+    editor.view.focus();
+  }, [abandonField, draft, editor, onNotice, textDraft, textInitial]);
 
   // Enter saves and Escape cancels, from either field — the card has no <form> to do it (a nested
   // one is dropped by the browser, the shape TableGridMenu documents), so both keys are handled by

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, devices, type Page } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
 import { loadMarkdown, selectInside, setRange } from './editor-authoring';
 
@@ -909,4 +909,85 @@ test('コピー reaches the clipboard, and the card goes when the author leaves 
   await settle(page);
   await expect(card(page)).toBeHidden();
   await expect(highlight(page)).toHaveCount(0);
+});
+
+// The two cases in this file that are not a desktop browser, and they have to be: what they pin
+// lives behind `isiOS() || isAndroid()` inside @tiptap/core's `focus` command, so a Desktop Chrome
+// run takes the other branch and passes with the bug in place (measured — the desktop run of this
+// same gesture never moves the scroll). The emulation reaches that branch because it is chosen from
+// `navigator.userAgent`. What it does not reach is the soft keyboard: the press blurs the URL field
+// on a real phone, and that keyboard leaving and coming back can move the scroll on its own. Not
+// measured, and not measurable here (§5.5.21).
+test.describe('on a phone', () => {
+  // The device's emulation fields only. `defaultBrowserType` and `channel` are worker-scoped, and
+  // spreading the whole descriptor into a describe is refused for that reason ("forces a new
+  // worker") — the browser stays the project's own Chrome, which is what the run needs anyway.
+  const phone = devices['Pixel 7'];
+  test.use({
+    viewport: phone.viewport,
+    userAgent: phone.userAgent,
+    deviceScaleFactor: phone.deviceScaleFactor,
+    isMobile: phone.isMobile,
+    hasTouch: phone.hasTouch,
+  });
+
+  test('適用 leaves the scroll where it was', async ({ page }) => {
+    // A document tall enough that the link is nowhere near either end, so a scroll to the editor's
+    // top and a scroll to the selection are both visible as a change and are distinguishable.
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      `${'埋め草の段落。\n\n'.repeat(20)}前[リンク](https://example.com)後\n\n${'あとの段落。\n\n'.repeat(20)}`,
+    );
+    await page.locator('.ProseMirror a').scrollIntoViewIfNeeded();
+    await page.locator('.ProseMirror a').click();
+    await expect(card(page)).toBeVisible();
+    await settle(page);
+    const before = await page.evaluate(() => window.scrollY);
+    expect(before).toBeGreaterThan(0); // otherwise there is no scroll position to lose
+
+    await card(page).getByRole('button', { name: '編集' }).click();
+    const field = card(page).getByRole('textbox', { name: 'リンク先' });
+    await field.fill('https://example.org/changed');
+    await card(page).getByRole('button', { name: '適用' }).click();
+    await settle(page);
+    // Settled past two frames, because the scrolls the fix removed did not land at once: the
+    // editor element's own was synchronous and the selection's came a frame later.
+    await page.waitForTimeout(200);
+
+    expect(await page.evaluate(() => window.scrollY)).toBe(before);
+    expect(await markdown(page)).toContain('[リンク](https://example.org/changed)');
+    // Focus goes back to the editor and the card stays — the point of pressing 適用 rather than
+    // pressing Escape (§5.5.9).
+    await expect(card(page)).toBeVisible();
+  });
+
+  test('an emptied field applied on a phone leaves the scroll where it was too', async ({
+    page,
+  }) => {
+    // The other half of the same button. An empty field means "remove this link" (§5.5.16) and goes
+    // out through `close()`, so it reaches the focus by a different route — and there the card is
+    // meant to go away, which is one more thing the scroll assertion has to survive.
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      `${'埋め草の段落。\n\n'.repeat(20)}前[リンク](https://example.com)後\n\n${'あとの段落。\n\n'.repeat(20)}`,
+    );
+    await page.locator('.ProseMirror a').scrollIntoViewIfNeeded();
+    await page.locator('.ProseMirror a').click();
+    await expect(card(page)).toBeVisible();
+    await settle(page);
+    const before = await page.evaluate(() => window.scrollY);
+    expect(before).toBeGreaterThan(0);
+
+    await card(page).getByRole('button', { name: '編集' }).click();
+    await card(page).getByRole('textbox', { name: 'リンク先' }).fill('');
+    await card(page).getByRole('button', { name: '適用' }).click();
+    await settle(page);
+    await page.waitForTimeout(200);
+
+    expect(await page.evaluate(() => window.scrollY)).toBe(before);
+    expect(await markdown(page)).toContain('前リンク後');
+    await expect(card(page)).toBeHidden();
+  });
 });
