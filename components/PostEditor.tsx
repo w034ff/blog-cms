@@ -12,6 +12,7 @@ import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
+import { WidthDebug } from './editor/WidthDebug';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
@@ -283,6 +284,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         cancelPendingAutosave();
       }}
       className='space-y-5'>
+      {/* Temporary width probe, `?wdebug=1` only, never in production (WidthDebug.tsx). */}
+      <WidthDebug />
       {sessionExpired && (
         <div
           role='alert'
