@@ -607,7 +607,12 @@ export function LinkBubble({
       placement: 'top-start' as const,
       offset: 8,
       flip: { boundary: editor.view.dom },
-      shift: true,
+      // `padding` so the card stops short of the screen rather than against it. Without it `shift`
+      // is satisfied by a card whose right edge is exactly the viewport's — measured on a phone,
+      // left 16px, right 412px of a 412px screen — and every reason a device has to disagree with
+      // `100vw` by a pixel or two (a rounded corner, a safe-area inset, a rounding of the layout
+      // viewport) then shows as a card that runs off the edge. 8px is what the cap below leaves.
+      shift: { padding: 8 },
       // These three are the only report of whether the card is actually on screen. The class they
       // set suppresses the table toolbar; `setMenuVisible` hands the same fact to the highlight,
       // which otherwise has no way to learn that a blur took the card away. Setting state here is
@@ -1070,7 +1075,12 @@ export function LinkBubble({
       // `max-w` is the responsive half (§5.5.19): `shift` can only move a card that fits, and the
       // edit layout does not fit a phone. Capping it here lets the fields inside give up their
       // preferred width instead, which is the only axis with anything to give.
-      className='link-bubble z-20 flex max-w-[calc(100vw-1rem)] items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
+      //
+      // **`2rem`, which is 8px of margin on each side.** At `1rem` the arithmetic left none: the
+      // card is anchored at the text's left edge (16px in) and may be exactly `100vw - 16px` wide,
+      // so its right edge lands on `100vw` precisely — which is the last pixel of the screen on a
+      // browser that agrees with `100vw`, and past it on one that does not.
+      className='link-bubble z-20 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
       {editing ? (
         // Deliberately not a <form>: PostEditor wraps the whole page in one, and a nested form is
         // dropped by the browser, so its submit silently does nothing (the shape TableGridMenu

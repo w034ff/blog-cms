@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 
 // The editor's two floating menus on a phone (docs/link-requirements.md §5.5.19,
@@ -21,17 +21,26 @@ const LONG_HREF =
 // Every control's own box, not just its container's: the container fitting says nothing about the
 // button inside it that overflowed, and 適用 — the only press that commits an edit — was exactly
 // that button.
-async function fits(page: Page, selector: string): Promise<{ overflow: number; boxes: number }> {
+//
+// **What is measured is the margin, not the overflow.** A menu whose right edge lands exactly on
+// the viewport's satisfies "does not overflow" and still shows as cut off on a phone, because a
+// device has several ways to disagree with `100vw` by a pixel or two — a rounded corner, a
+// safe-area inset, a rounded layout viewport. Measured on an emulated phone before this: left 16px,
+// right 412px of a 412px screen. So the cap and `shift` both leave 8px and the specs hold them to
+// it (§5.5.19).
+const EDGE = 8;
+
+async function margins(page: Page, selector: string): Promise<{ smallest: number; boxes: number }> {
   return page.evaluate((sel) => {
     const root = document.querySelector(sel) as HTMLElement;
     const vw = document.documentElement.clientWidth;
     const boxes = [root, ...root.querySelectorAll('button, input')];
-    let overflow = 0;
+    let smallest = Number.POSITIVE_INFINITY;
     for (const el of boxes) {
       const r = el.getBoundingClientRect();
-      overflow = Math.max(overflow, Math.round(r.right - vw), Math.round(-r.left));
+      smallest = Math.min(smallest, Math.round(r.left), Math.round(vw - r.right));
     }
-    return { overflow, boxes: boxes.length };
+    return { smallest, boxes: boxes.length };
   }, selector);
 }
 
@@ -53,9 +62,9 @@ for (const width of [390, 320]) {
     await card.getByRole('button', { name: '編集' }).click();
     await expect(card.getByRole('textbox', { name: 'リンク先' })).toBeVisible();
 
-    const measured = await fits(page, '.link-bubble');
+    const measured = await margins(page, '.link-bubble');
     expect(measured.boxes).toBeGreaterThan(2); // the two fields and 適用 are in the sample
-    expect(measured.overflow).toBe(0);
+    expect(measured.smallest).toBeGreaterThanOrEqual(EDGE);
   });
 
   test(`the table toolbar's controls stay on a ${width}px screen (12b)`, async ({ page }) => {
@@ -65,8 +74,8 @@ for (const width of [390, 320]) {
     await page.locator('.ProseMirror td').first().click();
     await expect(page.locator('.table-toolbar')).toBeVisible();
 
-    const measured = await fits(page, '.table-toolbar');
-    expect(measured.overflow).toBe(0);
+    const measured = await margins(page, '.table-toolbar');
+    expect(measured.smallest).toBeGreaterThanOrEqual(EDGE);
     // It fits by wrapping, which is the half a width assertion alone would not catch: the row is
     // taller than one button because `flex-wrap` finally has a width to wrap against.
     const rows = await page
@@ -116,14 +125,14 @@ for (const width of [390, 320]) {
     expect(
       await page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }).count(),
     ).toBe(0);
-    expect((await fits(page, '.link-bubble')).overflow).toBe(0);
+    expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
 
     await caretInto('.ProseMirror p a');
     await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
     await expect(
       page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }),
     ).toBeVisible();
-    expect((await fits(page, '.link-bubble')).overflow).toBe(0);
+    expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 }
 
@@ -154,4 +163,53 @@ test('a wide screen is left as it was (12c)', async ({ page }) => {
       (el.querySelector('button') as HTMLElement).getBoundingClientRect().height,
   );
   expect(oneRow).toBeLessThan(1.5);
+});
+
+// The report that produced the margin (2026-08-21): the overflow was visible **on a phone only**.
+// A narrow desktop window is not the same environment — `isMobile` brings the device's viewport
+// meta handling, a device pixel ratio that is not 1, and touch — and the failure lived in the last
+// 8px, which is exactly the width a rounding or an inset can eat. So one case runs emulated.
+// Listed rather than spread: `defaultBrowserType` and `channel` both force a new worker from inside
+// a describe (Playwright refuses), and the project already runs system Chrome. What is wanted from
+// the descriptor is these five.
+const PIXEL_7 = devices['Pixel 7'];
+const PHONE = {
+  viewport: PIXEL_7.viewport,
+  userAgent: PIXEL_7.userAgent,
+  deviceScaleFactor: PIXEL_7.deviceScaleFactor,
+  isMobile: PIXEL_7.isMobile,
+  hasTouch: PIXEL_7.hasTouch,
+};
+
+test.describe('on an emulated phone', () => {
+  test.use(PHONE);
+
+  test('the card keeps its margin across the same move (12e)', async ({ page }) => {
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      `## 見出しの中の[リンク](${LONG_HREF})\n\n[単独行のリンクはカードにできる](${LONG_HREF})\n`,
+    );
+    const caretInto = (selector: string) =>
+      page.evaluate((sel) => {
+        const a = document.querySelector(sel) as HTMLElement;
+        const range = document.createRange();
+        range.setStart(a.firstChild as ChildNode, 2);
+        range.collapse(true);
+        const selection = window.getSelection() as Selection;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        (document.querySelector('.ProseMirror') as HTMLElement).focus();
+      }, selector);
+
+    await caretInto('.ProseMirror h2 a');
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
+
+    await caretInto('.ProseMirror p a');
+    await expect(
+      page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }),
+    ).toBeVisible();
+    expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
+  });
 });

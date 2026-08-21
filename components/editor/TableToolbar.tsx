@@ -22,7 +22,10 @@ export function TableToolbar({ editor }: { editor: Editor }) {
   const shouldShow = useCallback(() => editor.isActive('table'), [editor]);
   const appendTo = useCallback(() => document.body, []);
   const options = useMemo(
-    () => ({ placement: 'top-start' as const, offset: 8, flip: true, shift: true }),
+    // `shift` carries a padding for the link card's reason (LinkBubble.tsx): satisfied without one,
+    // it will place the toolbar's right edge exactly on the viewport's, which is the last pixel on a
+    // browser that agrees with `100vw` and past it on one that does not.
+    () => ({ placement: 'top-start' as const, offset: 8, flip: true, shift: { padding: 8 } }),
     [],
   );
   // Anchor the menu to the current table's top-left cell so it stays put while the
@@ -63,7 +66,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       // positioned box sizes shrink-to-fit against its containing block, which is wider than a phone,
       // so the row stayed on one line and ran off the screen — measured at 441px against 390px, with
       // `shift` already pinned to the left edge (docs/table-requirements.md, §5.5.19's twin).
-      className='table-toolbar z-20 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      className='table-toolbar z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>
