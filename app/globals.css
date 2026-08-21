@@ -188,6 +188,28 @@ body {
   content: none;
 }
 
+/* Editor-only chrome: the tooltip (`EditorTooltip`) is laid out even while it is invisible, and on a
+   touch device it can never become visible at all.
+
+   `opacity: 0` keeps a box, and an absolutely positioned box still counts toward the scrollable
+   overflow of the page. The tooltip is centred under its button (`left-1/2 -translate-x-1/2`) and
+   sized to its own text, so on any width where a toolbar button lands near the right edge, an
+   invisible 95px label hangs past it and **the page gains a horizontal scroll nothing explains** —
+   measured at 360px on an emulated phone: document 366px against a 360px screen, and the offender
+   invisible (docs/link-requirements.md §5.5.19). Whether it happens depends on where the toolbar
+   wraps, which is why 412px, 390px, 375px and 320px are all clean and 360px — the commonest Android
+   width — is not.
+
+   `display: none` rather than a narrower cap, because on `hover: none` the tooltip is not merely
+   overflowing: it is unreachable. Its content is duplicated in the button's `aria-label`, so
+   nothing is lost. A laptop with both a touchscreen and a mouse reports `hover: hover` and keeps
+   it. */
+@media (hover: none) {
+  .editor-tooltip {
+    display: none;
+  }
+}
+
 /* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
    each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
 .ProseMirror {

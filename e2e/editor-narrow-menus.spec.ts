@@ -258,3 +258,37 @@ test.describe('on an emulated phone', () => {
     expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 });
+
+// 360px, and emulated, because that pair is what the failure needed (2026-08-21). The offender was
+// an `EditorTooltip`: invisible (`opacity: 0`), laid out anyway, centred under its button and wide
+// enough to hang past the right edge — 366px of document against a 360px screen, with nothing
+// visible out of place. Whether any button lands in that position depends on where the toolbar
+// wraps, which is why 412px, 390px, 375px and 320px are all clean; and the rule that fixes it keys
+// on `hover: none`, so a desktop viewport of the same width does not exercise it.
+test.describe('on an emulated phone at 360px', () => {
+  test.use({ ...PHONE, viewport: { width: 360, height: 800 } });
+
+  test('nothing invisible widens the page (12g)', async ({ page }) => {
+    await openEditor(page);
+    // Before anything is opened: the toolbar alone was enough.
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+
+    await loadMarkdown(page, `${MD}\n${TABLE_MD}`);
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+
+    await setRange(page, 3, 3);
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+
+    await page.locator('.link-bubble').getByRole('button', { name: '編集' }).click();
+    await expect(page.getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+    await page.getByRole('textbox', { name: 'リンク先' }).fill('#');
+    await expect(page.locator('.link-bubble')).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+
+    await page.keyboard.press('Escape');
+    await page.locator('.ProseMirror td').first().click();
+    await expect(page.locator('.table-toolbar')).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
+  });
+});
