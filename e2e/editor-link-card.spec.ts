@@ -201,6 +201,37 @@ test('the card can be opened, and opening it leaves the card alone (4i)', async 
   expect(await markdown(page)).toContain(`data-href="${CARD_HREF}"`);
 });
 
+// §7.4's other half: the band's controls trade their labels for icons below 30rem, and the label
+// they stop showing is the accessible name every other test in this file selects them by. Hiding it
+// with `display: none` would read identically in a screenshot and take the name with it — a
+// regression a wide-viewport spec cannot see, because the rule it breaks only applies narrow.
+test('the band keeps its names when it shows icons (4j)', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openWithCard(page);
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+  for (const name of ['開く', '変更', 'リンクに戻す']) {
+    await expect(card(page).getByRole('button', { name })).toBeVisible();
+  }
+  const band = await card(page).evaluate((el) => {
+    const buttons = [...el.querySelectorAll('.link-card-head button')];
+    const label = el.querySelector('.link-card-action-label') as HTMLElement;
+    const danger = el.querySelector('.link-card-action-danger') as HTMLElement;
+    return {
+      icons: buttons.filter((b) => getComputedStyle(b.querySelector('svg')!).display === 'block')
+        .length,
+      labelWidth: label.getBoundingClientRect().width,
+      dangerColor: getComputedStyle(danger).color,
+      plainColor: getComputedStyle(buttons[0]).color,
+    };
+  });
+  expect(band.icons).toBe(3);
+  // Hidden by size, not by `display` — which is what keeps it in the accessibility tree.
+  expect(band.labelWidth).toBeLessThan(2);
+  // The destructive control is the only one wearing a colour of its own.
+  expect(band.dangerColor).not.toBe(band.plainColor);
+});
+
 // §7.3, and the answer to what §10 used to list as unmeasured. A card is an atom, so
 // prosemirror-commands deletes it whole from the edge of the neighbouring textblock in one press —
 // its `joinBackward` has an explicit branch for it (dist: `// If the node before is an atom, delete

@@ -3,6 +3,13 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
+import {
+  buildIcon,
+  EXTERNAL_LINK_SHAPES,
+  PENCIL_SHAPES,
+  UNLINK_SHAPES,
+  type IconShape,
+} from './svg/icon-shapes';
 import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -464,9 +471,14 @@ function renderCard(
     // lose to a navigation nobody meant. Same call the bubble's href line makes (LinkBubble.tsx),
     // including the new tab, which is what the published card does now too
     // (docs/link-requirements.md §7.2).
-    button('開く', () => window.open(href, '_blank', 'noopener,noreferrer')),
-    button('変更', onClear),
-    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos())),
+    button('開く', () => window.open(href, '_blank', 'noopener,noreferrer'), {
+      icon: EXTERNAL_LINK_SHAPES,
+    }),
+    button('変更', onClear, { icon: PENCIL_SHAPES }),
+    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos()), {
+      icon: UNLINK_SHAPES,
+      danger: true,
+    }),
   );
 
   const title = document.createElement('span');
@@ -626,12 +638,36 @@ function renderPicker(
   requestAnimationFrame(() => input.focus());
 }
 
-function button(label: string, onClick: () => void): HTMLButtonElement {
+// `icon` is what makes a band control; the picker's result rows pass none and stay plain text.
+//
+// **A control carries its icon AND its label at every width.** Which of the two is visible is the
+// stylesheet's business (`app/globals.css`: the label below 30rem, the icon above it), and it is
+// visually-hidden rather than `display: none` on purpose — the label is the button's accessible
+// name, so removing it from the tree at narrow widths would leave three unnamed buttons for a
+// screen reader and take every `getByRole('button', { name: … })` in the specs with it (§7.4).
+//
+// `danger` tints the control instead of filling it. That is how this editor already says
+// "destructive" — the bubble's 解除 and the toolbar's テーブルを削除 both wear the same red text
+// (`ToolbarButton`'s `destructive`), and a fill would read as a weight the rest of the chrome does
+// not carry.
+function button(
+  label: string,
+  onClick: () => void,
+  options: { icon?: readonly IconShape[]; danger?: boolean } = {},
+): HTMLButtonElement {
   const el = document.createElement('button');
   // Not a submit button: PostEditor wraps the whole editor in one <form>, so a default-type
   // button inside it submits the post (see the toolbar's dialogs, which hit this).
   el.type = 'button';
-  el.textContent = label;
+  if (options.icon) {
+    const text = document.createElement('span');
+    text.className = 'link-card-action-label';
+    text.textContent = label;
+    el.append(buildIcon(options.icon), text);
+    if (options.danger) el.classList.add('link-card-action-danger');
+  } else {
+    el.textContent = label;
+  }
   el.addEventListener('click', onClick);
   return el;
 }
