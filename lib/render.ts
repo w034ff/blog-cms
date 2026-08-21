@@ -15,6 +15,7 @@ import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
 import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
 import { rehypeEmbed } from './rehype-embed';
+import { rehypeNewTabLinks } from './rehype-new-tab-links';
 import {
   CALLOUT_DIV_CLASSES,
   CALLOUT_TITLE_CLASS,
@@ -87,8 +88,10 @@ const schema: SanitizeSchema = {
 // `clobber` renames nothing, and then neither should the links.
 const idClobberPrefix = schema.clobber?.includes('id') ? (schema.clobberPrefix ?? '') : '';
 
-// Shared pipeline used by both the public post page and the editor preview,
-// so what an author previews matches exactly what gets published.
+// The published side's pipeline. `app/posts/[slug]/page.tsx` is its only caller — the editor is a
+// WYSIWYG and draws the author's screen through TipTap, not through here, so "what the author sees
+// is what gets published" is kept by the two sides agreeing on the stored markdown, not by sharing
+// this module.
 // Mirrors the rehype-pretty-code options that used to live in next.config.ts.
 //
 // Now that non-admin users can author posts, raw HTML in MDX (e.g. <script>,
@@ -149,8 +152,13 @@ const processor = unified()
   // reason: `<iframe>` is not in the schema and must not be added to it, so the element is built
   // where sanitize can no longer reach it. Order against rehypeLinkCard does not matter — the two
   // read disjoint classes and neither produces the other's — but it sits after so that "the two
-  // reference-resolving stages are last" stays one statement.
+  // reference-resolving stages sit together" stays one statement.
   .use(rehypeEmbed)
+  // Decides which links open in a new tab — the ones leaving this site, and every link card
+  // (docs/link-requirements.md §7.2). Truly last: it is the one stage that reads anchors it did not
+  // build, so it has to see the ones rehypeLinkCard and rehypeEmbed produce as well as the author's
+  // own.
+  .use(rehypeNewTabLinks)
   .use(rehypeStringify);
 
 // `resolveCard` is injected rather than imported so this module stays pure and `server-only`

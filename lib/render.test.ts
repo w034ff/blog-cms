@@ -233,7 +233,7 @@ describe('renderMdxToHtml — link cards', () => {
 
   it('resolves a stored reference into a card (2a)', async () => {
     const { html } = await renderMdxToHtml(CARD, { resolveCard });
-    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
     expect(html).toContain('<span class="link-card-description">説明文</span>');
     // Title and description are the card's text: the target's date was dropped 2026-08-15
@@ -379,7 +379,7 @@ describe('renderMdxToHtml — link cards', () => {
     expect(toc).toEqual([{ id: 'user-content-導入', text: '導入', level: 2 }]);
     expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
     // The card's own href is a path, not a fragment, so the rewrite left it alone.
-    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     // …and pretty-code still ran on the fence below it.
     expect(html).toContain('data-rehype-pretty-code-figure');
   });
@@ -416,7 +416,9 @@ describe('renderMdxToHtml — external link cards', () => {
 
   it('resolves an absolute URL into a card carrying the target’s host (14i)', async () => {
     const { html } = await renderMdxToHtml(CARD, { resolveCard });
-    expect(html).toContain('<a class="link-card" href="https://example.com/article">');
+    expect(html).toContain(
+      '<a class="link-card" href="https://example.com/article" target="_blank">',
+    );
     expect(html).toContain('<span class="link-card-title">外部の記事</span>');
     expect(html).toContain('<span class="link-card-description">外部の説明</span>');
     // The provenance line §12 left empty while every card pointed at this blog (§14.4). It is
@@ -469,7 +471,9 @@ describe('renderMdxToHtml — external link cards', () => {
     // or an unknown slug on the internal side (§6.1): the reader still gets the link, and the
     // author sees a link where they expected a card.
     const { html } = await renderMdxToHtml(CARD, { resolveCard: async () => null });
-    expect(html).toContain('<a href="https://example.com/article">https://example.com/article</a>');
+    expect(html).toContain(
+      '<a href="https://example.com/article" target="_blank">https://example.com/article</a>',
+    );
     expect(html).not.toContain('link-card-title');
     expect(html).not.toContain('<div');
   });
@@ -561,7 +565,7 @@ describe('renderMdxToHtml / embed', () => {
     ]) {
       const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`, {});
       expect(html, href).not.toContain('<iframe');
-      expect(html, href).toContain(`<a href="${href}">`);
+      expect(html, href).toContain(`<a href="${href}" target="_blank">`);
     }
   });
 
@@ -587,7 +591,141 @@ describe('renderMdxToHtml / embed', () => {
       `<div class="link-card" data-href="/posts/abc123"></div>\n\n<div class="embed" data-href="https://youtu.be/${ID}"></div>`,
       { resolveCard },
     );
-    expect(html).toContain('<a class="link-card" href="/posts/abc123">');
+    expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     expect(html).toContain('<iframe');
+  });
+});
+
+// docs/link-requirements.md §7.2 — the stage that opens a link leaving this site in a new tab. It
+// is the last one in the pipeline, so what these measure is a single rule applied to anchors from
+// four different sources: the author's markdown, the author's raw HTML, and the two stages that
+// build anchors of their own (a card, and either stage's fallback link).
+//
+// The half that carries the risk is what must NOT get it. Every link that stays on this site is a
+// relative path or a fragment (§2.3), so the generated table of contents, footnote references and
+// their backrefs all sit outside a test written on the href's scheme — which is why the criterion
+// is "starts with http(s)" and not a comparison against `siteOrigin` (§7.2 item 1).
+describe('renderMdxToHtml — external links open in a new tab', () => {
+  const resolveCard = async (href: string) =>
+    href === '/posts/abc123'
+      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
+      : href === 'https://example.com/a'
+        ? { title: '外部の記事', description: '外部の説明', thumbnail: null }
+        : null;
+
+  it('opens an external link, written or autolinked, in a new tab (11a)', async () => {
+    const { html } = await renderMdxToHtml(
+      '[x](https://example.com/a)\n\nhttps://example.com/b\n\nwww.example.com/c\n',
+    );
+    expect(html).toContain('<a href="https://example.com/a" target="_blank">');
+    expect(html).toContain('<a href="https://example.com/b" target="_blank">');
+    // remark-gfm gives a bare `www.` literal an `http://` scheme, so it is external too.
+    expect(html).toContain('<a href="http://www.example.com/c" target="_blank">');
+  });
+
+  it('leaves an internal link in the same tab (11b)', async () => {
+    const { html } = await renderMdxToHtml('[内部](/posts/foo)\n');
+    expect(html).toContain('<a href="/posts/foo">');
+    expect(html).not.toContain('target=');
+  });
+
+  it('leaves the table of contents’ targets and a bare `#` in the same tab (11b)', async () => {
+    const { html } = await renderMdxToHtml('## 導入\n\n[導入へ](#導入)\n\n[上へ](#)\n');
+    expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
+    expect(html).not.toContain('target=');
+  });
+
+  it('leaves a hand-written `#user-content-…` fragment in the same tab (11b)', async () => {
+    // §2.1.1: copying an href off a published page produces this, and it is indistinguishable from
+    // a generated ToC link by its text. Both are outside the test for the same reason — neither
+    // starts with a scheme (§7.2 item 2).
+    const { html } = await renderMdxToHtml('[戻る](#user-content-導入)\n');
+    expect(html).not.toContain('target=');
+  });
+
+  it('leaves a footnote reference and its backref in the same tab (11b)', async () => {
+    const { html } = await renderMdxToHtml('本文[^1]\n\n[^1]: 注\n');
+    expect(html).toContain('href="#user-content-fn-1"');
+    expect(html).toContain('href="#user-content-fnref-1"');
+    expect(html).not.toContain('target=');
+  });
+
+  it('leaves the other schemes sanitize permits in the same tab (11c)', async () => {
+    // A new tab for `mailto:` opens a blank one beside the mail client.
+    const { html } = await renderMdxToHtml(
+      '[mail](mailto:a@example.com) [chat](xmpp:a@example.com)\n',
+    );
+    expect(html).toContain('href="mailto:a@example.com"');
+    expect(html).toContain('href="xmpp:a@example.com"');
+    expect(html).not.toContain('target=');
+  });
+
+  it('re-adds the target sanitize stripped off raw HTML, and only when external (11d)', async () => {
+    // The author still cannot write `target` — sanitize removes it (§2.3), `rel` with it. What the
+    // external one ends up with is this stage's own attribute, which is why the internal one below
+    // does not get one back.
+    const { html } = await renderMdxToHtml(
+      '<a href="https://example.com/a" target="_self" rel="opener">x</a>\n\n<a href="/posts/foo" target="_blank">y</a>\n',
+    );
+    expect(html).toContain('<a href="https://example.com/a" target="_blank">');
+    expect(html).toContain('<a href="/posts/foo">');
+    expect(html).not.toContain('rel=');
+  });
+
+  it('leaves a protocol-relative URL in the same tab — a measurement, not a criterion', async () => {
+    // `//example.com` has no scheme, so sanitize passes it as a relative URL and the test above
+    // does not match it: it is the one off-site shape that stays in this tab (§7.2 item 1). Pinned
+    // because it is the exception to "内部は相対パスか fragment", not because it is wanted — no
+    // route in the repo writes this form today.
+    const { html } = await renderMdxToHtml('[x](//example.com)\n');
+    expect(html).toContain('<a href="//example.com">');
+    expect(html).not.toContain('target=');
+  });
+
+  it('opens a link card in a new tab wherever it points (11e)', async () => {
+    // The internal card is the half that does not follow from the href: a card is a block-level
+    // aside standing for a whole other article, and one component behaves one way (§7.2 item 4).
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="https://example.com/a"></div>\n\n<div class="link-card" data-href="/posts/abc123"></div>\n',
+      { resolveCard },
+    );
+    expect(html).toContain('<a class="link-card" href="https://example.com/a" target="_blank">');
+    expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
+  });
+
+  it('does not let an author claim the card rule with raw HTML — a measurement', async () => {
+    // The card rule reads a class rather than an href shape, so it is worth pinning that the class
+    // is not something an author can put on an anchor. `link-card` is allow-listed on `div`
+    // (`divClasses` in lib/render.ts) and nowhere else; the only `className` value the schema lets
+    // through on `a` is `data-footnote-backref` (hast-util-sanitize's own `defaultSchema`), so the
+    // attribute survives emptied rather than carrying the name. The harm if it passed would be nil
+    // — a new tab on an internal link — but §7.2 item 6's "the author is not trusted" claim has to
+    // stay measured rather than assumed.
+    const { html } = await renderMdxToHtml('<a class="link-card" href="/posts/foo">x</a>\n');
+    expect(html).toContain('<a class="" href="/posts/foo">x</a>');
+    expect(html).not.toContain('link-card');
+    expect(html).not.toContain('target=');
+  });
+
+  it('leaves an internal card that resolved to nothing in the same tab (11f)', async () => {
+    // A card whose slug is unknown or whose target is a draft renders as a bare `<a>` with no
+    // class — it has lost the card's shape, so it is judged as the plain internal link it now is.
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="/posts/gone"></div>\n',
+      { resolveCard },
+    );
+    expect(html).toContain('<a href="/posts/gone">');
+    expect(html).not.toContain('target=');
+  });
+
+  it('opens a fallback link from either resolving stage in a new tab (11e)', async () => {
+    // A card whose URL resolves to nothing, and an embed no provider claims: both degrade to a
+    // plain external link, and both are anchors this stage sees because it runs after them.
+    const { html } = await renderMdxToHtml(
+      '<div class="link-card" data-href="https://example.com/unknown"></div>\n\n<div class="embed" data-href="https://www.youtube.com/playlist?list=PL1"></div>\n',
+      { resolveCard },
+    );
+    expect(html).toContain('<a href="https://example.com/unknown" target="_blank">');
+    expect(html).toContain('<a href="https://www.youtube.com/playlist?list=PL1" target="_blank">');
   });
 });
