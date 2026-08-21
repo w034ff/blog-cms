@@ -13,6 +13,10 @@ import { loadMarkdown, setRange } from './editor-authoring';
 // toolbar 441px, against 390px and 320px screens.
 const MD = '前[リンク](https://example.com "タイトル")後\n';
 const TABLE_MD = '| A | B | C |\n| --- | --- | --- |\n| x | y | z |\n';
+// Long enough that the card's href line runs into its own truncation, which is where the display
+// card is at its widest (measured 437px with 「カードにする」 present, 407px without).
+const LONG_HREF =
+  'https://example.com/very/long/path/that/does/not/fit/in/the/card/at/all/index.html';
 
 // Every control's own box, not just its container's: the container fitting says nothing about the
 // button inside it that overflowed, and 適用 — the only press that commits an edit — was exactly
@@ -73,6 +77,53 @@ for (const width of [390, 320]) {
           (el.querySelector('button') as HTMLElement).getBoundingClientRect().height,
       );
     expect(rows).toBeGreaterThan(1.5);
+  });
+}
+
+// Reported 2026-08-21, after the caps above: 「カード化のボタンがないバブルを開いてからカード化のある
+// バブルを開くと右端が画面外に出る」. A link in a heading is not offered 「カードにする」 and a
+// line-alone link is, so moving between the two changes the card's width by one button (~30px)
+// *after* the plugin has placed it. That is the shape a stale placement would take, so the sequence
+// — not either card alone — is what this measures, and it measures the card's children rather than
+// its box: a capped container can still be overflowed by what is inside it.
+for (const width of [390, 320]) {
+  test(`the card fits after moving from a link that cannot become one (${width}px, 12d)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      `## 見出しの中の[リンク](${LONG_HREF})\n\n[単独行のリンクはカードにできる](${LONG_HREF})\n`,
+    );
+
+    // Caret by selection rather than by click: at these widths the first card can cover the line
+    // below it, and a click that lands on the card measures the wrong thing (or times out).
+    const caretInto = (selector: string) =>
+      page.evaluate((sel) => {
+        const a = document.querySelector(sel) as HTMLElement;
+        const range = document.createRange();
+        range.setStart(a.firstChild as ChildNode, 2);
+        range.collapse(true);
+        const selection = window.getSelection() as Selection;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        (document.querySelector('.ProseMirror') as HTMLElement).focus();
+      }, selector);
+
+    await caretInto('.ProseMirror h2 a');
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    expect(
+      await page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }).count(),
+    ).toBe(0);
+    expect((await fits(page, '.link-bubble')).overflow).toBe(0);
+
+    await caretInto('.ProseMirror p a');
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    await expect(
+      page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }),
+    ).toBeVisible();
+    expect((await fits(page, '.link-bubble')).overflow).toBe(0);
   });
 }
 
