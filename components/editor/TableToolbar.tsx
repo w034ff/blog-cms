@@ -59,7 +59,11 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
-      className='table-toolbar z-20 flex flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      // `flex-wrap` has always been here; what it lacked was a width to wrap against. An absolutely
+      // positioned box sizes shrink-to-fit against its containing block, which is wider than a phone,
+      // so the row stayed on one line and ran off the screen — measured at 441px against 390px, with
+      // `shift` already pinned to the left edge (docs/table-requirements.md, §5.5.19's twin).
+      className='table-toolbar z-20 flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>

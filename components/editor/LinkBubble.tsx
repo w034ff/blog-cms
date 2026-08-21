@@ -61,8 +61,13 @@ const SUPPRESS_TABLE_MENU = 'link-menu-open';
 // Both fields of the edit mode wear this. One constant rather than two copies because the pair has
 // to line up: they sit one above the other and any difference in width or padding reads as a
 // mistake.
+// **The field fills its grid column; it does not set the card's width.** That is the arrangement
+// §5.5.19 needed: the width lives on the grid below, once, so that capping the card at the screen's
+// width is a change the fields follow. A `w-72` here (what this was until 2026-08-21) is a definite
+// width that a percentage `max-width` does not reliably clamp inside a grid area, and the card then
+// overflowed the phone it had just been capped to — measured, 288px of field inside a 229px column.
 const FIELD_CLASS =
-  'w-72 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]';
+  'w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]';
 
 // And the name of each, to its left. Reported 2026-08-17: with both fields up, which one is the
 // link's text and which is its destination could not be told apart — an existing link fills both,
@@ -73,7 +78,11 @@ const FIELD_CLASS =
 // the card sits over the link and every line it grows covers another paragraph the author is
 // reading (the measurement that moved it above the line — see `placement` below), while widening it
 // costs nothing but the space beside a `w-72` field.
-const LABEL_CLASS = 'shrink-0 text-xs text-zinc-500 dark:text-zinc-400';
+// `whitespace-nowrap` is load-bearing at a phone's width: the label sits in the grid's `auto`
+// column, and when the card is capped that column is the one thing that can still give — measured
+// at 320px, 「テキスト」 broke into four stacked characters and took the card to 146px tall. The
+// label is the one part with nothing to gain by shrinking, so it is pinned and the field gives.
+const LABEL_CLASS = 'shrink-0 whitespace-nowrap text-xs text-zinc-500 dark:text-zinc-400';
 
 // The heading list's own two numbers (§5.5.17). The height it wants is about six rows — enough that
 // scrolling is the exception, short enough that the list does not become the page. `size` caps it to
@@ -1058,7 +1067,10 @@ export function LinkBubble({
       // border, and enough padding that the three round hover targets don't touch each other. The
       // border is kept for the dark scheme, where a shadow alone leaves the card's edge invisible
       // against the editor surface.
-      className='link-bubble z-20 flex items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
+      // `max-w` is the responsive half (§5.5.19): `shift` can only move a card that fits, and the
+      // edit layout does not fit a phone. Capping it here lets the fields inside give up their
+      // preferred width instead, which is the only axis with anything to give.
+      className='link-bubble z-20 flex max-w-[calc(100vw-1rem)] items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
       {editing ? (
         // Deliberately not a <form>: PostEditor wraps the whole page in one, and a nested form is
         // dropped by the browser, so its submit silently does nothing (the shape TableGridMenu
@@ -1076,7 +1088,15 @@ export function LinkBubble({
         // Real <label for=…>, not text beside the field: it is what gives each input its accessible
         // name (the `aria-label` these carried until 2026-08-17), so the name and the visible word
         // cannot drift apart, and clicking the word focuses the field.
-        <div className='grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1'>
+        // `min-w-0`: this grid is a flex item of the card, and a flex item refuses by default to go
+        // below its min-content — which here contains a 288px field, so without it the card's cap
+        // is real but the grid overflows it and 適用 leaves the screen anyway (measured at 320px,
+        // §5.5.19). The cap has to reach the field, and this is the link in that chain.
+        // `w-96` is the edit layout's width, and `max-w-full` is where it gives it up — together
+        // with the card's own cap that is the whole of §5.5.19's fix. It sits here rather than on
+        // the fields because a grid column can be told to shrink and a definite-width field cannot;
+        // `min-w-0` is what lets this grid go below its min-content as a flex item of the card.
+        <div className='grid w-96 min-w-0 max-w-full grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1'>
           {textInitial !== null && (
             <>
               <label htmlFor={`${fieldId}-text`} className={LABEL_CLASS}>
@@ -1103,12 +1123,12 @@ export function LinkBubble({
               button's neighbour is a field, and it read as attached to it. The 8px is the same
               gap the grid puts between a label and its field, so the field has equal air on both
               sides — change one and the other has to move with it. */}
-          <div className='flex items-center gap-2'>
+          <div className='flex min-w-0 items-center gap-2'>
             {/* `relative` so the heading list can hang below the field. It is allowed out of the
                 card rather than laid out inside it: the card's expensive axis is its height (see
                 the label comment above), and a list that pushed the 適用 row down would move the
                 button out from under a pointer already on its way to it. */}
-            <div className='relative'>
+            <div className='relative min-w-0 flex-1'>
               <input
                 ref={inputRef}
                 id={`${fieldId}-href`}
@@ -1250,9 +1270,14 @@ export function LinkBubble({
                 else in the editor's chrome is filled, so the fill read as a weight this card does
                 not carry. Colouring the label says the same thing at the weight the rest of the
                 chrome is drawn at. */}
-            <ToolbarButton accent onClick={applyDraft}>
-              適用
-            </ToolbarButton>
+            {/* `shrink-0`: this row is a flex row, so on a phone the button was the item that gave
+                — 「適用」 came out stacked as 適／用 at 390px. The field beside it is the one with
+                room to lose (§5.5.19). */}
+            <span className='shrink-0'>
+              <ToolbarButton accent onClick={applyDraft}>
+                適用
+              </ToolbarButton>
+            </span>
           </div>
         </div>
       ) : (
