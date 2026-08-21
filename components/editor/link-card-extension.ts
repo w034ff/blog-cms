@@ -454,6 +454,17 @@ function renderCard(
 ): void {
   const actions = head();
   actions.append(
+    // The card's own repayment of a debt (§7.4). `openOnClick: false` took opening a link away from
+    // inside the editor (docs/link-requirements.md §3) and the bubble gave it back to text links
+    // (§5.5); a card had no way at all — 「変更」 opens an empty picker and 「リンクに戻す」 destroys
+    // the card to get at the link underneath it.
+    //
+    // A control rather than a click on the title or the picture: the card is an atom, so a click on
+    // its body is how the author selects it to delete or drag, and the picture is a large target to
+    // lose to a navigation nobody meant. Same call the bubble's href line makes (LinkBubble.tsx),
+    // including the new tab, which is what the published card does now too
+    // (docs/link-requirements.md §7.2).
+    button('開く', () => window.open(href, '_blank', 'noopener,noreferrer')),
     button('変更', onClear),
     button('リンクに戻す', () => editor.commands.unsetLinkCard(pos())),
   );

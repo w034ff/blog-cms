@@ -179,6 +179,28 @@ test('a card can be turned back into a text link (4b)', async ({ page }) => {
   expect(await markdown(page)).toContain(`[${CARD_TITLE}](${CARD_HREF})`);
 });
 
+// §7.4. The half worth measuring is not that a new tab appears — `window.open` is the browser's —
+// but that the document is untouched by pressing a control that sits *inside* a NodeView, next to
+// two buttons that both rewrite the node. A card that opened its target and dissolved itself would
+// be §7.1's failure by another route.
+test('the card can be opened, and opening it leaves the card alone (4i)', async ({
+  page,
+  context,
+}) => {
+  await openWithCard(page);
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+  const [popup] = await Promise.all([
+    context.waitForEvent('page'),
+    card(page).getByRole('button', { name: '開く' }).click(),
+  ]);
+  await popup.waitForURL(new RegExp(`${CARD_HREF}$`));
+
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  expect(await docString(page)).toContain('linkCard');
+  expect(await markdown(page)).toContain(`data-href="${CARD_HREF}"`);
+});
+
 // §7.3, and the answer to what §10 used to list as unmeasured. A card is an atom, so
 // prosemirror-commands deletes it whole from the edge of the neighbouring textblock in one press —
 // its `joinBackward` has an explicit branch for it (dist: `// If the node before is an atom, delete
