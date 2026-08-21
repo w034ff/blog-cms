@@ -292,3 +292,49 @@ test.describe('on an emulated phone at 360px', () => {
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
   });
 });
+
+// The width band where the card's *change* of width is what overflows (2026-08-22, reported from a
+// phone: `441/440 ⚠ link-bubble R=441 w=408`). The plugin places the card before React has
+// re-rendered it for the new link, so a move from a link that cannot become a card to one that can
+// — a heading's link to a line-alone one — adds a button and ~30px after `shift` has already run.
+//
+// Only a band shows it: below it both cards are at the cap and the width never changes, above it
+// neither is capped and there is room to grow into. 450px sits inside it; 360, 375, 390 and 412 are
+// all outside, which is why every width measured before came back clean.
+test.describe('in the width band where the card grows into the edge', () => {
+  test.use({ ...PHONE, viewport: { width: 450, height: 800 } });
+
+  test('the card is re-placed when it gains a button (12h)', async ({ page }) => {
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      `## この見出しの右のほうに[リンク](${LONG_HREF})\n\n[単独行のリンクはカードにできる](${LONG_HREF})\n`,
+    );
+    const caretInto = (selector: string) =>
+      page.evaluate((sel) => {
+        const a = document.querySelector(sel) as HTMLElement;
+        const walker = document.createTreeWalker(a, NodeFilter.SHOW_TEXT);
+        const text = walker.nextNode() as Text;
+        const range = document.createRange();
+        range.setStart(text, Math.min(2, text.length));
+        range.collapse(true);
+        const selection = window.getSelection() as Selection;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        (document.querySelector('.ProseMirror') as HTMLElement).focus();
+      }, selector);
+
+    await caretInto('.ProseMirror h2 a');
+    await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(450);
+
+    await caretInto('.ProseMirror p a');
+    await expect(
+      page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }),
+    ).toBeVisible();
+    // The page, and the margin: before the fix this was 451px of document against 450px of screen,
+    // with the card left at the text's left edge because `shift` had run against the narrow one.
+    expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(450);
+    expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
+  });
+});

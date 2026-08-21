@@ -309,6 +309,8 @@ export function LinkBubble({
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
   const dismissedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The card element itself, so its size can be watched (see the ResizeObserver below).
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // The two fields' ids, which exist only to join each label to its input. Generated rather than
@@ -667,6 +669,33 @@ export function LinkBubble({
     if (!menuVisible) return;
     signal('updatePosition');
   }, [editing, menuVisible, signal]);
+
+  // **And whenever the card's own box changes, whatever changed it** (2026-08-22). The effect above
+  // names one cause; this one observes the effect, which is what the rule above actually says.
+  //
+  // The case that forced it: the plugin places the card from its view update, which runs *before*
+  // React has re-rendered the card for the new link — so the coordinates are computed against the
+  // previous link's card. A link in a heading is not offered 「カードにする」 and a line-alone link
+  // is, so moving between them adds a button and about 30px afterwards, and `shift` — the one thing
+  // that would pull the wider card back inside — has already run and does not run again.
+  //
+  // It shows only in the band of widths where the narrow card fits and the wide one does not
+  // (measured 2026-08-22 at 450px and 460px, from a phone's report at 440px: left 33px, width at the
+  // `100vw - 2rem` cap, right edge 1px past the screen, and a page 1px wider than the viewport for
+  // as long as the card is up). Below the band both cards are capped and the width never changes;
+  // above it neither is. That is why 360, 375, 390 and 412 were all clean.
+  //
+  // A ResizeObserver rather than another dependency list: the title line arriving from
+  // `/api/link-title` (§5.5.10), the favicon, and 「埋め込みにする」 all resize this card too, and
+  // each would otherwise be a separate thing to remember. Repositioning changes `left`/`top` and not
+  // the box, so this cannot feed itself.
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card || !menuVisible) return;
+    const observer = new ResizeObserver(() => signal('updatePosition'));
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [menuVisible, signal]);
 
   // Focus the URL field as it opens, with its contents selected so retyping a wrong URL is one
   // gesture. Focus leaving the editor does not hide the card: the plugin's blur handler ignores a
@@ -1047,6 +1076,7 @@ export function LinkBubble({
 
   return (
     <BubbleMenu
+      ref={cardRef}
       editor={editor}
       pluginKey={MENU_KEY}
       // 250ms by default, which would leave the card at the previous link while the caret has
