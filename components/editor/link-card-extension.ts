@@ -18,6 +18,7 @@ import {
 } from './svg/icon-shapes';
 import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { refuseChromeDrops } from './useDragContainment';
 
 // The link card (docs/link-card-requirements.md): a block that shows a post, or an external page,
 // as a card rather than as a line of link text.
@@ -339,6 +340,14 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
       };
       render(node);
 
+      // What `stopEvent` below claims — stated once, because the drop refusal has to refuse exactly
+      // what the claim takes out of ProseMirror's reach and no more (refuseChromeDrops).
+      const claimsEvent = (target: HTMLElement) => target.closest('input, button') !== null;
+      // The picker's search box is a natively droppable text control, so a drop there was Chrome's
+      // to run: measured, dragging 前の段落 onto it left doc(paragraph("です"), linkCard, …) with the
+      // words in the box — the document's text destroyed by a move ProseMirror never authorized.
+      refuseChromeDrops(dom, claimsEvent, () => editor.view);
+
       return {
         dom,
         update: (updated: PMNode) => {
@@ -361,7 +370,7 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
         // belongs to the editor.
         stopEvent: (event: Event) => {
           const target = event.target;
-          return target instanceof HTMLElement && target.closest('input, button') !== null;
+          return target instanceof HTMLElement && claimsEvent(target);
         },
       };
     };

@@ -7,6 +7,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { refuseChromeDrops } from './useDragContainment';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -913,14 +914,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       // document is being dragged. A file dragged in from the OS (useImageUpload's overlay), text
       // from another application, and a drag within the field itself all leave it null and go on
       // working normally.
-      const refuseEditorDrag = (event: DragEvent) => {
-        if (!editor.view.dragging) return;
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-      };
-      header.addEventListener('dragenter', refuseEditorDrag);
-      header.addEventListener('dragover', refuseEditorDrag);
-      header.addEventListener('drop', refuseEditorDrag);
+      // The whole header, matching this NodeView's `stopEvent` below — what the claim takes out of
+      // ProseMirror's reach is exactly what has to be refused (refuseChromeDrops, shared with the
+      // link card and the embed, which claim their own controls the same way).
+      refuseChromeDrops(
+        header,
+        (target) => header.contains(target),
+        () => editor.view,
+      );
 
       header.appendChild(filenameInput);
       header.appendChild(select);

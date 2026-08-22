@@ -2,6 +2,7 @@ import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { resolveEmbed, type EmbedTarget } from '@/lib/embed-provider';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { refuseChromeDrops } from './useDragContainment';
 
 // The embed (docs/embed-requirements.md): a block that plays or shows an external item in place,
 // rather than naming it with a line of link text.
@@ -224,6 +225,12 @@ export const Embed = Node.create({
       };
       render(node);
 
+      // What `stopEvent` below claims, and the matching drop refusal — same pair, same reason as the
+      // link card's (refuseChromeDrops). No droppable text control lives in this band today, so
+      // nothing is destroyed by a drop here yet; the refusal is what keeps that true when one does.
+      const claimsEvent = (target: HTMLElement) => target.closest('button') !== null;
+      refuseChromeDrops(dom, claimsEvent, () => editor.view);
+
       return {
         dom,
         update: (updated: PMNode) => {
@@ -240,7 +247,7 @@ export const Embed = Node.create({
         // because events inside it never reach this document at all.
         stopEvent: (event: Event) => {
           const target = event.target;
-          return target instanceof HTMLElement && target.closest('button') !== null;
+          return target instanceof HTMLElement && claimsEvent(target);
         },
       };
     };
