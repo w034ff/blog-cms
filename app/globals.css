@@ -281,6 +281,12 @@ body {
     0.9
   ); /* zinc-700-ish; same shade at rest as on hover, just no background */
   cursor: grab;
+  /* The handle must never be a native drag source. The drag it starts is DragController's own
+     (block-drag-handle.ts), driven by mousemove/mouseup — and a native HTML5 drag beginning on top
+     of that one strands it, because the OS drag loop swallows both of those events for the rest of
+     the gesture and the session then never ends. The controller cancels such a dragstart wherever
+     it comes from; this keeps the browser from starting one here in the first place. */
+  -webkit-user-drag: none;
   opacity: 0;
   transition:
     opacity 0.12s ease,
@@ -1161,9 +1167,9 @@ body.link-menu-open .table-toolbar {
 /* Mask the browser's native text-selection highlight inside a table CellSelection.
    prosemirror-tables tags each selected cell with `.selectedCell` (the overlay
    above), but the native highlight is meant to be hidden by prosemirror-view's
-   `.ProseMirror-hideselection` ::selection rule — which we don't import, and which
-   in any case is only added after mouseup (its selectionToDOM bails on a focus check
-   mid-drag). So during a cross-cell drag the browser keeps painting a raw text
+   `.ProseMirror-hideselection` ::selection rule — which @tiptap/core does inject (verified in the
+   CSSOM 2026-08-22; an earlier note here said it was missing), but which is only added after
+   mouseup, its selectionToDOM bailing on a focus check mid-drag. So during a cross-cell drag the browser keeps painting a raw text
    highlight across the dragged-over cells, on top of the overlay — it reads as the
    head cell's text being "stuck" selected. `.selectedCell` is present for the whole
    drag, so key the mask on it. ::selection and ::-moz-selection must be separate

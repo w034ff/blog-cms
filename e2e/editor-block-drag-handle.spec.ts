@@ -690,3 +690,448 @@ for (const kind of ['blockquote', 'table'] as const) {
     await expect(selected).toHaveCSS('outline-width', '2px');
   });
 }
+
+// A long document, where the block has to travel further than one screen. The drag is driven by
+// plain mousemove/mouseup (block-drag-handle.ts's DragController), so nothing scrolls on its own the
+// way a native HTML5 drag would: before AUTOSCROLL_ZONE existed, holding the pointer at the bottom
+// edge left the page exactly where it was, and a target below the fold could not be reached at all.
+// That is worse than a drag that refuses, because the whole time the editor is *modal* —
+// `body.block-dragging` takes the cursor and text selection and handleKeyDown swallows every key,
+// so an author who cannot finish the gesture is looking at an editor that answers nothing. Measured
+// before the fix: `scrollY` 276 → 276 after 600ms parked at the edge.
+//
+// The pointer is deliberately never moved after it reaches the edge: the scrolling, and the
+// indicator's tracking of it, both have to happen without a mouse event to hang off.
+test('holding at the bottom edge scrolls the page so a target below the fold is reachable', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  const paragraphs = Array.from({ length: 40 }, (_, i) => `段落${i + 1}`).join('\n\n');
+  await loadMarkdown(page, `> 引用文です\n\n${paragraphs}\n`);
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  // Not vacuous only if the destination really is off-screen to begin with.
+  const lastVisible = await editor
+    .locator('p', { hasText: '段落40' })
+    .evaluate((el) => el.getBoundingClientRect().top < window.innerHeight);
+  expect(lastVisible).toBe(false);
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error('missing bounding box');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + 200, (await page.evaluate(() => window.innerHeight)) - 3, {
+    steps: 8,
+  });
+  // Parked at the edge, no further pointer movement: the page keeps scrolling until it runs out.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 1,
+      ),
+    )
+    .toBe(true);
+  await page.mouse.up();
+
+  // Landed at the tail gap — after every paragraph. (TrailingNode's empty paragraph is the very
+  // last block, so the quote is the last thing with content in it.)
+  const md = await getMarkdown(page);
+  expect(md.indexOf('段落40')).toBeLessThan(md.indexOf('> 引用文です'));
+  expect(md.trim().endsWith('> 引用文です')).toBe(true);
+});
+
+// The same "the page moved under a stationary pointer" question, asked of the wheel, which keeps
+// working during a drag. findBoundary() answers in viewport coordinates, so a scroll changes which
+// gap the pointer is over without any mouse event at all — and the indicator is what the author is
+// aiming with. Measured before handleScroll existed: the wheel scrolled the page 400px and the
+// indicator stayed at `top: 710.312px`, so the drop applied a boundary computed against the
+// pre-scroll layout — a block silently landing somewhere other than where the line was drawn.
+//
+// The assertion is that pairing, not a position: whichever paragraph the line ends up at is the one
+// the block must land in front of.
+test('the drop target follows a wheel-scroll made mid-drag', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  const paragraphs = Array.from({ length: 40 }, (_, i) => `段落${i + 1}`).join('\n\n');
+  await loadMarkdown(page, `> 引用文です\n\n${paragraphs}\n`);
+  // No scrolling of its own: the post form's own fields fill the first screen, so the editor body
+  // is only on screen at all because clicking into it scrolled there.
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error('missing bounding box');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  // Onto a paragraph that is on screen and well clear of the autoscroll bands at either edge, so
+  // the wheel is the only thing moving the page here. Asserted rather than assumed: a point inside
+  // a band would scroll on its own, and one above the first paragraph's midpoint resolves to the
+  // dragged block's own gap, where the indicator is deliberately not drawn at all.
+  const aimY = await page.evaluate(() => {
+    const middle = window.innerHeight / 2;
+    let best: number | null = null;
+    let bestDelta = Infinity;
+    for (const p of document.querySelectorAll('.ProseMirror > p')) {
+      const rect = p.getBoundingClientRect();
+      if (rect.top < 64 || rect.bottom > window.innerHeight - 64) continue;
+      const delta = Math.abs((rect.top + rect.bottom) / 2 - middle);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = rect.bottom - 2; // its lower half: the gap *after* it, a real target
+      }
+    }
+    return best;
+  });
+  if (aimY == null) throw new Error('no paragraph inside the safe band');
+  await page.mouse.move(handleBox.x + 200, aimY, { steps: 8 });
+  const indicator = page.locator('.block-drag-indicator');
+  await expect(indicator).toBeVisible();
+  const beforeWheel = await indicator.evaluate((el) => el.getBoundingClientRect().top);
+
+  await page.mouse.wheel(0, 400);
+  await expect
+    .poll(() => indicator.evaluate((el) => el.getBoundingClientRect().top))
+    .not.toBe(beforeWheel);
+
+  // Which paragraph the line is now drawn at — findBoundary() puts it at the top edge of the block
+  // the drop would go before.
+  const aimedAt = await page.evaluate(() => {
+    const line = document.querySelector('.block-drag-indicator') as HTMLElement;
+    const top = line.getBoundingClientRect().top;
+    let best: { text: string; delta: number } | null = null;
+    for (const p of document.querySelectorAll('.ProseMirror > p')) {
+      const delta = Math.abs(p.getBoundingClientRect().top - top);
+      if (!best || delta < best.delta) best = { text: p.textContent ?? '', delta };
+    }
+    return best;
+  });
+  if (!aimedAt) throw new Error('no paragraph to aim at');
+  expect(aimedAt.delta).toBeLessThan(2);
+
+  // Dropped with no further pointer movement, so nothing recomputes the target between the line
+  // being read above and the block landing.
+  await page.mouse.up();
+  expect(await getMarkdown(page)).toContain(`> 引用文です\n\n${aimedAt.text}`);
+});
+
+// mousedown on the handle never checked `event.button`, so the secondary button opened a full drag
+// session — measured: a right-drag reordered the blockquote outright, and the session is modal
+// (`body.block-dragging` takes the cursor and text selection, handleKeyDown swallows every key)
+// while the context menu the same click opens sits on top of it. The primary button is the only one
+// that means "pick this block up".
+test('a right-button press on a handle starts no drag', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await editor.click();
+  await loadMarkdown(page, '> 引用文です\n\n後の段落\n');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await expect(page.locator('.block-drag-preview')).toBeHidden();
+  await expect(page.locator('.block-drag-indicator')).toBeHidden();
+  expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(false);
+  await page.mouse.up({ button: 'right' });
+
+  expect(await getMarkdown(page)).toBe('> 引用文です\n\n後の段落');
+});
+
+// The reported freeze (2026-08-22): with the blue frame up, dragging the block left the editor
+// swallowing every key and refusing clicks. That is a DragController session that never ended —
+// while one is live, `body.block-dragging` holds `user-select: none` (so a click no longer places a
+// caret) and the plugin's handleKeyDown swallows every key. The only thing that can strand it is a
+// native HTML5 drag starting on top of it: its OS drag loop swallows `mousemove` and `mouseup` for
+// the rest of the gesture — measured in this harness, a native drag inside the editor logs
+// `mousedown → dragstart → drop` with no mouseup at all — so handleMouseUp never runs.
+//
+// The gesture cannot be driven the whole way here (page.mouse never enters the OS drag loop, see
+// e2e/native-drag.ts), so the two halves of the fix are asserted at the seam instead: the dragstart
+// is refused, and the session survives it as a live drag that still drops normally.
+test('a native drag cannot start while a block drag is in progress', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '> 引用文です\n\n後の段落\n');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+
+  // A cancellable dragstart, as the browser would raise it for whatever element prosemirror-view
+  // marked draggable when the press landed inside the NodeSelection.
+  const prevented = await handle.evaluate(
+    (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+  );
+  expect(prevented).toBe(true);
+
+  // Refused, not aborted: the drag the author is actually making carries on and still drops.
+  expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(true);
+  await page.mouse.up();
+  expect(await getMarkdown(page)).toBe('後の段落\n\n> 引用文です');
+});
+
+// The failsafe under that one, for a release nothing witnessed at all — a native drag that begins
+// before any cancellable dragstart, a button let go outside the window, a context menu. There is no
+// way to make Playwright actually lose a mouseup, so the state it leaves behind is what's staged
+// here: the session is live and the next movement arrives with no button down. prosemirror-view
+// keeps the same guard for its own MouseDown (`if (event.buttons == 0) this.done()`).
+test('a mouse move with the button already released ends a stranded drag', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '> 引用文です\n\n後の段落\n');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 6,
+  });
+  expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(true);
+
+  await page.evaluate(() =>
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 0 })),
+  );
+
+  // The modal state is gone: no body class, no ghost, and the keyboard reaches the document again.
+  expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(false);
+  await expect(page.locator('.block-drag-preview')).toBeHidden();
+  await page.mouse.up(); // the real release, now finding nothing to finish
+  // Aborted, not applied — an unwitnessed release is not a drop.
+  expect(await getMarkdown(page)).toBe('> 引用文です\n\n後の段落');
+
+  await editor.click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('X');
+  await expect.poll(() => getMarkdown(page)).toContain('X');
+});
+
+// The reported freeze, at its source (2026-08-22). A block that has a handle is also, by
+// prosemirror-view's own doing, a native HTML5 drag source once it is ringed: `selectNode()` sets
+// `dom.draggable = true` and `LeftMouseDown` arms `mightDrag` for a press inside the NodeSelection.
+// From the author's browser that native drag froze the editor the instant it began — every key and
+// click ignored, Escape included, `view.dragging` left set because neither `drop` nor `dragend` ever
+// reached `view.dom`. It cannot be driven to that point here (page.mouse never enters Chrome's OS
+// drag loop, see e2e/native-drag.ts), so what is asserted is that the drag is never handed over:
+// the dragstart is refused, and the same press runs this plugin's own drag instead.
+for (const kind of ['blockquote', 'table'] as const) {
+  test(`pressing a ringed ${kind} starts no native drag, and moves it as the handle does`, async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await loadMarkdown(
+      page,
+      kind === 'blockquote'
+        ? '> 引用文です\n\n後の段落\n'
+        : '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n後の段落\n',
+    );
+    const block = editor.locator(kind === 'blockquote' ? 'blockquote' : 'table');
+    await expect(block).toBeVisible();
+
+    // Ring it the way an author does: a click on its handle, no drag.
+    const handle = editor.locator('.block-drag-handle').first();
+    const handleBox = await handle.boundingBox();
+    if (!handleBox) throw new Error('missing bounding box');
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
+
+    // prosemirror-view has marked it draggable — the state the freeze starts from.
+    expect(
+      await editor
+        .locator('.ProseMirror-selectednode')
+        .evaluate((el) => el.getAttribute('draggable')),
+    ).toBe('true');
+
+    // Refused: a cancellable dragstart from the ringed block gets no drag. Asserted here, with no
+    // press in progress, and that placement is the whole point — DragController cancels a dragstart
+    // too while a session of its own is live, so the same assertion made mid-press passes with this
+    // guard removed and proves nothing (measured).
+    const prevented = await block.evaluate(
+      (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+    );
+    expect(prevented).toBe(true);
+
+    const blockBox = await block.boundingBox();
+    const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+    if (!blockBox || !targetBox) throw new Error('missing bounding box');
+
+    // And the press is this plugin's own drag instead — same chrome, same drop.
+    await page.mouse.move(blockBox.x + 40, blockBox.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+      steps: 8,
+    });
+    await expect(page.locator('.block-drag-indicator')).toBeVisible();
+    await expect(page.locator('.block-drag-preview')).toBeVisible();
+    await page.mouse.up();
+
+    const md = await getMarkdown(page);
+    expect(md.indexOf('後の段落')).toBeLessThan(
+      md.indexOf(kind === 'blockquote' ? '> 引用文です' : '| a | b |'),
+    );
+  });
+}
+
+// Dragging a ringed block by its own body must not paint a text selection behind the pointer.
+//
+// Once that press became this plugin's drag rather than a native one, ProseMirror's own mousedown
+// turned the NodeSelection into a caret and the browser started selecting text as the pointer
+// travelled — `.ProseMirror-hideselection` (injected by @tiptap/core) stops applying the moment the
+// selection is a visible one. Reported 2026-08-22. Restoring the NodeSelection at DRAG_THRESHOLD
+// does not undo it — `selectionToDOM` declines to touch the DOM selection while a press is live
+// (measured) — so the mousedown is preventDefault-ed instead, the way the handle's own always was.
+//
+// Measured in pixels, because the thing reported is a thing seen: `getSelection()` reports the
+// NodeSelection's own DOM range either way, and `::selection` has no readable computed style. The
+// block's idle colour is the baseline the drag is compared against, taken in the same run so a
+// theme or font change cannot drift it.
+test('dragging a ringed block by its body paints no text selection', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '> 引用文がここにあります\n\n後の段落\n');
+
+  const block = editor.locator('blockquote');
+  const blockBox = await block.boundingBox();
+  if (!blockBox) throw new Error('missing bounding box');
+  // Inside the block, clear of its own 2px selected-node outline.
+  const clip = {
+    x: blockBox.x + 6,
+    y: blockBox.y + 4,
+    width: blockBox.width - 12,
+    height: blockBox.height - 8,
+  };
+  const idle = await selectionBluePixels(page, clip);
+
+  // Ring it with its handle, then pick it up by its body.
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
+
+  await page.mouse.move(blockBox.x + 60, blockBox.y + 12);
+  await page.mouse.down();
+  // A short move first, then the long one — and that shape is load-bearing, not incidental: a
+  // single jump straight to the target does not leave the browser a selection to paint, so the same
+  // test written that way passes with the fix removed (measured).
+  await page.mouse.move(blockBox.x + 70, blockBox.y + 16, { steps: 3 });
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+    steps: 10,
+  });
+  await expect(page.locator('.block-drag-indicator')).toBeVisible();
+  const dragging = await selectionBluePixels(page, clip);
+  await page.mouse.up();
+
+  // Before the fix this read 3709 against an idle 188 — the block painted end to end.
+  expect(dragging).toBeLessThan(idle + 200);
+});
+
+// The caret must still be able to get into a ringed block — the guard for a regression this
+// plugin's mousedown introduced and had to give back (measured 2026-08-22): with `preventDefault`
+// on that press, `LeftMouseDown.up` never moved the selection, so a plain click left the
+// NodeSelection standing and the next keystroke replaced the whole block instead of typing into it.
+test('a plain click inside a ringed block lands the caret in it', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '> 引用文がここにあります\n\n後の段落\n');
+
+  const handle = editor.locator('.block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error('missing bounding box');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
+
+  const blockBox = await editor.locator('blockquote').boundingBox();
+  if (!blockBox) throw new Error('missing bounding box');
+  await page.mouse.click(blockBox.x + 60, blockBox.y + 12);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const el = document.querySelector('.ProseMirror') as Element & {
+          editor: { state: { selection: { constructor: { name: string } } } };
+        };
+        return el.editor.state.selection.constructor.name;
+      }),
+    )
+    .toBe('TextSelection');
+
+  await page.keyboard.type('X');
+  // Typed into the quote, not over it.
+  await expect.poll(() => getMarkdown(page)).toContain('> ');
+  expect(await getMarkdown(page)).toContain('引用文がここにあります');
+});
+
+// Selection-blue pixels inside `clip`, counted in the page (no image decoder in this harness).
+// "Blue" is the browser's own selection highlight, which is far bluer than anything the editor
+// draws: strongly blue, and clearly bluer than it is red or green.
+async function selectionBluePixels(
+  page: Page,
+  clip: { x: number; y: number; width: number; height: number },
+): Promise<number> {
+  const shot = await page.screenshot({ clip });
+  return page.evaluate(
+    async (dataUrl) => {
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = dataUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('no 2d context');
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let blue = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 2] > 140 && data[i + 2] - data[i] > 45 && data[i + 2] - data[i + 1] > 25) {
+          blue += 1;
+        }
+      }
+      return blue;
+    },
+    `data:image/png;base64,${shot.toString('base64')}`,
+  );
+}

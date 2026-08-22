@@ -247,7 +247,9 @@ renderMdxToHtml(source, { resolveCard });
 
 **実測（2026-08-14）**: ハンドルが無くてもカードは動いていた。カードを直接掴むネイティブドラッグで `doc(linkCard, paragraph("後の段落"))` → `doc(paragraph("後の段落"), linkCard, paragraph)` になり、`data-href` は保たれ `pageerror` も無い。`draggable: true` に対して prosemirror-view が `dom.draggable = true` を立てるのは NodeView の `dom` にも及ぶためである。**したがって補修しているのは操作の可否ではなく、他のブロックと揃った掴みどころの有無である。**
 
-**機構**: 許可リストの 1 行だけ。ハンドルは widget decoration なので NodeView 側には何も足さない。対象は文書の直接の子だけなので、引用やリスト項目の中のカードにハンドルは出ない（他の 6 種と同じ範囲であり、`block-drag-handle.ts` の `decorations` が `state.doc.forEach` で走ることの帰結である）。落とし先は `findBoundary` が返すトップレベルの隙間に限られ、この経路は `handleDrop` を通らないので、§5.4 が塞いでいるセルとタイトルへの新しい入口は増えない（ネイティブドラッグ側は従来どおり両ガードを通る）。併せて、種類を数え上げていたコメント 2 か所（`block-drag-handle.ts` と `app/globals.css`）を許可リストの現状に合わせた。どちらも `details` を足したときから 5 種のままだった。
+**現在、カード本体を直接掴むネイティブドラッグは拒否する（2026-08-22）。** トップレベルにあり `DRAGGABLE_TYPES` に載っているブロックが選択されているとき、`block-drag-handle.ts` の `handleDOMEvents.dragstart` が `preventDefault` で取り消し、同じ押下をこのプラグイン自身のドラッグとして開始する（`handleDOMEvents.mousedown`）。**理由**: 青い枠（NodeSelection）が出た状態でブロック本体を掴むと、その瞬間にエディタが固まる報告が実使用から上がった — キーもクリックも Escape も一切効かず、`view.dragging` が立ったまま（`drop` も `dragend` も `view.dom` に届いていない）。合成入力は Chrome の OS ドラッグループに入れないため（`e2e/native-drag.ts`）何がそこで止めているかは未解明で、経路ごと閉じている。ハンドル経由と同じドラッグになるので操作は失われず、落とし先が `findBoundary` のトップレベルの隙間に限られる点だけが変わる（ネイティブ経路はそれより広い場所に落とせた）。上の 2026-08-14 の実測は当時の事実として残す — ネイティブ経路が動いていたこと自体が、この補修を「掴みどころの追加」と位置づける根拠だからである。
+
+**機構**: 許可リストの 1 行だけ。ハンドルは widget decoration なので NodeView 側には何も足さない。対象は文書の直接の子だけなので、引用やリスト項目の中のカードにハンドルは出ない（他の 6 種と同じ範囲であり、`block-drag-handle.ts` の `decorations` が `state.doc.forEach` で走ることの帰結である）。落とし先は `findBoundary` が返すトップレベルの隙間に限られ、この経路は `handleDrop` を通らないので、§5.4 が塞いでいるセルとタイトルへの新しい入口は増えない（トップレベルのカードを直接掴むネイティブドラッグは 2026-08-22 に閉じた。引用やリスト項目の中のカード — ハンドルを持たないもの — は従来どおりネイティブ経路で動き、両ガードを通る）。併せて、種類を数え上げていたコメント 2 か所（`block-drag-handle.ts` と `app/globals.css`）を許可リストの現状に合わせた。どちらも `details` を足したときから 5 種のままだった。
 
 ### 7.3 カードの削除は上流の atom の規則のままにする（2026-08-14 追記）
 
@@ -417,7 +419,7 @@ renderMdxToHtml(source, { resolveCard });
 
 遅れて届いた答えは捨てる。`renderCard` の `.then()` は以前 `title` と `meta` にしか書かなかったので、`body.replaceChildren()` で外れた要素に書くだけで無害だった。`setImage` は NodeView の `dom` に触るため、`変更` を押してピッカーに戻ったカードに古い問い合わせの答えが届くと、検索欄の横に画像が付く。`title.isConnected` で降りる（構築中も false だが、ProseMirror が `dom` を挿すのは同じ同期ブロックの後なので、遅れて来るこの経路だけが該当する）。
 
-画像はドラッグの的にはならない。`<img>` は既定でドラッグ可能だが、ProseMirror の `dragstart` が先に取るので、サムネイルを掴んで引くとカードごと動く（実測 2026-08-18: `doc(paragraph, linkCard, paragraph)` → `doc(linkCard, paragraph, paragraph)`、画像ノードは増えず pageerror も無し）。`draggable = false` は要らない。この 1 件は基準にしていない — 上流の挙動であり、崩れたときに測るべきなのは画像ではなくカードのドラッグそのもの（基準 4d）だからである。
+画像はドラッグの的にはならない。`<img>` は既定でドラッグ可能だが、ProseMirror の `dragstart` が先に取るので、サムネイルを掴んで引くとカードごと動く（実測 2026-08-18: `doc(paragraph, linkCard, paragraph)` → `doc(linkCard, paragraph, paragraph)`、画像ノードは増えず pageerror も無し）。`draggable = false` は要らない。トップレベルのカードでは 2026-08-22 以降その `dragstart` 自体が取り消され、押下はハンドルと同じドラッグになる（§7.2）ので、サムネイルを掴んだときの行き先も同じである。この 1 件は基準にしていない — 上流の挙動であり、崩れたときに測るべきなのは画像ではなくカードのドラッグそのもの（基準 4d）だからである。
 
 **この穴は最初の描画からは見えないので、基準 4f はいったん別の文書を読み込んでからカードを読み直す。** 同じ内容を読み直すだけでは ProseMirror が NodeView を作り直さず、古い DOM がそのまま残って何も測らない（実測 2026-08-18: キャッシュ命中で画像を描けないコードに対して、その形の assertion は緑のままだった。文書を空けてから読み直す形にすると赤になる）。箱の寸法も測っている — 公開カードのために書かれた `.prose .link-card-image` が NodeView にも届くことは、`.link-card-view` を行にした今回の変更では仮定であって前提ではない。
 
