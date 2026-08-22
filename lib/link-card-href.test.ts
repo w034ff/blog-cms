@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { externalCardHost, isCardHref, normalizeCardHref } from './link-card-href';
+import { externalCardHost, isCardHref, isOwnPostHref, normalizeCardHref } from './link-card-href';
 
 // docs/link-card-requirements.md §14.2 and §14.5.1. These predicates are asked from both sides —
 // the resolve stage decides whether a stored reference becomes a card, the editor decides whether a
@@ -103,5 +103,35 @@ describe('normalizeCardHref', () => {
       '//evil.example',
     ])
       expect(normalizeCardHref(raw, ORIGIN), raw).toBeNull();
+  });
+});
+
+// docs/link-card-requirements.md §18. The self-reference guard is a predicate the editor's four
+// doors each ask for themselves, so this is where the rule itself is measured.
+describe('isOwnPostHref', () => {
+  it('recognizes the post being edited', () => {
+    expect(isOwnPostHref('/posts/abc123', 'abc123')).toBe(true);
+  });
+
+  it('lets every other post through', () => {
+    expect(isOwnPostHref('/posts/abc124', 'abc123')).toBe(false);
+    // A prefix is not a slug: nothing about `/posts/abc1234` is this post.
+    expect(isOwnPostHref('/posts/abc1234', 'abc123')).toBe(false);
+    expect(isOwnPostHref('https://example.com/a', 'abc123')).toBe(false);
+  });
+
+  it('answers no when the post has no slug yet', () => {
+    // A brand-new post before autosave has created its row. There is no address to point at, so
+    // there is nothing to refuse — and `/posts/` must not become the reference that matches.
+    expect(isOwnPostHref('/posts/abc123', '')).toBe(false);
+    expect(isOwnPostHref('/posts/', '')).toBe(false);
+  });
+
+  it('is asked about a normalized reference, which is what every caller has', () => {
+    // The published URL of the post being edited arrives at the guards as the internal reference
+    // (§14.5.1), which is the form this predicate reads. The two together are the paste path.
+    const own = normalizeCardHref('https://blog.example/posts/abc123', 'https://blog.example');
+    expect(own).toBe('/posts/abc123');
+    expect(isOwnPostHref(own ?? '', 'abc123')).toBe(true);
   });
 });

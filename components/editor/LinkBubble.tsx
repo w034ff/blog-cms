@@ -22,7 +22,7 @@ import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
 import { CardIcon } from './svg/CardIcon';
 import { PlayIcon } from './svg/PlayIcon';
-import { normalizeCardHref } from '@/lib/link-card-href';
+import { isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
@@ -273,9 +273,14 @@ function currentHref(editor: Editor): string {
 export function LinkBubble({
   editor,
   onNotice,
+  ownSlug,
 }: {
   editor: Editor;
   onNotice: (message: string) => void;
+  // The post being edited, so a link to it is not offered 「カードにする」 (§18). A value rather
+  // than the getter the extension takes: this is a React prop, so a new slug re-renders the bubble
+  // and the button is re-decided with it.
+  ownSlug: string;
 }) {
   // `editing` drives the render; the ref is what shouldShow reads, because that callback has to keep
   // a stable identity (a new one each render dispatches a transaction, which re-renders us — the
@@ -341,8 +346,16 @@ export function LinkBubble({
       ? () => editor.chain().focus().linkToEmbed({ from: link.from, to: link.to }, embedHref).run()
       : null;
   const cardHref = link && !embedHref ? normalizeCardHref(link.href, window.location.origin) : null;
+  // The third question, and the one that has no placement in it: a link to the article being
+  // written cannot become a card (§18). The button disappears, which is this file's existing way
+  // of saying "not offered" — the link itself is left alone, deliberately, since a text link to
+  // oneself is not what §18 is about.
+  const selfCard = cardHref !== null && isOwnPostHref(cardHref, ownSlug);
   const toCard =
-    link && cardHref && editor.can().linkToCard({ from: link.from, to: link.to }, cardHref)
+    link &&
+    cardHref &&
+    !selfCard &&
+    editor.can().linkToCard({ from: link.from, to: link.to }, cardHref)
       ? () => editor.chain().focus().linkToCard({ from: link.from, to: link.to }, cardHref).run()
       : null;
 

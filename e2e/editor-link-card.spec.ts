@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
-import { TEST_DB_PATH } from './constants';
+import { BASE_URL, TEST_DB_PATH } from './constants';
 import {
   closeHistory,
   collapseToEnd,
@@ -738,4 +738,120 @@ test('the first paragraph of a list item is not offered as a card (14u)', async 
   await page.locator('.ProseMirror a').first().click();
   await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
+});
+
+// §18: the article being written cannot be made into a card of itself. Four doors, and every one of
+// them is measured here rather than through the predicate alone — the predicate is unit-tested
+// (lib/link-card-href.test.ts) and says nothing about whether the editor ever asks it.
+//
+// These open a post of their own rather than one of the seeded two. Two reasons: the create-mode
+// path is the one the wiring exists for (a brand-new post learns its slug from the first autosave,
+// long after the extension list was built, which is why the slug travels through the editor's
+// storage), and a spec that loaded a document into `second-post` would leave its autosaved working
+// copy behind for every spec after it.
+async function openOwnPost(page: Page, title: string): Promise<string> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByLabel('タイトル').fill(title);
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('本文');
+  // Autosave creates the row — and with it the slug this whole section is about. The URL swap is
+  // what says the editor has adopted the identity.
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
+  const id = Number(/\/admin\/posts\/(\d+)\/edit/.exec(page.url())?.[1]);
+  const db = new Database(TEST_DB_PATH, { readonly: true });
+  const row = db.prepare('SELECT slug FROM posts WHERE id = ?').get(id) as { slug: string };
+  db.close();
+  expect(row.slug).toBeTruthy();
+  return row.slug;
+}
+
+async function openPicker(page: Page) {
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/リンクカード');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await expect(card(page)).toBeVisible();
+  return page.locator('.link-card-search');
+}
+
+test('the picker drops the post being edited, and says why when nothing is left (18a)', async ({
+  page,
+}) => {
+  const title = `自参照テスト ${Date.now()}`;
+  const slug = await openOwnPost(page, title);
+  const search = await openPicker(page);
+  const results = page.locator('.link-card-results');
+
+  // The default list is every post: this one is not in it, and the others are one click away —
+  // which is what keeps the absence below from passing on a picker that lists nothing at all.
+  await expect(results.getByRole('button', { name: CARD_TITLE })).toBeVisible();
+  await expect(results.getByText(title)).toHaveCount(0);
+
+  // The one case where dropping the row would say something untrue: this post is the only match.
+  await search.fill(title);
+  await expect(results.getByText('この記事自身は参照できません')).toBeVisible();
+  await expect(results.getByText('一致する記事がありません')).toHaveCount(0);
+
+  // A query that matches nothing still says so — the two messages answer different questions.
+  await search.fill('該当しない題名の断片');
+  await expect(results.getByText('一致する記事がありません')).toBeVisible();
+
+  // A query that matches another post is unaffected.
+  await search.fill('React');
+  await expect(results.getByRole('button', { name: CARD_TITLE })).toBeVisible();
+
+  // The paste door (§14.5.1 hands this one the internal reference): this post's own public URL.
+  await search.fill(`${BASE_URL}/posts/${slug}`);
+  await expect(results.getByText('この記事自身は参照できません')).toBeVisible();
+  await expect(results.getByRole('button', { name: 'この URL をカードにする' })).toHaveCount(0);
+
+  // Another post's public URL still becomes a card, so the refusal is about this post and not
+  // about own-origin URLs in general.
+  await search.fill(`${BASE_URL}${CARD_HREF}`);
+  await expect(results.getByRole('button', { name: 'この URL をカードにする' })).toBeVisible();
+});
+
+test('a link to the post being edited is not offered 「カードにする」 (18b)', async ({ page }) => {
+  const slug = await openOwnPost(page, `自参照リンク ${Date.now()}`);
+  // Reloaded on purpose: this is the edit-mode entry, where the slug is known before the editor
+  // exists. 18a covers the create-mode one, where it is not.
+  await page.reload();
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `[この記事](/posts/${slug})\n\n[別の記事](${CARD_HREF})\n`);
+  // setContent leaves the caret inside the *second* link, so its bubble is already up — and it
+  // covers the line above, which is the link this test is about to click (measured: the click
+  // retried for 30s against the bubble). Put the caret somewhere that is not a link first.
+  await setRange(page, 1);
+  await expect(page.locator('.link-bubble')).toHaveCount(0);
+
+  await page.locator('.ProseMirror a').first().click();
+  await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
+
+  // The link itself is untouched — §18 is about the card, not about linking to yourself in text.
+  expect(await markdown(page)).toContain(`[この記事](/posts/${slug})`);
+
+  // The other post's link, and the same guard against a bubble sitting over the target.
+  await setRange(page, 1);
+  await expect(page.locator('.link-bubble')).toHaveCount(0);
+  await page.locator('.ProseMirror a').nth(1).click();
+  await expect(page.getByRole('button', { name: 'カードにする' })).toBeVisible();
+});
+
+test('a card that already points at this post says so (18c)', async ({ page }) => {
+  const slug = await openOwnPost(page, `自参照カード ${Date.now()}`);
+  await page.locator('.ProseMirror').click();
+  // The door the other three cannot close: a body that already carries the reference, written
+  // before this rule or pasted as raw HTML. It resolves to a refusal rather than to the post.
+  await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
+
+  await expect(card(page).locator('.link-card-meta')).toHaveText('この記事自身は参照できません');
+  await expect(card(page).locator('.link-card-title')).toHaveText(`/posts/${slug}`);
+  // Still a card in the document, with its reference intact: the author is the one who decides
+  // what to do about it (「変更」 or 「リンクに戻す」), and nothing was rewritten behind them.
+  expect(await markdown(page)).toContain(`data-href="/posts/${slug}"`);
 });

@@ -50,7 +50,9 @@ export function useAutosave({
   // The post's row id; null for a brand-new post until its row materializes.
   committedIdRef: RefObject<number | null>;
   // The first save of a new post materialized its row: adopt the new id.
-  onCreated: (id: number) => void;
+  // The row the first save materialized, and the slug it was given (§18 — the editor needs its
+  // own address before it can refuse to link to it).
+  onCreated: (id: number, slug: string) => void;
   // An edit was recorded (called before the debounce is (re)armed).
   onDirty: () => void;
   // Autosave hit a lapsed session (true) or proved it valid again (false).
@@ -105,6 +107,7 @@ export function useAutosave({
       }
       const data = (await res.json()) as {
         id?: number;
+        slug?: string;
         savedAt?: number;
         created?: boolean;
         skipped?: boolean;
@@ -119,7 +122,7 @@ export function useAutosave({
       // into the ref, see above) so the editor keeps addressing the same row.
       if (data.created && typeof data.id === 'number') {
         committedIdRef.current = data.id;
-        onCreated(data.id);
+        onCreated(data.id, typeof data.slug === 'string' ? data.slug : '');
       }
       ok = true;
       setAutosaveState('saved');

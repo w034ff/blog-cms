@@ -17,7 +17,7 @@ import { Link } from './link-extension';
 import { Blockquote } from './blockquote-extension';
 import { TrailingNode } from './trailing-node-extension';
 import { Image } from './image-extension';
-import { LinkCard } from './link-card-extension';
+import { LinkCard, type LinkCardStorage } from './link-card-extension';
 import { Embed } from './embed-extension';
 import { AccentEmphasis } from './accent-emphasis-extension';
 import { FootnoteLiteral } from './footnote-literal-extension';
@@ -42,6 +42,10 @@ import { BlockDragHandle } from './block-drag-handle';
 declare module '@tiptap/core' {
   interface Storage {
     markdown: MarkdownStorage;
+    // The link card's, for the one field PostEditor writes into it: the slug of the post being
+    // edited (§18). Declared beside markdown's for the same reason — the host reads
+    // `editor.storage.linkCard` and nothing else would type it.
+    linkCard: LinkCardStorage;
   }
 }
 
@@ -165,6 +169,10 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     // time on both sides — see docs/link-card-requirements.md and lib/rehype-link-card.ts.
     // Must be registered above Markdown for the same reason Image is: its serializer is what
     // keeps the card out of tiptap-markdown's raw-HTML fallback.
+    //
+    // Which post it refuses to point at is not decided here: `editor.storage.linkCard.ownSlug`
+    // carries that, because the post being edited may not have a slug yet when this list is built
+    // (§18, and see the extension's own note).
     LinkCard,
     Embed,
     Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),

@@ -1,7 +1,7 @@
 import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
-import { externalCardHost, normalizeCardHref } from '@/lib/link-card-href';
+import { externalCardHost, isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import {
   CARD_PLACEHOLDER_DARK_SRC,
   externalCardImage,
@@ -60,7 +60,22 @@ function serializeLinkCard(state: MarkdownSerializerState, node: PMNode): void {
   state.closeBlock(node);
 }
 
-export const LinkCard = Node.create({
+// Storage rather than an option, and the difference is the whole of §18's wiring: options are
+// fixed when the extension list is built, and `useEditor` keeps the list from the first render —
+// which is before a brand-new post has a row, and therefore before it has a slug at all. Storage is
+// the one piece of an extension the host may write later (`editor.storage.linkCard`, kept live by
+// ExtensionManager), and the card only needs the answer at the moment it draws itself.
+export type LinkCardStorage = {
+  // The post open in the editor, '' when it has none yet. What a card refuses to point at.
+  ownSlug: string;
+  // tiptap-markdown's hooks, which is what storage on this node was for until now.
+  markdown: {
+    serialize: (state: MarkdownSerializerState, node: PMNode) => void;
+    parse: Record<string, never>;
+  };
+};
+
+export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
   name: 'linkCard',
   group: 'block',
   // A leaf the caret cannot enter. §7-1 hangs on this: with no position inside the card,
@@ -92,8 +107,12 @@ export const LinkCard = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, { class: 'link-card' })];
   },
 
-  addStorage() {
+  addStorage(): LinkCardStorage {
     return {
+      // Starts as "there is no such post", the way the callout's onBlocked starts as a no-op: an
+      // extension mounted on its own, and a post that has no row yet, both want §18's question to
+      // simply not fire. PostEditor writes the real answer in as soon as there is one.
+      ownSlug: '',
       markdown: {
         serialize: serializeLinkCard,
         // Parsing is markdown-it's raw-HTML passthrough plus parseHTML above, the same route
@@ -209,6 +228,11 @@ export const LinkCard = Node.create({
   // is an atom, so nothing inside it is document content and everything here is chrome.
   addNodeView() {
     return ({ node, editor, getPos }) => {
+      // Read on every draw rather than captured here: a brand-new post gains its slug from the
+      // first autosave, and this NodeView may well have been built before that answer came back.
+      // `this.storage` is the editor's own object, not a copy — ExtensionManager hands the live one
+      // to every context it builds — so what PostEditor writes is what this reads.
+      const ownSlug = () => this.storage.ownSlug;
       const dom = document.createElement('div');
       dom.className = 'link-card link-card-view';
       // Nothing in here is editable text. Without this ProseMirror would let the caret into the
@@ -301,7 +325,7 @@ export const LinkCard = Node.create({
         // it back only once the lookup says the target has one.
         setImage(null);
         const href = currentHref(n);
-        if (!href) renderPicker(body, editor, setHref, toEmbed);
+        if (!href) renderPicker(body, editor, setHref, toEmbed, ownSlug());
         else
           renderCard(
             body,
@@ -310,6 +334,7 @@ export const LinkCard = Node.create({
             () => setHref(''),
             () => getPos(),
             setImage,
+            ownSlug(),
           );
       };
       render(node);
@@ -372,6 +397,10 @@ type CardFace = {
 // that fetched (§13).
 const cardCache = new Map<string, CardFace>();
 
+// One wording for all four doors (§18). The author is told the same thing whether they are picking
+// a post, pasting their own URL, or looking at a card that already points at this article.
+const SELF_NOTE = 'この記事自身は参照できません';
+
 // What is known about a card's target. Three states rather than a nullable answer, because "the
 // answer has not come back yet" and "the route says there is nothing there" are the same `null` in
 // the data and must not be the same card on screen (§13.1): the second says so in the card's own
@@ -395,8 +424,16 @@ type Lookup =
 // can arrive carrying `https://<this blog>/posts/<slug>` — hand-written, or pasted as raw HTML.
 // Without the rewrite that card asks the preview route about this server's own address, is refused
 // there, and reports that the author's own post could not be read.
-function lookupCard(href: string): Promise<Lookup> {
+function lookupCard(href: string, ownSlug: string): Promise<Lookup> {
   const reference = normalizeCardHref(href, window.location.origin) ?? href;
+  // The fourth door, and the only one that answers for a card that already exists (§18): a body
+  // carrying a self-reference — written before this rule, hand-edited, or pasted as raw HTML —
+  // reaches the editor as an ordinary card and would otherwise resolve to the post the author is
+  // looking at. `missing` rather than `found` with a note, because only `found` is written to
+  // `cardCache`, and a reference nobody may point at has no business being cached as a face.
+  if (isOwnPostHref(reference, ownSlug)) {
+    return Promise.resolve({ status: 'missing', note: SELF_NOTE });
+  }
   return externalCardHost(reference) === null ? fetchPost(reference) : fetchPreview(reference);
 }
 
@@ -496,6 +533,7 @@ function renderCard(
   onClear: () => void,
   pos: () => number | undefined,
   setImage: (picture: CardImage | null) => void,
+  ownSlug: string,
 ): void {
   const actions = head();
   actions.append(
@@ -566,7 +604,7 @@ function renderCard(
   const cached = cardCache.get(href);
   draw(cached ? { status: 'found', card: cached } : { status: 'unknown' });
   if (!cached) {
-    void lookupCard(href).then((lookup) => {
+    void lookupCard(href, ownSlug).then((lookup) => {
       if (lookup.status === 'found') cardCache.set(href, lookup.card);
       // The card this answer was for may be gone: 「変更」 detaches these spans while the lookup is
       // still in flight. Harmless while `draw` only wrote into them — they were unreachable — but
@@ -594,6 +632,7 @@ function renderPicker(
   editor: { view: { dom: HTMLElement } },
   onPick: (href: string) => void,
   onEmbed: (href: string) => void,
+  ownSlug: string,
 ): void {
   const input = document.createElement('input');
   input.type = 'search';
@@ -608,14 +647,21 @@ function renderPicker(
 
   const show = (results: PostSearchResult[]) => {
     list.replaceChildren();
-    if (results.length === 0) {
+    // The article being written is not among the candidates (§18): a list of things to pick has no
+    // business holding a row that cannot be picked.
+    const offered = results.filter((post) => !isOwnPostHref(`/posts/${post.slug}`, ownSlug));
+    if (offered.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'link-card-empty';
-      empty.textContent = '一致する記事がありません';
+      // The one place dropping the row would say something untrue: the query matched this post and
+      // nothing else, so 「一致する記事がありません」 would deny an article the author can see the
+      // title of. Where other candidates remain, the quiet removal needs no explanation — there is
+      // something to pick, and the missing row is the article they are looking at.
+      empty.textContent = offered.length < results.length ? SELF_NOTE : '一致する記事がありません';
       list.appendChild(empty);
       return;
     }
-    for (const post of results) {
+    for (const post of offered) {
       const row = document.createElement('li');
       row.appendChild(
         button(post.draft ? `${post.title}（未公開）` : post.title, () =>
@@ -638,6 +684,17 @@ function renderPicker(
     row.appendChild(button(label, apply));
     list.appendChild(row);
   };
+  // A URL that names something, and the reason it cannot become a block. Same `latest` bump as
+  // showReference: an in-flight search must not land on top of this line either.
+  const showRefusal = (note: string) => {
+    latest += 1;
+    list.replaceChildren();
+    const row = document.createElement('li');
+    row.className = 'link-card-empty';
+    row.textContent = note;
+    list.appendChild(row);
+  };
+
   const search = async (query: string) => {
     const ticket = (latest += 1);
     try {
@@ -662,7 +719,11 @@ function renderPicker(
       return;
     }
     const cardHref = normalizeCardHref(input.value, window.location.origin);
-    if (cardHref !== null) showReference('この URL をカードにする', () => onPick(cardHref));
+    // This blog's own published address for this very post, which §14.5.1 has already rewritten
+    // into the internal reference by the time it gets here (§18). Refused with a line rather than
+    // with an unresponsive row: an offer that does nothing is worse than no offer.
+    if (cardHref !== null && isOwnPostHref(cardHref, ownSlug)) showRefusal(SELF_NOTE);
+    else if (cardHref !== null) showReference('この URL をカードにする', () => onPick(cardHref));
     else void search(input.value);
   });
   // Escape hands focus back to the document rather than closing anything — there is nothing to

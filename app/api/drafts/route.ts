@@ -61,13 +61,17 @@ export async function POST(req: NextRequest) {
   if (content.title.trim() === '' && content.body.trim() === '') {
     return NextResponse.json({ skipped: true });
   }
+  // Reported back below, not just written: the editor has to know its own address to refuse a
+  // link card pointing at it (docs/link-card-requirements.md §18), and this is the only moment a
+  // brand-new post learns one — publish is too late, and the row is already searchable from here.
+  const slug = generateUniqueSlug();
   const newId = createPost({
-    slug: generateUniqueSlug(),
+    slug,
     ...content,
     category: content.category || DEFAULT_CATEGORY,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,
   });
-  return NextResponse.json({ id: newId, savedAt: Date.now(), created: true });
+  return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true });
 }

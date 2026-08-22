@@ -88,3 +88,20 @@ export function normalizeCardHref(raw: string, origin: string): string | null {
   const internal = `/posts/${decoded}`;
   return INTERNAL_CARD_HREF.test(internal) ? internal : null;
 }
+
+// Does this reference point at the post that is open in the editor (§18)?
+//
+// A predicate of its own rather than a rule inside `normalizeCardHref`, and that is the whole
+// reason it exists separately: `lookupCard` reads `normalizeCardHref(href, origin) ?? href`, so a
+// null from there falls through to the raw reference and resolves as an ordinary internal card —
+// the guard would be a silent no-op at the one door it most needs to hold. Every entry point asks
+// this question explicitly instead.
+//
+// The argument is a normalized reference (`/posts/<slug>`), which is what all four callers have:
+// three pass `normalizeCardHref`'s answer and the picker's list builds `/posts/${post.slug}` itself.
+//
+// An empty `ownSlug` is always false. A post with no row yet has no address to point at, so there
+// is no self to reference — the question does not arise rather than being answered "no" by luck.
+export function isOwnPostHref(href: string, ownSlug: string): boolean {
+  return ownSlug !== '' && href === `/posts/${ownSlug}`;
+}

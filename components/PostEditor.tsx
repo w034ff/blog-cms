@@ -116,7 +116,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
 
   // Autosave wiring: the hook owns the dirty/debounce/save machinery; the
   // publish-flow state stays here and is updated through these callbacks.
-  const handleCreated = useCallback((id: number) => setCommittedId(id), []);
+  const handleCreated = useCallback((id: number, createdSlug: string) => {
+    setCommittedId(id);
+    // The slug the row was created with (§18). Nothing on screen changes — 表示 is gated on
+    // `isPublished` — but from here the card picker can tell this post apart from every other.
+    if (createdSlug !== '') setSlug(createdSlug);
+  }, []);
   // An edit to a live post is a pending publish until pushed public again.
   const handleDirty = useCallback(() => {
     if (publishedRef.current) setPendingPublish(true);
@@ -228,6 +233,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  // The post's own address, handed to the link card so it can refuse to point at it
+  // (docs/link-card-requirements.md §18). Written into the editor's storage rather than passed
+  // with the extension list: the list `useEditor` keeps is the one built on the first render, and
+  // in create mode the slug does not exist until autosave has created the row.
+  //
+  // Through `editorRef` for the reason every other imperative reach into the editor goes through
+  // it (the upload hook, the drag containment): it is the handle for work outside React's render
+  // flow, and the effect above — declared first, so it runs first — has already filled it.
+  useEffect(() => {
+    const live = editorRef.current;
+    if (live) live.storage.linkCard.ownSlug = slug;
+  }, [editor, slug]);
 
   // Sync the address bar to a newly created post's edit URL without navigating
   // (keeps the editor mounted, cursor intact). Runs once when a create-mode post
@@ -350,7 +368,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         {editor && <TableToolbar editor={editor} />}
         {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
             are BubbleMenus that portal themselves to <body> — neither renders here. */}
-        {editor && <LinkBubble editor={editor} onNotice={showNotice} />}
+        {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
       </div>
 
       <input type='hidden' name='body' value={body} />
