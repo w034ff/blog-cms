@@ -582,28 +582,36 @@ export const BlockDragHandle = Extension.create({
             return DecorationSet.create(state.doc, decorations);
           },
           handleDOMEvents: {
-            // The body of a block that has a handle is not a native drag source.
+            // No NodeSelection is a native drag source, full stop.
             //
-            // prosemirror-view makes it one: `NodeViewDesc.selectNode()` sets `dom.draggable = true`
-            // on the selected node, and `LeftMouseDown` arms `mightDrag` for a press inside an
-            // existing NodeSelection — so once a block is ringed (a click on its handle is what
-            // rings it), pressing the block itself hands Chrome a real HTML5 drag. Reported
-            // 2026-08-22 and confirmed from the author's browser: that drag freezes the editor the
-            // moment it starts — every key and every click ignored, Escape included, with
-            // `view.dragging` left set (so neither `drop` nor `dragend` ever reached `view.dom`).
-            // It could not be reproduced from Playwright, whose synthetic input never enters
-            // Chrome's OS drag loop (e2e/native-drag.ts), so what strands it there is not settled.
+            // prosemirror-view makes ANY node with a NodeSelection one: `NodeViewDesc.selectNode()`
+            // sets `dom.draggable = true` on the selected node, and `LeftMouseDown` arms `mightDrag`
+            // for a press inside an existing NodeSelection — with no type or depth check at all.
+            // Reported 2026-08-22 for a ringed top-level block (a click on the handle is what rings
+            // one) and confirmed from the author's browser: that drag freezes the editor the moment
+            // it starts — every key and every click ignored, Escape included, with `view.dragging`
+            // left set (so neither `drop` nor `dragend` ever reached `view.dom`). It could not be
+            // reproduced from Playwright, whose synthetic input never enters Chrome's OS drag loop
+            // (e2e/native-drag.ts), so what strands it there is not settled.
             //
-            // Cancelling it costs nothing the author had: the same gesture now runs as this
-            // plugin's own drag (see mousedown below), which is the one the handle already uses and
-            // the only one that can aim at the gaps findBoundary() offers — the native path could
-            // always land a block anywhere prosemirror-view's own drop logic allowed, which is a
-            // wider answer than this editor's guards were written for.
+            // First fix (`994c1b0`) scoped the cancel to `selectedHandledBlock` — top-level
+            // `DRAGGABLE_TYPES` only — because that was the reported gesture. But the mechanism
+            // above has no such scope: Ctrl/Cmd+click (prosemirror-view's own `selectNodeModifier`)
+            // turns ANY selectable node into a NodeSelection, paragraphs and headings included, and
+            // a plain click already does that for an inline atom like a footnote reference (picking
+            // it for deletion, §5.1) — every one of those is then the same native drag source.
+            // Measured live: Ctrl+click on a plain paragraph leaves `draggable="true"` on it and an
+            // undefended `dragstart`. Cancel for every NodeSelection instead.
             //
-            // Scoped to `selectedHandledBlock`, so a text selection dragged out of a quote or a
-            // code block — the gesture every drop guard in this editor is built on — is untouched.
+            // Costs nothing real: a schema audit found only `image`/`linkCard`/`embed` declare
+            // `draggable: true` of their own, and those are exactly the `DRAGGABLE_TYPES` already
+            // routed through this plugin's own drag (see mousedown below). The footnote reference's
+            // drag (criterion 14, e2e/editor-footnote.spec.ts) moves a TextSelection spanning it, not
+            // a NodeSelection on it, so it never reaches this guard either way. A plain TextSelection
+            // dragged out of a quote or a code block — the gesture every drop guard in this editor is
+            // built on — is likewise untouched, since it is never a NodeSelection.
             dragstart(view, event) {
-              if (!selectedHandledBlock(view.state)) return false;
+              if (!(view.state.selection instanceof NodeSelection)) return false;
               event.preventDefault();
               return true;
             },

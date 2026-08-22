@@ -1003,6 +1003,73 @@ for (const kind of ['blockquote', 'table'] as const) {
   });
 }
 
+// The freeze's mechanism has no type or depth check at all — only the ORIGINAL report did (a
+// ringed, top-level DRAGGABLE_TYPES block). Ctrl/Cmd+click (prosemirror-view's own
+// `selectNodeModifier`) turns any selectable node into a NodeSelection, a plain paragraph and a
+// heading included, and neither is in `DRAGGABLE_TYPES` — so the first fix's `selectedHandledBlock`
+// scoping left them unguarded. Widened to "any NodeSelection" the same day (still 2026-08-22).
+// Asserted at the same seam as the loop above: no press is driven into the OS drag loop (Playwright
+// can't), just that the resulting NodeSelection is refused a native drag.
+for (const [label, markdown, selector] of [
+  ['paragraph', '本文の段落です。\n', 'p'],
+  ['heading', '## 見出しです\n', 'h2'],
+] as const) {
+  test(`ctrl+click selecting a ${label} starts no native drag`, async ({ page }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await loadMarkdown(page, markdown);
+
+    const target = editor.locator(selector).first();
+    const box = await target.boundingBox();
+    if (!box) throw new Error('missing bounding box');
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.keyboard.down('Control');
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.keyboard.up('Control');
+
+    await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
+    expect(
+      await editor
+        .locator('.ProseMirror-selectednode')
+        .evaluate((el) => el.getAttribute('draggable')),
+    ).toBe('true');
+
+    const prevented = await editor
+      .locator('.ProseMirror-selectednode')
+      .evaluate(
+        (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+      );
+    expect(prevented).toBe(true);
+  });
+}
+
+// A plain click already makes a NodeSelection out of an inline atom (a footnote reference — how
+// it is picked for deletion, footnote-extension.ts §5.1), no modifier needed. Same mechanism,
+// reached through a completely different gesture and at a nonzero depth — the first fix's
+// `$from.depth === 0` scoping would have left this one unguarded too.
+test('clicking a footnote reference to select it starts no native drag', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '本文[^a]です\n\n[^a]: 注釈\n');
+
+  const ref = editor.locator('sup[data-footnote-ref]').first();
+  await ref.click();
+
+  await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
+  const prevented = await editor
+    .locator('.ProseMirror-selectednode')
+    .evaluate(
+      (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+    );
+  expect(prevented).toBe(true);
+});
+
 // Dragging a ringed block by its own body must not paint a text selection behind the pointer.
 //
 // Once that press became this plugin's drag rather than a native one, ProseMirror's own mousedown
