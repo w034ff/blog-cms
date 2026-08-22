@@ -143,7 +143,13 @@ test('a link the block cannot hold an embed for is not offered one (E7)', async 
     ['list item head', `- [x](${WATCH})\n`],
   ] as const) {
     await openWith(page, md);
-    await page.locator('.ProseMirror a').first().click();
+    const link = page.locator('.ProseMirror a').first();
+    // A dead-center click sits on the browser's caret tie-break boundary for this one-character
+    // link: the identical click resolves the caret before or after "x" depending on run (measured
+    // — same pixel, `parentOffset` 0 one run and 1 the next), and before it `linkAtCaret` correctly
+    // reports no link, which was this test's flake. Bias right so the caret lands inside the link.
+    const box = await link.boundingBox();
+    await link.click({ position: { x: (box?.width ?? 0) - 1, y: (box?.height ?? 0) / 2 } });
     // The bubble is up — otherwise the absence below would pass for the wrong reason.
     await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
     await expect(page.getByRole('button', { name: '埋め込みにする' }), name).toHaveCount(0);
