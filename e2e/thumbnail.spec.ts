@@ -221,8 +221,10 @@ test('a post with no chosen image still shows the body’s first one', async ({ 
 });
 
 // The other direction, which is the half a positive-only test would let rot: a post with no image
-// anywhere carries no <img> on either surface rather than an empty frame (criterion 5f).
-test('a post with no image anywhere shows no image box', async ({ page }) => {
+// anywhere (criteria 5f, 17b). The two surfaces answer differently on purpose — the list still
+// shows nothing, because the mark is the card's furniture and not the list's (§17) — so this
+// measures both rather than assuming they agree.
+test('a post with no image anywhere gets the house mark on its card (17b)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   const href = await publish(page, '画像なしの記事', '文字だけの本文。\n');
@@ -239,8 +241,47 @@ test('a post with no image anywhere shows no image box', async ({ page }) => {
     `<div class="link-card" data-href="/posts/${slug}"></div>\n`,
   );
   await page.goto(cardHref);
-  await expect(page.locator('.prose a.link-card')).toHaveCount(1);
-  await expect(page.locator('.prose a.link-card img')).toHaveCount(0);
+  const card = page.locator('.prose a.link-card');
+  await expect(card).toHaveCount(1);
+  const image = card.locator('img.link-card-image');
+  // The literal path rather than the constant: what is measured here is that the file the card
+  // asks for is the one this site serves, and importing the constant would make the assertion
+  // agree with the code by construction.
+  await expect(image).toHaveAttribute('src', '/link-card-placeholder.svg');
+  await expect(image).toHaveClass(/link-card-placeholder/);
+  await expect(image).toHaveAttribute('alt', '');
+  // The mark has a file per colour scheme and the page chooses (§17.3). This context is the light
+  // one, so what must actually be loaded is the light file — `currentSrc`, not `src`, since `src`
+  // says nothing about which `<source>` won.
+  await expect
+    .poll(async () => image.evaluate((el: HTMLImageElement) => el.currentSrc))
+    .toContain('/link-card-placeholder.svg');
+  await expect(card.locator('picture source')).toHaveAttribute(
+    'srcset',
+    '/link-card-placeholder-dark.svg',
+  );
+
+  // The mark sits in the same frame a real picture would, meeting the border on three sides — the
+  // point of §17 is that the card keeps one shape, not that it gains a second one.
+  const cardBox = (await card.boundingBox())!;
+  const box = (await image.boundingBox())!;
+  expect(box.width).toBeCloseTo(256, 0);
+  expect(box.height).toBeCloseTo(cardBox.height - 2, 0);
+  expect(box.y - cardBox.y).toBeCloseTo(1, 0);
+  expect(cardBox.x + cardBox.width - (box.x + box.width)).toBeCloseTo(1, 0);
+
+  // Drawn to fit on its tint, not cropped to fill: that rule is the whole difference between
+  // furniture and a photograph, and it is the reason the second class exists.
+  expect(await image.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
+  expect(await image.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
+    'rgba(0, 0, 0, 0)',
+  );
+  // And the file actually arrived. A 404 leaves the box, the class and the src exactly as asserted
+  // above and shows nothing at all, which is the failure this whole test would otherwise miss.
+  await expect
+    .poll(async () => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
+    .toBeGreaterThan(0);
+
   // The text column is there either way, so the card's shape does not depend on having a picture.
-  await expect(page.locator('.prose a.link-card .link-card-text')).toHaveCount(1);
+  await expect(card.locator('.link-card-text')).toHaveCount(1);
 });

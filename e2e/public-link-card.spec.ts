@@ -194,3 +194,31 @@ test('a published external card serves its picture through this site (14j)', asy
   const unsigned = '/api/link-image?url=' + encodeURIComponent('https://evil.example/x.png');
   expect((await page.request.get(unsigned)).status()).toBe(404);
 });
+
+// §17.3, criterion 17d. The house mark is the site's name in the foreground colour, so it is two
+// files and the page picks — and the wrong pick is not a shade off, it is a black wordmark on the
+// dark tint. `src` cannot answer which one won, so this reads `currentSrc` in a dark context; the
+// light half is measured in thumbnail.spec.ts, and both halves are needed because a `<source>` that
+// matched unconditionally would pass either one alone.
+test.describe('in a dark colour scheme', () => {
+  test.use({ colorScheme: 'dark' });
+
+  test('the house mark loads its dark file (17d)', async ({ page }) => {
+    const href = await publish(
+      page,
+      'Public card dark mark spec',
+      `<div class="link-card" data-href="/posts/${TARGET_SLUG}"></div>\n`,
+    );
+    await page.goto(href);
+
+    // `second-post` is seeded with no thumbnail and no image in its body, so this card resolves to
+    // the mark rather than to a picture.
+    const image = page.locator('.prose a.link-card img.link-card-placeholder');
+    await expect(image).toHaveCount(1);
+    await expect
+      .poll(async () => image.evaluate((el: HTMLImageElement) => el.currentSrc))
+      .toContain('/link-card-placeholder-dark.svg');
+    // The tint under it moves with the same query, from the stylesheet rather than from the file.
+    await expect(image).toHaveCSS('background-color', 'rgb(28, 33, 40)');
+  });
+});

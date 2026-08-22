@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderMdxToHtml } from '@/lib/render';
+import { CARD_PLACEHOLDER_DARK_SRC, CARD_PLACEHOLDER_SRC } from '@/lib/link-card-image';
 
 // Guards the public render pipeline end-to-end (remark-gfm → alerts →
 // remark-rehype → rehype-raw → rehype-sanitize → pretty-code). Focus: the GitHub
@@ -227,9 +228,7 @@ describe('renderMdxToHtml — link cards', () => {
   // Stands in for the DB. The real one closes over getPostBySlug (app/posts/[slug]/page.tsx);
   // this is the whole reason the resolver is injected rather than imported (§6, criterion 5a).
   const resolveCard = async (href: string) =>
-    href === '/posts/abc123'
-      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
-      : null;
+    href === '/posts/abc123' ? { title: '参照先の記事', description: '説明文', image: null } : null;
 
   it('resolves a stored reference into a card (2a)', async () => {
     const { html } = await renderMdxToHtml(CARD, { resolveCard });
@@ -241,16 +240,17 @@ describe('renderMdxToHtml — link cards', () => {
     // NodeView, which says there that the target is a draft or cannot be found (§13.1), so its
     // absence here is asserted rather than assumed.
     expect(html).not.toContain('link-card-meta');
-    // This target has no image, and a card without one carries no <img> at all rather than an
-    // empty box — the text column is the whole card.
-    expect(html).not.toContain('link-card-image');
+    // This resolver answers with no picture, and the stage then draws no <img> at all rather than
+    // an empty box — the text column is the whole card. In production that answer comes from an
+    // external target with no og:image: an internal card always carries a picture, the site's own
+    // mark when the post has none, and the resolver is what decides that (§17, the test below).
   });
 
   it('puts the target’s image beside the text when it has one', async () => {
     const withImage = async () => ({
       title: '絵のある記事',
       description: '説明文',
-      thumbnail: '/uploads/8c3a2ce41540e56801a3.png',
+      image: { src: '/uploads/8c3a2ce41540e56801a3.png', placeholder: false },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('<img class="link-card-image" src="/uploads/8c3a2ce41540e56801a3.png"');
@@ -261,6 +261,48 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<span class="link-card-text">');
   });
 
+  it('marks the house placeholder so the card can draw it differently (17a)', async () => {
+    // §17. A post with neither a chosen thumbnail nor an image in its body resolves to this site's
+    // own mark, and the card has to paint it as a mark on a tint rather than crop it to fill the
+    // frame. The second class is the whole of how the stylesheet tells the two apart, and it comes
+    // from the resolver's flag — not from a test on the src here, which would break the moment the
+    // file is renamed.
+    const houseMark = async () => ({
+      title: '絵のない記事',
+      description: '説明文',
+      image: { src: CARD_PLACEHOLDER_SRC, placeholder: true },
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: houseMark });
+    expect(html).toContain(
+      `<img class="link-card-image link-card-placeholder" src="${CARD_PLACEHOLDER_SRC}"`,
+    );
+    // Still decorative: the mark names this blog, which the card already points at.
+    expect(html).toContain('alt=""');
+    // The mark is the site's name in the foreground colour, so it has a file per scheme and the
+    // page chooses (§17.3). The `<img>`'s own src stays the light file — that is the fallback for
+    // anything that ignores `<source>`, and asserting both is what keeps the pair from collapsing
+    // into "the dark one only".
+    expect(html).toContain(
+      `<picture><source media="(prefers-color-scheme: dark)" srcset="${CARD_PLACEHOLDER_DARK_SRC}">`,
+    );
+  });
+
+  it('leaves the second class off a picture the target owns (17a)', async () => {
+    // The other half: a real picture must not be painted on the tint. Mutating `placeholder` to a
+    // constant `true` takes this one red and the one above green, which is what makes the pair
+    // measure the flag rather than the class name.
+    const withImage = async () => ({
+      title: '絵のある記事',
+      description: '',
+      image: { src: '/uploads/8c3a2ce41540e56801a3.png', placeholder: false },
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
+    expect(html).toContain('<img class="link-card-image" src="/uploads/');
+    expect(html).not.toContain('link-card-placeholder');
+    // And no wrapper: a photograph has one file, so there is nothing for a `<source>` to choose.
+    expect(html).not.toContain('<picture>');
+  });
+
   it('survives sanitize with the image intact (2a)', async () => {
     // The stage runs after rehype-sanitize, so nothing it emits meets the schema — this pins that
     // the ordering still holds for the <img>, which is the one element here a schema would care
@@ -268,7 +310,7 @@ describe('renderMdxToHtml — link cards', () => {
     const withImage = async () => ({
       title: 'T',
       description: '',
-      thumbnail: '/uploads/a.png',
+      image: { src: '/uploads/a.png', placeholder: false },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('src="/uploads/a.png"');
@@ -279,7 +321,7 @@ describe('renderMdxToHtml — link cards', () => {
     // The stored form holds no display text at all, so a renamed post shows its new title with
     // no rewrite of any body that links to it. Same source, a different resolver, a different
     // title — which is the round-trip claim §4.2 makes, measured at the only place it can be.
-    const renamed = async () => ({ title: '改題後', description: '', thumbnail: null });
+    const renamed = async () => ({ title: '改題後', description: '', image: null });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: renamed });
     expect(html).toContain('改題後');
     expect(CARD).not.toContain('改題後');
@@ -411,7 +453,7 @@ describe('renderMdxToHtml — external link cards', () => {
   const CARD = '<div class="link-card" data-href="https://example.com/article"></div>';
   const resolveCard = async (href: string) =>
     href === 'https://example.com/article'
-      ? { title: '外部の記事', description: '外部の説明', thumbnail: null }
+      ? { title: '外部の記事', description: '外部の説明', image: null }
       : null;
 
   it('resolves an absolute URL into a card carrying the target’s host (14i)', async () => {
@@ -428,7 +470,7 @@ describe('renderMdxToHtml — external link cards', () => {
   });
 
   it('drops a leading `www.` from the host line (14i)', async () => {
-    const withWww = async () => ({ title: 'T', description: '', thumbnail: null });
+    const withWww = async () => ({ title: 'T', description: '', image: null });
     const { html } = await renderMdxToHtml(
       '<div class="link-card" data-href="https://www.example.com/a"></div>',
       { resolveCard: withWww },
@@ -447,7 +489,10 @@ describe('renderMdxToHtml — external link cards', () => {
     const withImage = async () => ({
       title: '外部の記事',
       description: '',
-      thumbnail: '/api/link-image?url=https%3A%2F%2Fcdn.example%2Fa.png&sig=0123456789abcdef0123',
+      image: {
+        src: '/api/link-image?url=https%3A%2F%2Fcdn.example%2Fa.png&sig=0123456789abcdef0123',
+        placeholder: false,
+      },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('<img class="link-card-image" src="/api/link-image?url=');
@@ -498,7 +543,7 @@ describe('renderMdxToHtml — external link cards', () => {
   it('keeps an internal card free of the host line (14i)', async () => {
     // The two kinds share every mechanism but this: a card pointing at this blog has nothing to
     // say about provenance, which is why §12 dropped the line rather than filling it with a date.
-    const internal = async () => ({ title: '内部の記事', description: '', thumbnail: null });
+    const internal = async () => ({ title: '内部の記事', description: '', image: null });
     const { html } = await renderMdxToHtml(
       '<div class="link-card" data-href="/posts/abc123"></div>',
       { resolveCard: internal },
@@ -516,9 +561,7 @@ describe('renderMdxToHtml — external link cards', () => {
 describe('renderMdxToHtml / embed', () => {
   const ID = 'hDPybQwAuVo';
   const resolveCard = async (href: string) =>
-    href === '/posts/abc123'
-      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
-      : null;
+    href === '/posts/abc123' ? { title: '参照先の記事', description: '説明文', image: null } : null;
 
   it('turns a stored reference into a lazily-loaded nocookie iframe (Y1)', async () => {
     const { html } = await renderMdxToHtml(
@@ -608,9 +651,9 @@ describe('renderMdxToHtml / embed', () => {
 describe('renderMdxToHtml — external links open in a new tab', () => {
   const resolveCard = async (href: string) =>
     href === '/posts/abc123'
-      ? { title: '参照先の記事', description: '説明文', thumbnail: null }
+      ? { title: '参照先の記事', description: '説明文', image: null }
       : href === 'https://example.com/a'
-        ? { title: '外部の記事', description: '外部の説明', thumbnail: null }
+        ? { title: '外部の記事', description: '外部の説明', image: null }
         : null;
 
   it('opens an external link, written or autolinked, in a new tab (11a)', async () => {

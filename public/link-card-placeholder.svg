@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 96" width="240" height="96">
+  <!-- The picture a link card to one of this blog's own posts shows when the post has no image of
+       its own (docs/link-card-requirements.md §17). The mark only — no background: the tint behind
+       it is the card's own CSS (`.link-card-image.link-card-placeholder` in app/globals.css).
+
+       **This is the light-scheme file, and the one the `<img>` itself points at;
+       `link-card-placeholder-dark.svg` is its pair.** The card emits both through a `<picture>`,
+       whose `media` attribute is evaluated by the page rather than by the image — an SVG's own
+       `prefers-color-scheme` is honoured by Chrome (measured 2026-08-22) and by nothing this repo
+       can measure, and a mark that turns invisible when it is ignored is not a mark. Keep the two
+       files in step: same geometry, only the two fills differ.
+
+       The colours are the site's own: the accent rule (#cf222e, the h3 rule and the 強調 mark) over
+       the foreground (#171717). The lockup is the one public/og.png draws
+       (scripts/make-og-image.mts).
+
+       The font is the system stack, not the site's Geist: an SVG rendered as an image may not fetch
+       anything, so a webfont cannot reach it. -->
+  <rect x="96" y="8" width="48" height="6" rx="3" fill="#cf222e" />
+  <text
+    x="120"
+    y="72"
+    text-anchor="middle"
+    fill="#171717"
+    font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    font-size="40"
+    font-weight="800"
+    letter-spacing="-0.8">Tech Blog</text>
+</svg>

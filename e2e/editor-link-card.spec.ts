@@ -86,17 +86,30 @@ test('the card shows the current title, fetched rather than stored (1c)', async 
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
 });
 
-// The other half of criterion 4f. The published card omits the `<img>` entirely for a post with
-// no image rather than leaving an empty frame, and the editor's card has to agree — a placeholder
-// box here would be the editor showing a layout the reader never gets. `second-post` carries no
-// thumbnail and no image in its body, so `resolveThumbnail` answers null for it; the case where
-// there is one is measured in thumbnail.spec.ts, which can upload one first.
-test('a card to a post with no image shows no image frame (4f)', async ({ page }) => {
+// The other half of criterion 4f, and §17's editor half. A card to one of this blog's own posts
+// always carries a picture — the site's own mark when the post has none — so the editor has to
+// show the same thing the reader gets. Drawing nothing here would be the editor teaching a layout
+// that does not exist, which is the failure §13 exists to prevent. `second-post` carries no
+// thumbnail and no image in its body, so `resolveThumbnail` answers null for it and
+// `internalCardImage` turns that into the mark; the case where the post has a picture of its own
+// is measured in thumbnail.spec.ts, which can upload one first.
+test('a card to a post with no image shows this site’s mark (4f/17b)', async ({ page }) => {
   await openWithCard(page);
-  // Wait for the lookup to land first: asserting on an empty card would pass before the answer
-  // arrives, which is the same vacuous pass whichever way the code behaves.
+  // Wait for the lookup to land first: asserting on the card before the answer arrives is the same
+  // vacuous pass whichever way the code behaves.
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
-  await expect(card(page).locator('img')).toHaveCount(0);
+  const image = card(page).locator('img.link-card-image');
+  await expect(image).toHaveAttribute('src', '/link-card-placeholder.svg');
+  // Both classes: the second is what makes the stylesheet draw it as a mark on a tint rather than
+  // crop it like a photograph, and it is set on every draw rather than toggled (§17).
+  await expect(image).toHaveClass(/link-card-placeholder/);
+  await expect(image).toHaveAttribute('alt', '');
+  // The dark file rides along in the `<picture>` the NodeView builds, exactly as the published
+  // card's does — the editor showing the reader's layout is the whole of §13.
+  await expect(card(page).locator('picture source')).toHaveAttribute(
+    'srcset',
+    '/link-card-placeholder-dark.svg',
+  );
 });
 
 // §13.1. The second line used to hold the reference itself, which said nothing a 20-hex slug can

@@ -5,6 +5,7 @@ import { getPostBySlug } from '@/lib/posts';
 import { readLinkPreview } from '@/lib/link-previews';
 import { linkImageSrc } from '@/lib/link-image';
 import { normalizeCardHref } from '@/lib/link-card-href';
+import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
 import { siteOrigin } from '@/lib/site';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
@@ -48,7 +49,10 @@ async function resolveCard(href: string): Promise<CardTarget | null> {
     // /api/link-image, so the reader's browser asks this site for it and the target's CDN never
     // sees the reader (§14.4). Deriving the path here rather than storing it means the signing key
     // can change without rewriting a single row.
-    return { ...preview, thumbnail: preview.image ? linkImageSrc(preview.image) : null };
+    return {
+      ...preview,
+      image: externalCardImage(preview.image ? linkImageSrc(preview.image) : null),
+    };
   }
   const target = await getPostBySlug(reference.slice('/posts/'.length));
   if (!target) return null;
@@ -56,10 +60,16 @@ async function resolveCard(href: string): Promise<CardTarget | null> {
   // post list does, including the body-derived fallback. It is also the only
   // thing standing between a bad stored value and an `<img src>`, since the
   // rehype stage trusts what this returns.
+  //
+  // `internalCardImage` is what turns its `null` — a post with no picture at all
+  // — into this site's own mark (§17). It is not folded into `resolveThumbnail`
+  // because that answer also becomes `og:image` and is checked against the
+  // uploads sweep; the fallback belongs to the card, and the editor's card
+  // reaches the same function through `/api/posts/search`.
   return {
     title: target.title,
     description: target.description,
-    thumbnail: resolveThumbnail(target),
+    image: internalCardImage(resolveThumbnail(target)),
   };
 }
 

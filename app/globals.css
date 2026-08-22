@@ -1588,10 +1588,30 @@ body.link-menu-open .table-toolbar {
   margin: 0;
   object-fit: cover;
 }
-/* A card whose target has no picture (§16.2). The fixed height is spent on three lines of text and
-   the rest falls to the bottom, which reads as a missing element rather than as room — so the
-   column is centred and the same slack sits above and below it instead. Nothing else moves: the
-   height, the clamps and the text are what they are on every other card.
+/* The house mark, shown by a card to one of this blog's own posts when the post has neither a
+   chosen thumbnail nor an image in its body (docs/link-card-requirements.md §17). It is furniture,
+   not the target's picture, so it is drawn as a mark on a tint rather than cropped to fill the
+   frame: `contain` and the padding are what keep it a logo instead of a photograph, and the tint is
+   what stops the empty frame from reading as a picture that failed to load.
+
+   The tint is this stylesheet's half of the colour scheme; the mark itself is two files, and the
+   `<picture>` the card emits is what picks between them (§17.3) — the wordmark is the site's
+   foreground colour, so the wrong file is invisible rather than merely off. The dark value here is
+   deliberately not the card's hover fill: the picture area has to stay distinguishable from the
+   card while the pointer is on it.
+
+   Both surfaces again: keyed on the class, so the editor's NodeView gets the identical box. */
+.prose .link-card-image.link-card-placeholder {
+  object-fit: contain;
+  padding: 1.25em;
+  background: #eaeef2;
+}
+/* A card whose target has no picture (§16.2) — an external page with no og:image, which since §17
+   is the only kind left: a card pointing at this blog always carries the house mark. The fixed
+   height is spent on three lines of text and the rest falls to the bottom, which reads as a missing
+   element rather than as room — so the column is centred and the same slack sits above and below it
+   instead. Nothing else moves: the height, the clamps and the text are what they are on every
+   other card.
 
    Keyed on the anchor, so it does not reach the editor's NodeView. That card carries the control
    band at its top, and centring what hangs below it would put the two states' controls back out of
@@ -1838,6 +1858,14 @@ body.link-menu-open .table-toolbar {
   .prose .link-card-description {
     display: none;
   }
+  /* The mark keeps its own size here rather than shrinking with the frame. At 320px the picture
+     box is 94.8x102 (measured 2026-08-22), and the wide value would leave 54.8px of artwork — a
+     wordmark drawn at about 9px, which is the height §15 recorded as unreadable when it measured
+     Qiita's baked-in text. The padding is the only term that can give the mark room back, since
+     the frame's width belongs to §16.1. */
+  .prose .link-card-image.link-card-placeholder {
+    padding: 0.5em;
+  }
   /* The band goes to icons where the card is at its most cramped — three words of chrome above a
      clamped title is most of what a narrow card shows otherwise. The label stays in the tree,
      hidden the visually-hidden way rather than with `display: none`, because it is the button's
@@ -1958,6 +1986,10 @@ body.link-menu-open .table-toolbar {
   }
   .prose a.link-card:hover {
     background: #161b22;
+  }
+  /* Dark counterpart of the house mark's tint (§17.3). */
+  .prose .link-card-image.link-card-placeholder {
+    background: #1c2128;
   }
   .prose .link-card-view,
   .prose .link-card-search,

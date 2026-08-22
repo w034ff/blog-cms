@@ -2,11 +2,12 @@ import type { Root, Element, ElementContent } from 'hast';
 import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
 import { externalCardHost, isCardHref } from './link-card-href';
+import { CARD_PLACEHOLDER_DARK_SRC, type CardImage } from './link-card-image';
 
 // What a card resolves to. Deliberately the shape the card renders, not a `Post`: lib/render.ts
 // must not import the DB or its types (docs/link-card-requirements.md §6), so the caller —
 // app/posts/[slug]/page.tsx — is what knows about `posts`, and a test can hand over a literal.
-export type CardTarget = { title: string; description: string; thumbnail: string | null };
+export type CardTarget = { title: string; description: string; image: CardImage | null };
 export type ResolveCard = (href: string) => Promise<CardTarget | null>;
 
 declare module 'vfile' {
@@ -34,19 +35,21 @@ function hasClass(node: Element, name: string): boolean {
 // line below is built from the href rather than from the resolver's answer — it says where the
 // click goes, and only the reference knows that.
 //
-// `thumbnail` is NOT re-validated here, unlike `data-href` below, and the difference is where each
+// `image` is NOT re-validated here, unlike `data-href` below, and the difference is where each
 // one comes from. The href is written into the body by an author and reaches this stage having
-// skipped sanitize's protocol check; the thumbnail comes from the injected resolver, which builds
-// it either with `resolveThumbnail` (lib/thumbnail.ts — a `/uploads/…` path, for a post) or with
-// `linkImageSrc` (lib/link-image.ts — a signed `/api/link-image?…` path, for an external card's
-// picture, §14.4). **Both are same-origin**, which is the property that matters: an external card
-// never points a reader at the target's CDN. Re-checking the shape here would be checking this
-// project against itself; what matters is that no future resolver hands over a value it did not
-// build with one of those two.
+// skipped sanitize's protocol check; the picture comes from the injected resolver, which builds it
+// with one of three things — `resolveThumbnail` (lib/thumbnail.ts — a `/uploads/…` path, for a
+// post), `linkImageSrc` (lib/link-image.ts — a signed `/api/link-image?…` path, for an external
+// card's picture, §14.4), or the house mark for a post with no picture of its own
+// (lib/link-card-image.ts — a static file, §17). **All three are same-origin**, which is the
+// property that matters: an external card never points a reader at the target's CDN. Re-checking
+// the shape here would be checking this project against itself; what matters is that no future
+// resolver hands over a value it did not build with one of those three.
 //
 // The text column exists even when there is no image: it is what keeps the description clamped to
 // the column's width rather than the card's, so a card gains and loses its picture without the
-// text re-flowing into a different shape.
+// text re-flowing into a different shape. That case is an external target with no og:image now
+// that an internal card always carries one (§17).
 function cardElement(href: string, target: CardTarget): Element {
   const lines: Element[] = [
     {
@@ -81,15 +84,53 @@ function cardElement(href: string, target: CardTarget): Element {
       children: lines,
     },
   ];
-  if (target.thumbnail) {
+  if (target.image) {
     // `alt=''` deliberately: the title is right beside it inside the same anchor, so naming the
-    // image would make a screen reader read the card twice.
-    parts.push({
+    // image would make a screen reader read the card twice. The house mark is decorative for a
+    // second reason — it names this blog, which every internal card already points at.
+    //
+    // The second class is what tells the picture apart from a real one: the mark is drawn to fit
+    // on a tint rather than cropped to fill (app/globals.css, §17). It comes from the resolver
+    // rather than from a test on `src` here, so renaming the file cannot silently change how it
+    // is painted.
+    const image: Element = {
       type: 'element',
       tagName: 'img',
-      properties: { className: ['link-card-image'], src: target.thumbnail, alt: '' },
+      properties: {
+        className: target.image.placeholder
+          ? ['link-card-image', 'link-card-placeholder']
+          : ['link-card-image'],
+        src: target.image.src,
+        alt: '',
+      },
       children: [],
-    });
+    };
+    // The house mark is the site's name in the foreground colour, so it has a file per scheme and
+    // the page — not the image — chooses between them (§17.3). The `<img>` keeps the light file as
+    // its `src`, which is what a browser that ignores `<source>` falls back to. The card's own
+    // rules key on `.link-card-image`, so the wrapper changes nothing about the box: `<picture>` is
+    // a display:contents-shaped element that renders only its `<img>`.
+    parts.push(
+      target.image.placeholder
+        ? {
+            type: 'element',
+            tagName: 'picture',
+            properties: {},
+            children: [
+              {
+                type: 'element',
+                tagName: 'source',
+                properties: {
+                  media: '(prefers-color-scheme: dark)',
+                  srcSet: CARD_PLACEHOLDER_DARK_SRC,
+                },
+                children: [],
+              },
+              image,
+            ],
+          }
+        : image,
+    );
   }
   return {
     type: 'element',

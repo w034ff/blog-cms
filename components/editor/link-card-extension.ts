@@ -2,6 +2,12 @@ import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, normalizeCardHref } from '@/lib/link-card-href';
+import {
+  CARD_PLACEHOLDER_DARK_SRC,
+  externalCardImage,
+  internalCardImage,
+  type CardImage,
+} from '@/lib/link-card-image';
 import { resolveEmbed } from '@/lib/embed-provider';
 import {
   buildIcon,
@@ -218,16 +224,38 @@ export const LinkCard = Node.create({
       // list and the card's lines can be rebuilt without disturbing it — which also means
       // `body.replaceChildren()` does not take it down and `render` has to.
       const image = document.createElement('img');
-      image.className = 'link-card-image';
       // Decorative, for the published card's reason: the title it belongs to is right beside it.
       image.alt = '';
-      const setImage = (src: string | null) => {
-        if (src === null) {
+      // The wrapper the house mark needs and a real picture does not (§17.3): a file per colour
+      // scheme, chosen by the page. Built once and used only while the mark is showing — the
+      // `<img>` moves in and out of it, so there is one image element either way and the layout
+      // rules, which key on `.link-card-image`, never see the difference.
+      const picture = document.createElement('picture');
+      const darkSource = document.createElement('source');
+      darkSource.media = '(prefers-color-scheme: dark)';
+      darkSource.srcset = CARD_PLACEHOLDER_DARK_SRC;
+      const setImage = (drawn: CardImage | null) => {
+        if (drawn === null) {
+          picture.remove();
           image.remove();
           return;
         }
-        image.src = src;
-        dom.appendChild(image);
+        // Both classes are set on every draw, never toggled from the last one: the same `<img>` is
+        // reused across lookups, so a card that resolved to the house mark and is then pointed at
+        // a post with a real picture would otherwise keep painting it on the tint (§17).
+        image.className = drawn.placeholder
+          ? 'link-card-image link-card-placeholder'
+          : 'link-card-image';
+        image.src = drawn.src;
+        if (drawn.placeholder) {
+          picture.append(darkSource, image);
+          dom.appendChild(picture);
+        } else {
+          // `appendChild` moves the image out of the wrapper, which is what leaves the previous
+          // card's `<source>` behind rather than letting it decide this card's picture.
+          picture.remove();
+          dom.appendChild(image);
+        }
       };
 
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
@@ -325,7 +353,9 @@ type CardFace = {
   note: string;
   // The provenance line, and null on an internal card, whose target is this same blog (§14.4).
   domain: string | null;
-  thumbnail: string | null;
+  // Null only on an external target with no og:image: an internal card always has a picture, the
+  // site's own mark when the post has none (§17).
+  image: CardImage | null;
 };
 
 // Lookups already made, keyed by href. A card holds only a reference (§4.2), so every NodeView
@@ -388,7 +418,10 @@ async function fetchPost(href: string): Promise<Lookup> {
         // link there (§5.2-4, §6.1), which is only fixable from here.
         note: post.draft ? '未公開の記事' : '',
         domain: null,
-        thumbnail: post.thumbnail,
+        // The route answers with `resolveThumbnail`'s value and this side turns a null into the
+        // house mark — the same function the published card's resolver calls, so the two cannot
+        // decide differently what a post with no picture looks like (§17).
+        image: internalCardImage(post.thumbnail),
       },
     };
   } catch {
@@ -422,7 +455,12 @@ async function fetchPreview(href: string): Promise<Lookup> {
     // party's own URL never reaches this browser.
     return {
       status: 'found',
-      card: { title: preview.title, note: '', domain: host, thumbnail: preview.image || null },
+      card: {
+        title: preview.title,
+        note: '',
+        domain: host,
+        image: externalCardImage(preview.image || null),
+      },
     };
   } catch {
     return { status: 'unknown' };
@@ -457,7 +495,7 @@ function renderCard(
   editor: { commands: { unsetLinkCard: (at?: number) => boolean } },
   onClear: () => void,
   pos: () => number | undefined,
-  setImage: (src: string | null) => void,
+  setImage: (picture: CardImage | null) => void,
 ): void {
   const actions = head();
   actions.append(
@@ -522,7 +560,7 @@ function renderCard(
       lookup.status === 'found' ? lookup.card.note : lookup.status === 'missing' ? lookup.note : '',
       lookup.status === 'found' ? lookup.card.domain : null,
     );
-    setImage(lookup.status === 'found' ? lookup.card.thumbnail : null);
+    setImage(lookup.status === 'found' ? lookup.card.image : null);
   };
 
   const cached = cardCache.get(href);
