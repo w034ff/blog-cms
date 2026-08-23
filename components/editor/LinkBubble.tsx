@@ -22,8 +22,10 @@ import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
 import { CardIcon } from './svg/CardIcon';
 import { PlayIcon } from './svg/PlayIcon';
+import { XPostIcon } from './svg/XPostIcon';
 import { isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
+import { X_PROVIDER } from '@/lib/embed-message';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -340,7 +342,8 @@ export function LinkBubble({
   // asking it first would answer for a YouTube link too — and offer a card that publishes as a
   // plain link, since the preview fetch cannot read that page (§9.1). One URL, one meaning: the
   // provider is asked first and the card only gets what no provider claims.
-  const embedHref = link && resolveEmbed(link.href) ? link.href : null;
+  const embedTarget = link ? resolveEmbed(link.href) : null;
+  const embedHref = link && embedTarget ? link.href : null;
   const toEmbed =
     link && embedHref && editor.can().linkToEmbed({ from: link.from, to: link.to }, embedHref)
       ? () => editor.chain().focus().linkToEmbed({ from: link.from, to: link.to }, embedHref).run()
@@ -1442,7 +1445,10 @@ export function LinkBubble({
           </ToolbarButton>
           {toEmbed && (
             <ToolbarButton round title='埋め込みにする' onClick={toEmbed}>
-              <PlayIcon />
+              {/* The glyph is the outcome, which is not the same picture for every provider: a
+                  video gets the player it produces, a post gets the mark of where it comes from
+                  (§7.3). One button either way — the two are never on offer at once (§5). */}
+              {embedTarget?.provider === X_PROVIDER ? <XPostIcon /> : <PlayIcon />}
             </ToolbarButton>
           )}
           {toCard && (
