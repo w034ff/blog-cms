@@ -19,11 +19,22 @@ function hasClass(node: Element, name: string): boolean {
 // replaced-element defaults. The editor's NodeView builds the identical two elements, which is what
 // keeps §7's "what the author is looking at is what the reader gets" true of the box as well as of
 // the player.
-function embedElement(target: EmbedTarget): Element {
+function embedElement(target: EmbedTarget, instanceId: string, href: string): Element {
   return {
     type: 'element',
     tagName: 'div',
-    properties: { className: ['embed', `embed-${target.provider}`] },
+    // `data-embed-id` names this placement for the reader's browser: the provider addresses its
+    // messages to the id it was given (§10.5), and `components/EmbedFrames.tsx` reads the attribute
+    // back to find the box a `resize` belongs to. Written here rather than derived from the src so
+    // the client never has to parse a URL it did not build.
+    // `data-href` survives onto the published element because the client-side fallback needs the
+    // reference to build its link from (§10.6) and must not reconstruct it from the src, which is
+    // this file's output rather than the author's input. It is the same public URL either way.
+    properties: {
+      className: ['embed', `embed-${target.provider}`],
+      dataEmbedId: instanceId,
+      dataHref: href,
+    },
     children: [
       {
         type: 'element',
@@ -34,7 +45,7 @@ function embedElement(target: EmbedTarget): Element {
             type: 'element',
             tagName: 'iframe',
             properties: {
-              src: target.src,
+              src: target.src(instanceId),
               title: target.title,
               // Below the fold, the third party is not asked for anything until the reader scrolls
               // that far (§9.5). The request cannot be removed — that is §8-① — but it can be made
@@ -56,6 +67,11 @@ function embedElement(target: EmbedTarget): Element {
 // playlist, a channel, another site (§9.4). A plain link, for rehypeLinkCard's reason: nothing is lost for the reader,
 // and the author sees a link where they expected an embed, whereas dropping the node would make the
 // body silently shorter. Unwrapped, so it fits wherever the `<div>` fitted.
+//
+// **`target` is deliberately absent.** `rehypeNewTabLinks` runs after this stage and decides it in
+// one place for the whole document. The shape this ends up with is what `lib/embed-fallback.ts`
+// describes, and it is what the reader's browser has to reproduce when a resolved embed turns out
+// to be unfetchable (§10.6) — that path gets no later stage, so it adds `target` itself.
 function fallbackLink(href: string): Element {
   return {
     type: 'element',
@@ -95,13 +111,17 @@ export function rehypeEmbed() {
     });
     if (found.length === 0) return;
 
-    const replacements: (ElementContent | null)[] = found.map(({ node }) => {
+    const replacements: (ElementContent | null)[] = found.map(({ node }, index) => {
       const href = node.properties.dataHref;
       // No reference at all: an empty `<div class="embed">` names nothing and cannot degrade to a
       // link either, so it goes.
       if (typeof href !== 'string' || href === '') return null;
       const target = resolveEmbed(href);
-      if (target) return embedElement(target);
+      // Unique within the document, which is all the provider's addressing needs. The prefix is not
+      // `embed-` on purpose: that is the name X's widget gives an iframe that was handed no id at
+      // all, and a collision between "the one we named" and "the ones it named itself" is the exact
+      // ambiguity the id exists to remove.
+      if (target) return embedElement(target, `emb-${index}`, href);
       // **The fallback is published markup too, and it is built after sanitize.** `resolveEmbed`
       // returning null says only "no provider claims this" — it says nothing about whether the
       // string is safe as an `<a href>`, and `javascript:` reaches here exactly as it reaches the

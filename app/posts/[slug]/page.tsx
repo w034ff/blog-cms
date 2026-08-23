@@ -11,6 +11,7 @@ import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
+import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
 import { sharedOpenGraph } from '@/app/shared-metadata';
@@ -183,11 +184,14 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
-        {/* Client enhancers: both attach behaviour to the server-rendered body after mount and
-            render nothing themselves — a copy button on each code block, and a preview of the note
-            behind each footnote reference (which stays a working anchor either way). */}
+        {/* Client enhancers: each attaches behaviour to the server-rendered body after mount and
+            renders nothing itself — a copy button on each code block, a preview of the note behind
+            each footnote reference (which stays a working anchor either way), and the height and
+            missing-post fallback for an X embed, which only its own iframe can report
+            (docs/embed-requirements.md §10.5, §10.6). */}
         <CodeCopyButtons targetId='post-body' />
         <FootnotePopover targetId='post-body' />
+        <EmbedFrames targetId='post-body' />
       </div>
       {showToc && <TocNavDesktop toc={toc} />}
     </article>

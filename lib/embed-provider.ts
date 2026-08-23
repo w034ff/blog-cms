@@ -17,11 +17,18 @@ export type EmbedTarget = {
   // carries no provider of its own (§4): it is derived here, so adding one cannot widen what has to
   // be spelled out in the document, in the sanitize schema, or in the editor.
   provider: string;
-  // The iframe's src, built here and nowhere else. **A stored reference never becomes a src.** The
-  // published stage runs after rehype-sanitize, so this string meets no other check on its way into
-  // the DOM (§4.2) — hence an allowlist of shapes that can be expressed, rather than a filter over
-  // shapes that cannot.
-  src: string;
+  // The iframe's src for ONE placement of this embed, built here and nowhere else. **A stored
+  // reference never becomes a src.** The published stage runs after rehype-sanitize, so this string
+  // meets no other check on its way into the DOM (§4.2) — hence an allowlist of shapes that can be
+  // expressed, rather than a filter over shapes that cannot.
+  //
+  // A function rather than a string because a provider may need to name this particular iframe: X
+  // does, and without a distinct `embedId` every iframe on the page calls itself `embed-0`, so the
+  // parent cannot tell whose `resize` is whose (§10.5). The id is minted per placement by the two
+  // render stages and never by `resolveEmbed`, which is what keeps this file pure and §4.3's
+  // registry contract unchanged. A provider that needs no such thing ignores the argument — and
+  // there is no bare src string left lying around for a caller to use instead.
+  src: (instanceId: string) => string;
   // The iframe's accessible name. Generic on purpose (§8-②): with no fetch, the target's own title
   // is not available to either surface.
   title: string;
@@ -90,11 +97,52 @@ const youtube: Provider = {
     // nocookie because the request cannot be removed but its cookies can (§9.5). The query is built
     // from the parsed number, never from the author's string.
     const src = `https://www.youtube-nocookie.com/embed/${id}${start > 0 ? `?start=${start}` : ''}`;
-    return { provider: 'youtube', src, title: 'YouTube 動画', allow: YOUTUBE_ALLOW };
+    // The id is ignored: one YouTube iframe says nothing to its parent, so nothing has to tell two
+    // of them apart.
+    return { provider: 'youtube', src: () => src, title: 'YouTube 動画', allow: YOUTUBE_ALLOW };
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube];
+// §10.4. Up to 19 digits — a snowflake id, verified against the parse rather than trusted from it,
+// for YOUTUBE_ID's reason: this is the value that reaches the src. The bound also keeps a longer
+// run of digits out, which is the shape that would otherwise be written into the src verbatim.
+const X_ID = /^\d{1,19}$/;
+// `/<handle>/status/<ID>` and `/i/status/<ID>` — one pattern, because `/i/` occupies the handle's
+// place. The handle segment stays `[^/]+` on purpose: copying X's own rules for what a handle may
+// contain would go stale when they change, and it would guard nothing, since the id is the only
+// part that reaches the src. A trailing `/photo/1` and the like are ignored for the same reason.
+const X_PATH = /^\/[^/]+\/status\/([^/]+)/;
+
+// Nothing is asked for. A post is text and images in someone else's page, so the four permissions
+// YouTube's player needs have no counterpart here.
+const X_ALLOW = '';
+
+const x: Provider = {
+  // `t.co` is absent: it is a redirector, and resolving one would put a request on the wire, which
+  // §3.2 forbids. The old domain is present because links to it are still written and it 301s to
+  // `x.com` (§10.1) — following that redirect is the same forbidden request, so the shapes are
+  // matched here instead.
+  hosts: ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'],
+  resolve: (url) => {
+    const id = X_PATH.exec(url.pathname)?.[1] ?? null;
+    // A profile URL, a list and a search all land here, and all become cards instead (§10.4). That
+    // is the account half of §10's decision, and it is this `null` rather than any code of its own.
+    if (id === null || !X_ID.test(id)) return null;
+    return {
+      provider: 'x',
+      // `embedId` is what makes a `resize` message attributable (§10.5): without it every iframe on
+      // the page answers to `embed-0`. `lang` changes the widget's own UI only — 「フォローする」
+      // rather than `Follow` — and not the post (§10.4). Both are built from values this file owns;
+      // the author's string reaches neither.
+      src: (instanceId) =>
+        `https://platform.twitter.com/embed/Tweet.html?id=${id}&lang=ja&embedId=${encodeURIComponent(instanceId)}`,
+      title: 'X の投稿',
+      allow: X_ALLOW,
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

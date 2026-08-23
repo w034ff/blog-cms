@@ -1920,6 +1920,18 @@ body.link-menu-open .table-toolbar {
 .prose .embed-youtube .embed-frame {
   aspect-ratio: 16 / 9;
 }
+/* A post has no ratio — its height is its content's, and only its own iframe can report it
+   (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
+   corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`
+   over this one. 250px is where 3 of the 4 measured posts sat (225/225/249, with one long post at
+   473); the jump when the correction lands is accepted, as it is on Zenn and Qiita.
+
+   No black behind it: unlike a video, a post paints its own light card, and #000 would show as a
+   dark band for as long as the iframe takes to arrive. */
+.prose .embed-x .embed-frame {
+  height: 250px;
+  background: transparent;
+}
 .prose .embed-frame iframe {
   position: absolute;
   inset: 0;

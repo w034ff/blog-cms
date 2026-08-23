@@ -10,6 +10,9 @@ import { resolveEmbed } from './embed-provider';
 // one measured in §9.2's table.
 const ID = 'hDPybQwAuVo';
 const SRC = `https://www.youtube-nocookie.com/embed/${ID}`;
+// `src` takes the instance id the render stages mint per placement (§10.5). YouTube ignores it —
+// these assertions pass one only because the signature requires it.
+const ANY = 'probe';
 
 describe('resolveEmbed / YouTube', () => {
   it('makes one src out of all five URL shapes (Y1)', () => {
@@ -24,7 +27,7 @@ describe('resolveEmbed / YouTube', () => {
       `https://www.youtube.com/live/${ID}`,
       `https://www.youtube.com/embed/${ID}`,
     ])
-      expect(resolveEmbed(href)?.src, href).toBe(SRC);
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(SRC);
   });
 
   it('refuses every host outside the allowlist (Y2)', () => {
@@ -40,11 +43,11 @@ describe('resolveEmbed / YouTube', () => {
   });
 
   it('carries the start time across, in each form it accepts (Y3)', () => {
-    expect(resolveEmbed(`https://youtu.be/${ID}?t=90`)?.src).toBe(`${SRC}?start=90`);
-    expect(resolveEmbed(`https://youtu.be/${ID}?t=90s`)?.src).toBe(`${SRC}?start=90`);
-    expect(resolveEmbed(`https://youtu.be/${ID}?t=1h2m3s`)?.src).toBe(`${SRC}?start=3723`);
-    expect(resolveEmbed(`https://youtu.be/${ID}?t=2m`)?.src).toBe(`${SRC}?start=120`);
-    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&start=45`)?.src).toBe(
+    expect(resolveEmbed(`https://youtu.be/${ID}?t=90`)?.src(ANY)).toBe(`${SRC}?start=90`);
+    expect(resolveEmbed(`https://youtu.be/${ID}?t=90s`)?.src(ANY)).toBe(`${SRC}?start=90`);
+    expect(resolveEmbed(`https://youtu.be/${ID}?t=1h2m3s`)?.src(ANY)).toBe(`${SRC}?start=3723`);
+    expect(resolveEmbed(`https://youtu.be/${ID}?t=2m`)?.src(ANY)).toBe(`${SRC}?start=120`);
+    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&start=45`)?.src(ANY)).toBe(
       `${SRC}?start=45`,
     );
   });
@@ -52,7 +55,7 @@ describe('resolveEmbed / YouTube', () => {
   it('plays from the start when `t` is not something it understands (Y3)', () => {
     // Not a guess to make: an uninterpreted string in the src is worse than the wrong moment.
     for (const t of ['abc', '', '-5', '1h2m3', '9'.repeat(12), 'NaN'])
-      expect(resolveEmbed(`https://youtu.be/${ID}?t=${t}`)?.src, t).toBe(SRC);
+      expect(resolveEmbed(`https://youtu.be/${ID}?t=${t}`)?.src(ANY), t).toBe(SRC);
   });
 
   it('refuses what names no single video (Y4)', () => {
@@ -69,7 +72,7 @@ describe('resolveEmbed / YouTube', () => {
   });
 
   it('embeds the video and drops the list when both are present (Y5)', () => {
-    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&list=PLabc&index=2`)?.src).toBe(SRC);
+    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&list=PLabc&index=2`)?.src(ANY)).toBe(SRC);
   });
 
   it('refuses an id that is not an id', () => {
@@ -107,6 +110,97 @@ describe('resolveEmbed / YouTube', () => {
   it('names the provider and an accessible name for the iframe (§8-②)', () => {
     const target = resolveEmbed(`https://youtu.be/${ID}`);
     expect(target?.provider).toBe('youtube');
+    expect(target?.title).not.toBe('');
+  });
+});
+
+// docs/embed-requirements.md §10. The account/post split lives entirely in what this file returns:
+// a post URL resolves, and every other x.com URL returns null and falls to `normalizeCardHref`,
+// which is the whole of "the account gets a card" (§10.4). So the two halves of §10's decision are
+// both measured here.
+//
+// `2089798442306711646` is the post measured in §10.1 and §10.5's table.
+const X_ID = '2089798442306711646';
+const X_SRC = (id: string, embedId: string) =>
+  `https://platform.twitter.com/embed/Tweet.html?id=${id}&lang=ja&embedId=${embedId}`;
+
+describe('resolveEmbed / X', () => {
+  it('makes one src out of both post URL shapes, on every host (X1, X3)', () => {
+    // `/i/status/` carries the id where a handle would be, so one pattern covers both. The old
+    // domain 301s to x.com (§10.1) — matched here rather than followed, since resolving an embed
+    // must not put a request on the wire (§3.2).
+    for (const href of [
+      `https://x.com/ClaudeDevs/status/${X_ID}`,
+      `https://www.x.com/ClaudeDevs/status/${X_ID}`,
+      `https://twitter.com/ClaudeDevs/status/${X_ID}`,
+      `https://www.twitter.com/ClaudeDevs/status/${X_ID}`,
+      `https://mobile.twitter.com/ClaudeDevs/status/${X_ID}`,
+      `https://x.com/i/status/${X_ID}`,
+      // What the share sheet appends, and a trailing segment the id does not depend on.
+      `https://x.com/ClaudeDevs/status/${X_ID}?s=20&t=abc`,
+      `https://x.com/ClaudeDevs/status/${X_ID}/photo/1`,
+    ])
+      expect(resolveEmbed(href)?.src('e1'), href).toBe(X_SRC(X_ID, 'e1'));
+  });
+
+  it('names the iframe per placement, so two embeds are told apart (X1, §10.5)', () => {
+    // Without a distinct `embedId` every iframe on the page answers to `embed-0`, and the parent
+    // cannot tell whose `resize` is whose — measured 2026-08-23.
+    const target = resolveEmbed(`https://x.com/ClaudeDevs/status/${X_ID}`);
+    expect(target?.src('a')).not.toBe(target?.src('b'));
+    // The id is the render stage's string, so it is escaped on the way into the query.
+    expect(target?.src('a b&c')).toBe(X_SRC(X_ID, 'a%20b%26c'));
+  });
+
+  it('leaves the account, and everything else on the host, to the card (X2)', () => {
+    // Not a rejection with a message — a `null` here IS how the account gets a card (§10.4).
+    for (const href of [
+      'https://x.com/ClaudeDevs',
+      'https://x.com/',
+      'https://x.com/i/lists/12345',
+      'https://x.com/search?q=claude',
+      'https://x.com/ClaudeDevs/with_replies',
+      'https://x.com/ClaudeDevs/status',
+      'https://twitter.com/__example__',
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses an id that is not an id (X4)', () => {
+    // The bound is what keeps a longer run of digits out of the src verbatim; `99999999999999999999`
+    // is the 20-digit fixture §10.6 keeps, and it is refused HERE, before anything reaches the wire.
+    for (const bad of [
+      '99999999999999999999',
+      'abc',
+      '12a45',
+      '',
+      '-1',
+      '1.5',
+      '１２３',
+    ])
+      expect(resolveEmbed(`https://x.com/ClaudeDevs/status/${encodeURIComponent(bad)}`), bad)
+        .toBeNull();
+  });
+
+  it('refuses a redirector rather than following it (§3.2)', () => {
+    // `t.co` names nothing without a request, and resolving an embed must not make one.
+    expect(resolveEmbed('https://t.co/abc123')).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as YouTube does (E2)', () => {
+    expect(resolveEmbed(`https://user:pass@x.com/a/status/${X_ID}`)).toBeNull();
+    expect(resolveEmbed(`//x.com/a/status/${X_ID}`)).toBeNull();
+  });
+
+  it('does not throw on a broken percent-escape (E3)', () => {
+    expect(() => resolveEmbed('https://x.com/a/status/%zz')).not.toThrow();
+    expect(resolveEmbed('https://x.com/a/status/%zz')).toBeNull();
+  });
+
+  it('names the provider and an accessible name for the iframe (§8-②)', () => {
+    // `embed-x` is the CSS hook both surfaces share; the name is generic because no fetch has run.
+    const target = resolveEmbed(`https://x.com/ClaudeDevs/status/${X_ID}`);
+    expect(target?.provider).toBe('x');
     expect(target?.title).not.toBe('');
   });
 });

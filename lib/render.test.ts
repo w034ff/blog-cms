@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { embedFallbackAnchor } from './embed-fallback';
 import { renderMdxToHtml } from '@/lib/render';
 import { CARD_PLACEHOLDER_DARK_SRC, CARD_PLACEHOLDER_SRC } from '@/lib/link-card-image';
 
@@ -567,7 +568,7 @@ describe('renderMdxToHtml / embed', () => {
     const { html } = await renderMdxToHtml(
       `<div class="embed" data-href="https://www.youtube.com/watch?v=${ID}&amp;t=90"></div>`,
     );
-    expect(html).toContain('<div class="embed embed-youtube">');
+    expect(html).toContain('class="embed embed-youtube"');
     expect(html).toContain(`src="https://www.youtube-nocookie.com/embed/${ID}?start=90"`);
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('allowfullscreen');
@@ -636,6 +637,53 @@ describe('renderMdxToHtml / embed', () => {
     );
     expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     expect(html).toContain('<iframe');
+  });
+
+  // docs/embed-requirements.md §10. `2089798442306711646` is the post measured in §10.1.
+  const POST = 'https://x.com/ClaudeDevs/status/2089798442306711646';
+
+  it('turns a post reference into an iframe the browser can address (X1)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${POST}"></div>`);
+    expect(html).toContain('class="embed embed-x"');
+    expect(html).toContain('src="https://platform.twitter.com/embed/Tweet.html?id=2089798442306711646&#x26;lang=ja&#x26;embedId=emb-0"');
+    // The client needs both to do its work: the name the provider will answer to, and the
+    // reference to build the fallback link from (§10.6). Neither is reconstructible from the src.
+    expect(html).toContain('data-embed-id="emb-0"');
+    expect(html).toContain(`data-href="${POST}"`);
+  });
+
+  it('names each placement distinctly, so two posts are told apart (§10.5)', async () => {
+    // Without this every iframe answers to `embed-0` and the parent cannot route a `resize`.
+    const { html } = await renderMdxToHtml(
+      `<div class="embed" data-href="${POST}"></div>\n\n<div class="embed" data-href="${POST}"></div>`,
+    );
+    expect(html).toContain('embedId=emb-0');
+    expect(html).toContain('embedId=emb-1');
+  });
+
+  it('leaves the account URL to the card, as a plain link here (X2)', async () => {
+    // A profile becomes a card upstream; reaching this stage at all means someone hand-wrote it,
+    // and the answer is the same one every unclaimed reference gets.
+    const { html } = await renderMdxToHtml(
+      '<div class="embed" data-href="https://x.com/ClaudeDevs"></div>',
+    );
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain('<a href="https://x.com/ClaudeDevs" target="_blank">');
+  });
+
+  it('publishes the fallback anchor in exactly the shape the client must reproduce (X5)', async () => {
+    // **One surface, two code paths** (§10.6). This one is built here, before rehypeNewTabLinks;
+    // the other is built in the reader's browser after `no_results`, with no later stage to add
+    // `target`. `lib/embed-fallback.ts` is what both are derived from, so this pins the render-time
+    // path against it — the client path is pinned by construction, since it calls it.
+    const href = 'https://example.com/article';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    const spec = embedFallbackAnchor(href);
+    const anchor = /<a\s[^>]*href="https:\/\/example\.com\/article"[^>]*>[^<]*<\/a>/.exec(html);
+    expect(anchor?.[0]).toBe(`<a href="${spec.href}" target="${spec.target}">${spec.text}</a>`);
+    // No `rel`: a modern browser implies `noopener`, and `noreferrer` would withhold what §7
+    // refuses to withhold (lib/rehype-new-tab-links.ts).
+    expect(anchor?.[0]).not.toContain('rel=');
   });
 });
 

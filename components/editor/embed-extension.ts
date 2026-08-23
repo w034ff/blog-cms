@@ -1,6 +1,12 @@
 import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { resolveEmbed, type EmbedTarget } from '@/lib/embed-provider';
+import {
+  EMBED_SILENCE_MS,
+  EMBED_VISIBLE_THRESHOLD,
+  readXCall,
+  X_ORIGIN,
+} from '@/lib/embed-message';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
 
@@ -35,6 +41,11 @@ function serializeEmbed(state: MarkdownSerializerState, node: PMNode): void {
   // this line and reaches the public pipeline glued to the div.
   state.closeBlock(node);
 }
+
+// Names one placement in the provider's messages (§10.5), the counterpart of the id rehypeEmbed
+// mints per element. A NodeView keeps its own for its whole life: when the reference changes the
+// iframe reloads and re-announces itself under the same name.
+let viewCount = 0;
 
 export const Embed = Node.create({
   name: 'embed',
@@ -200,22 +211,56 @@ export const Embed = Node.create({
       // Which of the two states is on screen, so the swap happens on a crossing rather than on
       // every update. `null` until the first render puts something there.
       let showing: 'player' | 'note' | null = null;
+      let current: PMNode = node;
+      const instanceId = `emb-view-${(viewCount += 1)}`;
+      // The reference whose post the provider could not produce. Remembered rather than re-asked,
+      // because an edit elsewhere re-runs `render` and must not put a known-empty player back.
+      // Cleared when the reference itself changes, which is the only thing that can change the
+      // answer.
+      let failedHref: string | null = null;
+      let silence: number | null = null;
+      // Whether the iframe has said anything at all. Separate from the clock because the two are
+      // not ordered: an embed already on screen can report its height before the observer's first
+      // callback runs, and arming a clock for it would turn a working post into the failure note
+      // eight seconds later.
+      let answered = false;
+
+      const clearSilence = () => {
+        if (silence === null) return;
+        window.clearTimeout(silence);
+        silence = null;
+      };
 
       const render = (n: PMNode) => {
+        current = n;
         const href = typeof n.attrs.href === 'string' ? n.attrs.href : '';
         const target: EmbedTarget | null = resolveEmbed(href);
+        if (failedHref !== null && failedHref !== href) {
+          failedHref = null;
+        }
         dom.className = target
           ? `embed embed-view embed-${target.provider}`
           : 'embed embed-view embed-unresolved';
-        if (!target) {
-          note.textContent = href === '' ? '参照がありません' : `埋め込みにできない参照: ${href}`;
+        // Three states, not two. **The author is told rather than shown the degraded form** — the
+        // published page turns an unfetchable post into a plain link (§10.6), but this is the
+        // surface where the reference can still be corrected, so it says what happened instead.
+        // §7.2 settled that for a reference no provider claims; a post that no longer exists is the
+        // same kind of news.
+        if (!target || failedHref === href) {
+          dom.className = 'embed embed-view embed-unresolved';
+          if (!target) {
+            note.textContent = href === '' ? '参照がありません' : `埋め込みにできない参照: ${href}`;
+          } else {
+            note.textContent = `取得できない投稿です（削除済み・非公開・存在しない）: ${href}`;
+          }
           if (showing !== 'note') {
             dom.replaceChildren(actions, note);
             showing = 'note';
           }
           return;
         }
-        if (iframe.src !== target.src) iframe.src = target.src;
+        const src = target.src(instanceId);
+        if (iframe.src !== src) iframe.src = src;
         iframe.title = target.title;
         iframe.allow = target.allow;
         if (showing !== 'player') {
@@ -224,6 +269,46 @@ export const Embed = Node.create({
         }
       };
       render(node);
+
+      // The same two answers the reader's browser waits for (`components/EmbedFrames.tsx`), for the
+      // same reason: a post's height is its content's, and whether the post exists at all is
+      // something only its own iframe can report. Kept here rather than shared with that file
+      // because the two surfaces do different things with the second answer.
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== X_ORIGIN) return;
+        const call = readXCall(event.data);
+        if (call?.id !== instanceId) return;
+        const height = call.params?.[0]?.height;
+        if (call.method === 'twttr.private.resize' && typeof height === 'number') {
+          answered = true;
+          clearSilence();
+          frame.style.height = `${height}px`;
+        } else if (call.method === 'twttr.private.no_results') {
+          clearSilence();
+          failedHref = typeof current.attrs.href === 'string' ? current.attrs.href : '';
+          render(current);
+        }
+      };
+      window.addEventListener('message', onMessage);
+
+      // Started by visibility and never by load: nothing is sent while the iframe is off screen,
+      // even though the post inside it is already drawn (§10.5).
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting || silence !== null || answered) continue;
+            observer.unobserve(entry.target);
+            silence = window.setTimeout(() => {
+              silence = null;
+              if (showing !== 'player') return;
+              failedHref = typeof current.attrs.href === 'string' ? current.attrs.href : '';
+              render(current);
+            }, EMBED_SILENCE_MS);
+          }
+        },
+        { threshold: EMBED_VISIBLE_THRESHOLD },
+      );
+      observer.observe(dom);
 
       // What `stopEvent` below claims, and the matching drop refusal — same pair, same reason as the
       // link card's (refuseChromeDrops). No droppable text control lives in this band today, so
@@ -241,6 +326,11 @@ export const Embed = Node.create({
         // Everything in here is chrome the NodeView owns; none of it is document content, so
         // ProseMirror must never read a mutation back into the document.
         ignoreMutation: () => true,
+        destroy: () => {
+          window.removeEventListener('message', onMessage);
+          observer.disconnect();
+          clearSilence();
+        },
         // Narrowed to the button rather than claimed for the whole block, the distinction the card
         // paid for: swallowing every event inside `dom` also swallows the mousedown that makes a
         // NodeSelection, and then clicking the block selects nothing. The iframe is not listed
