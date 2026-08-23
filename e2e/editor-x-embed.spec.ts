@@ -67,6 +67,10 @@ test('the block renders the post and takes the height it is told (§10.5)', asyn
     ),
   );
 
+  // §10.8. The bar X's own document reserves takes no width under a headless browser's overlay
+  // scrollbars, so what is measurable here is the attribute that removes it, not its absence.
+  await expect(iframe).toHaveAttribute('scrolling', 'no');
+
   // The box is published at a guess and corrected by the provider — the correction is the thing
   // only a browser can show happening.
   const frame = embed(page).locator('.embed-frame');
@@ -79,6 +83,25 @@ test('the block renders the post and takes the height it is told (§10.5)', asyn
     `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n本文`,
   );
   await shot(page, '03-editor-post-sized');
+});
+
+test('the box ends where the player ends (§10.9)', async ({ page }) => {
+  await openWith(page, `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n本文\n`);
+  await expect(embed(page)).toHaveCount(1);
+
+  const column = (await page.locator('.ProseMirror').boundingBox())!;
+  const box = (await embed(page).boundingBox())!;
+  const frame = (await embed(page).locator('.embed-frame').boundingBox())!;
+
+  // Not vacuous: the column has to be wide enough that an uncapped box would be visibly wider.
+  expect(Math.round(column.width - box.width)).toBeGreaterThan(100);
+  expect(Math.round(frame.width)).toBe(550);
+  // The claim is the shape, not the pixel count: the band's border hugs the player by the same
+  // padding on both sides, rather than running out to the column edge on the right. Asserted this
+  // way so a change of font size does not have to be restated here.
+  const leftGap = Math.round(frame.x - box.x);
+  const rightGap = Math.round(box.x + box.width - (frame.x + frame.width));
+  expect(rightGap).toBe(leftGap);
 });
 
 test('an unfetchable post tells the author, and does not become a link (§10.6)', async ({

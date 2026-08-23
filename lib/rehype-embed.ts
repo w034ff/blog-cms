@@ -51,6 +51,14 @@ function embedElement(target: EmbedTarget, instanceId: string, href: string): El
               // that far (§9.5). The request cannot be removed — that is §8-① — but it can be made
               // to follow the reader's own attention.
               loading: 'lazy',
+              // §10.8. `Tweet.html` sets `overflow-y: scroll` on its own `<html>`, which reserves a
+              // scrollbar track whether or not anything overflows — a 15px bar down the right edge
+              // of a post that fits, stealing 15px of the width the post lays itself out in. The
+              // attribute is obsolete in HTML5 and honoured by current Chrome; the day it stops
+              // being honoured, the embed is back to what it looks like today. A no-op for YouTube,
+              // whose player already sets `overflow: hidden` on both `<html>` and `<body>`, which is
+              // why it goes on every provider rather than becoming a branch in `resolveEmbed`.
+              scrolling: 'no',
               referrerPolicy: 'strict-origin-when-cross-origin',
               allow: target.allow,
               allowFullScreen: true,

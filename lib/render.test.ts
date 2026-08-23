@@ -572,6 +572,9 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain(`src="https://www.youtube-nocookie.com/embed/${ID}?start=90"`);
     expect(html).toContain('loading="lazy"');
     expect(html).toContain('allowfullscreen');
+    // §10.8. Measured on X, applied to every provider — and a headless browser cannot see the bar
+    // it removes (overlay scrollbars report a width of 0), so the attribute is what is asserted.
+    expect(html).toContain('scrolling="no"');
     // No fetch runs, so the name is generic on purpose (§8-②) — but it is present.
     expect(html).toContain('title="YouTube 動画"');
   });
@@ -650,6 +653,8 @@ describe('renderMdxToHtml / embed', () => {
     // reference to build the fallback link from (§10.6). Neither is reconstructible from the src.
     expect(html).toContain('data-embed-id="emb-0"');
     expect(html).toContain(`data-href="${POST}"`);
+    // The provider this one was measured on (§10.8).
+    expect(html).toContain('scrolling="no"');
   });
 
   it('names each placement distinctly, so two posts are told apart (§10.5)', async () => {

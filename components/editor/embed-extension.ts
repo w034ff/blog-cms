@@ -199,6 +199,10 @@ export const Embed = Node.create({
       frame.className = 'embed-frame';
       const iframe = document.createElement('iframe');
       iframe.loading = 'lazy';
+      // The published iframe's attribute, for the reason lib/rehype-embed.ts states (§10.8): X's
+      // own document reserves a scrollbar track that nothing scrolls. `setAttribute` rather than
+      // the property, because what is being asked for is the obsolete HTML attribute.
+      iframe.setAttribute('scrolling', 'no');
       iframe.referrerPolicy = 'strict-origin-when-cross-origin';
       iframe.allowFullscreen = true;
       frame.appendChild(iframe);

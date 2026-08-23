@@ -1928,9 +1928,33 @@ body.link-menu-open .table-toolbar {
 
    No black behind it: unlike a video, a post paints its own light card, and #000 would show as a
    dark band for as long as the iframe takes to arrive. */
+.prose .embed-x {
+  /* X lays its card out at 548px and stops; 550 is the widget's own cap. One value, because the
+     published frame and the editor's box around it have to end at the same place (§10.9). */
+  --embed-x-width: 550px;
+}
 .prose .embed-x .embed-frame {
   height: 250px;
   background: transparent;
+  /* §10.9. The widget lays its card out at 548px and stops there: measured 2026-08-24, the card is
+     548 wide in a 750px frame and in a 550px one, and only shrinks below that. So a full-width box
+     on a 750px article column leaves ~200px that paints nothing and still swallows the pointer,
+     since it is iframe all the way across.
+
+     Left, not centred. A block narrower than the column keeps the left rail here — an image
+     narrower than the column already does, having no rule of its own. Zenn centres this embed, but
+     it centres a narrow image too (measured on `zenn.dev/zenn/articles/markdown-guide`: a 250px
+     image sits in a 708px column with 229px on each side), so that is one page-wide rule rather
+     than a decision about embeds. Adopting it here would be `margin-inline: auto` plus the same
+     answer for images. */
+  max-width: var(--embed-x-width);
+}
+/* The editor's box takes the same cap, and needs one the published block does not: its border is
+   drawn, so width the player does not use is emptiness inside a visible frame. The padding and
+   border added below are .embed-view's own (0.75em each side, 1px each side) — this box has to end
+   where the player ends. */
+.prose .embed-x.embed-view {
+  max-width: calc(var(--embed-x-width) + 1.5em + 2px);
 }
 .prose .embed-frame iframe {
   position: absolute;

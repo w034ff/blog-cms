@@ -36,6 +36,22 @@ const box = (page: Page) => page.locator('#post-body .embed-x');
 const frameHeight = async (page: Page) =>
   Math.round((await page.locator('#post-body .embed-x .embed-frame').boundingBox())!.height);
 
+test('the box stops at the width the post can use, on the left rail (§10.9)', async ({ page }) => {
+  const href = await publish(page, 'Public X embed width', `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`);
+  await stubX(page);
+  await page.goto(href);
+  await expect(box(page)).toHaveCount(1);
+
+  const column = (await page.locator('#post-body').boundingBox())!;
+  const frame = (await page.locator('#post-body .embed-x .embed-frame').boundingBox())!;
+  // Vacuous unless the column is actually wider than the cap — which is the whole situation the
+  // cap exists for.
+  expect(Math.round(column.width)).toBeGreaterThan(550);
+  expect(Math.round(frame.width)).toBe(550);
+  // Left rail, not centred: the box starts where the paragraphs start.
+  expect(Math.round(frame.x - column.x)).toBe(0);
+});
+
 test('a post takes the height its iframe reports (§10.5)', async ({ page }) => {
   const href = await publish(page, 'Public X embed', `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`);
   await stubX(page);
