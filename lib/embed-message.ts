@@ -14,6 +14,14 @@
 
 export const X_ORIGIN = 'https://platform.twitter.com';
 
+// The one provider whose iframe answers back, named because **both parent behaviours below are
+// this provider's and no other's**: correcting the height, and reading silence as a missing post.
+// A surface that arms the clock for every provider replaces a working YouTube player with the
+// failure state eight seconds after the reader scrolls to it — measured in the editor 2026-08-24.
+// Not a boolean on `EmbedTarget`: the parent has to know WHICH protocol it is speaking, since
+// `readXCall` understands one, and a flag would promise a generality that does not exist.
+export const X_PROVIDER = 'x';
+
 // Measured 2026-08-23: `resize` lands ~600ms after the iframe becomes visible (~1.1s from a cold
 // navigation). Eight seconds is roughly seven times that — long enough that a slow connection is
 // not mistaken for a missing post, short enough that nobody is left looking at a blank box.

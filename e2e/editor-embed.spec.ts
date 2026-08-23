@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 import { markdown, shot } from './editor-probe';
+import { EMBED_SILENCE_MS } from '../lib/embed-message';
 
 // The YouTube embed in the live editor (docs/embed-requirements.md §9). Browser-only for the usual
 // reason and one of its own: the NodeView builds an `<iframe>` whose src is derived at runtime, and
@@ -154,4 +155,19 @@ test('a link the block cannot hold an embed for is not offered one (E7)', async 
     await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
     await expect(page.getByRole('button', { name: '埋め込みにする' }), name).toHaveCount(0);
   }
+});
+
+test('a provider that says nothing is not mistaken for a missing post (§10.6)', async ({ page }) => {
+  await openWith(page, `<div class="embed" data-href="${WATCH}"></div>\n\n本文\n`);
+  await expect(embed(page).locator('iframe')).toHaveCount(1);
+
+  // Elapsed time is the subject, so the wait is the measurement rather than a smell — the same
+  // shape `e2e/editor-x-embed.spec.ts` uses to watch the clock actually fire. A YouTube player
+  // holds its own ratio and never speaks (`lib/embed-message.ts`), so the editor's silence clock
+  // must not be armed for it at all: armed, it replaces a working player with 「取得できない投稿」
+  // eight seconds after the author scrolls to it. No stub is needed — the clock is ours, and it
+  // expires whether or not youtube-nocookie.com answers.
+  await page.waitForTimeout(EMBED_SILENCE_MS + 1500);
+  await expect(embed(page).locator('.embed-note')).toHaveCount(0);
+  await expect(embed(page).locator('iframe')).toHaveCount(1);
 });

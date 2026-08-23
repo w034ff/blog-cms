@@ -6,6 +6,7 @@ import {
   EMBED_VISIBLE_THRESHOLD,
   readXCall,
   X_ORIGIN,
+  X_PROVIDER,
 } from '@/lib/embed-message';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
@@ -224,6 +225,15 @@ export const Embed = Node.create({
       // callback runs, and arming a clock for it would turn a working post into the failure note
       // eight seconds later.
       let answered = false;
+      // Whether the block has been on screen at all, and whether what is on it answers back. The
+      // clock needs both, and neither is known at the moment the other becomes true — an embed can
+      // be scrolled to long before an edit re-points it at another provider, and vice versa — so
+      // they are kept rather than acted on where they are observed.
+      let visible = false;
+      let speaks = false;
+      // The reference `render` last drew, so a change of reference can be told from a redraw of the
+      // same one.
+      let lastHref: string | null = null;
 
       const clearSilence = () => {
         if (silence === null) return;
@@ -231,13 +241,35 @@ export const Embed = Node.create({
         silence = null;
       };
 
+      // **Only the provider that speaks gets a clock** (§10.6, corrected 2026-08-24). A YouTube
+      // player holds its own ratio and sends nothing at all, so silence from it is not news — armed
+      // for it, the clock replaced a working player with the failure note eight seconds after the
+      // author scrolled to it. The published side never had this: it selects `.embed-x` (see
+      // `components/EmbedFrames.tsx`), and this is the editor's counterpart of that selector.
+      const arm = () => {
+        if (!visible || !speaks || answered || silence !== null || showing !== 'player') return;
+        silence = window.setTimeout(() => {
+          silence = null;
+          if (showing !== 'player') return;
+          failedHref = typeof current.attrs.href === 'string' ? current.attrs.href : '';
+          render(current);
+        }, EMBED_SILENCE_MS);
+      };
+
       const render = (n: PMNode) => {
         current = n;
         const href = typeof n.attrs.href === 'string' ? n.attrs.href : '';
         const target: EmbedTarget | null = resolveEmbed(href);
-        if (failedHref !== null && failedHref !== href) {
+        // A new reference is a new question, and nothing the old one answered carries over: a post
+        // that reported its height says nothing about the one replacing it, so the clock is re-armed
+        // for it below rather than left disarmed by its predecessor's answer.
+        if (lastHref !== null && lastHref !== href) {
           failedHref = null;
+          answered = false;
+          clearSilence();
         }
+        lastHref = href;
+        speaks = target?.provider === X_PROVIDER;
         dom.className = target
           ? `embed embed-view embed-${target.provider}`
           : 'embed embed-view embed-unresolved';
@@ -267,6 +299,7 @@ export const Embed = Node.create({
           dom.replaceChildren(actions, frame);
           showing = 'player';
         }
+        arm();
       };
       render(node);
 
@@ -292,18 +325,15 @@ export const Embed = Node.create({
       window.addEventListener('message', onMessage);
 
       // Started by visibility and never by load: nothing is sent while the iframe is off screen,
-      // even though the post inside it is already drawn (§10.5).
+      // even though the post inside it is already drawn (§10.5). Once seen is enough — a block
+      // scrolled past and back is not a second chance to fail — so the flag outlives the observer.
       const observer = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
-            if (!entry.isIntersecting || silence !== null || answered) continue;
+            if (!entry.isIntersecting) continue;
             observer.unobserve(entry.target);
-            silence = window.setTimeout(() => {
-              silence = null;
-              if (showing !== 'player') return;
-              failedHref = typeof current.attrs.href === 'string' ? current.attrs.href : '';
-              render(current);
-            }, EMBED_SILENCE_MS);
+            visible = true;
+            arm();
           }
         },
         { threshold: EMBED_VISIBLE_THRESHOLD },
