@@ -42,6 +42,11 @@ const AUTOSCROLL_MAX_STEP = 18;
 // scrolls at the same speed rather than twice it.
 const AUTOSCROLL_FRAME_MS = 1000 / 60;
 
+// How far past the source block's own box the "cut out of here" veil is drawn (markCut). Enough
+// to cover the selection ring the block is wearing — `outline: 2px` at `outline-offset: 2px`
+// (globals.css) reaches 4px out — so the veil replaces that ring rather than being drawn inside it.
+const CUT_INFLATE = 4;
+
 interface DragSession {
   node: ProseMirrorNode;
   from: number;
@@ -176,6 +181,8 @@ function createDragController(view: EditorView): DragController {
   let session: DragSession | null = null;
   let indicator: HTMLElement | null = null;
   let preview: HTMLElement | null = null;
+  // The veil drawn over the source block while a real target is on offer (markCut).
+  let veil: HTMLElement | null = null;
   // The pending autoscroll frame, or 0 when the pointer is not in an edge band (see autoscrollTick),
   // and the timestamp of the previous one (0 whenever the loop is not running).
   let autoscrollFrame = 0;
@@ -433,6 +440,7 @@ function createDragController(view: EditorView): DragController {
     if (autoscrollFrame !== 0) cancelAnimationFrame(autoscrollFrame);
     autoscrollFrame = 0;
     autoscrollAt = 0;
+    markCut(false);
     document.body.classList.remove('block-dragging');
     session?.handleEl.classList.remove('is-dragging');
     if (indicator) indicator.style.display = 'none';
@@ -488,6 +496,68 @@ function createDragController(view: EditorView): DragController {
     }
   }
 
+  function ensureVeil(): HTMLElement {
+    if (!veil) {
+      const el = document.createElement('div');
+      el.className = 'block-drag-cut';
+      el.style.display = 'none';
+      document.body.appendChild(el);
+      veil = el;
+    }
+    return veil;
+  }
+
+  // Shows the source block **cut out of the document** — faded behind a dashed outline, in place of
+  // the live block and its selection ring — for exactly as long as a real target is on offer. With
+  // the indicator drawn at that target, the two together state the whole move: this leaves here,
+  // that is where it lands. Both go away together in the stretch where the only candidate is the
+  // gap the block already sits in, because dropping there takes nothing out of anywhere
+  // (docs/link-card-requirements.md §7.6).
+  //
+  // **The first version showed this in the other state** — on the no-op, as "the slot it drops back
+  // into" — and the author read it as a cut preview on sight. That reading is the right one: a
+  // faded box behind a dashed edge is how every tool draws *absence*, so it has to mean the block
+  // is going somewhere, not that it is staying. Nothing about the drawing changed; only which
+  // branch shows it.
+  //
+  // A line in the gap below the block, labelled 「ここに戻ります」, was tried for the no-op state and
+  // rejected before that (compared in the browser 2026-08-25): it draws in the same place and
+  // nearly the same shape as the real drop indicator while meaning the opposite, so one mark would
+  // say both "insert here" and "insert nowhere".
+  //
+  // Changing the source block's appearance was reverted once before — see applyMove()'s comment —
+  // but that attempt collapsed its **height**, and what could not be followed was the reflow of
+  // everything below it. Nothing here moves any layout: the block is not touched at all.
+  //
+  // **A class on the block's own DOM does not survive, measured 2026-08-25.** It was the first
+  // implementation and it looked right for one mouse move. `decorations()` below builds a fresh
+  // DecorationSet on every state change and its widgets carry no `key`, so ProseMirror cannot match
+  // the old ones and rebuilds the descs around them — `view.nodeDOM(from)` came back as a
+  // *different* `<blockquote>` on the very next move, with the class left on the detached one. Any
+  // transaction at all does it, and one arrives mid-drag on its own (the press's NodeSelection
+  // giving way to a TextSelection). So the mark is a `position: fixed` box over the block instead —
+  // the same shape as the indicator and the ghost, and for the same reason: chrome this file owns
+  // outright, drawn from the block's rect rather than written into it.
+  //
+  // The box is inflated by CUT_INFLATE so it covers the selection ring (2px at `outline-offset:
+  // 2px`, globals.css) rather than leaving a blue outline showing through a faded block; the veil's
+  // own dashed outline is pulled back in by the same amount, so it lands on the block's real edge.
+  function markCut(on: boolean): void {
+    const current = session;
+    const dom = on && current ? view.nodeDOM(current.from) : null;
+    if (!(dom instanceof HTMLElement)) {
+      if (veil) veil.style.display = 'none';
+      return;
+    }
+    const rect = dom.getBoundingClientRect();
+    const el = ensureVeil();
+    el.style.display = 'block';
+    el.style.top = `${rect.top - CUT_INFLATE}px`;
+    el.style.left = `${rect.left - CUT_INFLATE}px`;
+    el.style.width = `${rect.width + CUT_INFLATE * 2}px`;
+    el.style.height = `${rect.height + CUT_INFLATE * 2}px`;
+  }
+
   // Resolve the drop target for the pointer's last known position and redraw the chrome that
   // follows it. Split out of handleMouseMove because the pointer is not the only thing that moves:
   // the page scrolling under a stationary pointer changes the answer just as much (handleScroll).
@@ -502,10 +572,17 @@ function createDragController(view: EditorView): DragController {
     // at drag start, when the pointer is barely past the handle and still visually over the
     // (unmoving — see applyMove()'s comment) source block itself, where showing a "real-looking"
     // indicator elsewhere would read as reacting before you've gone anywhere.
+    // The cut preview is bound to the same answer, from the other side: it shows only when there
+    // *is* a target, so the emptied source and the line at the destination arrive and leave
+    // together as one statement of the move (markCut). Nothing marks this zone, and that is the
+    // point — a drop here takes the block out of nowhere and puts it back where it is, and the
+    // honest drawing of "nothing happens" is the block drawn as it already is.
     if (pos === current.to) {
       current.target = null;
       if (indicator) indicator.style.display = 'none';
+      markCut(false);
     } else {
+      markCut(true);
       current.target = pos;
       const el = ensureIndicator();
       el.style.display = 'block';
@@ -584,6 +661,8 @@ function createDragController(view: EditorView): DragController {
       indicator = null;
       preview?.remove();
       preview = null;
+      veil?.remove();
+      veil = null;
     },
   };
 }

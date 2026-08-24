@@ -1328,3 +1328,64 @@ test('the card ghost carries the card’s face, not its controls', async ({ page
   expect(picker.text).toBe('リンク先未設定のカード');
   expect(picker.width).toBe(400);
 });
+
+// The source block is drawn as cut out of the document for as long as the drag has a real target,
+// paired with the indicator at the destination (docs/link-card-requirements.md §7.6). It is bound
+// to the same answer as the line, so the two are on and off together — a drop whose only candidate
+// is the gap the block already sits in takes nothing out of anywhere, and marks neither end.
+//
+// Three states, because the mark is only right in one of them: off in the no-op stretch, on the
+// moment a real target exists, and gone when the session ends.
+test('the source block shows as cut only while the drop would move it', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '段落A\n\n> 引用文がここにあります\n\n段落B\n\n段落C\n\n段落D\n');
+
+  const quote = editor.locator('blockquote');
+  const quoteBox = await quote.boundingBox();
+  const handle = editor.locator(':scope > .block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox || !quoteBox) throw new Error('missing bounding box');
+  // The mark is a `position: fixed` box on <body>, not a class on the block (block-drag-handle.ts
+  // says why), so it is read as geometry: shown, and covering the block it speaks for.
+  const cut = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.block-drag-cut') as HTMLElement | null;
+      if (!el || el.style.display === 'none') return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, left: r.left, bottom: r.bottom, right: r.right };
+    });
+  const lineShown = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.block-drag-indicator') as HTMLElement | null;
+      return !!el && el.style.display !== 'none';
+    });
+
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+
+  // Just inside the block's own height: dropping here changes nothing, so neither end is marked.
+  await page.mouse.move(handleBox.x + 200, quoteBox.y + quoteBox.height / 2);
+  expect(await lineShown()).toBe(false);
+  expect(await cut()).toBeNull();
+
+  // Far enough down that a real gap wins: the line and the cut arrive together.
+  await page.mouse.move(handleBox.x + 200, quoteBox.y + quoteBox.height + 300);
+  expect(await lineShown()).toBe(true);
+  const veil = await cut();
+  expect(veil).not.toBeNull();
+  // It speaks for the dragged block, so it covers that block's box and no other — the ring included
+  // (it is drawn a few px outside, which is what the box's inflation is for).
+  if (!veil) throw new Error('unreachable');
+  expect(veil.top).toBeLessThan(quoteBox.y);
+  expect(veil.left).toBeLessThan(quoteBox.x);
+  expect(veil.bottom).toBeGreaterThan(quoteBox.y + quoteBox.height);
+  expect(veil.right).toBeGreaterThan(quoteBox.x + quoteBox.width);
+
+  // End the session while it is showing — the mark must not survive the drag.
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  expect(await cut()).toBeNull();
+});

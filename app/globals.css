@@ -350,6 +350,42 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   }
 }
 
+/* Editor-only chrome: the source block drawn as **cut out of the document**, for as long as the
+   drag has a real target to land on. `markCut` (block-drag-handle.ts) lays this over the block, and
+   the indicator draws at the destination, so the two together state the move: this leaves here,
+   that is where it lands. Neither is shown over the stretch whose only candidate is the gap the
+   block already sits in — a drop there takes nothing out of anywhere.
+   A box over the block rather than a class on it, for the reason markCut states at length: the
+   block's own DOM is ProseMirror's and gets rebuilt out from under a class mid-drag. `position:
+   fixed` + `pointer-events: none` for `.block-drag-indicator`'s reasons, and below both it (40) and
+   the ghost (41), since it is the backdrop of this state rather than its subject.
+   The fade is on `::before` rather than on this element, so the dashed outline stays at full
+   strength instead of being washed out along with everything it surrounds. `outline-offset` pulls
+   the outline back in by exactly the inflation markCut adds (CUT_INFLATE), landing it on the
+   block's real edge while the box itself covers the selection ring outside it. */
+.block-drag-cut {
+  position: fixed;
+  z-index: 39;
+  display: none;
+  pointer-events: none;
+  border-radius: 0.5rem;
+  outline: 2px dashed rgba(113, 113, 122, 0.75);
+  outline-offset: -4px;
+}
+.block-drag-cut::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--background);
+  opacity: 0.6;
+}
+@media (prefers-color-scheme: dark) {
+  .block-drag-cut {
+    outline-color: rgba(161, 161, 170, 0.75);
+  }
+}
+
 /* Editor-only chrome: a cursor-following clone of the block DragController (block-drag-handle.ts)
    is dragging — positive visual continuity, since the source block itself stays put (no
    collapse/reflow) while dragging. `position: fixed` + `pointer-events: none` for the same
@@ -371,7 +407,6 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0.95;
 }
-
 /* The card is the one ghost that has to be *given* a width (docs/link-card-requirements.md §7.5).
    Its controls came off (`stripCardControls`, block-drag-handle.ts), and they were what happened to
    be holding the box open — without them the shrink-to-fit preview collapsed to 114px and the card
@@ -401,6 +436,7 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   margin: 0;
   min-height: 4.5rem;
 }
+
 /* What the cursor carries for an embed (block-drag-handle.ts's `previewContent`,
    docs/embed-requirements.md §10.10). A cloned `<iframe>` is a live browsing context rather than a
    picture of one, so the block is named rather than reproduced: the provider's mark, then the
