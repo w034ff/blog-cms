@@ -1,5 +1,7 @@
 import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
-import type { Node as PMNode } from '@tiptap/pm/model';
+import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
+import { NodeSelection, Plugin } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import { resolveEmbed, type EmbedTarget } from '@/lib/embed-provider';
 import {
   EMBED_SILENCE_MS,
@@ -47,6 +49,46 @@ function serializeEmbed(state: MarkdownSerializerState, node: PMNode): void {
 // mints per element. A NodeView keeps its own for its whole life: when the reference changes the
 // iframe reloads and re-announces itself under the same name.
 let viewCount = 0;
+
+// §8.2. A click landing beside a narrower-than-column embed (only embed-x today, §10.9) never
+// reaches the node's own DOM at all — measured 2026-08-25, `document.elementFromPoint` there
+// returns `view.dom` itself, not `.embed-view` or the iframe, so the click fell through to the
+// browser's own caret-from-point search and could land in a neighbouring block instead of
+// selecting the embed.
+//
+// Geometric, not provider-keyed: this asks the same question of every embed node's own DOM rect,
+// so a provider whose box already spans the column (YouTube, the unresolved-note state) never
+// matches — nothing here has to know which providers are narrow, and a future one that caps its
+// width gets the fix for free.
+function embedDeadZonePlugin(embedType: NodeType): Plugin {
+  return new Plugin({
+    props: {
+      handleDOMEvents: {
+        mousedown(view: EditorView, event: MouseEvent) {
+          // A click that hit anything more specific than the editable root already resolves
+          // correctly (the embed's own dom, another block, a mark) and must be left alone.
+          if (event.target !== view.dom) return false;
+          let hit: number | null = null;
+          view.state.doc.forEach((node, offset) => {
+            if (hit !== null || node.type !== embedType) return;
+            const dom = view.nodeDOM(offset);
+            if (!(dom instanceof HTMLElement)) return;
+            const rect = dom.getBoundingClientRect();
+            const besideIt = event.clientX < rect.left || event.clientX > rect.right;
+            if (event.clientY >= rect.top && event.clientY <= rect.bottom && besideIt) {
+              hit = offset;
+            }
+          });
+          if (hit === null) return false;
+          event.preventDefault();
+          view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, hit)));
+          view.focus();
+          return true;
+        },
+      },
+    },
+  });
+}
 
 export const Embed = Node.create({
   name: 'embed',
@@ -166,6 +208,10 @@ export const Embed = Node.create({
             .run();
         },
     };
+  },
+
+  addProseMirrorPlugins() {
+    return [embedDeadZonePlugin(this.type)];
   },
 
   // The embed as the author sees it (§7): the same two elements and the same iframe the published

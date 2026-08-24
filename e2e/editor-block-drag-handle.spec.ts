@@ -1169,6 +1169,55 @@ test('a plain click inside a ringed block lands the caret in it', async ({ page 
   expect(await getMarkdown(page)).toContain('引用文がここにあります');
 });
 
+// An atom has no addressable interior, so the previous test's `Selection.near` answer is wrong
+// for it: a re-press on the blank band inside an already-ringed card or embed (the control band's
+// floor below the title, docs/link-card-requirements.md §16; an embed's box past a resized frame)
+// resolves through the *boundary* position next to the atom, and near() picks the nearest real
+// text on the far side — the following block. Measured 2026-08-25 before the fix: re-pressing
+// there moved the selection into the paragraph after it.
+test('a plain re-press on a ringed link card or embed keeps it selected', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await stubX(page);
+  await loadMarkdown(
+    page,
+    `${CARD_MD}\n\n<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n後の段落\n`,
+  );
+
+  const card = editor.locator('.link-card-view');
+  await expect(card.locator('.link-card-title')).toHaveText(CARD_TITLE);
+  const embed = editor.locator('.embed-view');
+  const frame = embed.locator('.embed-frame');
+  await expect.poll(async () => Math.round((await frame.boundingBox())!.height)).toBeGreaterThan(0);
+
+  const selectionType = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('.ProseMirror') as Element & {
+        editor: { state: { selection: { constructor: { name: string } } } };
+      };
+      return el.editor.state.selection.constructor.name;
+    });
+
+  for (const target of [card, embed]) {
+    await target.scrollIntoViewIfNeeded();
+    const box = await target.boundingBox();
+    if (!box) throw new Error('missing bounding box');
+    // Just inside the box's bottom edge, in the blank band below the title/frame — the spot the
+    // dead-zone fix (§8.2) does not touch, since it is inside the box rather than beside it.
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height - 8;
+
+    await page.mouse.click(x, y);
+    await expect(target).toHaveClass(/ProseMirror-selectednode/);
+
+    await page.mouse.click(x, y);
+    await expect(target).toHaveClass(/ProseMirror-selectednode/);
+    expect(await selectionType()).toBe('NodeSelection');
+  }
+});
+
 // Selection-blue pixels inside `clip`, counted in the page (no image decoder in this harness).
 // "Blue" is the browser's own selection highlight, which is far bluer than anything the editor
 // draws: strongly blue, and clearly bluer than it is red or green.

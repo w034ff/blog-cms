@@ -240,3 +240,31 @@ test('a frame answering under this block’s embedId is ignored (§10.10)', asyn
   // Heard by the page, refused by the block.
   expect(Math.round((await frame.boundingBox())!.height)).toBe(X_HEIGHT);
 });
+
+// §8.2. The box stops at 550px and does not centre (§10.9), so a click in the band beside it —
+// still inside the column, at the embed's own row — used to fall through to the browser's own
+// caret search and land in the next block instead of selecting the embed.
+test('a click beside the box selects the embed, not the next block (§8.2)', async ({ page }) => {
+  await openWith(page, `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n後の段落\n`);
+  const frame = embed(page).locator('.embed-frame');
+  await expect
+    .poll(async () => Math.round((await frame.boundingBox())!.height), { timeout: 10_000 })
+    .toBe(X_HEIGHT);
+
+  const box = (await embed(page).boundingBox())!;
+  const column = (await page.locator('.ProseMirror').boundingBox())!;
+  // Not vacuous: there has to be a real gap between the box's right edge and the column's for a
+  // click to land beside it rather than on it.
+  expect(column.x + column.width - (box.x + box.width)).toBeGreaterThan(20);
+
+  await page.mouse.click(
+    box.x + box.width + (column.x + column.width - (box.x + box.width)) / 2,
+    box.y + box.height / 2,
+  );
+
+  await expect(embed(page)).toHaveClass(/ProseMirror-selectednode/);
+  const nextParaSelected = await page
+    .locator('.ProseMirror p', { hasText: '後の段落' })
+    .evaluate((el) => el.classList.contains('ProseMirror-selectednode'));
+  expect(nextParaSelected).toBe(false);
+});

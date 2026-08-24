@@ -238,6 +238,26 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 **この節はネイティブドラッグの経路を含まない。** 枠の付いていないカード・埋め込み・画像を本体から押した場合は prosemirror-view 側のドラッグが立ち上がり、`body.block-dragging` は付かない。そちらの `dragover` とドロップカーソルが同じ `iframe` の盲点を持つかは**未測**である（§12）。
 
+### 8.2 箱の右側の余白は、埋め込み自身のクリックとして扱う（実測 2026-08-25、修正）
+
+**決定**: カラムより狭い埋め込みの箱（今日は X の埋め込みだけ、§10.9）の右側、同じ行の余白をクリックすると、その埋め込みが選択される。
+
+**機構**: 箱は `max-width` で止めてあるので、その右側は `.embed-view` にもフレームにも属さない — カラムそのものの背景である。実測: そこをクリックすると `document.elementFromPoint` は `view.dom`（`.ProseMirror` 自身）を返し、`.embed-view` にもフレームにも当たらない。ProseMirror はそのままブラウザの caret-from-point 探索に落ち、直下の段落など**別のブロックへキャレットが飛ぶ**。埋め込みを選択済みかどうかは無関係で、未選択の状態から直接同じ座標をクリックしても同じ結果になる。
+
+修正は `embed-extension.ts` の `addProseMirrorPlugins()` に足したプラグイン一つ（`handleDOMEvents.mousedown`）。`event.target === view.dom` のときだけ動き、ドキュメント直下の子を一巡して `embed` ノードのうち `clientY` がその DOM 矩形の縦域に入り、かつ `clientX` がその左右の外にあるものを探す。見つかれば `preventDefault` した上で `NodeSelection` をその位置に立てる。**プロバイダ名では判定しない** — 矩形がカラム幅まで届く埋め込み（YouTube、未解決の note 状態）はこの条件に最初から当たらないので、狭いのがどのプロバイダかをこちら側が知る必要がない。
+
+**箱の外の余白だけを閉じている。** リンクカードの箱の中(タイトル下の余白など)を再クリックしたときの穴は別物で、§8.3 が閉じる。
+
+### 8.3 リング済みの箱を本体で再クリックしても、選択は外れない(実測 2026-08-25、修正)
+
+**決定**: 選択済み(リング表示)のリンクカード・埋め込みを、その箱の内側(タイトルや枠の下の余白を含む)でもう一度クリックしても、選択はそのブロックのまま保たれる。
+
+**機構**: リング済みのブロックを本体でクリックし直す操作は、`block-drag-handle.ts` の `handleDOMEvents.mousedown` が「ハンドルを掴んだのと同じ」掴み直しとして拾う(`selectedHandledBlock` が現在の選択と一致する top-level ブロックを返し、`dom.contains(event.target)` が真になる)。ドラッグ閾値(4px)を越えずに離した「実質クリック」は `DragController.handleMouseUp` の `!finished.dragging` 分岐に落ち、`placeCaretAt(clientX, clientY)` が `view.posAtCoords` の `pos` を `Selection.near` に渡してキャレットを立てる — これは中身のあるブロック(引用ブロックなど、`e2e/editor-block-drag-handle.spec.ts` の「a plain click inside a ringed block lands the caret in it」が守る形)には正しい答えだが、**atom には中身の位置が無い**。実測: カード/埋め込みの箱の中で、タイトルやプレイヤーの実体の外(空白の余白)をクリックすると、`posAtCoords` は箱の**境界**位置を返し、`Selection.near` はその境界の先にある一番近い実テキスト — 次のブロック — を選ぶ。選択済みかどうかは無関係で、未選択の状態から直接そこをクリックしても同じ結果になる(§8.2 の余白の穴と同じ形だが、箱の外ではなく内側で起きる点が違う)。
+
+**修正**: `handleMouseUp` の `!finished.dragging` 分岐で、`finished.node.isAtom` のときは `placeCaretAt` を呼ばず、`NodeSelection.create(view.state.doc, finished.from)` で選択を立て直す。atom は中身の位置を持たないので、その箱の中への素クリックが意味しうる答えは「このブロックを選択したままにする」の一つしかない — 実体(カードのタイトルなど)の上のクリックは、ドラッグセッションが始まる前に ProseMirror 自身の leaf-click 処理で解決しているので、ここには最初から届かない。
+
+**受け入れ基準**: E14。
+
 ---
 
 ## 9. YouTube（2026-08-21 決定）
@@ -502,20 +522,22 @@ YouTube 側では no-op である — プレイヤーは `<html>` と `<body>` �
 
 **共通**:
 
-| id  | 基準                                                                                                       | 測り方                                                                                                                                                                                         |
-| --- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E1  | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む）                         | `e2e/editor-embed.spec.ts`                                                                                                                                                                     |
-| E2  | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される | `lib/render.test.ts` / `e2e/public-embed.spec.ts`（**2 つの出口の両方** — §6.1）                                                                                                               |
-| E3  | `%zz` のような壊れた参照でページが 500 にならない                                                          | `lib/embed-provider.test.ts` / `lib/render.test.ts`                                                                                                                                            |
-| E4  | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている                                   | `lib/render.test.ts`                                                                                                                                                                           |
-| E5  | ドラッグハンドルで埋め込みブロックを掴んで移動できる                                                       | `e2e/editor-embed.spec.ts`（ハンドルが 1 つ出る。段落には出ない）                                                                                                                              |
-| E6  | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動）                                      | 手動確認（2026-08-24）。自動 e2e はまだ無い                                                                                                                                                    |
-| E7  | 表のセル・リスト項目の先頭には挿入できない                                                                 | `e2e/editor-embed.spec.ts`（アコーディオンのタイトルはこの基準から外れる — §7.1）                                                                                                              |
-| E8  | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い                                           | `e2e/editor-embed.spec.ts`（動画 URL とプレイリスト URL の両方から）                                                                                                                           |
-| E9  | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない                                       | `e2e/editor-embed.spec.ts`                                                                                                                                                                     |
-| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①）         | **未測**（取得の段が存在しないことは読めば分かるが、測ってはいない）                                                                                                                           |
-| E11 | 2 面が組む `iframe` がどちらも `scrolling="no"` を持つ（§10.8）                                            | `lib/render.test.ts` / `e2e/editor-x-embed.spec.ts`（headless では**バーの不在は測れない** — 属性を測っている）                                                                                |
-| E12 | ブロックドラッグ中は編集面の `iframe` がヒット対象にならない（§8.1）                                       | `e2e/editor-block-drag-handle.spec.ts`（計算後の `pointer-events` を測っている。CDP 入力は out-of-process フレームのヒットテストを迂回するので、**凍り付きそのものは headless では測れない**） |
+| id  | 基準                                                                                                                                                             | 測り方                                                                                                                                                                                         |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む）                                                                               | `e2e/editor-embed.spec.ts`                                                                                                                                                                     |
+| E2  | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される                                                       | `lib/render.test.ts` / `e2e/public-embed.spec.ts`（**2 つの出口の両方** — §6.1）                                                                                                               |
+| E3  | `%zz` のような壊れた参照でページが 500 にならない                                                                                                                | `lib/embed-provider.test.ts` / `lib/render.test.ts`                                                                                                                                            |
+| E4  | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている                                                                                         | `lib/render.test.ts`                                                                                                                                                                           |
+| E5  | ドラッグハンドルで埋め込みブロックを掴んで移動できる                                                                                                             | `e2e/editor-embed.spec.ts`（ハンドルが 1 つ出る。段落には出ない）                                                                                                                              |
+| E6  | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動）                                                                                            | 手動確認（2026-08-24）。自動 e2e はまだ無い                                                                                                                                                    |
+| E7  | 表のセル・リスト項目の先頭には挿入できない                                                                                                                       | `e2e/editor-embed.spec.ts`（アコーディオンのタイトルはこの基準から外れる — §7.1）                                                                                                              |
+| E8  | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い                                                                                                 | `e2e/editor-embed.spec.ts`（動画 URL とプレイリスト URL の両方から）                                                                                                                           |
+| E9  | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない                                                                                             | `e2e/editor-embed.spec.ts`                                                                                                                                                                     |
+| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①）                                                               | **未測**（取得の段が存在しないことは読めば分かるが、測ってはいない）                                                                                                                           |
+| E11 | 2 面が組む `iframe` がどちらも `scrolling="no"` を持つ（§10.8）                                                                                                  | `lib/render.test.ts` / `e2e/editor-x-embed.spec.ts`（headless では**バーの不在は測れない** — 属性を測っている）                                                                                |
+| E12 | ブロックドラッグ中は編集面の `iframe` がヒット対象にならない（§8.1）                                                                                             | `e2e/editor-block-drag-handle.spec.ts`（計算後の `pointer-events` を測っている。CDP 入力は out-of-process フレームのヒットテストを迂回するので、**凍り付きそのものは headless では測れない**） |
+| E13 | カラムより狭い埋め込みの箱の右側、同じ行の余白をクリックすると、その埋め込みが選択され、下のブロックへキャレットが飛ばない（§8.2）                               | `e2e/editor-x-embed.spec.ts`                                                                                                                                                                   |
+| E14 | 選択済みの埋め込みを箱の内側(空白帯を含む)で再クリックしても、選択が外れて下のブロックへ飛ばない（§8.3、リンクカードにも当たる — link-card-requirements.md §19） | `e2e/editor-block-drag-handle.spec.ts`（`block-drag-handle.ts` 側の修正なので、埋め込み単体のスイートではなくこちらに置いている）                                                              |
 
 **YouTube**:
 

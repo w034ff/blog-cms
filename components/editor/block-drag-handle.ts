@@ -612,7 +612,26 @@ function createDragController(view: EditorView): DragController {
       // (between blocks, on an atom), and near() resolves to the closest place one can. A press
       // from the *handle* is excluded — clicking a handle means "select this block", which is the
       // selection already in place.
-      if (finished.viaBody) placeCaretAt(finished.clientX, finished.clientY);
+      //
+      // An atom is excepted from that near() call: it has no addressable interior, so a re-press
+      // anywhere in its own box resolves through the *boundary* position next to it rather than
+      // through anything inside — and near() then finds the nearest real text on the far side of
+      // that boundary. Measured 2026-08-25: re-pressing the blank lower band of an already-ringed
+      // link card or embed (padding below the title, or an embed's box past a resized frame) moved
+      // the selection into the following block instead of leaving the card/embed selected. A press
+      // on real content inside the same atom (its title text) never reaches this at all — that
+      // click already resolves through ProseMirror's own leaf-click handling before a drag session
+      // is ever started here — so this only has to answer for the blank band.
+      if (finished.viaBody) {
+        if (finished.node.isAtom) {
+          view.dispatch(
+            view.state.tr.setSelection(NodeSelection.create(view.state.doc, finished.from)),
+          );
+          view.focus();
+        } else {
+          placeCaretAt(finished.clientX, finished.clientY);
+        }
+      }
       return;
     }
     if (finished.target == null) return;
