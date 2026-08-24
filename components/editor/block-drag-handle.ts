@@ -3,6 +3,8 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, Selection } from '@tiptap/pm/state';
 import type { EditorState } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { resolveEmbed } from '@/lib/embed-provider';
+import { buildIcon, embedMarkShapes } from './svg/icon-shapes';
 import type { EditorView } from '@tiptap/pm/view';
 
 // Top-level-only reorder targets. A nested instance (e.g. a blockquote inside a callout) gets
@@ -244,6 +246,66 @@ function createDragController(view: EditorView): DragController {
     view.focus();
   }
 
+  // What the cursor carries. Two shapes, because two things can be true of a block: it can be
+  // *shown*, or it can only be *named*.
+  //
+  // **An embed can only be named.** A cloned `<iframe>` is not a picture of one — the clone gets a
+  // browsing context of its own and loads the same `src` again the moment it is attached, and for
+  // an X embed it carries the same `embedId` as the block it came from, which is the name that
+  // block answers to. Measured 2026-08-24: picking up an X embed put a second frame on the page
+  // under `emb-view-1`, it reported the height its own narrower box called for, and the NodeView in
+  // the document took it — the block at the original position shrank from 1550px to 1092px the
+  // instant the drag began. Keeping the live frame would also cost 17 requests and 4 of X's own
+  // analytics beacons per drag, for a post that is still blank when a 1–2 second drag ends
+  // (docs/embed-requirements.md §10.10).
+  //
+  // So an embed is carried as a token, on one line: the provider's mark, and `EmbedTarget.label` —
+  // the account for a post, the provider and the moment for a video. **The kind is deliberately not
+  // spelled out**: 「X の投稿」 beside the X monogram is the same words on every post, and an X URL
+  // that is not a post never becomes an embed at all (§10.4), so the phrase separates nothing.
+  // The block's own box is not reproduced either. It was, briefly, and it is worth not repeating:
+  // an empty 480x300 slab whose largest feature was a 「リンクに戻す」 button nobody can press.
+  //
+  // Everything else is carried as itself, with any `<iframe>` inside it removed before the clone is
+  // attached, so no browsing context ever loads. Nothing in the schema puts one there today; the
+  // removal is what keeps that from becoming a quiet regression.
+  function previewContent(node: ProseMirrorNode, dom: HTMLElement): HTMLElement {
+    if (node.type.name === 'embed') return embedToken(node);
+    const clone = dom.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('iframe').forEach((frame) => frame.remove());
+    // The ring is the document's state, not the ghost's, and nothing in a ghost is editable.
+    clone.classList.remove('ProseMirror-selectednode');
+    clone.setAttribute('contenteditable', 'false');
+    return clone;
+  }
+
+  function embedToken(node: ProseMirrorNode): HTMLElement {
+    const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
+    const target = resolveEmbed(href);
+    const el = document.createElement('div');
+    el.className = 'embed-drag-token';
+    // No mark for a reference no provider claims: the marks all name a provider, and the default
+    // one is a player, which would promise something this block is not going to be.
+    if (target) el.appendChild(buildIcon(embedMarkShapes(target.provider)));
+    const body = document.createElement('span');
+    body.className = 'embed-drag-token-body';
+    // A reference no provider claims is carried under the same words the block itself shows
+    // (embed-extension.ts), with the URL as the only other thing known about it.
+    const label = target?.label ?? { lead: '埋め込みにできない参照', detail: href };
+    const lead = document.createElement('span');
+    lead.className = 'embed-drag-token-lead';
+    lead.textContent = label.lead;
+    body.appendChild(lead);
+    if (label.detail !== '') {
+      const detail = document.createElement('span');
+      detail.className = 'embed-drag-token-detail';
+      detail.textContent = label.detail;
+      body.appendChild(detail);
+    }
+    el.appendChild(body);
+    return el;
+  }
+
   // px to scroll this frame for a pointer at `clientY` — 0 anywhere outside the two edge bands,
   // ramping to AUTOSCROLL_MAX_STEP at the very edge.
   function autoscrollStep(clientY: number): number {
@@ -377,12 +439,7 @@ function createDragController(view: EditorView): DragController {
       const dom = view.nodeDOM(current.from);
       if (dom instanceof HTMLElement) {
         const el = ensurePreview();
-        el.replaceChildren(dom.cloneNode(true) as Node);
-        const cloneRoot = el.firstElementChild;
-        if (cloneRoot instanceof HTMLElement) {
-          cloneRoot.classList.remove('ProseMirror-selectednode');
-          cloneRoot.setAttribute('contenteditable', 'false');
-        }
+        el.replaceChildren(previewContent(current.node, dom));
         el.style.display = 'block';
       }
     }

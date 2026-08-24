@@ -22,14 +22,20 @@ export const X_MISSING_ID = '2222222222222222222';
 // **Answers nothing, ever.** What a changed entry point would look like, and the only way to
 // observe when the silence timeout starts (§10.6).
 export const X_SILENT_ID = '3333333333333333333';
+// Answers with a height nothing else uses. It exists for the impersonation case (§10.10): a second
+// frame carrying another frame's `embedId` has to be told apart from that frame by its number
+// alone, so the two must not agree.
+export const X_TALL_ID = '4444444444444444444';
 
 export const X_HEIGHT = 420;
+export const X_TALL_HEIGHT = 999;
 
 // Long enough to be observable, far below the 8s the timeout allows.
 const REPLY_MS = 300;
 
 const url = (id: string) => `https://x.com/ClaudeDevs/status/${id}`;
 export const X_RESIZE_URL = url(X_RESIZE_ID);
+export const X_TALL_URL = url(X_TALL_ID);
 export const X_MISSING_URL = url(X_MISSING_ID);
 export const X_SILENT_URL = url(X_SILENT_ID);
 
@@ -41,9 +47,11 @@ function body(id: string, embedId: string): string {
   const answer =
     id === X_RESIZE_ID
       ? call('resize', `{"width":550,"height":${X_HEIGHT},"data":{"tweet_id":"${id}"}}`)
-      : id === X_MISSING_ID
-        ? call('no_results', `{"data":{"tweet_id":"${id}"}}`)
-        : '/* silence */';
+      : id === X_TALL_ID
+        ? call('resize', `{"width":550,"height":${X_TALL_HEIGHT},"data":{"tweet_id":"${id}"}}`)
+        : id === X_MISSING_ID
+          ? call('no_results', `{"data":{"tweet_id":"${id}"}}`)
+          : '/* silence */';
   return `<!doctype html><meta charset="utf-8"><title>stub</title>
 <body style="margin:0;font:14px system-ui">
 <div id="post">${id === X_RESIZE_ID ? 'stubbed post' : ''}</div>

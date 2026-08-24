@@ -21,11 +21,10 @@ import { CopyIcon } from './svg/CopyIcon';
 import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
 import { CardIcon } from './svg/CardIcon';
-import { PlayIcon } from './svg/PlayIcon';
-import { XPostIcon } from './svg/XPostIcon';
+import { IconSvg } from './svg/IconSvg';
+import { embedMarkShapes } from './svg/icon-shapes';
 import { isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
-import { X_PROVIDER } from '@/lib/embed-message';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -1447,8 +1446,9 @@ export function LinkBubble({
             <ToolbarButton round title='埋め込みにする' onClick={toEmbed}>
               {/* The glyph is the outcome, which is not the same picture for every provider: a
                   video gets the player it produces, a post gets the mark of where it comes from
-                  (§7.3). One button either way — the two are never on offer at once (§5). */}
-              {embedTarget?.provider === X_PROVIDER ? <XPostIcon /> : <PlayIcon />}
+                  (§7.3). One button either way — the two are never on offer at once (§5). The
+                  choice itself lives in `embedMarkShapes`, because the drag ghost asks it too. */}
+              <IconSvg shapes={embedMarkShapes(embedTarget?.provider)} />
             </ToolbarButton>
           )}
           {toCard && (

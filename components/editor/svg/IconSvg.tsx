@@ -16,7 +16,20 @@ export function IconSvg({ shapes }: { shapes: readonly IconShape[] }) {
       aria-hidden='true'>
       {shapes.map((shape, i) =>
         shape.kind === 'path' ? (
-          <path key={i} d={shape.d} />
+          <path
+            key={i}
+            d={shape.d}
+            {...(shape.filled ? { fill: 'currentColor', stroke: 'none' } : {})}
+          />
+        ) : shape.kind === 'rect' ? (
+          <rect
+            key={i}
+            x={shape.x}
+            y={shape.y}
+            width={shape.width}
+            height={shape.height}
+            rx={shape.rx}
+          />
         ) : (
           <line key={i} x1={shape.x1} y1={shape.y1} x2={shape.x2} y2={shape.y2} />
         ),

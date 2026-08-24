@@ -372,6 +372,50 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   opacity: 0.95;
 }
 
+/* What the cursor carries for an embed (block-drag-handle.ts's `previewContent`,
+   docs/embed-requirements.md §10.10). A cloned `<iframe>` is a live browsing context rather than a
+   picture of one, so the block is named rather than reproduced: the provider's mark, then the
+   strongest thing its URL says about this particular item. One line, sized by its own content —
+   the block's box is deliberately not restated, since a 480x300 slab of empty white says nothing
+   that this line does not. */
+/* Drawn a step larger than the surrounding prose rather than at its size: this is a label held
+   under the cursor, read while the pointer is moving and while the eye is on the drop indicator
+   somewhere else. Measured 2026-08-24 — the token's own box goes 149x39 to 200x57 for a post — and
+   it is still a chip, not a panel. */
+.block-drag-preview .embed-drag-token {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.35em 0.4em;
+  max-width: 24em;
+}
+.block-drag-preview .embed-drag-token svg {
+  width: 1.8em;
+  height: 1.8em;
+  flex: none;
+}
+.block-drag-preview .embed-drag-token-body {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+}
+.block-drag-preview .embed-drag-token-lead {
+  flex: none;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+/* What is left worth saying — a moment, or the URL of a reference no provider claims, which is the
+   one case that can run past the token's width and so is the one that gives way. */
+.block-drag-preview .embed-drag-token-detail {
+  min-width: 0;
+  font-size: 1em;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Editor-only chrome: while DragController (block-drag-handle.ts) has an active drag, it toggles
    this on <body> rather than `.ProseMirror` — the pointer roams outside the editor during a drag,
    and both the grabbing cursor and the text-selection suppression need to hold everywhere, not just

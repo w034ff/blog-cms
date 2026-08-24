@@ -313,6 +313,14 @@ export const Embed = Node.create({
       // because the two surfaces do different things with the second answer.
       const onMessage = (event: MessageEvent) => {
         if (event.origin !== X_ORIGIN) return;
+        // And from this placement's own frame. **The id is not enough**: it names a placement, and
+        // anything that copies this element copies the name with it. The block drag handle's
+        // preview cloned the whole NodeView, iframe included — a clone is a live browsing context,
+        // not a picture — and the copy answered under `emb-view-1` from a box of a different width,
+        // which shrank the block still sitting in the document (measured 2026-08-24; the clone is
+        // gone now, blankClonedFrames in block-drag-handle.ts, and this is the check that makes the
+        // question "did MY frame say it" rather than "did something say it").
+        if (!iframe.contentWindow || event.source !== iframe.contentWindow) return;
         const call = readXCall(event.data);
         if (call?.id !== instanceId) return;
         const height = call.params?.[0]?.height;

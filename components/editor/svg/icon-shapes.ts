@@ -1,3 +1,5 @@
+import { X_PROVIDER } from '@/lib/embed-message';
+
 // The geometry of the editor's icons, as data.
 //
 // It lives apart from the components in this directory because it has two consumers that cannot
@@ -6,7 +8,18 @@
 // the shapes below were tuned against how they read at 16px (see UnlinkIcon's note), and a second
 // copy would drift away from that the first time one of them is adjusted.
 export type IconShape =
-  | { readonly kind: 'path'; readonly d: string }
+  // `filled` is for a shape that is a solid area rather than a stroke — a play triangle inside a
+  // stroked frame, say. The svg's own attributes stay stroke-first (see `buildIcon`), so a filled
+  // shape overrides them for itself.
+  | { readonly kind: 'path'; readonly d: string; readonly filled?: boolean }
+  | {
+      readonly kind: 'rect';
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+      readonly rx: number;
+    }
   | {
       readonly kind: 'line';
       readonly x1: number;
@@ -45,6 +58,35 @@ export const EXTERNAL_LINK_SHAPES: readonly IconShape[] = [
   { kind: 'path', d: 'M18 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5' },
 ];
 
+// A framed block with a play triangle in it — the embed as it is drawn on the published page
+// (lib/rehype-embed.ts), so a button showing it names what it produces rather than describing it.
+// The sibling of CardIcon, and deliberately the same frame: the two occupy the same slot and differ
+// only in what fills it. The default mark for a provider with no mark of its own.
+export const PLAY_SHAPES: readonly IconShape[] = [
+  { kind: 'rect', x: 3, y: 5, width: 18, height: 14, rx: 2 },
+  { kind: 'path', d: 'M10.5 9.5l4.5 2.5-4.5 2.5z', filled: true },
+];
+
+// The X monogram (docs/embed-requirements.md §7.3). The one mark here that is a brand's rather than
+// a drawn shape, and the one with no frame: at 16px a frame leaves about 5 rendered pixels for what
+// sits inside it, which is not enough for a letterform. **Drawn filled** — under this file's usual
+// attributes the path is a hollow outline of the letter, which at this size is a blot.
+export const X_MARK_SHAPES: readonly IconShape[] = [
+  {
+    kind: 'path',
+    d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
+    filled: true,
+  },
+];
+
+// **A post is not something that plays**, so the mark for an embed is the provider's question, not
+// one picture for all of them (§7.3). One place answers it, because the bubble's button and the
+// drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
+// one of them is the drift this avoids.
+export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
+  return provider === X_PROVIDER ? X_MARK_SHAPES : PLAY_SHAPES;
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // The DOM half, for callers outside React. The attributes match what the React icons carry, so the
@@ -64,7 +106,19 @@ export function buildIcon(shapes: readonly IconShape[]): SVGSVGElement {
     if (shape.kind === 'path') {
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', shape.d);
+      if (shape.filled) {
+        path.setAttribute('fill', 'currentColor');
+        path.setAttribute('stroke', 'none');
+      }
       svg.appendChild(path);
+    } else if (shape.kind === 'rect') {
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('x', String(shape.x));
+      rect.setAttribute('y', String(shape.y));
+      rect.setAttribute('width', String(shape.width));
+      rect.setAttribute('height', String(shape.height));
+      rect.setAttribute('rx', String(shape.rx));
+      svg.appendChild(rect);
     } else {
       const line = document.createElementNS(SVG_NS, 'line');
       line.setAttribute('x1', String(shape.x1));

@@ -32,6 +32,16 @@ export type EmbedTarget = {
   // The iframe's accessible name. Generic on purpose (§8-②): with no fetch, the target's own title
   // is not available to either surface.
   title: string;
+  // How this embed reads when it is *named* rather than shown — the editor's drag ghost
+  // (docs/embed-requirements.md §10.10). Two slots, filled by the provider because only it knows
+  // which of the two it can answer: `lead` is the strongest thing the URL says about this item (the
+  // account for a post; the provider for a video, which has no name of its own without a fetch),
+  // and `detail` is whatever is left worth saying, or `''`.
+  //
+  // **Separate from `title`, which is the iframe's accessible name on both surfaces.** That one has
+  // to say what kind of thing this is to someone who cannot see it; this one is read beside a mark
+  // that already says so, where a second 「X の投稿」 is the same word on every post.
+  label: { lead: string; detail: string };
   allow: string;
 };
 
@@ -99,7 +109,16 @@ const youtube: Provider = {
     const src = `https://www.youtube-nocookie.com/embed/${id}${start > 0 ? `?start=${start}` : ''}`;
     // The id is ignored: one YouTube iframe says nothing to its parent, so nothing has to tell two
     // of them apart.
-    return { provider: 'youtube', src: () => src, title: 'YouTube 動画', allow: YOUTUBE_ALLOW };
+    return {
+      provider: 'youtube',
+      src: () => src,
+      title: 'YouTube 動画',
+      // Seconds, the unit the author's own `t` and the src's `start` are both in. The video itself
+      // cannot be named without a fetch — its id is not something a person reads — so the provider
+      // leads and the moment follows.
+      label: { lead: 'YouTube', detail: start > 0 ? `${start} 秒から` : '' },
+      allow: YOUTUBE_ALLOW,
+    };
   },
 };
 
@@ -111,7 +130,7 @@ const X_ID = /^\d{1,19}$/;
 // place. The handle segment stays `[^/]+` on purpose: copying X's own rules for what a handle may
 // contain would go stale when they change, and it would guard nothing, since the id is the only
 // part that reaches the src. A trailing `/photo/1` and the like are ignored for the same reason.
-const X_PATH = /^\/[^/]+\/status\/([^/]+)/;
+const X_PATH = /^\/([^/]+)\/status\/([^/]+)/;
 
 // Nothing is asked for. A post is text and images in someone else's page, so the four permissions
 // YouTube's player needs have no counterpart here.
@@ -124,7 +143,8 @@ const x: Provider = {
   // matched here instead.
   hosts: ['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com', 'mobile.twitter.com'],
   resolve: (url) => {
-    const id = X_PATH.exec(url.pathname)?.[1] ?? null;
+    const path = X_PATH.exec(url.pathname);
+    const id = path?.[2] ?? null;
     // A profile URL, a list and a search all land here, and all become cards instead (§10.4). That
     // is the account half of §10's decision, and it is this `null` rather than any code of its own.
     if (id === null || !X_ID.test(id)) return null;
@@ -137,6 +157,10 @@ const x: Provider = {
       src: (instanceId) =>
         `https://platform.twitter.com/embed/Tweet.html?id=${id}&lang=ja&embedId=${encodeURIComponent(instanceId)}`,
       title: 'X の投稿',
+      // The account, which the URL already carries. `/i/status/<ID>` is the form that does not, and
+      // there the provider leads and the bare id is all there is to add.
+      label:
+        path?.[1] === 'i' ? { lead: 'X', detail: id } : { lead: `@${path?.[1] ?? ''}`, detail: '' },
       allow: X_ALLOW,
     };
   },
