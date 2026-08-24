@@ -18,10 +18,10 @@
 
 2026-08-21 に `data/blog.db`（`-wal` ごとコピー。`sqlite-copy-needs-wal.md`）を見た結果、対象になりうる URL は id 36「テスト」の中にだけある:
 
-| 形 | 件数 | 今の姿 |
-| --- | --- | --- |
-| `<https://www.youtube.com/watch?v=hDPybQwAuVo>` | 1 | 行に単独の autolink |
-| `<div class="link-card" data-href="https://x.com/ClaudeDevs">` | 1 | 外部カード（解決できている — §10.1） |
+| 形                                                             | 件数 | 今の姿                               |
+| -------------------------------------------------------------- | ---- | ------------------------------------ |
+| `<https://www.youtube.com/watch?v=hDPybQwAuVo>`                | 1    | 行に単独の autolink                  |
+| `<div class="link-card" data-href="https://x.com/ClaudeDevs">` | 1    | 外部カード（解決できている — §10.1） |
 
 どちらも需要の証拠ではない。 2 行は隣り合っており、外部カードの動作確認の並びの中に置かれている。`link-card-requirements.md` §0 が Zenn のリンクについて下した判定と同じ形で、**テストの残骸である**。実投稿での使用はゼロで、需要は測れていない。
 
@@ -44,10 +44,10 @@
 
 ## 2. 出発点 — 本書を書き始めた時点で、これらの URL が何になったか（実測 2026-08-21）
 
-| 行に単独で置いたもの | 「カードにする」を押すと | 公開ページ |
-| --- | --- | --- |
-| YouTube の動画 URL | カードのノードになる | **素のリンクに落ちる**（§9.1） |
-| X の投稿 URL | カードのノードになる | **カードになる**（§10.1） |
+| 行に単独で置いたもの | 「カードにする」を押すと | 公開ページ                     |
+| -------------------- | ------------------------ | ------------------------------ |
+| YouTube の動画 URL   | カードのノードになる     | **素のリンクに落ちる**（§9.1） |
+| X の投稿 URL         | カードのノードになる     | **カードになる**（§10.1）      |
 
 2 行の違いが本書の出発点である。 前者は押せてしまうのに結果が押さなかった場合と同じになり、後者は既に動いている。同じ「埋め込みたい」という要求でも、答えるべき問いが違う。
 
@@ -192,11 +192,11 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 非選択状態で 3 案を描いて比べた（2026-08-21）:
 
-| 案 | プレーヤーの幅 | 見え方 |
-| --- | --- | --- |
-| 枠なし | 公開と同じ | 帯が浮く |
-| **枠 + 内側 padding（採用）** | 公開より 1.5em 狭い | 帯とプレーヤーが 1 つの箱に入る |
-| 枠 + フレームが枠に接する | 公開と同じ | 帯が枠内の 1 行、その下にプレーヤー |
+| 案                            | プレーヤーの幅      | 見え方                              |
+| ----------------------------- | ------------------- | ----------------------------------- |
+| 枠なし                        | 公開と同じ          | 帯が浮く                            |
+| **枠 + 内側 padding（採用）** | 公開より 1.5em 狭い | 帯とプレーヤーが 1 つの箱に入る     |
+| 枠 + フレームが枠に接する     | 公開と同じ          | 帯が枠内の 1 行、その下にプレーヤー |
 
 **3 つ目は設計としては優れている** — プレーヤーの幅が公開ページと変わらず、角丸も二重にならず、`link-card-requirements.md` §15 が画像について下した判断（枠いっぱいに出す）と同じ形である。**採らなかったのは見た目の判断による**（2026-08-21）。
 
@@ -234,12 +234,12 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 `https://www.youtube.com/watch?v=hDPybQwAuVo` を `fetchGuarded` と同じ形（`Accept: text/html`、`redirect: 'manual'`）で取得した:
 
-| 見たもの | 値 |
-| --- | --- |
-| 応答 | 200 / `text/html` / 265ms / 1.19MB |
-| `og:title` のバイト位置 | 693,270 |
-| `<title>` のバイト位置 | 690,464 |
-| `MAX_BYTES`（64KB、`lib/link-title.ts`）の内側にある `<title>` と `meta` | **1 つも無い** |
+| 見たもの                                                                 | 値                                 |
+| ------------------------------------------------------------------------ | ---------------------------------- |
+| 応答                                                                     | 200 / `text/html` / 265ms / 1.19MB |
+| `og:title` のバイト位置                                                  | 693,270                            |
+| `<title>` のバイト位置                                                   | 690,464                            |
+| `MAX_BYTES`（64KB、`lib/link-title.ts`）の内側にある `<title>` と `meta` | **1 つも無い**                     |
 
 YouTube は head のメタデータの前に約 690KB のインライン JS を置く。`fetchPageHtml` は `readCapped` で 64KB を切って渡すので、**`fetchLinkPreview` は YouTube に対して null を返す**（ここまで実測）。その先は文書と実装を読んだ結果であって実測ではない: `resolveLinkPreview` が `status='failed'` の行を書き、`rehypeLinkCard` があちらの §6.1 の通り素のリンクに落とす。この失敗の形そのものは `link-card-requirements.md` §14.13 に記録した。
 
@@ -249,26 +249,26 @@ YouTube は head のメタデータの前に約 690KB のインライン JS を�
 
 **ホストの許可リスト**: `www.youtube.com` / `youtube.com` / `m.youtube.com` / `youtu.be`。
 
-| 形 | ID の出どころ |
-| --- | --- |
-| `youtu.be/<ID>` | パスの 1 段目 |
+| 形                         | ID の出どころ  |
+| -------------------------- | -------------- |
+| `youtu.be/<ID>`            | パスの 1 段目  |
 | `youtube.com/watch?v=<ID>` | `v` パラメータ |
-| `youtube.com/shorts/<ID>` | パスの 2 段目 |
-| `youtube.com/live/<ID>` | パスの 2 段目 |
-| `youtube.com/embed/<ID>` | パスの 2 段目 |
+| `youtube.com/shorts/<ID>`  | パスの 2 段目  |
+| `youtube.com/live/<ID>`    | パスの 2 段目  |
+| `youtube.com/embed/<ID>`   | パスの 2 段目  |
 
 **この 5 つが同じ 1 本の動画を指すことは、YouTube 自身が言っている**（実測 2026-08-21、`redirect: 'manual'` で `Location` を読んだ）:
 
-| 要求 | 応答 |
-| --- | --- |
-| `youtu.be/hDPybQwAuVo` | 303 → `www.youtube.com/watch?v=hDPybQwAuVo&feature=youtu.be` |
-| `youtu.be/hDPybQwAuVo?t=90` | 303 → `www.youtube.com/watch?t=90&v=hDPybQwAuVo&feature=youtu.be` |
-| `m.youtube.com/watch?v=…` | 302 → `www.youtube.com/watch?app=desktop&v=…` |
-| `youtube.com/watch?v=…` | 301 → `www.youtube.com/watch?v=…` |
-| `youtube.com/shorts/…` | 303 → `www.youtube.com/watch?v=…` |
-| `youtube.com/live/…` | 200 |
-| `www.youtube.com/embed/…` | 200 |
-| `www.youtube-nocookie.com/embed/…` | 200 |
+| 要求                               | 応答                                                              |
+| ---------------------------------- | ----------------------------------------------------------------- |
+| `youtu.be/hDPybQwAuVo`             | 303 → `www.youtube.com/watch?v=hDPybQwAuVo&feature=youtu.be`      |
+| `youtu.be/hDPybQwAuVo?t=90`        | 303 → `www.youtube.com/watch?t=90&v=hDPybQwAuVo&feature=youtu.be` |
+| `m.youtube.com/watch?v=…`          | 302 → `www.youtube.com/watch?app=desktop&v=…`                     |
+| `youtube.com/watch?v=…`            | 301 → `www.youtube.com/watch?v=…`                                 |
+| `youtube.com/shorts/…`             | 303 → `www.youtube.com/watch?v=…`                                 |
+| `youtube.com/live/…`               | 200                                                               |
+| `www.youtube.com/embed/…`          | 200                                                               |
+| `www.youtube-nocookie.com/embed/…` | 200                                                               |
 
 **この表は根拠であって、機構ではない。** 実装はリダイレクトを追わない — 取得を 1 本も出さないことが §3.2 の要点なので、ID は文字列から取る。表が言っているのは、どの書き方も同じ ID を含んでいるという 1 点である。
 
@@ -290,12 +290,13 @@ YouTube は head のメタデータの前に約 690KB のインライン JS を�
 
 ```html
 <div class="embed embed-youtube">
-  <iframe src="https://www.youtube-nocookie.com/embed/<ID>?start=<秒>"
-          title="YouTube 動画"
-          loading="lazy"
-          referrerpolicy="strict-origin-when-cross-origin"
-          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowfullscreen></iframe>
+  <iframe
+    src="https://www.youtube-nocookie.com/embed/<ID>?start=<秒>"
+    title="YouTube 動画"
+    loading="lazy"
+    referrerpolicy="strict-origin-when-cross-origin"
+    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+    allowfullscreen></iframe>
 </div>
 ```
 
@@ -319,22 +320,22 @@ Shorts かどうかは URL からは分からず、`/shorts/<ID>` は 303 で `w
 
 `https://x.com/ClaudeDevs/status/2089798442306711646` を `fetchGuarded` と同じ形で取得した:
 
-| 見たもの | 値 |
-| --- | --- |
-| 応答 | 200 / `text/html` / 172,963 バイト |
-| `og:title` のバイト位置 | **3,830**（`MAX_BYTES` の内側） |
-| `twitter.com/...` | 301 → `x.com/...` |
+| 見たもの                | 値                                 |
+| ----------------------- | ---------------------------------- |
+| 応答                    | 200 / `text/html` / 172,963 バイト |
+| `og:title` のバイト位置 | **3,830**（`MAX_BYTES` の内側）    |
+| `twitter.com/...`       | 301 → `x.com/...`                  |
 
 `link_previews` にも `status='ok'` の行が 2 本ある（プロフィールと投稿の両方）。**YouTube と違い、X はカードとして完成する。**
 
 カードに出るもの:
 
-| 枠 | 中身 |
-| --- | --- |
+| 枠       | 中身                                                                        |
+| -------- | --------------------------------------------------------------------------- |
 | タイトル | `ClaudeDevs (@ClaudeDevs) on X`（**アカウント名であって投稿の題ではない**） |
-| 説明 | 投稿の本文（`DESCRIPTION_MAX_LENGTH` の 200 字で切れる） |
-| 画像 | **アカウントのアイコン**（`pbs.twimg.com/profile_images/…_400x400.png`） |
-| 出所 | `x.com` |
+| 説明     | 投稿の本文（`DESCRIPTION_MAX_LENGTH` の 200 字で切れる）                    |
+| 画像     | **アカウントのアイコン**（`pbs.twimg.com/profile_images/…_400x400.png`）    |
+| 出所     | `x.com`                                                                     |
 
 ### 10.2 埋め込みが答える差は 2 つだけである
 
@@ -380,14 +381,17 @@ ID は `/^\d{1,19}$/` で検証し、**この形を通ったものだけが `src
 2. **視界の外では送られてこない。** `iframe` の中では投稿が正しい高さで描画済みなのに、可視になるまで resize が出ない（headless・headed の両方で同じ）。**高さの確定は読み込み時ではなく、読者がその埋め込みまでスクロールした時である**
 3. **幅を変えると再送される。** 最初の 1 通で聞き終えることはできない
 
-初期高さは 250px にする。実測した高さは 550px 幅で次の 4 件で、3 件がこの近辺に集まる:
+初期高さは 250px にする。実測した高さは 550px 幅で次の 5 件で、文字だけの 3 件はこの近辺に集まる:
 
-| 投稿 ID | 高さ | |
-| --- | --- | --- |
-| `20` | 225 | 最古の投稿。消える見込みが最も低い |
-| `1234567890` | 225 | 2009 年 |
-| `987654321` | 249 | |
-| `2089798442306711646` | 473 | §10.1 で測ったもの |
+| 投稿 ID               | 高さ |                                    |
+| --------------------- | ---- | ---------------------------------- |
+| `20`                  | 225  | 最古の投稿。消える見込みが最も低い |
+| `1234567890`          | 225  | 2009 年                            |
+| `987654321`           | 249  |                                    |
+| `2089798442306711646` | 473  | §10.1 で測ったもの                 |
+| `2091079277710397784` | 624  | 画像 2 枚付き。実測 2026-08-24     |
+
+**画像付き投稿を x.com 本体の詳細ページと比べても、公開ページのほうが縦幅が大きいとは言えない**（実測 2026-08-24）。`2091079277710397784` を両面で開くと、公開ページの埋め込みは 624px（550px 幅）、x.com 本体の同じ投稿は 694px（566px 幅）だった。x.com 側が高いのは、本文を省略せず全文出すのに対し、こちらの埋め込みは既定で本文を「さらに表示」の手前で切るからである — 見えている情報量そのものが違う。動画付き投稿と、x.com のタイムライン表示（詳細ページではなく一覧上のカード）を比較対象にした場合はまだ測っていない。
 
 **箱が飛ぶことは受け入れる。** Zenn も Qiita も同じ postMessage 方式で飛びを回避しておらず、Qiita のリンクカードは `height="29"` から 112 へ飛ぶ（実測 2026-08-23）。§9.6 の固定箱にはしない — 幅が変われば正しい高さも変わるので、携帯の幅で固定値は成り立たない。
 
@@ -484,52 +488,51 @@ YouTube 側では no-op である — プレイヤーは `<html>` と `<body>` �
 
 **共通**:
 
-| id | 基準 | 測り方 |
-| --- | --- | --- |
-| E1 | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む） | `e2e/editor-embed.spec.ts` |
-| E2 | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される | `lib/render.test.ts` / `e2e/public-embed.spec.ts`（**2 つの出口の両方** — §6.1） |
-| E3 | `%zz` のような壊れた参照でページが 500 にならない | `lib/embed-provider.test.ts` / `lib/render.test.ts` |
-| E4 | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている | `lib/render.test.ts` |
-| E5 | ドラッグハンドルで埋め込みブロックを掴んで移動できる | `e2e/editor-embed.spec.ts`（ハンドルが 1 つ出る。段落には出ない） |
-| E6 | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動） | **未測** |
-| E7 | 表のセル・リスト項目の先頭には挿入できない | `e2e/editor-embed.spec.ts`（アコーディオンのタイトルはこの基準から外れる — §7.1） |
-| E8 | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い | `e2e/editor-embed.spec.ts`（動画 URL とプレイリスト URL の両方から） |
-| E9 | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない | `e2e/editor-embed.spec.ts` |
-| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①） | **未測**（取得の段が存在しないことは読めば分かるが、測ってはいない） |
-| E11 | 2 面が組む `iframe` がどちらも `scrolling="no"` を持つ（§10.8） | `lib/render.test.ts` / `e2e/editor-x-embed.spec.ts`（headless では**バーの不在は測れない** — 属性を測っている） |
+| id  | 基準                                                                                                       | 測り方                                                                                                          |
+| --- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| E1  | 保存 → 再読込 → 保存で `data-href` が 1 文字も変わらない（`&` のエスケープを含む）                         | `e2e/editor-embed.spec.ts`                                                                                      |
+| E2  | 手で書いた `<div class="embed" data-href="javascript:…">` は `iframe` を作らず、素のリンクとして公開される | `lib/render.test.ts` / `e2e/public-embed.spec.ts`（**2 つの出口の両方** — §6.1）                                |
+| E3  | `%zz` のような壊れた参照でページが 500 にならない                                                          | `lib/embed-provider.test.ts` / `lib/render.test.ts`                                                             |
+| E4  | `embed` の class が sanitize を生き延び、公開 HTML の `div` に残っている                                   | `lib/render.test.ts`                                                                                            |
+| E5  | ドラッグハンドルで埋め込みブロックを掴んで移動できる                                                       | `e2e/editor-embed.spec.ts`（ハンドルが 1 つ出る。段落には出ない）                                               |
+| E6  | Backspace 1 回で消える（`link-card-requirements.md` §7.3 と同じ挙動）                                      | 手動確認（2026-08-24）。自動 e2e はまだ無い                                                                     |
+| E7  | 表のセル・リスト項目の先頭には挿入できない                                                                 | `e2e/editor-embed.spec.ts`（アコーディオンのタイトルはこの基準から外れる — §7.1）                               |
+| E8  | バブルの行のラベルが URL で切り替わり、同時に 2 行出ることが無い                                           | `e2e/editor-embed.spec.ts`（動画 URL とプレイリスト URL の両方から）                                            |
+| E9  | ピッカーの行から埋め込みに置き換えても、キャレットとノードが飛ばない                                       | `e2e/editor-embed.spec.ts`                                                                                      |
+| E10 | 公開ページの描画中に**サーバ**が第三者へ 1 本も要求を出さない（§3.2。読者のブラウザは出す — §8-①）         | **未測**（取得の段が存在しないことは読めば分かるが、測ってはいない）                                            |
+| E11 | 2 面が組む `iframe` がどちらも `scrolling="no"` を持つ（§10.8）                                            | `lib/render.test.ts` / `e2e/editor-x-embed.spec.ts`（headless では**バーの不在は測れない** — 属性を測っている） |
 
 **YouTube**:
 
-| id | 基準 | 測り方 |
-| --- | --- | --- |
-| Y1 | `watch?v=` / `youtu.be/` / `shorts/` / `live/` / `embed/` の 5 形が同じ `iframe src` になる | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts` |
-| Y2 | ホスト許可リストの外（`youtube-nocookie.com`・`music.youtube.com`・他サイト）は埋め込みにならず、カード側の判定に落ちる | `lib/embed-provider.test.ts` |
-| Y3 | `?t=90` / `?t=90s` / `?t=1h2m3s` が `start=` の同じ秒数になり、解釈できない `t` は `start=` 無しになる | `lib/embed-provider.test.ts`（受ける 5 形と、受けない 6 形） |
-| Y4 | `?list=` / `/playlist` / `/@handle` / `/channel/…` は埋め込みにならず、素のリンクのまま公開される | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts` |
-| Y5 | `watch?v=<ID>&list=…` は動画として埋め込まれ、`list` は `src` に入らない | `lib/embed-provider.test.ts` |
+| id  | 基準                                                                                                                    | 測り方                                                       |
+| --- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Y1  | `watch?v=` / `youtu.be/` / `shorts/` / `live/` / `embed/` の 5 形が同じ `iframe src` になる                             | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts`    |
+| Y2  | ホスト許可リストの外（`youtube-nocookie.com`・`music.youtube.com`・他サイト）は埋め込みにならず、カード側の判定に落ちる | `lib/embed-provider.test.ts`                                 |
+| Y3  | `?t=90` / `?t=90s` / `?t=1h2m3s` が `start=` の同じ秒数になり、解釈できない `t` は `start=` 無しになる                  | `lib/embed-provider.test.ts`（受ける 5 形と、受けない 6 形） |
+| Y4  | `?list=` / `/playlist` / `/@handle` / `/channel/…` は埋め込みにならず、素のリンクのまま公開される                       | `lib/embed-provider.test.ts` / `e2e/public-embed.spec.ts`    |
+| Y5  | `watch?v=<ID>&list=…` は動画として埋め込まれ、`list` は `src` に入らない                                                | `lib/embed-provider.test.ts`                                 |
 
 **X**（§10、基準は 2026-08-23 に置いた）:
 
-| id | 基準 | 測り方 |
-| --- | --- | --- |
-| X1 | `/<handle>/status/<ID>` と `/i/status/<ID>` が同じ `iframe src` になる | `lib/embed-provider.test.ts` |
-| X2 | プロフィール URL は埋め込みにならず、**カードになる**（§10.4） | `lib/embed-provider.test.ts` / `e2e/editor-embed.spec.ts` |
-| X3 | `twitter.com` の同形が `x.com` と同じ結果になる | `lib/embed-provider.test.ts` |
-| X4 | ID の形を外れたもの（非数字・20 桁以上）は埋め込みにならない | `lib/embed-provider.test.ts` |
-| X5 | `no_results` で素のリンクに差し替わり、そのマークアップが `fallbackLink` と一致する | `e2e/public-x-embed.spec.ts` / `lib/render.test.ts`（**2 つの経路の両方** — §10.6） |
-| X6 | どの入り方でもタイムアウトが誤爆しない（折り返しの下・アンカーで途中に着地・初回描画から可視） | `e2e/public-x-embed.spec.ts`（沈黙が実際にリンクに落ちることも測り、基準が空振りでないことを担保している） |
-| X7 | エディタの沈黙時計が、何も送ってこないプロバイダには張られない（YouTube の埋め込みは 8 秒を過ぎてもプレイヤーのまま） | `e2e/editor-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した） |
-| X8 | 本文カラムが 550px より広いとき、箱は 550px で止まり、左端は段落と揃う（§10.9） | `e2e/public-x-embed.spec.ts`（カラムが実際に広いことも測り、基準が空振りでないことを担保している） |
-| X9 | ドラッグ中に箱の高さが変わらず、プレビューに `iframe` が生まれず、ゴーストが投稿をアカウントで名指しする（§10.10） | `e2e/editor-x-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した） |
-| X10 | 同じ `embedId` を名乗る別のフレームの `resize` を受け取らない（§10.10） | `e2e/editor-x-embed.spec.ts`（そのメッセージがページに届いたことも数えており、基準が空振りでない） |
+| id  | 基準                                                                                                                  | 測り方                                                                                                     |
+| --- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| X1  | `/<handle>/status/<ID>` と `/i/status/<ID>` が同じ `iframe src` になる                                                | `lib/embed-provider.test.ts`                                                                               |
+| X2  | プロフィール URL は埋め込みにならず、**カードになる**（§10.4）                                                        | `lib/embed-provider.test.ts` / `e2e/editor-embed.spec.ts`                                                  |
+| X3  | `twitter.com` の同形が `x.com` と同じ結果になる                                                                       | `lib/embed-provider.test.ts`                                                                               |
+| X4  | ID の形を外れたもの（非数字・20 桁以上）は埋め込みにならない                                                          | `lib/embed-provider.test.ts`                                                                               |
+| X5  | `no_results` で素のリンクに差し替わり、そのマークアップが `fallbackLink` と一致する                                   | `e2e/public-x-embed.spec.ts` / `lib/render.test.ts`（**2 つの経路の両方** — §10.6）                        |
+| X6  | どの入り方でもタイムアウトが誤爆しない（折り返しの下・アンカーで途中に着地・初回描画から可視）                        | `e2e/public-x-embed.spec.ts`（沈黙が実際にリンクに落ちることも測り、基準が空振りでないことを担保している） |
+| X7  | エディタの沈黙時計が、何も送ってこないプロバイダには張られない（YouTube の埋め込みは 8 秒を過ぎてもプレイヤーのまま） | `e2e/editor-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                    |
+| X8  | 本文カラムが 550px より広いとき、箱は 550px で止まり、左端は段落と揃う（§10.9）                                       | `e2e/public-x-embed.spec.ts`（カラムが実際に広いことも測り、基準が空振りでないことを担保している）         |
+| X9  | ドラッグ中に箱の高さが変わらず、プレビューに `iframe` が生まれず、ゴーストが投稿をアカウントで名指しする（§10.10）    | `e2e/editor-x-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                  |
+| X10 | 同じ `embedId` を名乗る別のフレームの `resize` を受け取らない（§10.10）                                               | `e2e/editor-x-embed.spec.ts`（そのメッセージがページに届いたことも数えており、基準が空振りでない）         |
 
 ---
 
 ## 12. 未実測のこと
 
 - **スライスガードが本当に不要か**（§5）。カードと同じ block atom だから覆うはず、という推論のままである。ペースト・ドロップで測っていない
-- **Backspace 1 回で消えること**（基準 E6）
-- **画像・動画付き投稿の高さ**（§10.5）。250px という初期値の根拠は、文字だけの投稿 4 件である。§10.2 の ① が挙げた当のものが標本に入っていない
+- **動画付き投稿の高さ**（§10.5）。画像付きは 1 件実測した（624px）が、動画付きはまだ無い
 - **削除済み・非公開・存在しない の区別**。`no_results` は `tweet_id` を返すだけで 3 者を区別しない（§10.6 は同じ扱いにする）
 - `youtu.be` 以外のホストで `t=` が付いた実例
 - Shorts の実 ID・ライブ配信の実 ID での `/embed/<ID>` の応答。§9.2 の表は通常動画の ID を 5 つのパスに当てて測っている
