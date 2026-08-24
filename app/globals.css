@@ -437,6 +437,23 @@ body.block-dragging .table-toolbar {
   display: none !important;
 }
 
+/* Editor-only chrome: no `<iframe>` may be the hit target while a block drag is in progress
+   (docs/embed-requirements.md §8.1). The drag is driven by `mousemove` on the *window*
+   (block-drag-handle.ts), and an iframe swallows the pointer outright — measured 2026-08-25: 32
+   moves sent across one, 0 reached the parent, and the `mouseup` went with them. The ghost stops
+   dead over the box, the drop indicator stops answering, and the release is lost (the session ends
+   on the next move outside, where `event.buttons === 0` aborts it).
+   The frame below is already inert at rest, but `.ProseMirror-selectednode.embed-view … iframe`
+   hands it back the pointer for the selected block — and picking a block up *is* what selects it,
+   so the one embed guaranteed to be live during a drag is the one being dragged, whose own box the
+   pointer crosses immediately. `!important` because that rule is the more specific of the two.
+   CSS rather than a JS pass at drag start: an embed can resolve and attach its frame mid-gesture,
+   and a `querySelectorAll` taken at pickup would not see it. `postMessage` is untouched, so the
+   height handshake and the silence clock (§10.5) run exactly as before. */
+body.block-dragging .embed-frame iframe {
+  pointer-events: none !important;
+}
+
 /* Editor-only chrome: the same suppression for the other floating menu that can want the same
    space. A link inside a table cell satisfies both menus' `shouldShow` at once, and the decision
    (docs/link-requirements.md §5.5.4-2) is that the link card wins there — it is the more specific

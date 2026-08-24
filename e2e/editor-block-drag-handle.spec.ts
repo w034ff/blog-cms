@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 import { docString } from './editor-probe';
+import { stubX, X_RESIZE_URL } from './x-embed-stub';
 
 async function getMarkdown(page: Page): Promise<string> {
   return page.evaluate(() => {
@@ -1202,3 +1203,60 @@ async function selectionBluePixels(
     `data:image/png;base64,${shot.toString('base64')}`,
   );
 }
+
+// The dragged block's own `<iframe>` must not be the hit target while the drag is live
+// (docs/embed-requirements.md §8.1, criterion E12). The whole drag is `mousemove` on the *window*,
+// and an iframe swallows the pointer: the ghost freezes over the box, the drop indicator stops
+// answering, and the `mouseup` never arrives either, so the release is lost rather than applied.
+//
+// The frame is inert at rest (globals.css `.prose .embed-view .embed-frame iframe`), which is why
+// dragging any *other* block across an embed was already safe — but
+// `.ProseMirror-selectednode.embed-view … iframe` hands the pointer back for the selected block,
+// and picking a block up is what selects it. So the one embed certain to be live mid-drag is the
+// one being dragged, whose own box the pointer crosses in the first few pixels.
+//
+// **The computed style is what this asserts, not the freeze itself.** Playwright's mouse events go
+// in through CDP, which dispatches into the main frame's widget and bypasses the browser-side
+// hit-test routing an out-of-process frame relies on — so the parent keeps receiving `mousemove`
+// over a cross-origin iframe here whether the fix is in place or not, and a spec written against
+// the ghost's coordinates would pass on a broken build. The swallow was measured separately
+// (2026-08-25, a same-origin frame, where CDP does route into it: 32 moves sent, 0 received;
+// `pointer-events: none` restored 32/32).
+test('an embed being dragged does not let its own iframe take the pointer', async ({ page }) => {
+  await stubX(page);
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, `前の段落\n\n<div class="embed" data-href="${X_RESIZE_URL}"></div>\n`);
+
+  const frame = editor.locator('.embed-view .embed-frame iframe');
+  await expect(frame).toBeVisible();
+  const pointerEvents = () =>
+    frame.evaluate((el) => getComputedStyle(el as HTMLElement).pointerEvents);
+  // At rest, with the caret in the paragraph rather than on the block, the frame is inert for its
+  // own reason — `loadMarkdown` leaves the selection on the embed, which is the state below.
+  await editor.locator('p').first().click();
+  await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(0);
+  expect(await pointerEvents()).toBe('none');
+
+  const handle = editor.locator(':scope > .block-drag-handle').first();
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error('missing bounding box');
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  // Past DRAG_THRESHOLD: `body.block-dragging` is set here, not at mousedown.
+  await page.mouse.move(handleBox.x + 30, handleBox.y + 40);
+  await expect
+    .poll(() => page.evaluate(() => document.body.classList.contains('block-dragging')))
+    .toBe(true);
+  // The block is now the NodeSelection — which is exactly what used to wake its frame up.
+  await expect(editor.locator('.ProseMirror-selectednode.embed-view')).toHaveCount(1);
+  expect(await pointerEvents()).toBe('none');
+
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  // The drag is over and the block is still selected, so the player is reachable again.
+  await expect(editor.locator('.ProseMirror-selectednode.embed-view')).toHaveCount(1);
+  await expect.poll(pointerEvents).toBe('auto');
+});
