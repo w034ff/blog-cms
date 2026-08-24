@@ -1260,3 +1260,71 @@ test('an embed being dragged does not let its own iframe take the pointer', asyn
   await expect(editor.locator('.ProseMirror-selectednode.embed-view')).toHaveCount(1);
   await expect.poll(pointerEvents).toBe('auto');
 });
+
+// What the cursor carries for a link card (docs/link-card-requirements.md §7.5): the card's face —
+// title, host, picture — and none of its controls. Before this the ghost's box, which sizes to its
+// content, could not fit the control band: the three buttons stacked vertically, 「リンクに戻す」
+// broke one character per line, and on an external card the band alone overran the 300px
+// `max-height` so `overflow: hidden` clipped the title and the host away entirely — a ghost that was
+// three unpressable buttons and nothing else.
+//
+// Both halves are asserted because both were wrong and each fails on its own: the controls have to
+// be gone, *and* the box has to be given a width, since the band was what had been holding it open
+// (114px without it — the same splinter docs/embed-requirements.md §10.10 hit at 92px).
+test('the card ghost carries the card’s face, not its controls', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(
+    page,
+    '段落A\n\n<div class="link-card" data-href="/posts/second-post"></div>\n\n' +
+      '段落B\n\n<div class="link-card" data-href=""></div>\n\n段落C\n',
+  );
+  await expect(editor.locator('.link-card-view')).toHaveCount(2);
+  // The resolved card has to have answered, or its title is not there to be carried.
+  await expect(editor.locator('.link-card-title').first()).toHaveText(CARD_TITLE);
+
+  const ghost = page.locator('.block-drag-preview');
+  const carry = async (nth: number) => {
+    const handles = editor.locator(':scope > .block-drag-handle');
+    const box = await handles.nth(nth).boundingBox();
+    if (!box) throw new Error('missing bounding box');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 200, box.y + 60);
+    await expect(ghost).toBeVisible();
+    return ghost.evaluate((el) => ({
+      controls: el.querySelectorAll('button, input').length,
+      width: Math.round(el.getBoundingClientRect().width),
+      height: Math.round(el.getBoundingClientRect().height),
+      text: (el.textContent ?? '').trim(),
+    }));
+  };
+  const drop = async () => {
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+  };
+
+  const cardBox = await editor.locator('.link-card-view').first().boundingBox();
+  if (!cardBox) throw new Error('missing bounding box');
+  const resolved = await carry(0);
+  await drop();
+  expect(resolved.controls).toBe(0);
+  expect(resolved.text).toBe(CARD_TITLE);
+  expect(resolved.width).toBe(400);
+  // Shorter than the block it stands for. The card's box is built for the document — the margin
+  // between it and the paragraphs around it, and the floor that keeps the editor's cards matching
+  // each other — and neither means anything under the cursor. Before this the ghost was *taller*
+  // than the card itself.
+  expect(resolved.height).toBeLessThan(cardBox.height);
+
+  // The picker has no face to carry — no title, no picture, no answer to have come back — so it is
+  // named instead, for the reason the embed's token is (docs/embed-requirements.md §10.10). Without
+  // this it would be an empty bordered box, which is the other failure that section names.
+  const picker = await carry(1);
+  await drop();
+  expect(picker.controls).toBe(0);
+  expect(picker.text).toBe('リンク先未設定のカード');
+  expect(picker.width).toBe(400);
+});

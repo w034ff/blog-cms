@@ -372,6 +372,35 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   opacity: 0.95;
 }
 
+/* The card is the one ghost that has to be *given* a width (docs/link-card-requirements.md §7.5).
+   Its controls came off (`stripCardControls`, block-drag-handle.ts), and they were what happened to
+   be holding the box open — without them the shrink-to-fit preview collapsed to 114px and the card
+   came out a vertical splinter, which is the same trap `docs/embed-requirements.md` §10.10 hit at
+   92px. Stated rather than derived from the block's own width: the card is as wide as the body
+   column (768px here), so "the card at its real width" is only ever the 480px cap, and measured at
+   that width the ghost reads stretched — the title has a whole empty line to itself beside a
+   fixed-size picture. 400px was picked against 320 and 480 from the three side by side
+   (2026-08-25); 320 leaves the title squeezed against the image. `max-width` above still wins on a
+   narrow window, so this never overhangs the viewport. */
+.block-drag-preview:has(.link-card) {
+  width: 400px;
+}
+/* And the one that has to be *shortened*. The card's box is built for the document: `margin: 1.25em
+   0` is the space between it and the paragraphs around it, and `min-height: 8.5rem` is the floor
+   that keeps the editor's cards from differing from each other (§16.4). Neither means anything to a
+   box held under the cursor with nothing above or below it, and together they were most of its
+   height — measured 2026-08-25, of 192px: 40px margin, 136px floor, 16px the preview's own padding.
+   The margin goes entirely. The floor is lowered rather than dropped: at 0 a card whose target has
+   only a title comes to 72px and its picture is a 54px letterbox crop, which shows nothing. 4.5rem
+   leaves the picture 70px and binds only on that shortest card — one with a host line under the
+   title is taller than the floor on its own. The result is 88px against the 192px it was.
+   `.block-drag-preview.prose` rather than `.block-drag-preview`: the rules being overridden are
+   `.prose`-scoped and come later in this file, and the preview carries `prose` itself (it is put
+   there by ensurePreview so a cloned block keeps its typography). */
+.block-drag-preview.prose .link-card-view {
+  margin: 0;
+  min-height: 4.5rem;
+}
 /* What the cursor carries for an embed (block-drag-handle.ts's `previewContent`,
    docs/embed-requirements.md §10.10). A cloned `<iframe>` is a live browsing context rather than a
    picture of one, so the block is named rather than reproduced: the provider's mark, then the

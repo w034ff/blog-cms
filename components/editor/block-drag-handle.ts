@@ -273,10 +273,47 @@ function createDragController(view: EditorView): DragController {
     if (node.type.name === 'embed') return embedToken(node);
     const clone = dom.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('iframe').forEach((frame) => frame.remove());
+    stripCardControls(clone);
     // The ring is the document's state, not the ghost's, and nothing in a ghost is editable.
     clone.classList.remove('ProseMirror-selectednode');
     clone.setAttribute('contenteditable', 'false');
     return clone;
+  }
+
+  // **A ghost carries the card's face, never its controls** (docs/link-card-requirements.md §7.5).
+  // The same argument §10.10 of docs/embed-requirements.md already made for the embed: the most
+  // prominent thing in the ghost must not be a button nobody can press.
+  //
+  // It is worse here than that reads, because the ghost's box sizes to its content and the card's
+  // control band does not fit in it. Measured 2026-08-25 on an internal card: the band came out
+  // 112x141 of a 271x252 ghost — the three buttons stacked vertically with 「リンクに戻す」 broken one
+  // character per line — and the title, the only thing that says *which* card is in flight, sat
+  // 186px down. On an external card it was worse still: the band alone overran the 300px
+  // `max-height`, so `overflow: hidden` clipped the title and the host away and the ghost was three
+  // unpressable buttons and nothing else. The ghost was not a picture of the card; it was a picture
+  // of the card coming apart.
+  //
+  // `.link-card-head` is the band both states put their controls in (`head()`,
+  // link-card-extension.ts), so removing it takes the resolved card's three buttons and the
+  // picker's search box in one stroke. `.link-card-results` is the picker's list of pressable rows,
+  // which is the same thing one level down.
+  //
+  // That leaves the picker with nothing at all — no title, no image, no lookup to have answered —
+  // and an empty bordered box is the other failure §10.10 named. So it gets a line saying what it
+  // is, in the title's own slot, for the reason the embed's token gives its own: what is being
+  // carried has to be named even when it cannot be shown.
+  function stripCardControls(clone: HTMLElement): void {
+    clone.querySelectorAll('.link-card-head, .link-card-results').forEach((el) => el.remove());
+    if (!clone.classList.contains('link-card')) return;
+    // `renderCard` always builds the title span, so its absence is what tells the two states apart
+    // — not the `href` attribute, which the ghost has no reason to read.
+    if (clone.querySelector('.link-card-title')) return;
+    const body = clone.querySelector('.link-card-body');
+    if (!body) return;
+    const line = document.createElement('span');
+    line.className = 'link-card-title';
+    line.textContent = 'リンク先未設定のカード';
+    body.appendChild(line);
   }
 
   function embedToken(node: ProseMirrorNode): HTMLElement {
