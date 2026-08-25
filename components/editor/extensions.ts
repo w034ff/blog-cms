@@ -14,6 +14,7 @@ import { IsolatingBoundary } from './isolating-boundary';
 import { LinkHighlight } from './link-highlight-extension';
 import { LinkInputRule } from './link-input-rule';
 import { Link } from './link-extension';
+import { LinkPasteParagraphGuard } from './link-paste-paragraph-guard';
 import { Blockquote } from './blockquote-extension';
 import { TrailingNode } from './trailing-node-extension';
 import { Image } from './image-extension';
@@ -107,8 +108,9 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     // Kept (it is what makes a pasted URL a link) but must not open on click: the default sends a
     // left click to window.open, so a link inside the editor could not be clicked into and the
     // caret could never be placed in it — the text was uneditable and, with no toolbar control
-    // for links either, unremovable. Only these two options are overridden, so autolink and
-    // linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
+    // for links either, unremovable. Only these two options are overridden, so autolink keeps its
+    // default (docs/link-requirements.md §3, §4); linkOnPaste keeps its default too, but is now
+    // narrowed to a single-paragraph selection by the guard below.
     // What this gave up — "open this link" from inside the editor — is handed back by the link
     // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
     //
@@ -119,6 +121,11 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
       openOnClick: false,
       isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
     }),
+    // Heads off Link's own pasteHandler for a selection spanning more than one paragraph — position
+    // in this array doesn't secure that (Link's mark carries `priority: 1000`, which beats array
+    // order outright), so the extension itself carries a higher priority. See
+    // link-paste-paragraph-guard.ts.
+    LinkPasteParagraphGuard,
     Document,
     // Directly under Document because it exists to answer for Document's content expression:
     // `block+ footnoteSection?` makes `ContentMatch.defaultType` return `footnoteSection` past
