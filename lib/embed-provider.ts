@@ -318,7 +318,72 @@ const speakerdeck: Provider = {
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck];
+// docs/embed-requirements.md §17.2. Uppercase letters and digits, verified against the parse rather
+// than trusted from it, for `YOUTUBE_ID`'s reason: this is the value that reaches the src. Every key
+// measured is 6 of them (92 deck URLs collected 2026-08-26 from the front page, two tag listings, a
+// user page and a search result), and the bound is a ceiling rather than a length, as `FIGMA_KEY`'s
+// is — a class that refuses a working deck turns it into a bare link.
+//
+// **Lowercase is left out on purpose, and that is what keeps videos out** (§17.2). Docswell serves
+// video from the same `/s/<user>/<key>-<slug>` path with a `v` in front of the key (`vYN91PJ`), and
+// a video is a different endpoint — `/video/<key>/embed`, with that `v` dropped — so
+// `/slide/vYN91PJ/embed` answers 404. Keys are case-sensitive besides: `lk7j5v` is a 404 where
+// `LK7J5V` is the deck, so accepting lowercase could only ever build a src that shows Docswell's own
+// 404 page inside the article.
+const DOCSWELL_KEY = /^[0-9A-Z]{1,32}$/;
+// `/s/<user>/<key>-<slug>`, the deck page — the URL the address bar holds. The slug is optional
+// because the key alone resolves (`/s/<user>/<key>` 302s to the full form), and it is separated from
+// the key by the first `-`, which is why the key group excludes it. The trailing `/<n>` is the page
+// permalink (§17.3). `/s/` is matched in lowercase because the path is case-sensitive too — `/S/…`
+// answers 404 (measured 2026-08-26).
+const DOCSWELL_PATH = /^\/s\/[^/]+\/([^/-]+)(?:-[^/]*)?(?:\/(\d{1,4}))?\/?$/;
+// `#p<n>`, the page the deck page's own player writes into the address bar — the fragment reaches
+// here with its `#`, and `URL` never percent-decodes it into one.
+const DOCSWELL_PAGE = /^#p(\d{1,4})$/;
+
+// Nothing is asked for, as SlideShare, Figma and Speaker Deck ask for nothing: slides are images in
+// someone else's page. Full screen is the `allowFullScreen` attribute's, which both render stages
+// already set — measured 2026-08-26 with this exact pair (`allow=""` present), the player's own
+// 全画面 button puts the parent's `document.fullscreenElement` on the iframe.
+const DOCSWELL_ALLOW = '';
+
+// The page the author is pointing at, carried into the player (§17.3). The deck page and the player
+// spell it the same way, and both clamp — `#p99` on a 13-page deck lands on 13, `#p0` on 1
+// (measured 2026-08-26) — so nothing here has to know how long a deck is. The two spellings the
+// author may hold are the fragment and the `/<n>` permalink, which the deck page itself rewrites
+// into the fragment.
+function docswellPage(url: URL, path: RegExpExecArray): number {
+  const fragment = DOCSWELL_PAGE.exec(url.hash)?.[1];
+  return Number(fragment ?? path[2] ?? 0);
+}
+
+const docswell: Provider = {
+  // The apex is present because it answers directly rather than redirecting, and carries the key in
+  // the same place (measured 2026-08-26) — the call §14.2 made for `slideshare.net`.
+  hosts: ['www.docswell.com', 'docswell.com'],
+  resolve: (url) => {
+    const path = DOCSWELL_PATH.exec(url.pathname);
+    const key = path?.[1] ?? null;
+    if (path === null || key === null || !DOCSWELL_KEY.test(key)) return null;
+    const page = docswellPage(url, path);
+    return {
+      provider: 'docswell',
+      // The embed form Docswell publishes for itself, in `oembed`'s `html` and in the snippet its
+      // own Share dialog hands out (embed-requirements.md §17.3). No redirect and no fetch: the key
+      // in the deck page's URL is the key in the embed's, which is what makes §3.2 hold here. The
+      // fragment is built from the parsed number, never from the author's string (§9.3's rule), and
+      // page 1 writes none — it is what the player opens on.
+      src: () => `https://www.docswell.com/slide/${key}/embed${page > 1 ? `#p${page}` : ''}`,
+      title: 'Docswell のスライド',
+      // The provider, then the page if the author named one — YouTube's shape, and for its reason:
+      // the deck cannot be named without a fetch, and the slug is the title slugified (§17.7).
+      label: { lead: 'Docswell', detail: page > 1 ? `${page} ページ目から` : '' },
+      allow: DOCSWELL_ALLOW,
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck, docswell];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

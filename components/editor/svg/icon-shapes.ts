@@ -148,7 +148,10 @@ export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
 // provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
-  if (provider === 'slideshare') return SLIDES_SHAPES;
+  // Docswell shares SlideShare's mark for §14.8's reason — a deck is not something that plays,
+  // whichever site holds it. Its own logo is a cube whose three faces carry the shading that makes
+  // it a cube, and a 2px stroke at 16px has nowhere to put that (embed-requirements.md §17.7).
+  if (provider === 'slideshare' || provider === 'docswell') return SLIDES_SHAPES;
   if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
   return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }

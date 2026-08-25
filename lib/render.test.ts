@@ -744,6 +744,29 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain(`<a href="${href}" target="_blank">`);
   });
 
+  // docs/embed-requirements.md §17. `LK7J5V` is the deck measured there.
+  const DOCSWELL = 'https://www.docswell.com/s/ku-suke/LK7J5V-hello-docswell';
+
+  it('publishes a Docswell deck page reference as the embed iframe (D6)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${DOCSWELL}"></div>`);
+    // The class the box rule hangs on, and the src — built from the key in the author's own URL,
+    // which is what makes this provider need no redirect and no fetch (§17.3).
+    expect(html).toContain('class="embed embed-docswell"');
+    expect(html).toContain('src="https://www.docswell.com/slide/LK7J5V/embed"');
+    // Full screen is the attribute's business (§17.4), and `allow` is empty for this provider.
+    expect(html).toContain('allow="" allowfullscreen');
+  });
+
+  it('leaves a Docswell video URL to the card, as a plain link here (D3)', async () => {
+    // **The same path shape with a `v` in front of the key**, which is a video and a different
+    // endpoint — building `/slide/vYN91PJ/embed` would publish Docswell's 404 into the article
+    // (§17.2). Getting a link rather than that is the whole of what this measures.
+    const href = 'https://www.docswell.com/s/carol0226/vYN91PJ-2026-08-26-2684';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`<a href="${href}" target="_blank">`);
+  });
+
   it('publishes the fallback anchor in exactly the shape the client must reproduce (X5)', async () => {
     // **One surface, two code paths** (§10.6). This one is built here, before rehypeNewTabLinks;
     // the other is built in the reader's browser after `no_results`, with no later stage to add

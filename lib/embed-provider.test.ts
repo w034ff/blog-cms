@@ -470,3 +470,104 @@ describe('resolveEmbed / Speaker Deck', () => {
     expect(target?.allow).toBe('');
   });
 });
+
+// docs/embed-requirements.md §17. `LK7J5V` is the deck measured throughout that section
+// (`www.docswell.com/s/ku-suke/LK7J5V-hello-docswell`, 13 pages), and `vYN91PJ` is the video whose
+// page URL has the same shape — the one case where the key class is doing the work, since
+// `/slide/vYN91PJ/embed` answers 404 (§17.2).
+const DW_KEY = 'LK7J5V';
+const DW_PAGE = `https://www.docswell.com/s/ku-suke/${DW_KEY}-hello-docswell`;
+const DW_SRC = `https://www.docswell.com/slide/${DW_KEY}/embed`;
+
+describe('resolveEmbed / Docswell', () => {
+  it('makes the embed src out of the deck page URL, in all of its shapes (D1)', () => {
+    for (const href of [
+      DW_PAGE,
+      // The apex, which answers directly rather than redirecting (§17.2).
+      `https://docswell.com/s/ku-suke/${DW_KEY}-hello-docswell`,
+      // No slug — `/s/<user>/<key>` 302s to the full form, and the key alone is what resolves.
+      `https://www.docswell.com/s/ku-suke/${DW_KEY}`,
+      `${DW_PAGE}/`,
+      // A slug with hyphens of its own, which is the common shape: the key ends at the first one.
+      `https://www.docswell.com/s/1000ch/${DW_KEY}-ai-collaboration-shift-in-engineer-metrics`,
+      // Tracking parameters, which name no part of what is shown (§15.4's call for `t=`).
+      `${DW_PAGE}?utm_source=x`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(DW_SRC);
+  });
+
+  it('carries the page the author is pointing at, in either spelling (D2)', () => {
+    // The fragment is what the deck page's own player writes into the address bar (`#p1`…`#p13` are
+    // in its markup), and the `/<n>` permalink is rewritten into that fragment on load (§17.3).
+    expect(resolveEmbed(`${DW_PAGE}#p5`)?.src(ANY)).toBe(`${DW_SRC}#p5`);
+    expect(resolveEmbed(`${DW_PAGE}/5`)?.src(ANY)).toBe(`${DW_SRC}#p5`);
+    expect(resolveEmbed(`${DW_PAGE}/5#p7`)?.src(ANY)).toBe(`${DW_SRC}#p7`);
+    // Page 1 is what the player opens on, so it writes no fragment — and neither does a page this
+    // does not understand, for §9.3's reason: an uninterpreted string must not reach the src.
+    for (const href of [`${DW_PAGE}#p1`, `${DW_PAGE}/1`, `${DW_PAGE}#p0`, `${DW_PAGE}#page5`])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(DW_SRC);
+    // The label says so too, rather than leaving the carried page unnamed (§17.7).
+    expect(resolveEmbed(`${DW_PAGE}#p5`)?.label).toEqual({
+      lead: 'Docswell',
+      detail: '5 ページ目から',
+    });
+  });
+
+  it('leaves every Docswell URL that is not a deck page to the card (D3)', () => {
+    for (const href of [
+      // **A video**, which lives at the same path with a `v` in front of the key and is served from
+      // `/video/<key>/embed` instead — `/slide/vYN91PJ/embed` is a 404 (measured 2026-08-26).
+      'https://www.docswell.com/s/carol0226/vYN91PJ-2026-08-26-2684',
+      // The embed URL itself. Accepting it would make 「リンクに戻す」 write the bare player into an
+      // `<a href>` rather than the page the author was holding (§14.2's call).
+      DW_SRC,
+      `https://www.docswell.com/slide/${DW_KEY}/embed#p5`,
+      // A user page, the front page, a tag listing and a search — none of them name a deck.
+      'https://www.docswell.com/user/ku-suke',
+      'https://www.docswell.com/',
+      'https://www.docswell.com/tag/AI',
+      'https://www.docswell.com/search?q=AI',
+      // `/s/` with nothing under it, and the user segment alone (301 to the user page).
+      'https://www.docswell.com/s/ku-suke/',
+      'https://www.docswell.com/s/ku-suke',
+      // The oEmbed endpoint, which answers with the embed URL — reading that answer is a fetch, and
+      // this file has none (§3.2).
+      `https://www.docswell.com/service/oembed?url=${encodeURIComponent(DW_PAGE)}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses a key that is not a key (D4)', () => {
+    for (const key of [
+      // Lowercase is a different string to Docswell: `lk7j5v` answers 404 where `LK7J5V` is the deck
+      // (measured 2026-08-26), so the class has no `a-z` in it — which is also what keeps the video
+      // form above out (§17.2).
+      DW_KEY.toLowerCase(),
+      'LK7J5v',
+      'A'.repeat(33),
+      '%zz',
+      '..',
+    ])
+      expect(resolveEmbed(`https://www.docswell.com/s/ku-suke/${key}-slug`), key).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@www.docswell.com/s/ku-suke/${DW_KEY}-hello-docswell`,
+      `javascript:alert(1)//www.docswell.com/s/ku-suke/${DW_KEY}`,
+      `ftp://www.docswell.com/s/ku-suke/${DW_KEY}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('names the provider, an accessible name, and a mark-able label (D5, §8-②)', () => {
+    const target = resolveEmbed(DW_PAGE);
+    expect(target?.provider).toBe('docswell');
+    expect(target?.title).not.toBe('');
+    // The slug is the author's title slugified and the key is not a name, so there is nothing to
+    // put beside the provider until the URL names a page (embed-requirements.md §17.7).
+    expect(target?.label).toEqual({ lead: 'Docswell', detail: '' });
+    // Full screen is the attribute's business (embed-requirements.md §17.4).
+    expect(target?.allow).toBe('');
+  });
+});

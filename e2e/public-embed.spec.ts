@@ -221,3 +221,42 @@ test('a Speaker Deck reference is published in a 16:9 box the player fills (SD6)
   expect(inner!.height).toBeCloseTo(box!.height, 0);
   expect(inner!.width).toBeCloseTo(box!.width, 0);
 });
+
+// docs/embed-requirements.md §17.4, criterion D7. The deck itself is never fetched, for the reason
+// the SlideShare and Speaker Deck ones are not: `www.docswell.com/slide/**` is routed to a blank
+// page of our own, since what this measures is the box.
+const DOCSWELL_DECK = 'https://www.docswell.com/s/ku-suke/LK7J5V-hello-docswell#p5';
+
+test('a Docswell reference is published in a slide-plus-control-row box (D7)', async ({ page }) => {
+  await page.route('https://www.docswell.com/slide/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public docswell spec',
+    `本文の前。\n\n<div class="embed" data-href="${DOCSWELL_DECK}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-docswell .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  // The embed form built from the key, with the page the author was pointing at carried (§17.3).
+  await expect(iframe).toHaveAttribute('src', 'https://www.docswell.com/slide/LK7J5V/embed#p5');
+  // Full screen is this attribute's business and not the `allow` string's (§17.4).
+  await expect(iframe).toHaveAttribute('allowfullscreen', '');
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The box, measured rather than read off the stylesheet — the wrapper is what holds it. Not a
+  // ratio, for SlideShare's reason: the control bar is 56px whatever the box is, so the height is
+  // the slide area's 16:9 plus that bar (§17.4). A ratio assertion would pass at exactly one width.
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeCloseTo(box!.width * (9 / 16) + 56, 0);
+  // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
+  // height check while saying nothing about the column it sits in.
+  expect(box!.width).toBeGreaterThan(400);
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height, 0);
+  expect(inner!.width).toBeCloseTo(box!.width, 0);
+});

@@ -2109,6 +2109,33 @@ body.link-menu-open .table-toolbar {
   aspect-ratio: 16 / 9;
   background: transparent;
 }
+/* SlideShare's shape again, with a taller row: Docswell's player is a slide area plus a control bar
+   that is 56px whatever the box is (measured 2026-08-26 at 750px and at 400px, and it neither hides
+   nor moves — sampled every 3s for 24s with no interaction, and again with the pointer over the
+   frame). Given `56.25% + 56px` the bar lands exactly on the slide's lower edge: at 750px wide the
+   slide is 750×421.9 and the bar's top is at 422. Take the row away and the same bar draws over the
+   bottom 56px of every slide instead, since it is anchored to the frame rather than to the slide.
+
+   16:9 for the slide area, because that is what decks are published at: of the 18 slide decks
+   sampled 2026-08-26, 17 carry a `data-aspect` of 0.5625 or within 0.001 of it.
+
+   **A deck that is not 16:9 loses its lower part — it does not gain bands.** This is where Docswell
+   differs from §14.4 and §16.4, and the reason those two could accept a missed ratio does not carry
+   over: this player fits the slide to the frame's *width* and clips what will not fit
+   (`#player-main` measures 750×1061 inside a 750×478 frame for the A4-portrait deck `K8NL49`), so
+   the reader sees the top 40% of the page and no more. `?mode=extend` does not change the fit
+   (measured on the same deck). The deck's own ratio lives in the deck page's markup, not in the
+   reference, so it cannot be known without a fetch (§3.2) — and no message comes back from the
+   iframe to correct the box with (§10.5's mechanism has nothing to listen to here).
+
+   No black behind it, for .embed-slideshare's reason: the player's own `body` is white, so #000
+   would show as a dark rectangle for as long as the iframe takes to arrive.
+   docs/embed-requirements.md §17.4. */
+.prose .embed-docswell .embed-frame {
+  height: 0;
+  padding-bottom: calc(56.25% + 56px);
+  background: transparent;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`
