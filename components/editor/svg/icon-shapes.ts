@@ -79,18 +79,26 @@ export const X_MARK_SHAPES: readonly IconShape[] = [
   },
 ];
 
-// A screen on a stand — the conventional glyph for slides, and the shape a deck earns for the
-// reason a post does: **a deck is not something that plays** (embed-requirements.md §7.3, §14.8).
-// Drawn as the play mark's frame moved up to make room for the stand rather than as a new box, so
-// the three marks sit at the same weight in the same slot.
+// SlideShare's own mark, taken as published rather than re-derived, for SPEAKERDECK_MARK_SHAPES'
+// reason (embed-requirements.md §14.8). The source is the glyph inside `favicon.*.svg` on
+// SlideShare's CDN — the badge's orange disc is dropped, since the disc is a container rather than
+// the mark and no other mark here carries one.
 //
-// The stand is two strokes. Rendered at 16px against the stem alone (2026-08-25): with no foot the
-// stem reads as a stray tick hanging under the frame rather than as a stand, which is the same
-// failure mode UNLINK_SHAPES' note describes for shapes that are only a couple of pixels apart.
-export const SLIDES_SHAPES: readonly IconShape[] = [
-  { kind: 'rect', x: 3, y: 4, width: 18, height: 12, rx: 2 },
-  { kind: 'line', x1: 12, y1: 16, x2: 12, y2: 19 },
-  { kind: 'line', x1: 9, y1: 19, x2: 15, y2: 19 },
+// **One colour costs this mark nothing**: the inner panel is published as a counter — a reversed
+// subpath inside the same `d` — so it is a hole in the fill rather than a second colour, and the
+// two overlapping panels still read as two at 16px (compared against the badge and against the
+// stroked screen it replaces, 16/24/40px in both schemes, 2026-08-26).
+//
+// Fitted like the other brand marks: the glyph is 109×86 in the favicon's units, scaled to a 21.5
+// span by width and centred in the 24 box, landing at 21.5×16.96. The transform is baked into the
+// coordinates because an IconShape carries no transform; rounding to 2 decimals was diffed against
+// the un-baked render and differs in 0 pixels at 16, 24 and 40px.
+export const SLIDESHARE_MARK_SHAPES: readonly IconShape[] = [
+  {
+    kind: 'path',
+    d: 'M21.43 3.52H8.39C7.66 3.52 7.07 4.12 7.07 4.85V7.73C7.07 8.46 6.48 9.06 5.75 9.06H2.57C1.84 9.06 1.25 9.66 1.25 10.39V19.15C1.25 19.88 1.84 20.48 2.57 20.48H15.65C16.38 20.48 16.97 19.88 16.97 19.15V16.27C16.97 15.54 17.56 14.94 18.29 14.94H21.43C22.16 14.94 22.75 14.34 22.75 13.61V4.85C22.75 4.12 22.16 3.52 21.43 3.52H21.43ZM16.47 14.27C16.47 14.64 16.18 14.94 15.81 14.94H8.19C7.82 14.94 7.53 14.64 7.53 14.27V9.73C7.53 9.36 7.82 9.06 8.19 9.06H15.81C16.18 9.06 16.47 9.36 16.47 9.73V14.27Z',
+    filled: true,
+  },
 ];
 
 // The Figma logo (embed-requirements.md §7.3, §15.7). The second mark here that is a brand's rather
@@ -137,6 +145,54 @@ export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
   },
 ];
 
+// Docswell's own mark, taken as published rather than re-derived, for SPEAKERDECK_MARK_SHAPES'
+// reason (embed-requirements.md §17.7). The source is the mark half of `images/logo_yoko.svg` on
+// Docswell's CDN — the seven paths left of the wordmark, minus one that measures 0.05×0.08 in the
+// source's own units and renders as nothing at any size.
+//
+// **The two blues become one `currentColor`, and the drawing survives that** because the cube's
+// right face is published as an outline rather than a solid: flattened, it still reads as a face
+// behind the ribbon instead of merging into it (compared against the two-tone original at
+// 16/24/40px in both schemes, 2026-08-26).
+//
+// The refit is the same one number as Speaker Deck's. The mark is 35.21×32 in the source and near
+// square, so it is scaled to a 21.5 span *by width* and centred in the 24 box, which lands it at
+// 21.5×19.54 — X's own footprint (21.3×19.5) and the span the marks beside it hold. The transform
+// is baked into the coordinates because an IconShape carries no transform; rounding to 2 decimals
+// was diffed against the un-baked render and differs in 0 pixels at 16 and 24px, 1 at 40px.
+export const DOCSWELL_MARK_SHAPES: readonly IconShape[] = [
+  {
+    kind: 'path',
+    d: 'M14.79 2.83L18.21 4.67L22.75 7.12V12V16.88L18.21 19.33L14.79 21.17V17.04L16.29 16.24L18.92 14.82V12V9.18L16.29 7.76L14.79 6.96',
+    filled: true,
+  },
+  {
+    kind: 'path',
+    d: 'M9.81 19.69L13.67 21.77L14.79 21.17V17.04V6.96V2.83L13.67 2.23L9.81 4.31V19.69Z',
+    filled: true,
+  },
+  {
+    kind: 'path',
+    d: 'M9.81 15.54L6.72 10.21L5.39 7.91L4.57 7.94L3.09 10.34L8.05 18.92L9.81 18.86V15.54Z',
+    filled: true,
+  },
+  {
+    kind: 'path',
+    d: 'M6.65 16.5L6.62 16.47L3.26 14.2L1.88 13.27L1.43 13.51L1.25 15.27L6.38 18.73L7.58 18.1L6.65 16.5Z',
+    filled: true,
+  },
+  {
+    kind: 'path',
+    d: 'M4.11 12.1L3.26 12.55L1.88 13.27L3.26 14.2L3.86 13.88L4.84 13.37L4.11 12.1Z',
+    filled: true,
+  },
+  {
+    kind: 'path',
+    d: 'M9.81 7.78L7.89 7.84L5.39 7.91L6.72 10.21L7.82 10.18L9.74 10.12L9.81 10.24V7.78Z',
+    filled: true,
+  },
+];
+
 // **A post is not something that plays**, so the mark for an embed is the provider's question, not
 // one picture for all of them (§7.3). One place answers it, because the bubble's button and the
 // drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
@@ -148,11 +204,9 @@ export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
 // provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
-  // Docswell shares SlideShare's mark for §14.8's reason — a deck is not something that plays,
-  // whichever site holds it. Its own logo is a cube whose three faces carry the shading that makes
-  // it a cube, and a 2px stroke at 16px has nowhere to put that (embed-requirements.md §17.7).
-  if (provider === 'slideshare' || provider === 'docswell') return SLIDES_SHAPES;
+  if (provider === 'slideshare') return SLIDESHARE_MARK_SHAPES;
   if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
+  if (provider === 'docswell') return DOCSWELL_MARK_SHAPES;
   return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }
 
