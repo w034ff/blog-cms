@@ -126,7 +126,9 @@ export const FIGMA_MARK_SHAPES: readonly IconShape[] = [
 // provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
-  if (provider === 'slideshare') return SLIDES_SHAPES;
+  // Both slide hosts share the screen-and-legs mark: §7.3's reason is about the kind of thing being
+  // embedded, and a deck is not something that plays whichever site is holding it (§16.7).
+  if (provider === 'slideshare' || provider === 'speakerdeck') return SLIDES_SHAPES;
   return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }
 

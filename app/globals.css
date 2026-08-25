@@ -2087,6 +2087,28 @@ body.link-menu-open .table-toolbar {
   background: transparent;
   border: 1px solid #d0d7de;
 }
+/* A deck has no ratio of its own here either, and unlike SlideShare's player there is no control
+   row to add: Speaker Deck draws its controls over the slide, so the frame is the slide area and
+   one ratio describes the whole of it (measured 2026-08-26 — `.sd-player-slide` carries
+   `background-size: contain`, and a 16:9 deck fills a 16:9 box edge to edge with the arrows, the
+   share button and the full-screen button floating on top of it).
+
+   16:9 because that is what decks are published at now — Speaker Deck's own iframe snippet writes
+   `aspect-ratio: 560 / 315`, which is 16:9, and `data-ratio` was 1.7778 on four of the five decks
+   measured. `contain` is also what makes the miss survivable: a deck that is not 16:9 is drawn
+   whole with bands rather than cropped (measured with the 1.3333 deck
+   `cf29dcf084890130af0d12313d053a9e`), which is §9.6's Shorts URL again. The ratio cannot be known
+   without a fetch (§3.2) — `data-ratio` lives in the deck page's markup, not in the reference.
+
+   **No black behind it, and here that is not a preference.** The player paints no background at
+   all: `html` and `body` inside the iframe are both `rgba(0, 0, 0, 0)` (measured 2026-08-26), so
+   whatever this rule sets is what the reader sees in the bands and for as long as the slide takes
+   to arrive — with `#000` the whole box is a black rectangle, which is what the measurement showed.
+   docs/embed-requirements.md §16.4. */
+.prose .embed-speakerdeck .embed-frame {
+  aspect-ratio: 16 / 9;
+  background: transparent;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`

@@ -274,7 +274,51 @@ const figma: Provider = {
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma];
+// docs/embed-requirements.md §16.2. Lowercase hex, verified against the parse rather than trusted
+// from it, for `YOUTUBE_ID`'s reason: this is the value that reaches the src. Two lengths are in
+// service — 32 for decks published today and 24 for the older ones (measured 2026-08-26:
+// `504229f1c53c970002012ba0` and `4fa4436e5f35f0002200b70b` both play) — so the bound is a range
+// over the pair rather than either one alone. **Uppercase is not the same id**: the same 32
+// characters upper-cased answer 404, so the character class is not `[0-9a-fA-F]`.
+const SPEAKERDECK_ID = /^[0-9a-f]{24,32}$/;
+// `/player/<id>` — **the only shape there is** (§16.2). The deck page's own URL carries no id, and
+// no slug-shaped alias for the player exists: `/player/<user>/<slug>`, `/<user>/<slug>/embed`,
+// `/<user>/<slug>/player` and `/embed/<user>/<slug>` all answer 404 (measured 2026-08-26). The
+// trailing slash is optional because Speaker Deck serves it either way.
+const SPEAKERDECK_PATH = /^\/player\/([^/]+)\/?$/;
+
+// Nothing is asked for, as SlideShare and Figma ask for nothing. Speaker Deck's own snippet writes
+// `allow="web-share"` for the share menu the player draws, and that menu is a link list rather than
+// a call to the Web Share API — the author has not asked for it, and §9.2's rule for `autoplay`
+// applies. Full screen is the `allowFullScreen` attribute's, which both render stages already set:
+// measured 2026-08-26 with `allow=""`, the player's own button puts the parent's
+// `document.fullscreenElement` on the iframe.
+const SPEAKERDECK_ALLOW = '';
+
+const speakerdeck: Provider = {
+  // `www` is present because it answers and 301s to the apex, which is where the id sits in the
+  // same place (measured 2026-08-26) — the same call §14.2 made for `slideshare.net`.
+  hosts: ['speakerdeck.com', 'www.speakerdeck.com'],
+  resolve: (url) => {
+    const id = SPEAKERDECK_PATH.exec(url.pathname)?.[1] ?? null;
+    if (id === null || !SPEAKERDECK_ID.test(id)) return null;
+    return {
+      provider: 'speakerdeck',
+      // The reference rebuilt on the apex host, so the two spellings of the same deck reach one
+      // src. **This is the player URL the author pasted**, which is the whole of §16.3: the id is
+      // not derivable from the deck page's URL, so unlike SlideShare there is no canonical page to
+      // start from and no redirect for the reader's browser to follow.
+      src: () => `https://speakerdeck.com/player/${id}`,
+      title: 'Speaker Deck のスライド',
+      // The provider and nothing else, for SlideShare's reason: the deck cannot be named without a
+      // fetch, and this URL does not even carry a slug to be tempted by (§16.7).
+      label: { lead: 'Speaker Deck', detail: '' },
+      allow: SPEAKERDECK_ALLOW,
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

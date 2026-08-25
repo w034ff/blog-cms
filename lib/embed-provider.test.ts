@@ -379,3 +379,94 @@ describe('resolveEmbed / Figma', () => {
     expect(target?.allow).toBe('');
   });
 });
+
+// docs/embed-requirements.md §16. `9de2f18094b14cbb91b07331eb085e4f` is the deck measured throughout
+// that section (`speakerdeck.com/soudai/pgcon21j-tutorial`), and `504229f1c53c970002012ba0` the
+// 24-character legacy id measured beside it.
+//
+// **What is measured here is mostly what is refused.** The deck page's URL carries no id and no
+// slug-shaped alias for the player exists (§16.2), so this provider accepts one shape and one only,
+// and every other Speaker Deck URL — the page the author is most likely to be holding — has to
+// reach the card rather than an iframe that would name nothing.
+const SD_ID = '9de2f18094b14cbb91b07331eb085e4f';
+const SD_LEGACY_ID = '504229f1c53c970002012ba0';
+const SD_SRC = `https://speakerdeck.com/player/${SD_ID}`;
+
+describe('resolveEmbed / Speaker Deck', () => {
+  it('makes the src out of the player URL, on both hosts (SD1)', () => {
+    for (const href of [
+      SD_SRC,
+      `https://www.speakerdeck.com/player/${SD_ID}`,
+      `https://speakerdeck.com/player/${SD_ID}/`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(SD_SRC);
+    // The 24-character form older decks carry — both lengths play (measured 2026-08-26, §16.2).
+    expect(resolveEmbed(`https://speakerdeck.com/player/${SD_LEGACY_ID}`)?.src(ANY)).toBe(
+      `https://speakerdeck.com/player/${SD_LEGACY_ID}`,
+    );
+  });
+
+  it('leaves every Speaker Deck URL that is not a player to the card (SD2)', () => {
+    for (const href of [
+      // **The deck page itself**, which is the shape an author reaches for first. It carries no id
+      // at any depth of the path, and deriving one would mean fetching the page (§16.3).
+      'https://speakerdeck.com/soudai/pgcon21j-tutorial',
+      'https://www.speakerdeck.com/soudai/pgcon21j-tutorial',
+      // The slug-shaped aliases that do not exist — all four answer 404 (measured 2026-08-26).
+      `https://speakerdeck.com/player/soudai/pgcon21j-tutorial`,
+      'https://speakerdeck.com/soudai/pgcon21j-tutorial/embed',
+      'https://speakerdeck.com/soudai/pgcon21j-tutorial/player',
+      'https://speakerdeck.com/embed/soudai/pgcon21j-tutorial',
+      // A user page, the front page, and the player with nothing after it.
+      'https://speakerdeck.com/soudai',
+      'https://speakerdeck.com/',
+      'https://speakerdeck.com/player',
+      'https://speakerdeck.com/player/',
+      // The oEmbed endpoint. It answers with the player URL, but reading that answer is a fetch,
+      // and this file has no fetch in it (§3.2).
+      `https://speakerdeck.com/oembed.json?url=https%3A%2F%2Fspeakerdeck.com%2Fsoudai%2Fpgcon21j-tutorial`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses an id that is not an id (SD3)', () => {
+    for (const id of [
+      '',
+      'abc',
+      // Uppercase is a different string to Speaker Deck: the same characters upper-cased answer 404
+      // (measured 2026-08-26), so accepting them would build a src that plays nothing (§16.2).
+      SD_ID.toUpperCase(),
+      // Shorter than the legacy form, longer than the current one, and not hex at all.
+      '0'.repeat(23),
+      '0'.repeat(33),
+      `${SD_ID.slice(0, 31)}g`,
+      '%zz',
+    ])
+      expect(resolveEmbed(`https://speakerdeck.com/player/${id}`), id).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@speakerdeck.com/player/${SD_ID}`,
+      `javascript:alert(1)//speakerdeck.com/player/${SD_ID}`,
+      `ftp://speakerdeck.com/player/${SD_ID}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('does not throw on a broken percent-escape (E3)', () => {
+    expect(() => resolveEmbed('https://speakerdeck.com/player/%zz')).not.toThrow();
+    expect(resolveEmbed('https://speakerdeck.com/player/%zz')).toBeNull();
+  });
+
+  it('names the provider, an accessible name, and a mark-able label (SD4, §8-②)', () => {
+    const target = resolveEmbed(SD_SRC);
+    expect(target?.provider).toBe('speakerdeck');
+    expect(target?.title).not.toBe('');
+    // The reference carries nothing but the id, and an id is not a name (embed-requirements.md §16.7).
+    expect(target?.label).toEqual({ lead: 'Speaker Deck', detail: '' });
+    // Full screen is the attribute's business, and `web-share` is not asked for
+    // (embed-requirements.md §16.4).
+    expect(target?.allow).toBe('');
+  });
+});

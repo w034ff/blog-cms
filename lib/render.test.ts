@@ -721,6 +721,29 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain(`<a href="${href}" target="_blank">`);
   });
 
+  // docs/embed-requirements.md §16. `9de2f18094b14cbb91b07331eb085e4f` is the deck measured there.
+  const SLIDES = 'https://speakerdeck.com/player/9de2f18094b14cbb91b07331eb085e4f';
+
+  it('publishes a Speaker Deck player reference as the iframe (SD5)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${SLIDES}"></div>`);
+    // The class the aspect-ratio rule hangs on, and the src — which is the reference itself here,
+    // rebuilt from the id rather than passed through (§16.3).
+    expect(html).toContain('class="embed embed-speakerdeck"');
+    expect(html).toContain(`src="${SLIDES}"`);
+    // Full screen is the attribute's business (§16.4), and `allow` is empty for this provider.
+    expect(html).toContain('allow="" allowfullscreen');
+  });
+
+  it('leaves the deck page URL to the card, as a plain link here (SD2)', async () => {
+    // **The shape an author reaches for first**, and the one that cannot become an embed: the id
+    // is nowhere in it (§16.2). Getting a link rather than a silent gap is the whole of what this
+    // measures.
+    const href = 'https://speakerdeck.com/soudai/pgcon21j-tutorial';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`<a href="${href}" target="_blank">`);
+  });
+
   it('publishes the fallback anchor in exactly the shape the client must reproduce (X5)', async () => {
     // **One surface, two code paths** (§10.6). This one is built here, before rehypeNewTabLinks;
     // the other is built in the reader's browser after `no_results`, with no later stage to add

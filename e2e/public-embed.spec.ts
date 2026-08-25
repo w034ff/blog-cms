@@ -180,3 +180,44 @@ test('a design reference is published in a 16:9 box the viewer fills (F7)', asyn
   expect(inner!.height).toBeCloseTo(box!.height - 2, 0);
   expect(inner!.width).toBeCloseTo(box!.width - 2, 0);
 });
+
+// docs/embed-requirements.md §16.4, criterion SD6. The deck itself is never fetched, for the reason
+// the SlideShare one is not: `speakerdeck.com/player/**` is routed to a blank page of our own, since
+// what this measures is the box. There is no redirect to stand in for here — the reference is
+// already the player's own URL (§16.3), which is the whole of what makes this provider different.
+const SLIDES = 'https://speakerdeck.com/player/9de2f18094b14cbb91b07331eb085e4f';
+
+test('a Speaker Deck reference is published in a 16:9 box the player fills (SD6)', async ({
+  page,
+}) => {
+  await page.route('https://speakerdeck.com/player/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public speakerdeck spec',
+    `本文の前。\n\n<div class="embed" data-href="${SLIDES}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-speakerdeck .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  await expect(iframe).toHaveAttribute('src', SLIDES);
+  // Full screen is this attribute's business and not the `allow` string's (§16.4).
+  await expect(iframe).toHaveAttribute('allowfullscreen', '');
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The ratio, measured rather than read off the stylesheet — the wrapper is what holds it. One
+  // ratio suffices here where SlideShare needed a sum: Speaker Deck draws its controls over the
+  // slide rather than beside it, so the frame is the slide area (§16.4).
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+  // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
+  // ratio check while saying nothing about the column it sits in.
+  expect(box!.width).toBeGreaterThan(400);
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height, 0);
+  expect(inner!.width).toBeCloseTo(box!.width, 0);
+});
