@@ -2059,6 +2059,27 @@ body.link-menu-open .table-toolbar {
   aspect-ratio: 597 / 486;
   background: transparent;
 }
+/* A design file has no ratio of its own, and Figma hands one over as SlideShare does: the file page
+   declares 800×450 for its own player (`twitter:player:width` / `:height`, measured 2026-08-25 on
+   the sample), which is 16:9. The viewer then fills whatever box it is given and scales the design
+   to fit inside it — measured at 360×640 and 1000×300, where the canvas is the box's size exactly
+   and the design sits centred in it — so one rule serves every file, the way §9.6's Shorts URL is
+   served (docs/embed-requirements.md §15.3).
+
+   No black behind it, for .embed-slideshare's reason: the viewer paints its own light canvas, and
+   #000 shows as a dark rectangle for as long as the iframe takes to arrive.
+
+   **The border is this box's, because the viewer has no edge of its own.** Figma paints white to
+   all four sides — a control row at the top, a file name at the foot — so on the article's white
+   page the block ends nowhere (measured 2026-08-25 against a screenshot: the top bar, the footer
+   and the page are the same white). The line is the card's and the editor's box's, which is what
+   the author already sees around the same frame (§15.4). `box-sizing` is border-box here, so the
+   ratio still describes the block the reader sees and the iframe sits 1px inside it. */
+.prose .embed-figma .embed-frame {
+  aspect-ratio: 16 / 9;
+  background: transparent;
+  border: 1px solid #d0d7de;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`
@@ -2176,7 +2197,8 @@ body.link-menu-open .table-toolbar {
   .prose .link-card-search,
   .prose .link-card-head button,
   .prose .embed-head button,
-  .prose .embed-view {
+  .prose .embed-view,
+  .prose .embed-figma .embed-frame {
     border-color: #30363d;
   }
   /* red-400 / red-300, the pair `ToolbarButton`'s `destructive` uses on a dark surface. */

@@ -700,6 +700,27 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain(`<a href="${href}" target="_blank">`);
   });
 
+  // docs/embed-requirements.md §15. `7or4V8Tl8YbEFRmMSF3pXe` is the file measured there.
+  const DESIGN = 'https://www.figma.com/design/7or4V8Tl8YbEFRmMSF3pXe/Figma-sample?node-id=5-2&p=f';
+
+  it('turns a design reference into the key form of the embed URL (F6)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${DESIGN}"></div>`);
+    // The class the aspect-ratio rule hangs on, and the src the reader's browser redirects from.
+    expect(html).toContain('class="embed embed-figma"');
+    expect(html).toContain(
+      'src="https://embed.figma.com/design/7or4V8Tl8YbEFRmMSF3pXe?embed-host=tech-blog&#x26;node-id=5-2"',
+    );
+    // Full screen is the attribute's business (§15.3), and `allow` is empty for this provider.
+    expect(html).toContain('allow="" allowfullscreen');
+  });
+
+  it('leaves a Figma URL that names no file to the card, as a plain link here (F3)', async () => {
+    const href = 'https://www.figma.com/proto/7or4V8Tl8YbEFRmMSF3pXe/Figma-sample?node-id=5-2';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`<a href="${href}" target="_blank">`);
+  });
+
   it('publishes the fallback anchor in exactly the shape the client must reproduce (X5)', async () => {
     // **One surface, two code paths** (§10.6). This one is built here, before rehypeNewTabLinks;
     // the other is built in the reader's browser after `no_results`, with no later stage to add

@@ -93,6 +93,28 @@ export const SLIDES_SHAPES: readonly IconShape[] = [
   { kind: 'line', x1: 9, y1: 19, x2: 15, y2: 19 },
 ];
 
+// The Figma logo (embed-requirements.md §7.3, §15.7). The second mark here that is a brand's rather
+// than a drawn shape, and the second drawn **filled** — for X_MARK_SHAPES' reason, inverted: that
+// one is filled because a hollow letterform is a blot at 16px, and this one because the logo is
+// five solid shapes to begin with.
+//
+// The 1.2-unit gaps are the measurement (2026-08-25, rendered at 16px against the alternatives).
+// Without them the five shapes merge into one silhouette — the colours are what separate them in
+// the original, and this file has one colour. With them the F still reads on a 1x screen, where
+// the gaps are under a pixel and blur back into that same silhouette: the fallback is the shape it
+// would have had anyway.
+//
+// Geometry rather than a copied path, so it can be re-derived: three left-column shapes rounded on
+// the left (x 8.6–11.4), one top-right rounded on the right, and a circle at the middle right, on a
+// 3-row grid of r = 3.4 (measured off the logo as Figma draws it in the embed's own footer).
+export const FIGMA_MARK_SHAPES: readonly IconShape[] = [
+  { kind: 'path', d: 'M11.4 2.6H8.6a3.4 3.4 0 0 0 0 6.8h2.8z', filled: true },
+  { kind: 'path', d: 'M12.6 2.6h2.8a3.4 3.4 0 0 1 0 6.8h-2.8z', filled: true },
+  { kind: 'path', d: 'M11.4 9.6H8.6a3.4 3.4 0 0 0 0 6.8h2.8z', filled: true },
+  { kind: 'path', d: 'M12.6 12a3.4 3.4 0 1 1 6.8 0 3.4 3.4 0 0 1-6.8 0z', filled: true },
+  { kind: 'path', d: 'M11.4 16.6H8.6a3.4 3.4 0 0 0 0 6.8h2.8z', filled: true },
+];
+
 // **A post is not something that plays**, so the mark for an embed is the provider's question, not
 // one picture for all of them (§7.3). One place answers it, because the bubble's button and the
 // drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
@@ -104,7 +126,8 @@ export const SLIDES_SHAPES: readonly IconShape[] = [
 // provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
-  return provider === 'slideshare' ? SLIDES_SHAPES : PLAY_SHAPES;
+  if (provider === 'slideshare') return SLIDES_SHAPES;
+  return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

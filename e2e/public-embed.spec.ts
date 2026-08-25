@@ -133,3 +133,46 @@ test('a deck reference is published in a 597:486 box the player fills (S6)', asy
   const inner = await iframe.boundingBox();
   expect(inner!.height).toBeCloseTo(box!.height, 0);
 });
+
+// docs/embed-requirements.md §15.3, criterion F7. The file itself is never fetched, for the reason
+// the deck is not: `embed.figma.com` is routed to a blank page of our own, since what this measures
+// is the box. The stub also stands in for the `302 → www.figma.com/design/<key>?…&viewer=1` the
+// real host answers with — the redirect belongs to the reader's browser.
+const DESIGN = 'https://www.figma.com/design/7or4V8Tl8YbEFRmMSF3pXe/Figma-sample?node-id=5-2&p=f';
+
+test('a design reference is published in a 16:9 box the viewer fills (F7)', async ({ page }) => {
+  await page.route('https://embed.figma.com/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public figma spec',
+    `本文の前。\n\n<div class="embed" data-href="${DESIGN}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-figma .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  // The key form, with the linked node carried and `p=f` dropped (§15.4).
+  await expect(iframe).toHaveAttribute(
+    'src',
+    'https://embed.figma.com/design/7or4V8Tl8YbEFRmMSF3pXe?embed-host=tech-blog&node-id=5-2',
+  );
+  // Full screen is this attribute's business and not the `allow` string's (§15.3).
+  await expect(iframe).toHaveAttribute('allowfullscreen', '');
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The ratio, measured rather than read off the stylesheet — the wrapper is what holds it.
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width / box!.height).toBeCloseTo(16 / 9, 1);
+  expect(box!.width).toBeGreaterThan(400);
+  // The viewer fills the box inside the frame's own 1px rule (§15.4) — `box-sizing` is border-box,
+  // so the ratio above describes the block the reader sees, and this is what is left for the
+  // iframe. Asserted rather than tolerated: the rule is the block's edge, and an iframe painting
+  // over it would be the same block with no line around it.
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height - 2, 0);
+  expect(inner!.width).toBeCloseTo(box!.width - 2, 0);
+});

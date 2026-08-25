@@ -211,7 +211,70 @@ const slideshare: Provider = {
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x, slideshare];
+// docs/embed-requirements.md §15.2. `YOUTUBE_ID`'s character class, verified against the parse
+// rather than trusted from it, for `YOUTUBE_ID`'s reason: this is the value that reaches the src.
+// **Wider than the keys measured** — the two seen are 22 characters of letters and digits
+// (`7or4V8Tl8YbEFRmMSF3pXe`, `abttA1F3GxZdZlkI9t5s99`) — because a key form this refuses turns a
+// working file into a bare link, and two samples do not establish an alphabet. What it rules out
+// is a segment that cannot be a key at all: nothing that could leave the path, and nothing long
+// enough to be something else. The bound is a ceiling, not a length; Figma's own docs use a
+// four-character key in their example (`figma.com/design/pqrs/ExampleFile`).
+const FIGMA_KEY = /^[\w-]{1,64}$/;
+// `/design/<key>/<slug>` — the current canonical shape — and `/file/<key>/<slug>`, which is the
+// same file: Figma's own `og:url` still publishes the `/file/` form for a design URL (measured
+// 2026-08-25 on the sample). The slug is optional because it carries no meaning here; only the key
+// reaches the src. `/proto/`, `/board/` and `/slides/` are deliberately absent (§15.2).
+const FIGMA_PATH = /^\/(?:design|file)\/([^/]+)(?:\/|$)/;
+// `node-id=<page>-<node>`. Both separators are written — `5-2` in a URL Figma emits today and `5:2`
+// in an older one, which `searchParams` hands over already percent-decoded — and both land on the
+// same node (measured 2026-08-25). The hyphen form is what enters the src, built from the parsed
+// digits and never from the author's string (§9.3's rule).
+const FIGMA_NODE = /^(\d{1,9})[-:](\d{1,9})$/;
+
+// Figma refuses to render without it: with the parameter absent the frame is 「Not a valid embed
+// context」 instead of the file (measured 2026-08-25). It names the embedding site — Figma asks for
+// 「something that uniquely and clearly identifies your site」 — so it is this site's identifier for
+// a third party, not its display name: `SITE_NAME` is not imported, because renaming what the
+// header says should not retarget what Figma is told.
+const FIGMA_EMBED_HOST = 'tech-blog';
+
+// Nothing is asked for, as SlideShare asks for nothing: a design file is images in someone else's
+// page. Full screen is the `allowFullScreen` attribute's, which both render stages already set —
+// measured 2026-08-25 with this exact pair, the embed's own expand button puts the parent's
+// `document.fullscreenElement` on the iframe.
+const FIGMA_ALLOW = '';
+
+const figma: Provider = {
+  // `embed.figma.com` is deliberately absent for `youtube-nocookie.com`'s reason (§9.2): it is an
+  // output of this file, not an input to it. `figma.site` is a different product — a published
+  // site, not a file — and naming it here would claim a shape nothing has measured.
+  hosts: ['www.figma.com', 'figma.com'],
+  resolve: (url) => {
+    const key = FIGMA_PATH.exec(url.pathname)?.[1] ?? null;
+    if (key === null || !FIGMA_KEY.test(key)) return null;
+    const node = FIGMA_NODE.exec(url.searchParams.get('node-id') ?? '');
+    // The frame the author linked to, carried into the viewer (§15.3). Everything else the share
+    // dialog writes is dropped: `p=f` names a pane of Figma's own UI, and `t=` is a sharing
+    // attribution token, neither of which the reader's view is a function of (§15.4).
+    const target = node ? `&node-id=${node[1]}-${node[2]}` : '';
+    return {
+      provider: 'figma',
+      // The documented embed host, which 302s to `www.figma.com/design/<key>?…&viewer=1`, followed
+      // by the reader's browser — so this stays a function of the reference alone and §3.2 holds
+      // (embed-requirements.md §15.3). The legacy `www.figma.com/embed?url=<page URL>` form still
+      // renders, and is not used: it would put the author's string into the src, which §4.2 gives
+      // this file the job of preventing. The slug is dropped because the key alone resolves.
+      src: () => `https://embed.figma.com/design/${key}?embed-host=${FIGMA_EMBED_HOST}${target}`,
+      title: 'Figma のデザイン',
+      // The provider and nothing else, for SlideShare's reason: the file cannot be named without a
+      // fetch. The slug is the author's title slugified, and the node id (`5-2`) is not a name.
+      label: { lead: 'Figma', detail: '' },
+      allow: FIGMA_ALLOW,
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

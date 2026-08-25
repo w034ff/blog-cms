@@ -274,3 +274,108 @@ describe('resolveEmbed / SlideShare', () => {
     expect(target?.allow).toBe('');
   });
 });
+
+// docs/embed-requirements.md §15. `7or4V8Tl8YbEFRmMSF3pXe` is the file measured throughout that
+// section, and `5-2` the node its deep link was measured on.
+//
+// The src is the whole of what §15.3 decided — the key form on `embed.figma.com` rather than the
+// legacy `www.figma.com/embed?url=` form — so it is asserted as a whole string here, as SlideShare's
+// is, rather than through either caller.
+const FIGMA_KEY_SAMPLE = '7or4V8Tl8YbEFRmMSF3pXe';
+const FIGMA_SRC = `https://embed.figma.com/design/${FIGMA_KEY_SAMPLE}?embed-host=tech-blog`;
+
+describe('resolveEmbed / Figma', () => {
+  it('makes the key form out of every page URL that names the file (F1)', () => {
+    for (const href of [
+      `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+      `https://figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+      `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample/`,
+      // No slug at all, and the percent-encoded Japanese slug the sample URL actually carries.
+      `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}`,
+      `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma%E5%9F%8B%E3%82%81%E8%BE%BC%E3%81%BF%E3%82%B5%E3%83%B3%E3%83%97%E3%83%AB?p=f`,
+      // The `/file/` form, which is the same file — Figma's own `og:url` still publishes it
+      // (embed-requirements.md §15.2). Both inputs collapse to the one src.
+      `https://www.figma.com/file/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(FIGMA_SRC);
+  });
+
+  it('carries the linked node, in either separator, and drops the rest (F2)', () => {
+    // `5-2` is what Figma writes today and `5:2` what an older URL carries; `searchParams` hands
+    // the latter over decoded, and both land on the same node (embed-requirements.md §15.3).
+    for (const node of ['5-2', '5%3A2'])
+      expect(
+        resolveEmbed(`https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s?node-id=${node}`)?.src(
+          ANY,
+        ),
+        node,
+      ).toBe(`${FIGMA_SRC}&node-id=5-2`);
+    // `t` is a sharing attribution token and `p` names a pane of Figma's own UI; neither is part of
+    // what the reader sees (embed-requirements.md §15.4).
+    expect(
+      resolveEmbed(
+        `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s?node-id=0-1&t=abcDEF123-4&p=f`,
+      )?.src(ANY),
+    ).toBe(`${FIGMA_SRC}&node-id=0-1`);
+    // A `node-id` this does not understand is not a guess to make: the file opens where it opens,
+    // and the author's string never reaches the src (§9.3's rule).
+    for (const node of ['abc', '1', '1-', '-1', '1-2-3', `${'1'.repeat(10)}-2`, '%zz'])
+      expect(
+        resolveEmbed(`https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s?node-id=${node}`)?.src(
+          ANY,
+        ),
+        node,
+      ).toBe(FIGMA_SRC);
+  });
+
+  it('leaves every Figma URL that names no file to the card (F3)', () => {
+    for (const href of [
+      // The shapes deferred until one of Figma's own share URLs for them has been measured
+      // (embed-requirements.md §15.2): a prototype, a FigJam board, a Slides deck.
+      `https://www.figma.com/proto/${FIGMA_KEY_SAMPLE}/Figma-sample?node-id=5-2`,
+      `https://www.figma.com/board/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+      `https://www.figma.com/slides/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+      // The marketing site, the community, a team page, the front page.
+      'https://www.figma.com/community/file/1234567890/tiptap',
+      'https://www.figma.com/files/team/123/project',
+      'https://www.figma.com/',
+      // The embed host is an output of this file, not an input to it (embed-requirements.md §15.2),
+      // and `figma.site` is a published site rather than a file.
+      `https://embed.figma.com/design/${FIGMA_KEY_SAMPLE}?embed-host=tech-blog`,
+      'https://foo.figma.site/',
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses a key that is not a key (F4)', () => {
+    // The charset is deliberately `YOUTUBE_ID`'s and wider than the keys measured
+    // (embed-requirements.md §15.2), so `-` and `_` are NOT asserted as refusals here.
+    for (const key of ['', 'a'.repeat(65), '%zz', 'キー', 'a.b', 'a~b'])
+      expect(resolveEmbed(`https://www.figma.com/design/${key}/s`), key).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
+      `javascript:alert(1)//www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
+      `ftp://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('does not throw on a broken percent-escape (E3)', () => {
+    const href = `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/%zz?node-id=%zz`;
+    expect(() => resolveEmbed(href)).not.toThrow();
+    expect(resolveEmbed(href)?.src(ANY)).toBe(FIGMA_SRC);
+  });
+
+  it('names the provider, an accessible name, and a mark-able label (F5, §8-②)', () => {
+    const target = resolveEmbed(`https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s?node-id=5-2`);
+    expect(target?.provider).toBe('figma');
+    expect(target?.title).not.toBe('');
+    // Neither the slug nor the node id is a name (embed-requirements.md §15.5).
+    expect(target?.label).toEqual({ lead: 'Figma', detail: '' });
+    // Full screen is the attribute's business, not this string's (embed-requirements.md §15.3).
+    expect(target?.allow).toBe('');
+  });
+});
