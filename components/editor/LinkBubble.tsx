@@ -25,6 +25,7 @@ import { IconSvg } from './svg/IconSvg';
 import { embedMarkShapes } from './svg/icon-shapes';
 import { isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
+import { isSpeakerdeckDeckPage } from '@/lib/speakerdeck-snippet';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
 // things an author needs — see where it points, open it, edit the URL, remove the link. Pressing
@@ -347,6 +348,12 @@ export function LinkBubble({
     link && embedHref && editor.can().linkToEmbed({ from: link.from, to: link.to }, embedHref)
       ? () => editor.chain().focus().linkToEmbed({ from: link.from, to: link.to }, embedHref).run()
       : null;
+  // §16.10. The one reference in this editor where the missing button is the one the author wanted:
+  // a Speaker Deck deck page carries no id, so no provider claims it and the card is all that is on
+  // offer — and the author has no way to know that the embed is behind a different Copy button.
+  // A line rather than a check, for §15.6's reason: saying so costs nothing and there is nothing
+  // else available without a fetch (§3.2).
+  const deckPageHint = link ? isSpeakerdeckDeckPage(link.href) : false;
   const cardHref = link && !embedHref ? normalizeCardHref(link.href, window.location.origin) : null;
   // The third question, and the one that has no placement in it: a link to the article being
   // written cannot become a card (§18). The button disappears, which is this file's existing way
@@ -1429,6 +1436,20 @@ export function LinkBubble({
                   {displayHref(href)}
                 </span>
                 <EditorTooltip label={href} />
+              </span>
+            )}
+            {deckPageHint && (
+              // Third line, in the column the title and the href already share, so the card keeps
+              // its one row and its cap (§5.5.19). `whitespace-normal` because every other line
+              // here truncates — this one is a sentence and has to wrap.
+              //
+              // **The amber is the editor's own voice**, the colour the three unfinished footnote
+              // states already speak in (app/globals.css, `--alert-accent`'s caution value). It is
+              // here because the line had the href line's grey and measured as the identical
+              // computed colour, so it read as a third line of the reference rather than as
+              // something the editor was saying (§16.10).
+              <span className='link-bubble-deck-hint mt-0.5 block w-full whitespace-normal px-1.5 text-[10px] leading-tight text-[#9a6700] dark:text-[#d29922]'>
+                埋め込みにするには Share →「Copy iframe code」の内容を貼ってください
               </span>
             )}
           </div>

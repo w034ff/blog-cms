@@ -10,6 +10,7 @@ import {
   X_ORIGIN,
   X_PROVIDER,
 } from '@/lib/embed-message';
+import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
 
@@ -173,6 +174,46 @@ export const Embed = Node.create({
               { from: at, to: at + node.nodeSize },
               { type: this.name, attrs: { href } },
             )
+            .setNodeSelection(at)
+            .run();
+        },
+
+      // §16.9: insert an embed at the caret, for the one entry point that has no link to convert
+      // and no card to replace — a pasted Speaker Deck snippet, which arrives as a string rather
+      // than as something already in the document.
+      //
+      // **An empty textblock is replaced rather than pushed down.** Pasting on a blank line is the
+      // ordinary way to add a block, and `setLinkCard`'s insert-after rule would leave that blank
+      // line above the embed, where it is invisible in the editor and real in the markdown. With
+      // any content in the block the caret's textblock is kept whole and the embed goes after it,
+      // which is `insertCodeBlock`'s reasoning: a caret mid-sentence must not split the line.
+      setEmbed:
+        (href: string) =>
+        ({ chain, state }: CommandProps): boolean => {
+          const { $from, empty } = state.selection;
+          if (
+            empty &&
+            $from.depth >= 1 &&
+            $from.parent.isTextblock &&
+            $from.parent.content.size === 0
+          ) {
+            const parent = $from.node($from.depth - 1);
+            const index = $from.index($from.depth - 1);
+            if (parent.canReplaceWith(index, index + 1, this.type)) {
+              const from = $from.before($from.depth);
+              return chain()
+                .insertContentAt(
+                  { from, to: $from.after($from.depth) },
+                  { type: this.name, attrs: { href } },
+                )
+                .setNodeSelection(from)
+                .run();
+            }
+          }
+          if (!canPlaceAfterCaret(state, this.type)) return false;
+          const at = $from.after($from.depth);
+          return chain()
+            .insertContentAt(at, { type: this.name, attrs: { href } })
             .setNodeSelection(at)
             .run();
         },
@@ -463,6 +504,7 @@ declare module '@tiptap/core' {
     embed: {
       linkToEmbed: (range: { from: number; to: number }, href: string) => ReturnType;
       nodeToEmbed: (at: number, href: string) => ReturnType;
+      setEmbed: (href: string) => ReturnType;
       unsetEmbed: (at?: number) => ReturnType;
     };
   }

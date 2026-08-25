@@ -15,6 +15,7 @@ import { LinkHighlight } from './link-highlight-extension';
 import { LinkInputRule } from './link-input-rule';
 import { Link } from './link-extension';
 import { LinkPasteParagraphGuard } from './link-paste-paragraph-guard';
+import { SpeakerdeckSnippetPaste } from './speakerdeck-snippet-paste';
 import { Blockquote } from './blockquote-extension';
 import { TrailingNode } from './trailing-node-extension';
 import { Image } from './image-extension';
@@ -182,6 +183,11 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     // (§18, and see the extension's own note).
     LinkCard,
     Embed,
+    // Beside Embed because it is the one thing that makes one out of a paste (§16.9), and after it
+    // because the command it calls is Embed's. No priority of its own: the snippet is not a bare
+    // URL, so Link's own pasteHandler never claims it, and the only handler it has to run ahead of
+    // is ProseMirror's default paste — which is always last.
+    SpeakerdeckSnippetPaste,
     Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
     // The backstop under the footnote nodes below, not a leftover from before them. Every
     // definition markdown-it-footnote accepts is claimed before this is asked; what it still
