@@ -2046,17 +2046,24 @@ body.link-menu-open .table-toolbar {
 .prose .embed-youtube .embed-frame {
   aspect-ratio: 16 / 9;
 }
-/* A deck has no ratio of its own either, but unlike a post it is handed one: SlideShare names
-   597×486 for every deck it publishes an embed for (`"iframeEmbed":{"url":…,"height":486,
-   "width":597}` in the deck page's payload — measured 2026-08-25 across four decks, the value does
-   not vary). The player then fills whatever box it is given and letterboxes the slide inside it, so
-   one rule serves every deck and a slide that is not 597:486 gets bands, the way a Shorts URL does
-   (§9.6).
+/* A deck has no ratio of its own either, and the box is built from the two parts the player has:
+   a slide area, and a control row that is 38px whatever the box is (measured 2026-08-25 here and
+   on zenn.dev). So the height is the slide area's ratio plus that row, not one ratio over the whole
+   frame — which is what `aspect-ratio: 597 / 486` was, and why a 16:9 deck sat in 78px of bands.
+
+   16:9 for the slide area, because that is what decks are published at now. zenn.dev computes the
+   same thing the same way (`padding-bottom: calc(56.25% + 38px)` on `span.embed-slideshare`,
+   measured at 708px wide → 436.25px). A deck that is not 16:9 still gets bands — the player
+   letterboxes inside whatever it is given (§9.6's Shorts URL), and its own ratio cannot be known
+   without a fetch (§3.2). `height: 0` + `padding-bottom` rather than `aspect-ratio`, since the two
+   parts cannot be added inside one ratio; the iframe is positioned against the padding box and
+   fills it.
 
    No black behind it, for .embed-x's reason: the player paints its own light card, and #000 shows
    as a dark rectangle for as long as the iframe takes to arrive. */
 .prose .embed-slideshare .embed-frame {
-  aspect-ratio: 597 / 486;
+  height: 0;
+  padding-bottom: calc(56.25% + 38px);
   background: transparent;
 }
 /* A design file has no ratio of its own, and Figma hands one over as SlideShare does: the file page

@@ -101,7 +101,9 @@ test('a hand-written javascript: reference becomes nothing at all (E2)', async (
 // browser, and nothing here depends on where it lands.
 const DECK = 'https://www.slideshare.net/slideshow/slidesharesample-260753333/260753333';
 
-test('a deck reference is published in a 597:486 box the player fills (S6)', async ({ page }) => {
+test('a deck reference is published in a 16:9 + 38px box the player fills (S6)', async ({
+  page,
+}) => {
   await page.route('https://www.slideshare.net/slideshow/embed_code/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
   );
@@ -123,10 +125,12 @@ test('a deck reference is published in a 597:486 box the player fills (S6)', asy
   await expect(iframe).toHaveAttribute('allowfullscreen', '');
   await expect(iframe).toHaveAttribute('loading', 'lazy');
 
-  // The ratio, measured rather than read off the stylesheet — the wrapper is what holds it.
+  // The box, measured rather than read off the stylesheet — the wrapper is what holds it. Not a
+  // ratio: the control row is 38px whatever the box is, so the height is the slide area's 16:9 plus
+  // that row (§14.4). A ratio assertion would pass at exactly one width and say nothing at another.
   const box = await frame.boundingBox();
   expect(box).not.toBeNull();
-  expect(box!.width / box!.height).toBeCloseTo(597 / 486, 1);
+  expect(box!.height).toBeCloseTo(box!.width * (9 / 16) + 38, 0);
   // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
   // ratio check while saying nothing about the column it sits in.
   expect(box!.width).toBeGreaterThan(400);
