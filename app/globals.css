@@ -2179,6 +2179,13 @@ body.link-menu-open .table-toolbar {
   opacity: 0.7;
   word-break: break-all;
 }
+/* The Figma sharing line (embed-requirements.md §15.6), which sits under a player rather than in
+   place of one — the note above replaces the frame, this one accompanies it. Same voice, and a gap
+   the note does not need, since nothing else separates it from the box above. */
+.prose .embed-hint {
+  margin-top: 0.5em;
+  word-break: normal;
+}
 
 @media (prefers-color-scheme: dark) {
   /* Dark counterpart of the link card above — the accordion's and the code block card's dark

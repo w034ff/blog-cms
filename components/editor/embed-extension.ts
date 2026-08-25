@@ -259,6 +259,23 @@ export const Embed = Node.create({
       const note = document.createElement('span');
       note.className = 'embed-note';
 
+      // The one thing this surface cannot show the author (docs/embed-requirements.md §15.6).
+      // **A Figma file whose sharing is off renders here and refuses the reader** — measured
+      // 2026-08-25: the author's browser carries a Figma session and gets the design, a reader's
+      // gets Figma's own login screen inside the article. So §7's 「what the author sees is what the
+      // reader gets」 is false for exactly this case, and it is the only case where the editor has
+      // to say something the frame beside it contradicts.
+      //
+      // Unconditional, and worded as a consequence rather than a warning: telling the two apart
+      // means asking Figma, which would put a fetch in the editor and make §3.2's 「no stage
+      // fetches」 false (the check §14.7 declined for SlideShare). An author whose file is already
+      // shared reads one line that does not apply to them; the alternative is the author who
+      // publishes a login screen and never learns it.
+      const hint = document.createElement('span');
+      hint.className = 'embed-note embed-hint';
+      hint.textContent =
+        '読者に表示するには、Figma の共有設定が「リンクを知っている全員」である必要があります。';
+
       // Which of the two states is on screen, so the swap happens on a crossing rather than on
       // every update. `null` until the first render puts something there.
       let showing: 'player' | 'note' | null = null;
@@ -339,6 +356,7 @@ export const Embed = Node.create({
             dom.replaceChildren(actions, note);
             showing = 'note';
           }
+          hint.remove();
           return;
         }
         const src = target.src(instanceId);
@@ -348,6 +366,14 @@ export const Embed = Node.create({
         if (showing !== 'player') {
           dom.replaceChildren(actions, frame);
           showing = 'player';
+        }
+        // Appended and removed on its own rather than through `showing`, so that a change of
+        // provider never runs `replaceChildren` over the frame: detaching the iframe discards its
+        // browsing context, and the note above this one is the whole reason that matters.
+        if (target.provider === 'figma') {
+          if (hint.parentNode !== dom) dom.appendChild(hint);
+        } else {
+          hint.remove();
         }
         arm();
       };

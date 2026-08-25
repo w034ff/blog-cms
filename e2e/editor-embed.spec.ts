@@ -157,7 +157,9 @@ test('a link the block cannot hold an embed for is not offered one (E7)', async 
   }
 });
 
-test('a provider that says nothing is not mistaken for a missing post (§10.6)', async ({ page }) => {
+test('a provider that says nothing is not mistaken for a missing post (§10.6)', async ({
+  page,
+}) => {
   await openWith(page, `<div class="embed" data-href="${WATCH}"></div>\n\n本文\n`);
   await expect(embed(page).locator('iframe')).toHaveCount(1);
 
@@ -170,4 +172,33 @@ test('a provider that says nothing is not mistaken for a missing post (§10.6)',
   await page.waitForTimeout(EMBED_SILENCE_MS + 1500);
   await expect(embed(page).locator('.embed-note')).toHaveCount(0);
   await expect(embed(page).locator('iframe')).toHaveCount(1);
+});
+
+// docs/embed-requirements.md §15.6, criterion F8. The line the author gets instead of a check: a
+// Figma file whose sharing is off renders in this very NodeView (the author's browser carries a
+// Figma session) and shows the reader a login screen, so this is the one embed where what the
+// author sees is not what the reader gets — and the only signal available without a fetch (§3.2).
+const FIGMA = 'https://www.figma.com/design/7or4V8Tl8YbEFRmMSF3pXe/Figma-sample?node-id=0-1';
+
+test('a Figma embed carries the sharing line, and nothing else does (F8)', async ({ page }) => {
+  await page.route('https://embed.figma.com/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  await openWith(page, `<${FIGMA}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  await page.getByRole('button', { name: '埋め込みにする' }).click();
+
+  const view = embed(page);
+  await expect(view).toHaveCount(1);
+  // Beside the player, not in place of it — the frame is what the note state replaces.
+  await expect(view.locator('iframe')).toHaveCount(1);
+  await expect(view.locator('.embed-hint')).toHaveText(/リンクを知っている全員/);
+
+  // The reference is replaced rather than the block rebuilt, which is what the line has to survive
+  // — and a video is not something the line applies to.
+  await loadMarkdown(page, `<${WATCH}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  await page.getByRole('button', { name: '埋め込みにする' }).click();
+  await expect(embed(page).locator('iframe')).toHaveAttribute('src', SRC);
+  await expect(embed(page).locator('.embed-hint')).toHaveCount(0);
 });
