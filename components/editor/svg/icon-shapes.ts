@@ -115,6 +115,28 @@ export const FIGMA_MARK_SHAPES: readonly IconShape[] = [
   { kind: 'path', d: 'M11.4 16.6H8.6a3.4 3.4 0 0 0 0 6.8h2.8z', filled: true },
 ];
 
+// The Speaker Deck monogram (embed-requirements.md §16.7). The third mark here that is a brand's
+// rather than a drawn shape, and the third drawn **filled** — the glyph is a solid shape to begin
+// with, as Figma's five are.
+//
+// **Speaker Deck's own mark, re-fitted rather than re-derived.** Figma's note explains why that one
+// is geometry: five circles and rounded rectangles can be written down and checked. This is two
+// letterforms whose curves are the typeface's, and a re-derivation would be a drawing of the logo
+// rather than the logo — X_MARK_SHAPES is the precedent for taking the path as published.
+//
+// The refit is one number: the published mark is 32×20, and scaling it to 24 wide makes it heavier
+// at 16px than the two marks beside it, which span about 21.5. So it is scaled to that span instead
+// and centred in the 24 box (measured 2026-08-26, rendered at 16/24/40px against X and Figma in
+// both schemes). The source is `mark-*.svg` on Speaker Deck's own CDN, translated out of its
+// `translate(-41,-25)` group.
+export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
+  {
+    kind: 'path',
+    d: 'M10.23,13.68L5.45,13.68C3.13,13.68,1.25,11.8,1.25,9.48C1.25,7.16,3.13,5.28,5.45,5.28L11.03,5.28C11.96,5.28,12.71,6.03,12.71,6.96C12.71,7.89,11.96,8.64,11.03,8.64L5.36,8.64C4.9,8.64,4.52,9.02,4.52,9.48C4.52,9.94,4.9,10.32,5.36,10.32L10.14,10.32C12.46,10.32,14.34,12.2,14.34,14.52C14.34,16.84,12.46,18.72,10.14,18.72L2.93,18.72C2,18.72,1.25,17.97,1.25,17.04C1.25,16.11,2,15.36,2.93,15.36L10.23,15.36C10.69,15.36,11.07,14.98,11.07,14.52C11.07,14.06,10.69,13.68,10.23,13.68ZM13.76,18.72C14.88,17.96,15.68,16.76,15.91,15.36L18.62,15.36C19.08,15.36,19.45,14.98,19.45,14.52L19.45,9.48C19.45,9.02,19.08,8.64,18.62,8.64L13.7,8.64C14.09,8.19,14.33,7.61,14.33,6.96C14.33,6.32,14.09,5.73,13.7,5.28L19.45,5.28C21.27,5.28,22.75,6.79,22.75,8.64L22.75,15.36C22.75,17.21,21.27,18.72,19.45,18.72L13.76,18.72Z',
+    filled: true,
+  },
+];
+
 // **A post is not something that plays**, so the mark for an embed is the provider's question, not
 // one picture for all of them (§7.3). One place answers it, because the bubble's button and the
 // drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
@@ -126,9 +148,8 @@ export const FIGMA_MARK_SHAPES: readonly IconShape[] = [
 // provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
-  // Both slide hosts share the screen-and-legs mark: §7.3's reason is about the kind of thing being
-  // embedded, and a deck is not something that plays whichever site is holding it (§16.7).
-  if (provider === 'slideshare' || provider === 'speakerdeck') return SLIDES_SHAPES;
+  if (provider === 'slideshare') return SLIDES_SHAPES;
+  if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
   return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }
 

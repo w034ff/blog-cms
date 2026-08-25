@@ -1449,7 +1449,7 @@ export function LinkBubble({
               // computed colour, so it read as a third line of the reference rather than as
               // something the editor was saying (§16.10).
               <span className='link-bubble-deck-hint mt-0.5 block w-full whitespace-normal px-1.5 text-[10px] leading-tight text-[#9a6700] dark:text-[#d29922]'>
-                埋め込みにするには Share →「Copy iframe code」の内容を貼ってください
+                埋め込みにするには Share →「Copy iframe code」の内容を貼り付けてください
               </span>
             )}
           </div>
