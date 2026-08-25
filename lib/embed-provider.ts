@@ -166,7 +166,52 @@ const x: Provider = {
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x];
+// docs/embed-requirements.md §14.2. Digits, verified against the parse rather than trusted from it, for YOUTUBE_ID's reason:
+// this is the value that reaches the src. Bounded like X_ID so a longer run of digits cannot be
+// written into the src verbatim.
+const SLIDESHARE_ID = /^\d{1,19}$/;
+// `/slideshow/<slug>/<id>` — the current canonical shape, and the only public one that carries an
+// id (measured 2026-08-25: the old `/<handle>/<slug>` form answers 404 and has no id in it at all,
+// so there is nothing for a second pattern to read). The slug segment stays `[^/]+` for X_PATH's
+// reason — only the id reaches the src.
+const SLIDESHARE_PATH = /^\/slideshow\/[^/]+\/([^/]+)\/?$/;
+
+// Nothing is asked for. Slides are images in someone else's page, so YouTube's four permissions
+// have no counterpart here — and full screen is not among them anywhere: it is the iframe's
+// `allowFullScreen` attribute that decides it, which both render stages already set. Measured
+// 2026-08-25 with this exact pair (`allow=""` present, `allowfullscreen` present): the button in
+// SlideShare's own control row puts the frame full screen, and without the attribute it does
+// nothing.
+const SLIDESHARE_ALLOW = '';
+
+const slideshare: Provider = {
+  // Narrow on purpose, as §9.2's list is: the locale hosts (`es.slideshare.net` and its siblings)
+  // redirect to `www` and carry the id in the same place, but they are an open-ended set, and a URL
+  // from one becomes a card rather than nothing.
+  hosts: ['www.slideshare.net', 'slideshare.net'],
+  resolve: (url) => {
+    const id = SLIDESHARE_PATH.exec(url.pathname)?.[1] ?? null;
+    if (id === null || !SLIDESHARE_ID.test(id)) return null;
+    return {
+      provider: 'slideshare',
+      // The id form, which 302s to `embed_code/key/<KEY>` — the form SlideShare itself publishes in
+      // `twitter:player` (embed-requirements.md §14.3). **The redirect is followed by the reader's browser**, so this
+      // stays a function of the reference alone and no key has to be fetched, which is what makes
+      // §3.2 hold for this provider. The id is ignored by the player, as YouTube's is: a deck says
+      // nothing to its parent, so nothing has to tell two of them apart.
+      src: () => `https://www.slideshare.net/slideshow/embed_code/${id}`,
+      title: 'SlideShare のスライド',
+      // The provider and nothing else. The slug is the only other thing the URL carries, and it is
+      // not a name: a Japanese title slugifies to bare digits, and many slugs end in the id again
+      // (embed-requirements.md §14.8). YouTube leads with the provider for the same reason — the item cannot be named
+      // without a fetch.
+      label: { lead: 'SlideShare', detail: '' },
+      allow: SLIDESHARE_ALLOW,
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x, slideshare];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

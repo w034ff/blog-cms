@@ -2046,6 +2046,19 @@ body.link-menu-open .table-toolbar {
 .prose .embed-youtube .embed-frame {
   aspect-ratio: 16 / 9;
 }
+/* A deck has no ratio of its own either, but unlike a post it is handed one: SlideShare names
+   597×486 for every deck it publishes an embed for (`"iframeEmbed":{"url":…,"height":486,
+   "width":597}` in the deck page's payload — measured 2026-08-25 across four decks, the value does
+   not vary). The player then fills whatever box it is given and letterboxes the slide inside it, so
+   one rule serves every deck and a slide that is not 597:486 gets bands, the way a Shorts URL does
+   (§9.6).
+
+   No black behind it, for .embed-x's reason: the player paints its own light card, and #000 shows
+   as a dark rectangle for as long as the iframe takes to arrive. */
+.prose .embed-slideshare .embed-frame {
+  aspect-ratio: 597 / 486;
+  background: transparent;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`

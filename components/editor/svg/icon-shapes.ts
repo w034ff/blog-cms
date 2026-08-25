@@ -79,12 +79,32 @@ export const X_MARK_SHAPES: readonly IconShape[] = [
   },
 ];
 
+// A screen on a stand — the conventional glyph for slides, and the shape a deck earns for the
+// reason a post does: **a deck is not something that plays** (embed-requirements.md §7.3, §14.8).
+// Drawn as the play mark's frame moved up to make room for the stand rather than as a new box, so
+// the three marks sit at the same weight in the same slot.
+//
+// The stand is two strokes. Rendered at 16px against the stem alone (2026-08-25): with no foot the
+// stem reads as a stray tick hanging under the frame rather than as a stand, which is the same
+// failure mode UNLINK_SHAPES' note describes for shapes that are only a couple of pixels apart.
+export const SLIDES_SHAPES: readonly IconShape[] = [
+  { kind: 'rect', x: 3, y: 4, width: 18, height: 12, rx: 2 },
+  { kind: 'line', x1: 12, y1: 16, x2: 12, y2: 19 },
+  { kind: 'line', x1: 9, y1: 19, x2: 15, y2: 19 },
+];
+
 // **A post is not something that plays**, so the mark for an embed is the provider's question, not
 // one picture for all of them (§7.3). One place answers it, because the bubble's button and the
 // drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
 // one of them is the drift this avoids.
+//
+// The providers are named by their `EmbedTarget.provider` string. `X_PROVIDER` is imported because
+// `lib/embed-message.ts` already has to name X for the protocol it speaks; SlideShare has no such
+// constant to borrow, and inventing one there would put a name in a file about postMessage for a
+// provider that never sends one.
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
-  return provider === X_PROVIDER ? X_MARK_SHAPES : PLAY_SHAPES;
+  if (provider === X_PROVIDER) return X_MARK_SHAPES;
+  return provider === 'slideshare' ? SLIDES_SHAPES : PLAY_SHAPES;
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

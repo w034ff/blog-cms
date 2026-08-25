@@ -93,3 +93,43 @@ test('a hand-written javascript: reference becomes nothing at all (E2)', async (
   await expect(page.locator('#post-body iframe')).toHaveCount(0);
   expect(await page.locator('#post-body').innerHTML()).not.toContain('javascript:');
 });
+
+// docs/embed-requirements.md §14.4, criterion S6. The deck itself is never fetched: SlideShare is
+// routed to a blank page of our own, because what this measures is the box, and a spec that leans
+// on a third party's uptime measures that instead. The stub also stands in for the `302 →
+// embed_code/key/<KEY>` the real host answers with (§14.3) — the redirect belongs to the reader's
+// browser, and nothing here depends on where it lands.
+const DECK = 'https://www.slideshare.net/slideshow/slidesharesample-260753333/260753333';
+
+test('a deck reference is published in a 597:486 box the player fills (S6)', async ({ page }) => {
+  await page.route('https://www.slideshare.net/slideshow/embed_code/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public slideshare spec',
+    `本文の前。\n\n<div class="embed" data-href="${DECK}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-slideshare .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  await expect(iframe).toHaveAttribute(
+    'src',
+    'https://www.slideshare.net/slideshow/embed_code/260753333',
+  );
+  // Full screen is this attribute's business and not the `allow` string's (§14.4).
+  await expect(iframe).toHaveAttribute('allowfullscreen', '');
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The ratio, measured rather than read off the stylesheet — the wrapper is what holds it.
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width / box!.height).toBeCloseTo(597 / 486, 1);
+  // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
+  // ratio check while saying nothing about the column it sits in.
+  expect(box!.width).toBeGreaterThan(400);
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height, 0);
+});

@@ -72,7 +72,9 @@ describe('resolveEmbed / YouTube', () => {
   });
 
   it('embeds the video and drops the list when both are present (Y5)', () => {
-    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&list=PLabc&index=2`)?.src(ANY)).toBe(SRC);
+    expect(resolveEmbed(`https://www.youtube.com/watch?v=${ID}&list=PLabc&index=2`)?.src(ANY)).toBe(
+      SRC,
+    );
   });
 
   it('refuses an id that is not an id', () => {
@@ -169,17 +171,11 @@ describe('resolveEmbed / X', () => {
   it('refuses an id that is not an id (X4)', () => {
     // The bound is what keeps a longer run of digits out of the src verbatim; `99999999999999999999`
     // is the 20-digit fixture §10.6 keeps, and it is refused HERE, before anything reaches the wire.
-    for (const bad of [
-      '99999999999999999999',
-      'abc',
-      '12a45',
-      '',
-      '-1',
-      '1.5',
-      '１２３',
-    ])
-      expect(resolveEmbed(`https://x.com/ClaudeDevs/status/${encodeURIComponent(bad)}`), bad)
-        .toBeNull();
+    for (const bad of ['99999999999999999999', 'abc', '12a45', '', '-1', '1.5', '１２３'])
+      expect(
+        resolveEmbed(`https://x.com/ClaudeDevs/status/${encodeURIComponent(bad)}`),
+        bad,
+      ).toBeNull();
   });
 
   it('refuses a redirector rather than following it (§3.2)', () => {
@@ -202,5 +198,79 @@ describe('resolveEmbed / X', () => {
     const target = resolveEmbed(`https://x.com/ClaudeDevs/status/${X_ID}`);
     expect(target?.provider).toBe('x');
     expect(target?.title).not.toBe('');
+  });
+});
+
+// docs/embed-requirements.md §14. `260753333` is the deck measured throughout that section, and
+// `266319371` is the 43-slide one its paging was measured on.
+//
+// The whole of "a deck URL becomes an embed and a SlideShare URL that names no deck becomes a card"
+// lives in what this file returns, as X's account/post split does — so both halves are measured
+// here rather than through either caller.
+const SS_ID = '260753333';
+const SS_SRC = `https://www.slideshare.net/slideshow/embed_code/${SS_ID}`;
+
+describe('resolveEmbed / SlideShare', () => {
+  it('makes the id form out of the canonical URL, on both hosts (S1)', () => {
+    // embed-requirements.md §14.3 measured that this 302s to `embed_code/key/<KEY>` and plays the right deck. Nothing
+    // here follows that redirect — the id is read out of the string, which is what keeps §3.2 true.
+    for (const href of [
+      `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+      `https://slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+      `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}/`,
+      `https://www.slideshare.net/slideshow/2024-state-of-marketing-report-by-hubspot/${SS_ID}`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(SS_SRC);
+  });
+
+  it('leaves every SlideShare URL that names no deck to the card (S2)', () => {
+    for (const href of [
+      // The old shape, which carries no id at all (measured 2026-08-25: it answers 404).
+      'https://www.slideshare.net/HubSpot/2024-state-of-marketing-report-by-hubspot',
+      // A deck page with the id missing, the search page, the front page, a user page.
+      'https://www.slideshare.net/slideshow/slidesharesample-260753333',
+      'https://www.slideshare.net/search?q=tiptap',
+      'https://www.slideshare.net/',
+      // The embed URL itself. Accepting it would put a bare player page into the `<a href>` that
+      // 「リンクに戻す」 writes, which is not the page the author was holding (embed-requirements.md §14.2).
+      'https://www.slideshare.net/slideshow/embed_code/key/LZA7MNjzNb8GAl',
+      // The locale hosts are outside the allowlist and fall to the card, as `music.youtube.com`
+      // does (embed-requirements.md §14.2).
+      `https://es.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses an id that is not an id (S3)', () => {
+    for (const id of ['abc', '', '12a', '-1', '1'.repeat(20), '%zz'])
+      expect(resolveEmbed(`https://www.slideshare.net/slideshow/deck/${id}`), id).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@www.slideshare.net/slideshow/deck/${SS_ID}`,
+      `javascript:alert(1)//www.slideshare.net/slideshow/deck/${SS_ID}`,
+      `ftp://www.slideshare.net/slideshow/deck/${SS_ID}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('does not throw on a broken percent-escape (E3)', () => {
+    expect(() => resolveEmbed('https://www.slideshare.net/slideshow/%zz/1')).not.toThrow();
+    expect(resolveEmbed('https://www.slideshare.net/slideshow/%zz/1')?.src(ANY)).toBe(
+      'https://www.slideshare.net/slideshow/embed_code/1',
+    );
+  });
+
+  it('names the provider, an accessible name, and a mark-able label (S4, §8-②)', () => {
+    const target = resolveEmbed(
+      `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+    );
+    expect(target?.provider).toBe('slideshare');
+    expect(target?.title).not.toBe('');
+    // The slug is deliberately absent from the label — it is not a name (embed-requirements.md §14.8).
+    expect(target?.label).toEqual({ lead: 'SlideShare', detail: '' });
+    // Full screen is the attribute's business, not this string's (embed-requirements.md §14.4).
+    expect(target?.allow).toBe('');
   });
 });

@@ -648,7 +648,9 @@ describe('renderMdxToHtml / embed', () => {
   it('turns a post reference into an iframe the browser can address (X1)', async () => {
     const { html } = await renderMdxToHtml(`<div class="embed" data-href="${POST}"></div>`);
     expect(html).toContain('class="embed embed-x"');
-    expect(html).toContain('src="https://platform.twitter.com/embed/Tweet.html?id=2089798442306711646&#x26;lang=ja&#x26;embedId=emb-0"');
+    expect(html).toContain(
+      'src="https://platform.twitter.com/embed/Tweet.html?id=2089798442306711646&#x26;lang=ja&#x26;embedId=emb-0"',
+    );
     // The client needs both to do its work: the name the provider will answer to, and the
     // reference to build the fallback link from (§10.6). Neither is reconstructible from the src.
     expect(html).toContain('data-embed-id="emb-0"');
@@ -674,6 +676,28 @@ describe('renderMdxToHtml / embed', () => {
     );
     expect(html).not.toContain('<iframe');
     expect(html).toContain('<a href="https://x.com/ClaudeDevs" target="_blank">');
+  });
+
+  // docs/embed-requirements.md §14. `260753333` is the deck measured there.
+  const DECK = 'https://www.slideshare.net/slideshow/slidesharesample-260753333/260753333';
+
+  it('turns a deck reference into the id form of the embed URL (S5)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${DECK}"></div>`);
+    // The class the aspect-ratio rule hangs on, and the src the reader's browser redirects from.
+    expect(html).toContain('class="embed embed-slideshare"');
+    expect(html).toContain('src="https://www.slideshare.net/slideshow/embed_code/260753333"');
+    // Full screen is the attribute's business (§14.4), and `allow` is empty for this provider.
+    expect(html).toContain('allow="" allowfullscreen');
+    // Nothing listens for this one, so no client behaviour hangs off the id — but both stages mint
+    // it for every embed, and a missing attribute would be a difference between the two.
+    expect(html).toContain('data-embed-id="emb-0"');
+  });
+
+  it('leaves a SlideShare URL that names no deck to the card, as a plain link here (S2)', async () => {
+    const href = 'https://www.slideshare.net/HubSpot/2024-state-of-marketing-report-by-hubspot';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`<a href="${href}" target="_blank">`);
   });
 
   it('publishes the fallback anchor in exactly the shape the client must reproduce (X5)', async () => {
