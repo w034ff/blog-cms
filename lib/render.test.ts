@@ -863,7 +863,7 @@ describe('renderMdxToHtml — external links open in a new tab', () => {
     // `//example.com` has no scheme, so sanitize passes it as a relative URL and the test above
     // does not match it: it is the one off-site shape that stays in this tab (§7.2 item 1). Pinned
     // because it is the exception to "内部は相対パスか fragment", not because it is wanted — no
-    // route in the repo writes this form today.
+    // route in the repo generates this form, though an author can type one (§7.2 item 1).
     const { html } = await renderMdxToHtml('[x](//example.com)\n');
     expect(html).toContain('<a href="//example.com">');
     expect(html).not.toContain('target=');

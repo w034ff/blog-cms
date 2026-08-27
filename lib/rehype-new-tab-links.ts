@@ -35,7 +35,8 @@ import { visit } from 'unist-util-visit';
 // passes it as a relative URL and it carries no scheme (measured 2026-08-21, and pinned by a test
 // in lib/render.test.ts). That is the behaviour it had before this stage existed, and §7.2 item 1
 // says why it is left alone rather than parsed with `new URL()`: the value of the rule is that
-// everything staying on this site is outside it by shape, and nothing in the repo writes this form.
+// everything staying on this site is outside it by shape, and nothing in the repo *generates* this
+// form — though an author can type one, since `isPublishableUri` passes it (measured 2026-08-27).
 //
 // **Rule 2 is the class, not the reference**, so a card that resolved to nothing is not covered by
 // it — `fallbackLink` emits a bare `<a>` with no class, which is the shape it should be judged as
