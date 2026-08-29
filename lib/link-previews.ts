@@ -49,13 +49,26 @@ export async function readLinkPreview(url: string): Promise<LinkPreview | null> 
 // The editor's path: answer from the table while the row is fresh, otherwise read the page again
 // and write what came back. Returns what the card should draw, `null` when there is nothing to
 // draw — the caller falls back to showing the URL itself.
-export async function resolveLinkPreview(url: string): Promise<LinkPreview | null> {
+//
+// `force` is the author saying "I have just changed something on the other side" (§14.3.2) — the
+// case the TTL cannot know about, because a target whose sharing setting was switched on answers
+// differently to the identical request. **Only the explicit 「カードにする」 passes it**; the
+// NodeView's own per-render lookup never does, so the automatic path stays behind `FAIL_TTL_MS`
+// exactly as before.
+//
+// **It refuses a remembered failure, not a remembered answer.** An `ok` row is used even under
+// force: re-reading a page that already answered is the manual refresh §14.3 declined, and it can
+// only lose — a target that is momentarily down would replace a good card with a failure the row
+// then remembers for 30 minutes. Measured 2026-08-29: without this the E2E case that converts a
+// resolved external link went to the network and stopped agreeing with its seeded row.
+export async function resolveLinkPreview(url: string, force = false): Promise<LinkPreview | null> {
   const [row] = await db.select().from(linkPreviews).where(eq(linkPreviews.url, url)).limit(1);
   // `ok` is the only settled answer. `partial` and `failed` are re-asked far sooner, and a row from
   // an older version is not used at all — its age says nothing about whether it holds what this
   // version would have stored.
   const ttl = row?.status === 'ok' ? OK_TTL_MS : FAIL_TTL_MS;
-  const usable = row && row.version === PREVIEW_VERSION && Date.now() - row.fetchedAt < ttl;
+  const fresh = row && row.version === PREVIEW_VERSION && Date.now() - row.fetchedAt < ttl;
+  const usable = fresh && !(force && row.status !== 'ok');
   if (usable) {
     return row.status === 'failed'
       ? null

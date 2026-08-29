@@ -211,6 +211,11 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           const parent = $from.node($from.depth - 1);
           const index = $from.index($from.depth - 1);
           if (!parent.canReplaceWith(index, index + 1, this.type)) return false;
+          // **This button is the author saying "ask again"** (§14.3.2). The remembered face is
+          // dropped along with the remembered failure: a cache hit skips `lookupCard` entirely, so
+          // leaving it would answer an explicit refresh without asking anyone anything.
+          cardCache.delete(href);
+          forceRefresh.add(href);
           return chain()
             .insertContentAt(
               { from: $from.before($from.depth), to: $from.after($from.depth) },
@@ -406,9 +411,25 @@ type CardFace = {
 // that fetched (§13).
 const cardCache = new Map<string, CardFace>();
 
+// References whose next lookup must ask the page again instead of believing a remembered failure
+// (docs/link-card-requirements.md §14.3.2). Written only by `linkToCard` — the author's explicit
+// 「カードにする」 — and consumed by the first `lookupCard` that draws that reference.
+//
+// Module state next to `cardCache` rather than a field on `LinkCardStorage`: storage exists for the
+// one thing the *host* writes after the extension list is built (`ownSlug`), and this is set and
+// consumed inside this file. Keyed by reference, so two cards pointing at the same URL share the
+// one refresh — which is what the author asked for, since the row they are refreshing is shared too.
+const forceRefresh = new Set<string>();
+
 // One wording for all four doors (§18). The author is told the same thing whether they are picking
 // a post, pasting their own URL, or looking at a card that already points at this article.
 const SELF_NOTE = 'この記事自身は参照できません';
+
+// The other half of §14.3.2: the failure is remembered, and this is the gesture that forgets it.
+// Both buttons it names are on this card already — 「リンクに戻す」 here, 「カードにする」 in the
+// link bubble the reference falls back into — so it describes what the author can see, not a
+// control they have to find.
+const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに戻してカードにし直すと再取得します）';
 
 // What is known about a card's target. Three states rather than a nullable answer, because "the
 // answer has not come back yet" and "the route says there is nothing there" are the same `null` in
@@ -435,6 +456,11 @@ type Lookup =
 // there, and reports that the author's own post could not be read.
 function lookupCard(href: string, ownSlug: string): Promise<Lookup> {
   const reference = normalizeCardHref(href, window.location.origin) ?? href;
+  // Consumed here, once, whatever the lookup then decides — **including when the page fails
+  // again**. Leaving it set would put the next ordinary render back on the network, which is the
+  // automatic path `FAIL_TTL_MS` exists to keep off it. Read before the branches below so a
+  // self-reference or an internal post cannot swallow it on the external card's behalf.
+  const force = forceRefresh.delete(href);
   // The fourth door, and the only one that answers for a card that already exists (§18): a body
   // carrying a self-reference — written before this rule, hand-edited, or pasted as raw HTML —
   // reaches the editor as an ordinary card and would otherwise resolve to the post the author is
@@ -443,7 +469,9 @@ function lookupCard(href: string, ownSlug: string): Promise<Lookup> {
   if (isOwnPostHref(reference, ownSlug)) {
     return Promise.resolve({ status: 'missing', note: SELF_NOTE });
   }
-  return externalCardHost(reference) === null ? fetchPost(reference) : fetchPreview(reference);
+  return externalCardHost(reference) === null
+    ? fetchPost(reference)
+    : fetchPreview(reference, force);
 }
 
 async function fetchPost(href: string): Promise<Lookup> {
@@ -480,18 +508,23 @@ async function fetchPost(href: string): Promise<Lookup> {
 // The external half (§14.5). The route decides whether this costs a SELECT or a fetch; the editor
 // only ever asks it, and asks it again on every render, which is what keeps the stored row warm
 // without a refresh button anyone has to remember to press (§14.3).
-async function fetchPreview(href: string): Promise<Lookup> {
+async function fetchPreview(href: string, force: boolean): Promise<Lookup> {
   const host = externalCardHost(href);
   if (host === null) return { status: 'missing', note: 'タイトルを取得できませんでした' };
   try {
-    const res = await fetch(`/api/link-preview?url=${encodeURIComponent(href)}`);
+    const res = await fetch(
+      `/api/link-preview?url=${encodeURIComponent(href)}${force ? '&force=1' : ''}`,
+    );
     if (!res.ok) return { status: 'unknown' };
     const { preview } = (await res.json()) as {
       preview: { title: string; image: string } | null;
     };
     // The page answered nothing readable — a Cloudflare challenge, a timeout, a host that is
     // this server itself (§14.5.1). The card keeps its reference and shows the URL instead.
-    if (!preview) return { status: 'missing', note: 'タイトルを取得できませんでした' };
+    // The way back, named in the card itself: the row remembers this failure for 30 minutes
+    // (`FAIL_TTL_MS`), so an author who has just fixed the other side — a sharing setting, most
+    // often — would otherwise be told the same thing by a card that never asked again (§14.3.2).
+    if (!preview) return { status: 'missing', note: RETRY_NOTE };
     // The description is not drawn here. The NodeView has never shown one — §13 added the image,
     // not the description — and this card inherits that rather than introducing a second answer to
     // "what does the editor show" (§14.7).

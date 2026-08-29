@@ -524,6 +524,10 @@ const EXTERNAL_HREF = 'https://example.com/article';
 const EXTERNAL_TITLE = '外部ページの見出し';
 const EXTERNAL_MD = `<div class="link-card" data-href="${EXTERNAL_HREF}"></div>`;
 
+// What a card says when the page would not answer, and what to do about it (§14.3.2). The row
+// remembers the failure for 30 minutes, so the note names the two buttons that forget it.
+const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに戻してカードにし直すと再取得します）';
+
 test('the picker takes a URL and makes an external card (14a)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -624,7 +628,7 @@ test('a URL that could not be read says so, and shows the URL (14k)', async ({ p
     '<div class="link-card" data-href="https://unreachable.example/x"></div>\n\n本文\n',
   );
 
-  await expect(card(page).locator('.link-card-meta')).toHaveText('タイトルを取得できませんでした');
+  await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
   // The title degrades to the reference (§5.3), which is the thing the author can act on. The host
   // line is not drawn — there is no resolved card to draw it from, and the URL already names it.
   await expect(card(page).locator('.link-card-title')).toHaveText('https://unreachable.example/x');
@@ -690,7 +694,7 @@ test('a row from an older version is not used, however fresh it is (14t)', async
     '<div class="link-card" data-href="http://127.0.0.1/stale-row"></div>\n\n本文\n',
   );
 
-  await expect(card(page).locator('.link-card-meta')).toHaveText('タイトルを取得できませんでした');
+  await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
   await expect(card(page).locator('.link-card-title')).not.toHaveText('古い版の行');
 
   // And it was rewritten rather than merely ignored — the next render must not repeat the work.
@@ -854,4 +858,68 @@ test('a card that already points at this post says so (18c)', async ({ page }) =
   // Still a card in the document, with its reference intact: the author is the one who decides
   // what to do about it (「変更」 or 「リンクに戻す」), and nothing was rewritten behind them.
   expect(await markdown(page)).toContain(`data-href="/posts/${slug}"`);
+});
+
+test('カードにする asks the page again; an ordinary render does not (14.3.2)', async ({ page }) => {
+  // §14.3.2. The author fixes the other side — a sharing setting, most often — and presses the
+  // button again. Without this the row answers for them for up to `FAIL_TTL_MS`, and the card
+  // repeats a failure that has already been fixed. **Both halves have to be measured**: that the
+  // explicit conversion re-asks, and that the render after it does not — a flag left set would put
+  // the automatic path on the network, which is the thing the row exists to keep off it.
+  const HREF = 'https://unreachable.example/force-refresh';
+  const MD = `<div class="link-card" data-href="${HREF}"></div>\n\n本文\n`;
+  // The client's own requests, not the server's: what is under test is which one carries the flag.
+  const asked: string[] = [];
+  page.on('request', (req) => {
+    const url = new URL(req.url());
+    if (url.pathname === '/api/link-preview') asked.push(url.search);
+  });
+  const fetchedAt = (): number | null => {
+    const db = new Database(TEST_DB_PATH, { readonly: true });
+    const row = db.prepare('SELECT fetched_at AS at FROM link_previews WHERE url = ?').get(HREF) as
+      | { at: number }
+      | undefined;
+    db.close();
+    return row?.at ?? null;
+  };
+
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, MD);
+
+  // ① The NodeView's own lookup. It never forces, however the page answered.
+  await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
+  expect(asked.every((search) => !search.includes('force=1'))).toBe(true);
+  await expect.poll(fetchedAt).not.toBeNull();
+  const first = fetchedAt();
+
+  // ② 「リンクに戻す」 hands back a link whose text is the reference (nothing resolved, so there is
+  // no title to use), and the bubble offers 「カードにする」 over it — the round trip the note names.
+  await card(page).getByRole('button', { name: 'リンクに戻す' }).click();
+  await page.locator('.ProseMirror a').first().click();
+  await page.getByRole('button', { name: 'カードにする' }).click();
+
+  await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
+  expect(asked.filter((search) => search.includes('force=1'))).toHaveLength(1);
+  // The row was written again, which is the half the query string cannot prove: the server skipped
+  // a row it would otherwise have answered from, and asked the page.
+  await expect.poll(fetchedAt).toBeGreaterThan(first!);
+  const second = fetchedAt();
+
+  // ③ The flag is consumed by that one lookup **even though the page failed again**. A fresh
+  // NodeView over the same reference is back behind the TTL: it asks the route, and the route
+  // answers from the row without touching the network.
+  // A genuinely fresh mount. Re-loading the same markdown into the open editor is not one: the
+  // node lands at the same position with the same attrs, ProseMirror keeps the NodeView it already
+  // has, and no lookup runs at all (measured 2026-08-29 — the count did not move).
+  const before = asked.length;
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, MD);
+  await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
+  await expect.poll(() => asked.length).toBeGreaterThan(before);
+  expect(asked.slice(before).every((search) => !search.includes('force=1'))).toBe(true);
+  expect(fetchedAt()).toBe(second);
 });

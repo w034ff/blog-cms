@@ -62,7 +62,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ preview: null });
   }
 
-  const preview = await resolveLinkPreview(target.toString());
+  // The author's explicit 「カードにする」, which asks the page again rather than believing a
+  // remembered failure (§14.3.2). Compared against the one string that means it, so a missing or
+  // garbled value reads as `false` — the same shape the `url` check above uses.
+  const force = req.nextUrl.searchParams.get('force') === '1';
+
+  const preview = await resolveLinkPreview(target.toString(), force);
   // The image leaves as the signed proxy path, not as the target's URL. The editor draws the same
   // `<img src>` the published page does, which is what §7 means by the NodeView being the real
   // card — and it means the raw third-party URL has no reason to reach a browser at all.
