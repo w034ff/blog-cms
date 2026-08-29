@@ -22,9 +22,11 @@ import { PencilIcon } from './svg/PencilIcon';
 import { UnlinkIcon } from './svg/UnlinkIcon';
 import { CardIcon } from './svg/CardIcon';
 import { IconSvg } from './svg/IconSvg';
-import { embedMarkShapes } from './svg/icon-shapes';
+import { canImportGithubBlob, importGithubBlob } from './github-blob-import';
+import { embedMarkShapes, GITHUB_MARK_SHAPES } from './svg/icon-shapes';
 import { isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
 import { resolveEmbed } from '@/lib/embed-provider';
+import { parseGithubBlob } from '@/lib/github-blob';
 import { isSpeakerdeckDeckPage } from '@/lib/speakerdeck-snippet';
 
 // The editor's only link UI: a small floating card over the link the caret is in, holding the four
@@ -354,7 +356,28 @@ export function LinkBubble({
   // A line rather than a check, for §15.6's reason: saying so costs nothing and there is nothing
   // else available without a fetch (§3.2).
   const deckPageHint = link ? isSpeakerdeckDeckPage(link.href) : false;
-  const cardHref = link && !embedHref ? normalizeCardHref(link.href, window.location.origin) : null;
+  // The third outcome, and it sits in the same ordering for the same reason (§19.2): a
+  // `github.com/…/blob/…` URL has one meaning here, and it is not the card that would show none of
+  // the file. No provider claims it — GitHub publishes no frameable form of that page (§18.9) — so
+  // this is asked after `resolveEmbed` and before `normalizeCardHref`, and the card is not offered
+  // for what it answers.
+  //
+  // **The only button on this card whose press is asynchronous.** It reads the file from GitHub and
+  // then rewrites the line, so unlike its two neighbours it can fail after being pressed; what it
+  // says when it does is `BLOB_NOTICES`, through the toast this component is already handed.
+  const blobHref = link && !embedHref && parseGithubBlob(link.href) ? link.href : null;
+  const toBlob =
+    link && blobHref && canImportGithubBlob(editor.state, { from: link.from, to: link.to })
+      ? () => {
+          void importGithubBlob(editor, { from: link.from, to: link.to }, blobHref).then(
+            (notice) => {
+              if (notice) onNotice(notice);
+            },
+          );
+        }
+      : null;
+  const cardHref =
+    link && !embedHref && !blobHref ? normalizeCardHref(link.href, window.location.origin) : null;
   // The third question, and the one that has no placement in it: a link to the article being
   // written cannot become a card (§18). The button disappears, which is this file's existing way
   // of saying "not offered" — the link itself is left alone, deliberately, since a text link to
@@ -1470,6 +1493,14 @@ export function LinkBubble({
                   (§7.3). One button either way — the two are never on offer at once (§5). The
                   choice itself lives in `embedMarkShapes`, because the drag ghost asks it too. */}
               <IconSvg shapes={embedMarkShapes(embedTarget?.provider)} />
+            </ToolbarButton>
+          )}
+          {toBlob && (
+            <ToolbarButton round title='コードブロックにする' onClick={toBlob}>
+              {/* GitHub's own mark, the one the gist embed's button already wears (§18.8). The
+                  outcome is a code block, but the picture that says which button this is is where
+                  the code comes from — and the two are never on offer at once (§19.2). */}
+              <IconSvg shapes={GITHUB_MARK_SHAPES} />
             </ToolbarButton>
           )}
           {toCard && (

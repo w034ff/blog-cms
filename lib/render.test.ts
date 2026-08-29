@@ -960,3 +960,42 @@ describe('renderMdxToHtml — external links open in a new tab', () => {
     expect(html).toContain('<a href="https://www.youtube.com/playlist?list=PL1" target="_blank">');
   });
 });
+
+// docs/embed-requirements.md §19.4. A code block imported from a GitHub file stores the blob URL in
+// the fence's filename slot; this stage is what turns that back into a header a reader can follow.
+// **Every other code block in every existing post goes through the same stage**, so what it does
+// with an ordinary filename matters as much as what it does with a URL.
+describe('renderMdxToHtml — GitHub blob code block header (§19.4)', () => {
+  const BLOB = 'https://github.com/facebook/react/blob/main/packages/react/index.ts';
+
+  it('draws the caption as a link to the file (B16)', async () => {
+    const { html } = await renderMdxToHtml('```ts:' + BLOB + '\nconst a = 1;\n```\n');
+    expect(html).toContain('class="code-source"');
+    expect(html).toContain(`<a href="${BLOB}"`);
+    expect(html).toContain('<span class="code-source-repo">facebook/react</span>');
+    expect(html).toContain('<span class="code-source-path">packages/react/index.ts</span>');
+    // The URL is not also left as text: the header says the same thing twice otherwise.
+    expect(html).not.toContain(`>${BLOB}<`);
+    // The language still reaches Shiki — the split happens at the *first* colon, so `https:` is
+    // not read as the language.
+    expect(html).toContain('data-language="ts"');
+    // The anchor leaves this site, so rehypeNewTabLinks — which runs after this stage — treats it
+    // like any other external link in the body (§6).
+    expect(html).toContain('target="_blank"');
+  });
+
+  it('leaves an ordinary filename alone (B16)', async () => {
+    const { html } = await renderMdxToHtml('```ts:index.ts\nconst a = 1;\n```\n');
+    expect(html).toContain('>index.ts<');
+    expect(html).not.toContain('code-source');
+  });
+
+  it('leaves a filename that only looks like one alone (B16)', async () => {
+    // A URL on this host, and a GitHub URL that names no file: neither is an import, so neither
+    // gets a header that says it came from one.
+    for (const name of ['https://example.com/a.ts', 'https://github.com/facebook/react']) {
+      const { html } = await renderMdxToHtml('```ts:' + name + '\nconst a = 1;\n```\n');
+      expect(html, name).not.toContain('code-source');
+    }
+  });
+});

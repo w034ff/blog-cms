@@ -10,6 +10,7 @@ import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 import { rehypeCodeFilename } from './rehype-code-filename';
+import { rehypeCodeSource } from './rehype-code-source';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
@@ -140,6 +141,10 @@ const processor = unified()
     defaultLang: { block: 'plaintext' },
     transformers: [diffLineHighlight()],
   })
+  // A code block imported from a GitHub file wears a link to it in place of its filename
+  // (docs/embed-requirements.md §19.4). After pretty-code, which builds the caption this rewrites,
+  // and before rehypeNewTabLinks, which is what decides the anchor opens in a new tab.
+  .use(rehypeCodeSource)
   // Turns each stored `<div class="link-card" data-href>` into a card, a plain link, or nothing
   // (docs/link-card-requirements.md §6.1). Last, and after sanitize for the same reason
   // pretty-code is: everything it builds is this pipeline's own markup, so none of it has to be

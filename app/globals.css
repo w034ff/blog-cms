@@ -629,6 +629,10 @@ body.link-menu-open .table-toolbar {
 }
 .prose .code-block-header .code-block-lang {
   flex: 0 0 auto;
+  /* Holds the right-hand cluster against the right edge whatever is to its left. With the filename
+     `<input>` showing there is no free space and this resolves to nothing; with the source link,
+     which is only as wide as its text, this is what keeps the header's shape (2026-08-30). */
+  margin-left: auto;
   cursor: pointer;
   /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
      language is content you want to read at a glance — fixed to the same bright color used
@@ -654,6 +658,135 @@ body.link-menu-open .table-toolbar {
 }
 .prose .code-block-header .code-block-filename::placeholder {
   color: rgba(173, 184, 199, 0.55);
+}
+
+/* The header a code block wears when its filename is a GitHub blob URL: a link to the file, in
+   place of the filename field (docs/embed-requirements.md §19.4). The block was imported from that
+   file, so what the header has to say is where the code came from — the field is hidden rather
+   than filled with a URL nobody wants to read or rename.
+
+   Sized and coloured as the filename it replaces, not as a link: it sits in a header of quiet
+   captions, and the ordinary link blue would make it the loudest thing in the block it heads. The
+   underline appears on hover, which is where "this is a link" belongs here. */
+.prose .code-block-header .code-block-source {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  /* **Sized to its text**, unlike the filename `<input>` it stands in for: that field could fill
+     the bar for free, since a stray click only focused it, and a link cannot — the same area opens
+     a tab. Filling the row made the box 500px wide whatever the file was called, so `o/r › a.ts`
+     had the whole header as a target (measured 2026-08-30); it is 108px now.
+
+     **The controls stay at the right edge**, which is what a shorter name would otherwise cost:
+     they are pushed there by `margin-left: auto` on the language `<select>` below rather than by
+     this anchor growing, so the space between the two belongs to neither. `min-width: 0` stays, so
+     a name too long for the row truncates instead of pushing the controls off it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  color: #e6edf3;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1.5;
+  text-decoration: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.prose .code-block-header .code-block-source:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6edf3;
+  text-decoration: underline;
+}
+.prose .code-block-header .code-block-source svg {
+  flex: 0 0 auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  /* buildIcon draws for the toolbar, where every icon is a stroke; this mark is a solid area. */
+  fill: currentColor;
+  stroke: none;
+}
+/* **One colour for the whole name.** The repository half and the path half were painted
+   differently — GitHub's muted grey against the block's own text colour — and read as two things
+   rather than one reference (2026-08-29, author's call). What separates them is the `/`, which is
+   punctuation and stays muted; what is left is one line of text at one weight.
+
+   The earlier form also had an opacity on top of an already-muted colour and measured 1.70:1
+   against the light header, where 4.5:1 is the floor. Whatever the two halves are, they are one
+   stated colour now — the same one the published side uses. */
+.prose .code-block-header .code-block-source-repo {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose .code-block-header .code-block-source-path {
+  /* Not stretching either — with `1 1 auto` the span filled the anchor, so shrinking the anchor
+     alone would have left the hit area where it was. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* **A chevron, not a slash.** The two halves are joined by us, and a `/` here is the same glyph
+   GitHub itself wrote inside `owner/repo` and inside the path — one character meaning two
+   different things, with only the spacing to tell them apart (2026-08-29, author's call). The
+   space before it is the flex `gap`; the space after it is this padding. */
+.prose .code-block-header .code-block-source-path::before {
+  content: '›';
+  padding-right: 0.375rem;
+  /* The chevron is a small glyph at the caption's own size, so it is stepped up — **1.2em is the
+     largest step that moves nothing**: measured 2026-08-29, the header holds 38px and the link's
+     box 23.5px up to here, and 1.35em grows the box to 24.5px. `line-height: 1` is what keeps the
+     taller glyph from claiming a taller line. */
+  font-size: 1.2em;
+  line-height: 1;
+  /* Keeps the hover underline off the chevron. **`text-decoration: none` here would do
+     nothing** — the line is painted by the `<a>` and flows over its descendants, the same fact
+     `.prose a .accent-emphasis` records about colour. An inline-block is an atomic inline and
+     the parent's decoration does not enter one (measured 2026-08-29, both ways). */
+  display: inline-block;
+}
+
+/* The way back out of an import (§19.4), in the header of a block that has a reference to return
+   to. Quiet like the caption it sits beside rather than destructive-red: what it undoes is one
+   Ctrl-Z away, and it is not deleting anything the author cannot get back. */
+.prose .code-block-header .code-block-to-link {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(160, 160, 160, 0.25);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: #adbac7;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.prose .code-block-header .code-block-to-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6edf3;
+}
+.prose .code-block-header .code-block-to-link:focus-visible {
+  outline: none;
+  color: #e6edf3;
+  box-shadow: inset 0 0 0 1px rgba(140, 140, 140, 0.4);
+}
+/* The icon is out of the flow at this width, the way the link card's band keeps its own out
+   (`.prose .link-card-head button svg`): a header with room for the words does not need the
+   picture too. Which of the two shows is a width question, answered in the 30rem block below. */
+.prose .code-block-header .code-block-to-link svg {
+  display: none;
+  width: 0.875rem;
+  height: 0.875rem;
 }
 
 /* Diff-display toggle (components/editor/code-block-extension.ts's NodeView): a compact pill
@@ -784,6 +917,29 @@ body.link-menu-open .table-toolbar {
   .prose .code-block-header .code-block-filename {
     color: #57606a;
   }
+  /* The source header and the way back out of it, which had no light values at all until this was
+     measured — they were showing the dark scheme's #adbac7 on the light header's #eaeef2. The
+     header is one colour across both halves of the name; the button beside it stays quiet, being a
+     control rather than part of the name. */
+  .prose .code-block-header .code-block-source {
+    color: #24292f;
+  }
+  .prose .code-block-header .code-block-to-link {
+    color: #57606a;
+  }
+  .prose .code-block-header .code-block-source:hover,
+  .prose .code-block-header .code-block-to-link:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #24292f;
+  }
+  .prose .code-block-header .code-block-to-link {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  .prose .code-block-header .code-block-to-link:focus-visible {
+    color: #24292f;
+    box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  }
   .prose .code-block-header .code-block-filename:hover,
   .prose .code-block-header .code-block-lang:hover {
     background: rgba(0, 0, 0, 0.06);
@@ -866,6 +1022,79 @@ body.link-menu-open .table-toolbar {
   [data-rehype-pretty-code-title] {
     background: #1c2128;
     border-bottom-color: #30363d;
+  }
+}
+
+/* The published half of the same header (lib/rehype-code-source.ts, §19.4). The caption keeps its
+   own background and divider; what changes is that its text becomes a link with GitHub's mark. Not
+   painted in the body's link blue, for the reason the editor's copy is not: it heads a block, and
+   the colour would make the header louder than the code under it. */
+[data-rehype-pretty-code-title].code-source {
+  padding: 0;
+}
+.prose a.code-source-link {
+  /* Inline, so the link is as wide as what it says — the editor's copy of this header is sized
+     the same way. A caption-wide anchor is a caption-wide tap target, and what it does is take the
+     reader out of the article; measured 2026-08-30, filling the caption made the box 748px
+     whatever the file was called, `o/r › a.ts` included. It is 127px now. */
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 1rem;
+  /* Beats `.prose a`'s blue and @tailwindcss/typography's weight and underline, the way
+     `.prose a.link-card` beats them: this anchor is a caption that happens to be a link, and in
+     the body's link colour it reads louder than the code it heads. Same specificity trick, same
+     reason.
+     **The colour is stated rather than inherited.** `inherit` reaches the `<figcaption>`, and
+     @tailwindcss/typography paints that with `--tw-prose-captions` — a grey around L*48, measured
+     2026-08-29, which is what made the header look faint. These are the figure's own two colours,
+     the same pair the editor's copy of this header uses. */
+  color: #e6edf3;
+  font-weight: inherit;
+  text-decoration: none;
+}
+@media (prefers-color-scheme: light) {
+  .prose a.code-source-link {
+    color: #24292f;
+  }
+}
+.prose a.code-source-link:hover {
+  text-decoration: underline;
+}
+.code-source-mark {
+  flex: 0 0 auto;
+}
+.code-source-repo {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-source-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The chevron the editor's copy of this header uses, for the reason recorded there. */
+.code-source-path::before {
+  content: '›';
+  padding-right: 0.375rem;
+  font-size: 1.2em;
+  line-height: 1;
+  /* An atomic inline, so the anchor's hover underline stops at it — see the editor's copy. */
+  display: inline-block;
+}
+/* Same trade as the editor's copy of this header, at the same breakpoint. */
+@media (max-width: 30rem) {
+  .code-source-repo {
+    display: none;
+  }
+  .code-source-path::before {
+    content: none;
   }
 }
 
@@ -2009,7 +2238,10 @@ body.link-menu-open .table-toolbar {
   .prose .link-card-head button svg {
     display: block;
   }
-  .prose .link-card-action-label {
+  .prose .link-card-action-label,
+  /* The code block header's way back out of an import (§19.4) collapses on the same rule and for
+     the same reason: what a cramped header owes its width to is the file it names. */
+  .prose .code-block-to-link-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -2019,6 +2251,23 @@ body.link-menu-open .table-toolbar {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+  .prose .code-block-header .code-block-to-link {
+    padding: 0.25rem;
+    gap: 0;
+  }
+  .prose .code-block-header .code-block-to-link svg {
+    display: block;
+  }
+  /* The repository half goes, rather than both halves truncating to nothing: measured 2026-08-29
+     at 420px, the two shrank together into `fac… / pack…`, which names neither. Two blocks from
+     the same repository differ in their paths, so the path is the half worth the width — and the
+     whole reference is still on the link's `title` and one tap away. */
+  .prose .code-block-header .code-block-source-repo {
+    display: none;
+  }
+  .prose .code-block-header .code-block-source-path::before {
+    content: none;
   }
 }
 
