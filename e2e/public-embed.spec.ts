@@ -260,3 +260,83 @@ test('a Docswell reference is published in a slide-plus-control-row box (D7)', a
   expect(inner!.height).toBeCloseTo(box!.height, 0);
   expect(inner!.width).toBeCloseTo(box!.width, 0);
 });
+
+// docs/embed-requirements.md §18.4 and §18.5, criteria G7, G10 and G11.
+//
+// **GitHub is never reached here, and it cannot be stubbed either.** The frame is sandboxed without
+// `allow-same-origin`, and a request from an opaque-origin frame does not pass through Playwright's
+// routing — measured 2026-08-29, both `page.route` and `context.route` were bypassed and the real
+// gist rendered. So the loop is measured in two halves that between them touch every line of it:
+// G7/G10 drive the parent's half with the message its own document would have sent, and G11 runs
+// that document for real against a script served from this file.
+const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae?file=hello.rb';
+
+// The message the reporter posts, delivered directly. The published listener authenticates a gist
+// message by the id naming a box it is holding rather than by an origin (the origin is the string
+// `"null"`), so this is the same code path the frame's own message takes.
+async function report(page: Page, id: string, height: number, files: number): Promise<void> {
+  await page.evaluate(
+    ([source, embedId, h, n]) => {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { source, id: embedId, height: h, files: n } }),
+      );
+    },
+    ['gist-embed', id, height, files] as const,
+  );
+}
+
+test('a gist is published as a srcdoc whose box follows the report (G7)', async ({ page }) => {
+  const href = await publish(
+    page,
+    'Public gist spec',
+    `本文の前。\n\n<div class="embed" data-href="${GIST}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-gist .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  // The document is ours; GitHub's script is loaded from inside it (§18.5).
+  expect(await iframe.getAttribute('src')).toBeNull();
+  await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-popups');
+  const srcdoc = (await iframe.getAttribute('srcdoc'))!;
+  expect(srcdoc).toContain(
+    'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae.js?file=hello.rb',
+  );
+  expect(srcdoc).toContain('gist-embed');
+
+  // Published at the guess (§18.4), then corrected. **The guess itself is not asserted**: this
+  // environment reaches GitHub, the frame cannot be stubbed (see the note above), and the real
+  // gist's own report lands first — so what is measured is that a report moves the box, with a
+  // height no gist would coincidentally have.
+  expect((await frame.boundingBox())!.height).toBeLessThan(400);
+  await report(page, 'emb-0', 612, 1);
+  // **The transition, not the exact pixel.** This environment reaches GitHub and the frame cannot
+  // be stubbed, so the real gist is live inside it: given a taller box it re-measures and reports
+  // again, landing 2px under what was asked for (the frame is the box less its own 1px rule). That
+  // second report is the mechanism working, so the assertion is on the move rather than on a value
+  // only a dead frame would hold still at.
+  await expect.poll(async () => (await frame.boundingBox())!.height).toBeGreaterThan(600);
+  // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
+  // height check while saying nothing about the column it sits in.
+  expect((await frame.boundingBox())!.width).toBeGreaterThan(400);
+});
+
+test('a gist that drew no files is replaced with a plain link (G10)', async ({ page }) => {
+  // GitHub's script writes nothing at all for an id that no longer resolves, which is why the file
+  // count rather than silence is the signal (§18.5) — silence has its own path, the §10.6 clock,
+  // and this is the one that does not make the reader wait eight seconds for it.
+  const href = await publish(
+    page,
+    'Public gist fallback spec',
+    `<div class="embed" data-href="${GIST}"></div>\n`,
+  );
+  await page.goto(href);
+  await expect(page.locator('#post-body .embed-gist')).toHaveCount(1);
+
+  await report(page, 'emb-0', 250, 0);
+  const link = page.locator(`#post-body a[href="${GIST}"]`);
+  await expect(link).toHaveCount(1);
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(page.locator('#post-body iframe')).toHaveCount(0);
+});

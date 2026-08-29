@@ -2136,6 +2136,27 @@ body.link-menu-open .table-toolbar {
   padding-bottom: calc(56.25% + 56px);
   background: transparent;
 }
+/* A gist has no ratio, and its height is its content's — the shape X's post has
+   (docs/embed-requirements.md §18.4). So this is a published guess, corrected in the reader's
+   browser by components/EmbedFrames.tsx and in the editor by the NodeView, both from the reporter
+   inside the frame's own document (§18.5).
+
+   **250px, the same guess X's box takes, and for a weaker reason.** X's is the measured cluster of
+   real posts; a gist has no cluster to take one from — 45 public gists measured from 59px to
+   223,378px — so this is a value chosen to be a small jump for the short snippet an article usually
+   carries (250px is about 10 lines, and a gist measures `37 + 22 × 行数`), rather than a
+   measurement. The jump when the correction lands is accepted, as it is on X.
+
+   White rather than transparent, and bordered. GitHub's markup paints its code area white to all
+   four sides and carries no edge of its own, so on the article's white page the block would end
+   nowhere — the Figma case of §15.4. **The border is `#d0d7de` in both schemes deliberately:**
+   GitHub hard-codes `data-color-mode="light"` and no query changes it (§18.3), so this is a light
+   card on a dark page, and a dark border would outline it as something it is not. */
+.prose .embed-gist .embed-frame {
+  height: 250px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`

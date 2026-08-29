@@ -6,6 +6,9 @@ import { resolveEmbed, type EmbedTarget } from '@/lib/embed-provider';
 import {
   EMBED_SILENCE_MS,
   EMBED_VISIBLE_THRESHOLD,
+  GIST_PROVIDER,
+  gistAsk,
+  readGistCall,
   readXCall,
   X_ORIGIN,
   X_PROVIDER,
@@ -377,7 +380,12 @@ export const Embed = Node.create({
           clearSilence();
         }
         lastHref = href;
-        speaks = target?.provider === X_PROVIDER;
+        // **Two providers answer back now, and for opposite reasons** (§18.5). X's iframe reports
+        // because X wrote it that way; the gist's reports because the document around GitHub's
+        // script is one this codebase writes. Silence from either is news; silence from a YouTube
+        // player is not, and arming the clock for it replaced a working player with the failure
+        // note eight seconds after the author scrolled to it (2026-08-24).
+        speaks = target?.provider === X_PROVIDER || target?.provider === GIST_PROVIDER;
         dom.className = target
           ? `embed embed-view embed-${target.provider}`
           : 'embed embed-view embed-unresolved';
@@ -391,7 +399,10 @@ export const Embed = Node.create({
           if (!target) {
             note.textContent = href === '' ? '参照がありません' : `埋め込みにできない参照: ${href}`;
           } else {
-            note.textContent = `取得できない投稿です（削除済み・非公開・存在しない）: ${href}`;
+            note.textContent =
+              target.provider === GIST_PROVIDER
+                ? `取得できない gist です（削除済み・非公開・存在しない）: ${href}`
+                : `取得できない投稿です（削除済み・非公開・存在しない）: ${href}`;
           }
           if (showing !== 'note') {
             dom.replaceChildren(actions, note);
@@ -400,8 +411,24 @@ export const Embed = Node.create({
           hint.remove();
           return;
         }
+        // The published iframe's attribute, set here for the reason lib/rehype-embed.ts states
+        // (§18.6): without it a click inside a gist takes the whole article to
+        // `gist.githubusercontent.com`. **Set before the frame is pointed anywhere** — a `sandbox`
+        // written onto a document that has already loaded does not apply until it loads again, and
+        // the author would then be looking at the one thing the attribute exists to prevent.
+        if (target.sandbox === null) iframe.removeAttribute('sandbox');
+        else iframe.setAttribute('sandbox', target.sandbox);
         const src = target.src(instanceId);
-        if (iframe.src !== src) iframe.src = src;
+        // One or the other, never both, as the published stage does it. Both are guarded on the
+        // value already there: assigning either one reloads the frame, and an edit elsewhere in the
+        // document must not restart a player the author is watching.
+        if (target.srcdoc === null) {
+          if (iframe.hasAttribute('srcdoc')) iframe.removeAttribute('srcdoc');
+          if (iframe.src !== src) iframe.src = src;
+        } else {
+          const doc = target.srcdoc(src, instanceId);
+          if (iframe.srcdoc !== doc) iframe.srcdoc = doc;
+        }
         iframe.title = target.title;
         iframe.allow = target.allow;
         if (showing !== 'player') {
@@ -425,8 +452,7 @@ export const Embed = Node.create({
       // something only its own iframe can report. Kept here rather than shared with that file
       // because the two surfaces do different things with the second answer.
       const onMessage = (event: MessageEvent) => {
-        if (event.origin !== X_ORIGIN) return;
-        // And from this placement's own frame. **The id is not enough**: it names a placement, and
+        // From this placement's own frame. **The id is not enough**: it names a placement, and
         // anything that copies this element copies the name with it. The block drag handle's
         // preview cloned the whole NodeView, iframe included — a clone is a live browsing context,
         // not a picture — and the copy answered under `emb-view-1` from a box of a different width,
@@ -434,6 +460,25 @@ export const Embed = Node.create({
         // gone now, blankClonedFrames in block-drag-handle.ts, and this is the check that makes the
         // question "did MY frame say it" rather than "did something say it").
         if (!iframe.contentWindow || event.source !== iframe.contentWindow) return;
+        // Our own reporter first, because its origin is the string `"null"` rather than an origin
+        // (§18.5) — the source-window check above is the whole of its authentication, and it is the
+        // same check X's message gets. A gist that drew no files is the counterpart of X's
+        // `no_results`: GitHub's script writes nothing at all for an id that no longer resolves.
+        const gist = readGistCall(event.data);
+        if (gist !== null) {
+          if (gist.id !== instanceId) return;
+          if (gist.files === 0) {
+            clearSilence();
+            failedHref = typeof current.attrs.href === 'string' ? current.attrs.href : '';
+            render(current);
+            return;
+          }
+          answered = true;
+          clearSilence();
+          frame.style.height = `${gist.height}px`;
+          return;
+        }
+        if (event.origin !== X_ORIGIN) return;
         const call = readXCall(event.data);
         if (call?.id !== instanceId) return;
         const height = call.params?.[0]?.height;
@@ -448,6 +493,12 @@ export const Embed = Node.create({
         }
       };
       window.addEventListener('message', onMessage);
+
+      // The editor's half of the same arrangement (§18.5). This listener is attached when the
+      // NodeView is built, which can be after the frame's document has already parsed and
+      // announced — asking closes that gap, here as on the published page.
+      const ask = () => iframe.contentWindow?.postMessage(gistAsk(), '*');
+      iframe.addEventListener('load', ask);
 
       // Started by visibility and never by load: nothing is sent while the iframe is off screen,
       // even though the post inside it is already drawn (§10.5). Once seen is enough — a block
@@ -482,6 +533,7 @@ export const Embed = Node.create({
         // ProseMirror must never read a mutation back into the document.
         ignoreMutation: () => true,
         destroy: () => {
+          iframe.removeEventListener('load', ask);
           window.removeEventListener('message', onMessage);
           observer.disconnect();
           clearSilence();

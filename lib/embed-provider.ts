@@ -12,6 +12,11 @@
 // shows is derived from the reference itself, which is why none of the link card's apparatus — the
 // link_previews table, its TTL, its version, the image proxy — has a counterpart here.
 
+// The one import. `GIST_SOURCE` names the message the document below writes into itself, and the
+// two surfaces that read it live in `lib/embed-message.ts` — the name has to be the same string in
+// all three places, and this file is where it is written rather than where it is decided.
+import { GIST_SOURCE } from './embed-message';
+
 export type EmbedTarget = {
   // Names the provider for the CSS hook both surfaces share (`embed-<provider>`). The stored form
   // carries no provider of its own (§4): it is derived here, so adding one cannot widen what has to
@@ -43,6 +48,29 @@ export type EmbedTarget = {
   // that already says so, where a second 「X の投稿」 is the same word on every post.
   label: { lead: string; detail: string };
   allow: string;
+  // A document of our own to frame the provider in, built from the `src` above — or null to point
+  // the iframe straight at that `src`, which is what every provider but one does.
+  //
+  // **This exists so that a provider can be made to speak** (§18.5). A cross-origin frame's height
+  // is knowable only if the frame reports it, and GitHub's gist markup reports nothing: `.pibb`
+  // runs no script, and neither it nor `.js` sends CORS headers, so it cannot be measured from
+  // outside either (measured 2026-08-29). Framing GitHub's own `document.write` script inside a
+  // document this file writes puts a reporter of ours in that same document, and then the box
+  // follows the gist instead of guessing at it.
+  //
+  // The stages set `srcdoc` **instead of** `src` when this is non-null. The string is raw HTML;
+  // escaping it into an attribute belongs to whichever stage is writing one.
+  srcdoc: ((src: string, instanceId: string) => string) | null;
+  // The `sandbox` attribute, or null for no attribute at all — which is not the same thing, since
+  // `sandbox=""` is the most restrictive value there is.
+  //
+  // **Only a provider that would otherwise navigate the article away asks for this** (§18.6).
+  // `.pibb` carries `<base target="_parent">`, so a reader clicking 「view raw」 inside the frame
+  // takes the whole page to `gist.githubusercontent.com` — measured 2026-08-29, and no other
+  // provider here can do that. The empty value is enough because that fragment runs no script; a
+  // provider whose player does would be broken by it, which is why this is the provider's answer
+  // and not a blanket rule.
+  sandbox: string | null;
 };
 
 type Provider = {
@@ -118,6 +146,8 @@ const youtube: Provider = {
       // leads and the moment follows.
       label: { lead: 'YouTube', detail: start > 0 ? `${start} 秒から` : '' },
       allow: YOUTUBE_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
@@ -162,6 +192,8 @@ const x: Provider = {
       label:
         path?.[1] === 'i' ? { lead: 'X', detail: id } : { lead: `@${path?.[1] ?? ''}`, detail: '' },
       allow: X_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
@@ -207,6 +239,8 @@ const slideshare: Provider = {
       // without a fetch.
       label: { lead: 'SlideShare', detail: '' },
       allow: SLIDESHARE_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
@@ -270,6 +304,8 @@ const figma: Provider = {
       // fetch. The slug is the author's title slugified, and the node id (`5-2`) is not a name.
       label: { lead: 'Figma', detail: '' },
       allow: FIGMA_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
@@ -314,6 +350,8 @@ const speakerdeck: Provider = {
       // fetch, and this URL does not even carry a slug to be tempted by (§16.7).
       label: { lead: 'Speaker Deck', detail: '' },
       allow: SPEAKERDECK_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
@@ -379,11 +417,155 @@ const docswell: Provider = {
       // the deck cannot be named without a fetch, and the slug is the title slugified (§17.7).
       label: { lead: 'Docswell', detail: page > 1 ? `${page} ページ目から` : '' },
       allow: DOCSWELL_ALLOW,
+      srcdoc: null,
+      sandbox: null,
     };
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck, docswell];
+// docs/embed-requirements.md §18.2. Lowercase hex, verified against the parse rather than trusted
+// from it, for `YOUTUBE_ID`'s reason: this is the value that reaches the src. Two lengths are in
+// service, as Speaker Deck's are — 32 for gists made today and 20 for older ones (measured
+// 2026-08-29: `fa7df2b570a3f16b39e990b2d2c20aae` and `6cad326836d38bd3a7ae` both render) — so the
+// bound is a range over the pair. **Uppercase is not the same gist**: the same 32 characters
+// upper-cased answer 404, so the class is not `[0-9a-fA-F]`.
+const GIST_ID = /^[0-9a-f]{20,32}$/;
+// A GitHub login: letters, digits and hyphens, 39 at most, which is the ceiling GitHub itself
+// enforces. **This is the first path segment other than an id that reaches a src here**, and it has
+// to, because it is load-bearing: `gist.github.com/wrongowner/<id>.pibb` answers 404 rather than
+// redirecting (measured 2026-08-29). Case is not: `QIITAN/<id>` is the same gist as `qiitan/<id>`,
+// so nothing normalises it either.
+const GIST_OWNER = /^[A-Za-z0-9-]{1,39}$/;
+// `/<owner>/<id>` and `/<id>`. The second is a real form rather than a courtesy — it 302s to the
+// first, which the reader's browser follows (§14.3's arrangement), and the 302's own
+// `x-frame-options: deny` does not reach the rendered document, so the frame still draws (measured
+// 2026-08-29). The trailing slash is optional because gist serves it either way.
+const GIST_PATH = /^\/([^/]+)(?:\/([^/]+))?\/?$/;
+// The `?file=` a gist page URL may carry (§18.3), which both Zenn and Qiita document in this exact
+// spelling. Bounded rather than enumerated: the value is percent-encoded on its way into the src,
+// so what this excludes is not an injection but a string that cannot name a file — a path
+// separator, a control character, or a run longer than any filename. **A name the gist does not
+// have is a 404 with an empty body**, and 404 carries `x-frame-options: deny`, so the reader gets
+// the browser's own refusal notice rather than the whole gist (measured 2026-08-29).
+const GIST_FILE = /^[^/\\\u0000-\u001f\u007f]{1,255}$/;
+
+// Nothing is asked for, as SlideShare, Figma, Speaker Deck and Docswell ask for nothing: `.pibb` is
+// a stylesheet and static markup, with no script of its own to want a permission (measured
+// 2026-08-29 — 5054 bytes, one `<link rel=stylesheet>`, zero `<script>`).
+const GIST_ALLOW = '';
+
+// The document GitHub's gist script is run inside (embed-requirements.md §18.5). **Everything the
+// frame does that GitHub did not write is here**, and there is only ever one of it: no state, no
+// DOM, one string built from two arguments, so both render stages produce the identical frame.
+//
+// Three things it adds to what `.js` writes:
+//
+//   1. **A reporter**, because nothing else can answer「この gist は何 px か」. It sends the height
+//      and how many files were drawn; `lib/embed-message.ts` describes the message and why zero
+//      files is the signal for a gist that no longer resolves.
+//
+//      **It answers a `{ask}` as well as announcing, and announcing does not de-duplicate.** A
+//      frame that reported once and then went quiet is unreachable if the parent was not listening
+//      yet — and it is not, reliably: the frame's document parses with the page around it, while
+//      the listener is attached on hydration. Measured 2026-08-29, that race lost the message
+//      outright and the box sat at its published guess forever. Only the resize path compares
+//      heights, because that one is answering a change rather than a question.
+//   2. `<base target="_blank">`. GitHub's markup links to the gist, the file and the raw text, and
+//      the sandbox has no `allow-top-navigation`, so without a target of their own those clicks
+//      would do nothing at all. **`.pibb` writes `<base target="_parent">` instead** — which is why
+//      it could take the article away, and why the form that lets us write our own is safer as well
+//      as measurable (§18.6).
+//   3. A transparent background and no margin, so the box is the gist's own height rather than the
+//      gist plus the 8px `<body>` margin the UA would otherwise supply.
+//
+// **The height measured is `<body>`'s box, not `documentElement.scrollHeight`.** The latter is
+// clamped to the frame's own viewport, so it can never report a number below the box it is already
+// in — measured 2026-08-29, a six-line gist in the 250px guess reported 250 and kept 90px of empty
+// white under it forever. Reading the body's rect makes the box able to shrink as well as grow,
+// which is the whole of「可変」.
+//
+// **The document ends at the reporter's `</script>`, and closes no tags after it.** React's server
+// renderer does not reproduce anything following `</script>` inside this attribute: with
+// `</body></html>` written here, the served HTML carried the attribute without them while the RSC
+// payload carried the whole string, and the two disagreeing is a hydration mismatch — logged by
+// React, and gist-only (measured 2026-08-29 against the same page with a YouTube embed and with no
+// embed at all). Both tags are optional in HTML and the frame parses identically without them.
+// Anything added to this document belongs BEFORE that script, not after it.
+//
+// `postMessage` is addressed to `'*'` because the frame cannot know the origin it is embedded in —
+// the sandbox gives it an opaque one. The payload is a height and a count, so there is nothing in
+// it to withhold; the parent is the side that has to check who is talking.
+function gistDocument(src: string, instanceId: string): string {
+  return (
+    '<!doctype html><html><head><base target="_blank">' +
+    '<style>html,body{margin:0;padding:0;background:transparent}</style></head><body>' +
+    `<script src="${src}"></script>` +
+    '<script>(function(){var s=' +
+    JSON.stringify(GIST_SOURCE) +
+    ',i=' +
+    JSON.stringify(instanceId) +
+    ',l=-1;function h(){return Math.ceil(document.body.getBoundingClientRect().height);}' +
+    'function send(){l=h();' +
+    "parent.postMessage({source:s,id:i,height:l,files:document.querySelectorAll('.gist-file').length},'*');}" +
+    'function grew(){if(h()!==l)send();}' +
+    'if(window.ResizeObserver)new ResizeObserver(grew).observe(document.body);' +
+    'addEventListener("message",function(e){if(e.data&&e.data.ask===s)send();});' +
+    'addEventListener("load",send);setTimeout(send,0);setTimeout(send,400);})();</script>'
+  );
+}
+
+const gist: Provider = {
+  // One host. `gist.githubusercontent.com` is deliberately absent: it serves the raw file as
+  // `text/plain` under `x-frame-options: deny` and CSP `sandbox`, so it is not an embed of anything
+  // — and it is an output of this file's own `view raw` link rather than an input to it.
+  hosts: ['gist.github.com'],
+  resolve: (url) => {
+    const path = GIST_PATH.exec(url.pathname);
+    if (path === null) return null;
+    // `/<owner>/<id>` fills both groups; `/<id>` fills only the first, and then there is no owner.
+    const owner = path[2] === undefined ? null : path[1];
+    const id = path[2] ?? path[1];
+    if (!GIST_ID.test(id)) return null;
+    if (owner !== null && !GIST_OWNER.test(owner)) return null;
+    const named = url.searchParams.get('file');
+    // A `file` that cannot name a file is dropped rather than passed on, for §9.3's reason: the
+    // whole gist is a worse answer than the author's, and the browser's refusal notice is a worse
+    // one than either.
+    const file = named !== null && GIST_FILE.test(named) ? named : null;
+    return {
+      provider: 'gist',
+      // **The embed script, not the frameable page.** `.pibb` is GitHub's own frameable rendering
+      // and it renders — but it is a document we cannot add anything to, and a gist that cannot
+      // report its height forces a fixed box (embed-requirements.md §18.3). `.js` is the same
+      // markup delivered as `document.write` calls, so it can be run inside a document of ours,
+      // and `gistDocument` puts a reporter beside it. No redirect to wait on when the owner is
+      // present and no fetch either way, so §3.2 holds.
+      src: () =>
+        `https://gist.github.com/${owner === null ? '' : `${owner}/`}${id}.js` +
+        (file === null ? '' : `?file=${encodeURIComponent(file)}`),
+      srcdoc: gistDocument,
+      title: 'GitHub Gist のコード',
+      // **The one provider here whose reference carries real names**, which is why this is not
+      // `{ lead: 'GitHub Gist' }` the way every deck's is: the decks cannot be named without a
+      // fetch, and a gist URL already holds the owner, and the file too when the author named one.
+      // X's shape exactly (§10.4) — the account leads, and the form that carries no account falls
+      // back to the provider with the bare id behind it.
+      label:
+        owner === null
+          ? { lead: 'GitHub Gist', detail: file ?? id }
+          : { lead: owner, detail: file ?? '' },
+      allow: GIST_ALLOW,
+      // §18.6. `allow-scripts` because both the gist's own `document.write` and the reporter beside
+      // it have to run; `allow-popups` so GitHub's own 「view raw」 still opens somewhere, since the
+      // document sets `target="_blank"`. **`allow-same-origin` is deliberately absent**, which is
+      // what keeps a third party's markup out of the page around it — and the price is an opaque
+      // origin, so the parent authenticates the message by its source window (§18.5).
+      sandbox: 'allow-scripts allow-popups',
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck, docswell, gist];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

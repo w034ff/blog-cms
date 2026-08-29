@@ -45,7 +45,11 @@ function embedElement(target: EmbedTarget, instanceId: string, href: string): El
             type: 'element',
             tagName: 'iframe',
             properties: {
-              src: target.src(instanceId),
+              // One or the other, never both: a provider that brings a document of its own is
+              // framed in that, and the `src` it was built from appears only inside it (§18.5).
+              ...(target.srcdoc === null
+                ? { src: target.src(instanceId) }
+                : { srcDoc: target.srcdoc(target.src(instanceId), instanceId) }),
               title: target.title,
               // Below the fold, the third party is not asked for anything until the reader scrolls
               // that far (§9.5). The request cannot be removed — that is §8-① — but it can be made
@@ -58,9 +62,19 @@ function embedElement(target: EmbedTarget, instanceId: string, href: string): El
               // being honoured, the embed is back to what it looks like today. A no-op for YouTube,
               // whose player already sets `overflow: hidden` on both `<html>` and `<body>`, which is
               // why it goes on every provider rather than becoming a branch in `resolveEmbed`.
+              //
+              // **It stays unconditional because no box here clips what it holds.** The gist was
+              // briefly an exception, when its box was a fixed height and the rest had to stay
+              // reachable — and the wheel then belonged to the frame rather than the article for as
+              // long as the pointer crossed it (§18.4, measured 2026-08-29). Sizing the box to the
+              // gist removed the exception rather than managing it.
               scrolling: 'no',
               referrerPolicy: 'strict-origin-when-cross-origin',
               allow: target.allow,
+              // §18.6. Omitted entirely unless the provider asks: `sandbox=""` is the most
+              // restrictive value there is, not the absence of one, and it would stop every player
+              // here that runs a script of its own.
+              ...(target.sandbox === null ? {} : { sandbox: target.sandbox }),
               allowFullScreen: true,
             },
             children: [],

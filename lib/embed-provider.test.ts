@@ -571,3 +571,153 @@ describe('resolveEmbed / Docswell', () => {
     expect(target?.allow).toBe('');
   });
 });
+
+// docs/embed-requirements.md §18. `qiitan/fa7df…` is the gist Qiita's own guide embeds, and
+// `octocat/6cad326836d38bd3a7ae` is the 20-character form — both measured 2026-08-29.
+const GIST_OWNER = 'qiitan';
+const GIST_ID = 'fa7df2b570a3f16b39e990b2d2c20aae';
+const GIST_PAGE = `https://gist.github.com/${GIST_OWNER}/${GIST_ID}`;
+const GIST_SRC = `${GIST_PAGE}.js`;
+
+describe('resolveEmbed / GitHub Gist', () => {
+  it('makes the .js src out of the gist page URL, in both of its shapes (G1)', () => {
+    expect(resolveEmbed(GIST_PAGE)?.src(ANY)).toBe(GIST_SRC);
+    expect(resolveEmbed(`${GIST_PAGE}/`)?.src(ANY)).toBe(GIST_SRC);
+    // The ownerless form is a real one: it 302s to the owner form and the reader's browser follows
+    // it, which is §14.3's arrangement. It is not rewritten here, because rewriting would need the
+    // owner, and the owner is what this form does not carry.
+    expect(resolveEmbed(`https://gist.github.com/${GIST_ID}`)?.src(ANY)).toBe(
+      `https://gist.github.com/${GIST_ID}.js`,
+    );
+    // The 20-character id, which is still in service beside the 32 (§18.2).
+    expect(resolveEmbed('https://gist.github.com/octocat/6cad326836d38bd3a7ae')?.src(ANY)).toBe(
+      'https://gist.github.com/octocat/6cad326836d38bd3a7ae.js',
+    );
+    // A parameter that names no part of what is shown, as §15.4 drops Figma's `t=`.
+    expect(resolveEmbed(`${GIST_PAGE}?utm_source=x`)?.src(ANY)).toBe(GIST_SRC);
+  });
+
+  it('carries the file the author named, percent-encoded, and names it (G2)', () => {
+    expect(resolveEmbed(`${GIST_PAGE}?file=hello.rb`)?.src(ANY)).toBe(`${GIST_SRC}?file=hello.rb`);
+    // The one author-controlled string that reaches a src here, so it is encoded rather than
+    // trusted — a filename may hold a space or a `?` and still be a filename (§18.3).
+    expect(resolveEmbed(`${GIST_PAGE}?file=a b.md`)?.src(ANY)).toBe(`${GIST_SRC}?file=a%20b.md`);
+    // Not a filename: dropped rather than passed on, which shows the whole gist instead of the
+    // browser's own refusal notice (§9.3's rule).
+    for (const file of ['', 'a/b.txt', 'x'.repeat(256)])
+      expect(resolveEmbed(`${GIST_PAGE}?file=${encodeURIComponent(file)}`)?.src(ANY), file).toBe(
+        GIST_SRC,
+      );
+    // The label is the one here that can name the item, rather than leading with the provider the
+    // way every deck does (§18.8).
+    expect(resolveEmbed(`${GIST_PAGE}?file=hello.rb`)?.label).toEqual({
+      lead: GIST_OWNER,
+      detail: 'hello.rb',
+    });
+    expect(resolveEmbed(`https://gist.github.com/${GIST_ID}?file=hello.rb`)?.label).toEqual({
+      lead: 'GitHub Gist',
+      detail: 'hello.rb',
+    });
+  });
+
+  it('leaves every gist.github.com URL that is not one gist to the card (G3)', () => {
+    for (const href of [
+      // The two embed URLs themselves. Accepting either would make 「リンクに戻す」 write GitHub's
+      // bare embed form into an `<a href>` rather than the page the author was holding (§14.2's
+      // call).
+      GIST_SRC,
+      `${GIST_PAGE}.pibb`,
+      // Revisions, the starred list, the discover feed, a user's gist index, and the root.
+      `${GIST_PAGE}/revisions`,
+      'https://gist.github.com/starred',
+      'https://gist.github.com/discover',
+      `https://gist.github.com/${GIST_OWNER}`,
+      'https://gist.github.com/',
+      // The raw host, which serves `text/plain` under `x-frame-options: deny` and CSP `sandbox` —
+      // it is not an embed of anything (§18.2).
+      `https://gist.githubusercontent.com/${GIST_OWNER}/${GIST_ID}/raw/hello.rb`,
+      // github.com itself is not this provider: a blob page answers `deny` (§18.1).
+      'https://github.com/octocat/Spoon-Knife/blob/main/README.md',
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses an id or an owner that is not one (G4)', () => {
+    for (const id of [
+      // Case matters to gist: the same 32 characters upper-cased answer 404 (§18.2).
+      GIST_ID.toUpperCase(),
+      'g'.repeat(32),
+      'a'.repeat(19),
+      'a'.repeat(33),
+      '..',
+    ])
+      expect(resolveEmbed(`https://gist.github.com/${GIST_OWNER}/${id}`), id).toBeNull();
+    // The owner reaches the src too — a wrong one is a 404 rather than a redirect — so it is
+    // verified like an id (§18.2).
+    for (const owner of ['a'.repeat(40), 'own er', 'own/er'])
+      expect(resolveEmbed(`https://gist.github.com/${owner}/${GIST_ID}`), owner).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@gist.github.com/${GIST_OWNER}/${GIST_ID}`,
+      `javascript:alert(1)//gist.github.com/${GIST_OWNER}/${GIST_ID}`,
+      `ftp://gist.github.com/${GIST_OWNER}/${GIST_ID}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('does not throw on a broken percent-escape (E3)', () => {
+    expect(() => resolveEmbed(`${GIST_PAGE}?file=%E0%A4%A`)).not.toThrow();
+    expect(resolveEmbed('https://gist.github.com/%E0%A4%A')).toBeNull();
+  });
+
+  it('asks for the frame it needs, and no permission (G5, §8-②)', () => {
+    const target = resolveEmbed(GIST_PAGE);
+    expect(target?.provider).toBe('gist');
+    expect(target?.title).not.toBe('');
+    // No file named, so the owner stands alone (§18.8).
+    expect(target?.label).toEqual({ lead: GIST_OWNER, detail: '' });
+    // Nothing is asked for through `allow`; what the frame needs is asked for through `sandbox`,
+    // which is a list of restrictions lifted rather than permissions granted (§18.6).
+    expect(target?.allow).toBe('');
+    expect(target?.sandbox).toBe('allow-scripts allow-popups');
+    // Every other provider is pointed straight at its own URL and gets no sandbox.
+    for (const href of [`https://www.youtube.com/watch?v=${ID}`, `${DW_PAGE}`, `${SD_SRC}`]) {
+      expect(resolveEmbed(href)?.srcdoc, href).toBeNull();
+      expect(resolveEmbed(href)?.sandbox, href).toBeNull();
+    }
+  });
+
+  it('frames the gist in a document that reports back (G9, §18.5)', () => {
+    const target = resolveEmbed(`${GIST_PAGE}?file=hello.rb`);
+    const src = target!.src(ANY);
+    const doc = target!.srcdoc!(src, 'emb-3');
+    // GitHub's script is loaded by the document rather than framed as one — that is the whole of
+    // why this provider can be measured at all.
+    expect(doc).toContain(`<script src="${src}"></script>`);
+    // The reporter names this placement, so two gists on a page are told apart the way two X posts
+    // are (§10.5).
+    expect(doc).toContain('"emb-3"');
+    expect(doc).toContain('gist-embed');
+    // The height and the file count, which are the two answers the parent acts on. **The body's
+    // rect, not `documentElement.scrollHeight`** — that one is clamped to the frame's own viewport
+    // and so can never report a box smaller than the one it is already in (§18.5).
+    expect(doc).toContain('document.body.getBoundingClientRect');
+    expect(doc).not.toContain('scrollHeight');
+    expect(doc).toContain('.gist-file');
+    // **Our own base, not GitHub's.** `.pibb` hard-codes `target="_parent"`, which is what took the
+    // article away (§18.6); `.js` writes none, so this one is the document's.
+    expect(doc).toContain('<base target="_blank">');
+    expect(doc).not.toContain('_parent');
+    // **The document is written into an HTML attribute, so a filename that could close the `src`
+    // attribute would be writing markup.** `encodeURIComponent` is what prevents it, and this is
+    // the assertion that would fail if it were dropped (§18.3).
+    const hostile = resolveEmbed(`${GIST_PAGE}?file=${encodeURIComponent('a"><img src=x> .rb')}`);
+    const hostileDoc = hostile!.srcdoc!(hostile!.src(ANY), 'emb-4');
+    expect(hostileDoc).toContain('?file=a%22%3E%3Cimg%20src%3Dx%3E%20.rb');
+    expect(hostileDoc).not.toContain('<img');
+    // Pure: the same arguments give the same document, which is what lets both stages build it.
+    expect(target!.srcdoc!(src, 'emb-3')).toBe(doc);
+  });
+});

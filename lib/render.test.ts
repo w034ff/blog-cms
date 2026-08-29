@@ -757,6 +757,50 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain('allow="" allowfullscreen');
   });
 
+  // docs/embed-requirements.md §18. `qiitan/fa7df…` is the gist measured there.
+  const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae';
+
+  it('publishes a gist reference as a srcdoc that reports back (G6)', async () => {
+    const { html } = await renderMdxToHtml(
+      `<div class="embed" data-href="${GIST}?file=hello.rb"></div>`,
+    );
+    expect(html).toContain('class="embed embed-gist"');
+    // **`srcdoc` and no `src`.** The document is ours; GitHub's script is loaded from inside it,
+    // which is what puts a reporter in the same document and lets the box follow the gist (§18.5).
+    expect(html).toContain('srcdoc="');
+    expect(html).not.toContain(`src="${GIST}`);
+    expect(html).toContain(`${GIST}.js?file=hello.rb`);
+    // The sandbox that stops a click inside taking the article away (§18.6), and the entities that
+    // show the document reached the attribute escaped rather than raw.
+    expect(html).toContain('sandbox="allow-scripts allow-popups"');
+    expect(html).toContain('&#x22;gist-embed&#x22;');
+    // The reporter is addressed to this placement, as X's `embedId` is (§10.5).
+    expect(html).toContain('&#x22;emb-0&#x22;');
+  });
+
+  it('adds no sandbox and no srcdoc for every other provider (G6)', async () => {
+    // The counterpart of the row above: both are the provider's answer, so a change that made
+    // either universal would show up here rather than in a reader's broken player.
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${DOCSWELL}"></div>`);
+    expect(html).toContain('scrolling="no"');
+    expect(html).not.toContain('sandbox');
+    expect(html).not.toContain('srcdoc');
+  });
+
+  it('leaves a blob page and the raw host to the card, as a plain link here (G3)', async () => {
+    // **The shape an author reaches for first** — Zenn and Qiita both render a `/blob/` URL as
+    // code, and this one cannot: the page answers `x-frame-options: deny`, so there is no embed to
+    // make of it and a link is what is left (§18.1).
+    for (const href of [
+      'https://github.com/octocat/Spoon-Knife/blob/main/README.md#L1-L3',
+      'https://gist.githubusercontent.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae/raw/hello.rb',
+    ]) {
+      const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+      expect(html, href).not.toContain('<iframe');
+      expect(html, href).toContain(`<a href="${href}" target="_blank">`);
+    }
+  });
+
   it('leaves a Docswell video URL to the card, as a plain link here (D3)', async () => {
     // **The same path shape with a `v` in front of the key**, which is a video and a different
     // endpoint — building `/slide/vYN91PJ/embed` would publish Docswell's 404 into the article

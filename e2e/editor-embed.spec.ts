@@ -355,3 +355,88 @@ test('the deck page URL is told which Copy button it wanted (SD14)', async ({ pa
   await expect(page.getByRole('button', { name: '埋め込みにする' })).toBeVisible();
   await expect(hint).toHaveCount(0);
 });
+
+// docs/embed-requirements.md §18, criterion G8. **§7's promise is what is at stake, not the gist**:
+// the NodeView and the published stage build the same frame from the same `EmbedTarget`, and the
+// gist is the first provider whose frame is a document rather than a URL.
+//
+// The report is delivered directly, as `e2e/public-embed.spec.ts` delivers it and for the same
+// reason — a frame sandboxed without `allow-same-origin` does not pass through Playwright's routing,
+// so GitHub cannot be stubbed in place (measured 2026-08-29). **`source` is the frame's own window**,
+// because this surface authenticates by it: the id alone names a placement, and anything that copies
+// the element copies the name with it (§10.5's clone).
+const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae?file=hello.rb';
+
+async function reportToEditor(page: Page, height: number, files: number): Promise<void> {
+  // The id is read back out of the document the NodeView built, rather than guessed: it is minted
+  // per placement and the editor's counter is not addressable from here.
+  await page.evaluate(
+    ([h, n]) => {
+      const frame = document.querySelector<HTMLIFrameElement>('.ProseMirror .embed-view iframe');
+      const id = /,i="([^"]+)"/.exec(frame?.getAttribute('srcdoc') ?? '')?.[1];
+      if (!id) throw new Error('no instance id in the frame document');
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { source: 'gist-embed', id, height: h, files: n },
+          source: frame?.contentWindow ?? undefined,
+        }),
+      );
+    },
+    [height, files] as const,
+  );
+}
+
+async function insertGist(page: Page): Promise<void> {
+  await openWith(page, `<${GIST}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  await expect(page.getByRole('button', { name: '埋め込みにする' })).toBeVisible();
+  await page.getByRole('button', { name: '埋め込みにする' }).click();
+  await expect(embed(page)).toHaveClass(/embed-gist/);
+}
+
+test('the editor frames a gist in the same document the reader gets (G8)', async ({ page }) => {
+  await insertGist(page);
+
+  const iframe = embed(page).locator('iframe');
+  expect(await iframe.getAttribute('src')).toBeNull();
+  await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts allow-popups');
+  const srcdoc = (await iframe.getAttribute('srcdoc'))!;
+  expect(srcdoc).toContain(
+    'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae.js?file=hello.rb',
+  );
+
+  const frame = embed(page).locator('.embed-frame');
+  expect((await frame.boundingBox())!.height).toBeLessThan(400);
+  await reportToEditor(page, 612, 1);
+  // The transition rather than the pixel, for the reason public-embed.spec.ts states: the real gist
+  // is live in the frame and re-measures itself once the box grows.
+  await expect.poll(async () => (await frame.boundingBox())!.height).toBeGreaterThan(600);
+
+  // 「リンクに戻す」 hands back the reference the author pasted, `?file=` and all.
+  expect(await markdown(page)).toBe(`<div class="embed" data-href="${GIST}"></div>\n\n本文`);
+});
+
+test('a gist that drew nothing tells the author rather than degrading (G8)', async ({ page }) => {
+  // §7.2's position: the published page turns this into a link, but the editor is the surface where
+  // the reference can still be corrected, so it says what happened instead — and it says gist rather
+  // than 投稿, which is X's word.
+  await insertGist(page);
+  await reportToEditor(page, 250, 0);
+
+  await expect(page.locator('.ProseMirror .embed-unresolved')).toHaveCount(1);
+  await expect(page.locator('.ProseMirror .embed-note')).toContainText('取得できない gist です');
+  // The reference is still the author's, so it is still recoverable.
+  expect(await markdown(page)).toBe(`<div class="embed" data-href="${GIST}"></div>\n\n本文`);
+});
+
+test('a video still gets scrolling="no" and neither new attribute (G8)', async ({ page }) => {
+  // The counterpart: both are the provider's answer, and this is the assertion that would fail if
+  // either were written once at construction rather than per render.
+  await openWith(page, `<${WATCH}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  await page.getByRole('button', { name: '埋め込みにする' }).click();
+  const video = embed(page).locator('iframe');
+  await expect(video).toHaveAttribute('scrolling', 'no');
+  expect(await video.getAttribute('sandbox')).toBeNull();
+  expect(await video.getAttribute('srcdoc')).toBeNull();
+});

@@ -65,3 +65,61 @@ export function readXCall(data: string | XEnvelope | null): XCall | null {
   const call = envelope?.['twttr.embed'];
   return call && typeof call.method === 'string' && typeof call.id === 'string' ? call : null;
 }
+
+// docs/embed-requirements.md §18.5. **The second protocol here, and the first one that is ours.**
+// §10.7 recorded that a wrapper iframe on an origin of our own would normalise every provider onto
+// one message; this is that arrangement for a single provider, because GitHub gives no other way to
+// learn a gist's height — `.pibb` carries no script, and neither `.pibb` nor `.js` sends CORS
+// headers, so nothing can be measured from outside (measured 2026-08-29).
+//
+// The document is built by `lib/embed-provider.ts` and framed with `srcdoc`, so the reporter inside
+// it is written by us. That is what makes this shape a plain object rather than X's nested
+// `twttr.embed` envelope.
+export const GIST_PROVIDER = 'gist';
+
+// **`event.origin` is the string `"null"` for this one, not an origin to compare against.** The
+// frame is sandboxed without `allow-same-origin`, which is what stops the gist's own markup
+// reaching the page around it — and the price is an opaque origin. So the parent authenticates by
+// the window the message came from (`event.source === iframe.contentWindow`), which is the check the
+// editor's NodeView already makes for X, rather than by a constant.
+export const GIST_SOURCE = 'gist-embed';
+
+export type GistCall = {
+  // The `data-embed-id` this placement was given, as X's `id` is.
+  id: string;
+  // `document.documentElement.scrollHeight` inside the frame.
+  height: number;
+  // How many `.gist-file` blocks the script drew. **Zero is how a deleted or private gist is told
+  // apart from a slow one** — GitHub's `.js` writes nothing at all for an id that does not resolve
+  // (measured 2026-08-29), which no other signal distinguishes from silence.
+  files: number;
+};
+
+type GistEnvelope = { source?: string; id?: string; height?: number; files?: number };
+
+// Reads one of our own reporter's messages, or null for anything else on the bus. Shaped like
+// `readXCall`: it only parses, and the caller must still check where the message came from.
+export function readGistCall(data: string | GistEnvelope | null): GistCall | null {
+  let envelope: GistEnvelope | null = null;
+  if (typeof data === 'string') {
+    try {
+      envelope = JSON.parse(data);
+    } catch {
+      return null;
+    }
+  } else {
+    envelope = data;
+  }
+  if (envelope?.source !== GIST_SOURCE) return null;
+  const { id, height, files } = envelope;
+  if (typeof id !== 'string' || typeof height !== 'number' || typeof files !== 'number')
+    return null;
+  return { id, height, files };
+}
+
+// What the parent sends *into* a gist frame to make it announce itself (§18.5). The frame's reporter
+// answers it with the same message it sends unprompted, so a parent that attached its listener after
+// the frame had already spoken is not stuck with the published guess.
+export function gistAsk(): { ask: string } {
+  return { ask: GIST_SOURCE };
+}

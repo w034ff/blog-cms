@@ -5,6 +5,8 @@ import { embedFallbackAnchor } from '@/lib/embed-fallback';
 import {
   EMBED_SILENCE_MS,
   EMBED_VISIBLE_THRESHOLD,
+  gistAsk,
+  readGistCall,
   readXCall,
   X_ORIGIN,
 } from '@/lib/embed-message';
@@ -44,11 +46,33 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     const timers = new Map<string, number>();
     const answered = new Set<string>();
 
-    root.querySelectorAll<HTMLElement>('.embed-x[data-embed-id]').forEach((box) => {
-      const id = box.dataset.embedId;
-      if (id) boxes.set(id, box);
-    });
+    // **Two providers, one map.** The selector is not `.embed` — a YouTube box holds its own ratio
+    // and never sends anything, so a clock armed for it would replace a working player with a link
+    // (§10.5). It is these two because these two answer: X because X wrote its iframe that way, the
+    // gist because the document around GitHub's script is one this codebase writes (§18.5).
+    root
+      .querySelectorAll<HTMLElement>('.embed-x[data-embed-id], .embed-gist[data-embed-id]')
+      .forEach((box) => {
+        const id = box.dataset.embedId;
+        if (id) boxes.set(id, box);
+      });
     if (boxes.size === 0) return;
+
+    // **Ask the gist frames to speak, rather than only waiting for them to.** A frame's document
+    // parses with the page around it, while this listener is attached on hydration — measured
+    // 2026-08-29, an announcement sent in that gap was lost and the box kept its published guess.
+    // Asked on mount for a frame already loaded, and again on `load` for one that was not (every
+    // embed here is `loading="lazy"`, so below the fold that is much later).
+    const asked: { iframe: HTMLIFrameElement; onLoad: () => void }[] = [];
+    boxes.forEach((box) => {
+      if (!box.classList.contains('embed-gist')) return;
+      const iframe = box.querySelector('iframe');
+      if (!iframe) return;
+      const ask = () => iframe.contentWindow?.postMessage(gistAsk(), '*');
+      iframe.addEventListener('load', ask);
+      asked.push({ iframe, onLoad: ask });
+      ask();
+    });
 
     const stopClock = (id: string) => {
       const timer = timers.get(id);
@@ -83,6 +107,17 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     };
 
     const onMessage = (event: MessageEvent) => {
+      // Our own reporter first. **Its `event.origin` is the string `"null"`**, because the frame is
+      // sandboxed without `allow-same-origin` — so what authenticates it is the box the id names
+      // being one we put in the map, rather than a constant to compare the origin against (§18.5).
+      // A gist that drew no files is this provider's `no_results`: GitHub's script writes nothing
+      // at all for an id that no longer resolves.
+      const gist = readGistCall(event.data);
+      if (gist !== null) {
+        if (gist.files === 0) fallBack(gist.id);
+        else applyHeight(gist.id, gist.height);
+        return;
+      }
       if (event.origin !== X_ORIGIN) return;
       const call = readXCall(event.data);
       if (!call?.id) return;
@@ -123,6 +158,7 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
 
     return () => {
       window.removeEventListener('message', onMessage);
+      asked.forEach(({ iframe, onLoad }) => iframe.removeEventListener('load', onLoad));
       observer.disconnect();
       timers.forEach((timer) => window.clearTimeout(timer));
     };
