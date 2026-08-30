@@ -268,3 +268,105 @@ test('a click beside the box selects the embed, not the next block (§8.2)', asy
     .evaluate((el) => el.classList.contains('ProseMirror-selectednode'));
   expect(nextParaSelected).toBe(false);
 });
+
+// docs/embed-requirements.md §8.4 and the item §12 listed as unmeasured. Reordering blocks destroys
+// the jumped-over embed's NodeView and builds a new one, and **a rebuild resets `answered`, the
+// silence clock and `visible`** — so a frame that did not speak again within `EMBED_SILENCE_MS`
+// would turn a post the author had already seen into 「取得できない」. That is the failure this
+// measures the absence of, and it exists only for the two providers that answer back (§10.5, §18.5);
+// Figma and YouTube say nothing either way.
+//
+// **Moved by a transaction rather than a drag.** §8.4 measured with the block drag handle, but what
+// is being exercised is prosemirror-view's child sync (`destroyBetween` on the node-diff pass),
+// which a `delete` + `insert` reaches identically — without depending on CDP hit-testing over an
+// iframe (criterion E12). The marks below are what prove the rebuild actually happened, so nothing
+// here rests on the gesture being equivalent.
+async function moveBlockAbove(page: Page, text: string, typeName: string): Promise<void> {
+  await page.evaluate(
+    ({ needle, name }) => {
+      const el = document.querySelector('.ProseMirror') as {
+        editor?: {
+          state: {
+            tr: { delete(f: number, t: number): { insert(at: number, n: unknown): unknown } };
+            doc: {
+              forEach(
+                f: (
+                  n: { type: { name: string }; textContent: string; nodeSize: number },
+                  pos: number,
+                ) => void,
+              ): void;
+              nodeAt(pos: number): unknown;
+            };
+          };
+          view: { dispatch(tr: unknown): void };
+        };
+      } | null;
+      if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+      const { state, view } = el.editor;
+      let from = -1;
+      let size = 0;
+      let over = -1;
+      state.doc.forEach((node, pos) => {
+        if (node.type.name === 'paragraph' && node.textContent === needle) {
+          from = pos;
+          size = node.nodeSize;
+        }
+        if (over === -1 && node.type.name === name) over = pos;
+      });
+      if (from === -1 || over === -1) throw new Error('nothing to move');
+      if (from < over)
+        throw new Error('the block to move must start out below the one jumped over');
+      const moved = state.doc.nodeAt(from);
+      // Deleting below `over` leaves that position untouched, so it can be reused as the insert.
+      view.dispatch(state.tr.delete(from, from + size).insert(over, moved));
+    },
+    { needle: text, name: typeName },
+  );
+}
+
+test('a frame rebuilt by a reorder announces its height again (§8.4)', async ({ page }) => {
+  await openWith(
+    page,
+    `前の段落\n\n<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n後の段落\n`,
+  );
+
+  const frame = embed(page).locator('.embed-frame');
+  const iframe = frame.locator('iframe');
+  await expect
+    .poll(async () => Math.round((await frame.boundingBox())!.height), { timeout: 10_000 })
+    .toBe(X_HEIGHT);
+  const firstEmbedId = new URL((await iframe.getAttribute('src'))!).searchParams.get('embedId');
+  expect(firstEmbedId).toBeTruthy();
+
+  // Both elements are stamped: the iframe is what §8.4 marked, and the `.embed-frame` div is what
+  // carries the inline height. If the div survived, a height still reading X_HEIGHT afterwards
+  // would be the old inline style rather than a new announce.
+  await page.evaluate(() => {
+    document.querySelector('.embed-view iframe')?.setAttribute('data-mark', '1');
+    document.querySelector('.embed-view .embed-frame')?.setAttribute('data-mark', '1');
+  });
+
+  await moveBlockAbove(page, '後の段落', 'embed');
+
+  // **The gate.** Row 1 of §8.4's table is the reorder that rebuilds the *embed*; the other
+  // direction rebuilds the moved block instead and would leave this whole test measuring nothing.
+  await expect(embed(page).locator('[data-mark]')).toHaveCount(0);
+  // A new NodeView mints a new `instanceId` and bakes it into the src, which is the fact both
+  // answering providers depend on — the frame echoes the name back, so a stale id would be ignored
+  // by `onMessage` and read as silence.
+  const secondEmbedId = new URL((await iframe.getAttribute('src'))!).searchParams.get('embedId');
+  expect(secondEmbedId).toBeTruthy();
+  expect(secondEmbedId).not.toBe(firstEmbedId);
+
+  // The height comes back on a box that has never carried an inline style, so it was announced.
+  await expect
+    .poll(async () => Math.round((await frame.boundingBox())!.height), { timeout: 10_000 })
+    .toBe(X_HEIGHT);
+
+  // And the clock, re-armed by the rebuild, expires without firing. Waited out rather than asserted
+  // immediately: `toHaveCount(0)` on a note that has not appeared yet resolves at once and would
+  // pass however this went.
+  await page.waitForTimeout(9_000);
+  await expect(note(page)).toHaveCount(0);
+  await expect(frame).toBeVisible();
+});
