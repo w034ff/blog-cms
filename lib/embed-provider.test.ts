@@ -721,3 +721,131 @@ describe('resolveEmbed / GitHub Gist', () => {
     expect(target!.srcdoc!(src, 'emb-3')).toBe(doc);
   });
 });
+
+// docs/embed-requirements.md §20. `xgzdk` is the sandbox measured throughout that section (its
+// page URL is `/s/react-example-xgzdk`), and `eager-proskuriakova-2lcdqm` is the one Zenn's own
+// guide embeds — the fixture that pins the "do not split the segment" rule, since `2lcdqm` inside
+// it resolves to the same sandbox and is still not what goes into the src.
+const CSB_SEG = 'react-example-xgzdk';
+const CSB_PAGE = `https://codesandbox.io/p/sandbox/${CSB_SEG}`;
+const CSB_SRC = `https://codesandbox.io/embed/${CSB_SEG}?runonclick=1`;
+
+describe('resolveEmbed / CodeSandbox', () => {
+  it('makes the embed src out of the sandbox page URL, in all of its shapes (C1)', () => {
+    for (const href of [
+      CSB_PAGE,
+      // The legacy form, which 307s to `/p/sandbox/<seg>` and carries the segment in the same place
+      // — so the src is built without following the redirect (§3.2).
+      `https://codesandbox.io/s/${CSB_SEG}`,
+      // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30).
+      `https://www.codesandbox.io/p/sandbox/${CSB_SEG}`,
+      `${CSB_PAGE}/`,
+      // Tracking parameters and a fragment: neither names any part of what is shown, and there is
+      // no start time or page for this provider to carry over (§20.10).
+      `${CSB_PAGE}?utm_source=x`,
+      `${CSB_PAGE}#file=/src/index.js`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(CSB_SRC);
+  });
+
+  it('passes the whole last segment through, without splitting it (C2)', () => {
+    // **The bare id is a different string and stays a different string.** Both resolve, so this is
+    // not about which one works — it is that the author's segment is what reaches the src (§20.3).
+    expect(resolveEmbed('https://codesandbox.io/p/sandbox/xgzdk')?.src(ANY)).toBe(
+      'https://codesandbox.io/embed/xgzdk?runonclick=1',
+    );
+    expect(resolveEmbed(CSB_PAGE)?.src(ANY)).toBe(CSB_SRC);
+    // Zenn's fixture, which has two hyphens: a "text after the last hyphen" rule would send
+    // `2lcdqm`, and Zenn itself sends the whole thing (measured 2026-08-30).
+    const zenn = 'eager-proskuriakova-2lcdqm';
+    expect(resolveEmbed(`https://codesandbox.io/p/sandbox/${zenn}`)?.src(ANY)).toBe(
+      `https://codesandbox.io/embed/${zenn}?runonclick=1`,
+    );
+    // **The case that makes splitting unsafe rather than merely different**: this segment is a name,
+    // not a slug plus an id, so a split would build a src for a sandbox called `devbox`.
+    expect(resolveEmbed('https://codesandbox.io/s/react-new-devbox')?.src(ANY)).toBe(
+      'https://codesandbox.io/embed/react-new-devbox?runonclick=1',
+    );
+    // Case is not normalised either — `/embed/XGZDK` is the same sandbox (measured), so there is
+    // nothing to correct, and correcting it would put a string the author did not write in the src.
+    expect(resolveEmbed('https://codesandbox.io/s/XGZDK')?.src(ANY)).toBe(
+      'https://codesandbox.io/embed/XGZDK?runonclick=1',
+    );
+  });
+
+  it('leaves every CodeSandbox URL that is not a sandbox page to the card (C3)', () => {
+    for (const href of [
+      // **A devbox.** Whether `/embed/` serves one is unmeasured, and §20.12-2 keeps that distinct
+      // from unsupported — but an unmeasured src is not one to build.
+      'https://codesandbox.io/p/devbox/react-new-devbox',
+      // The embed URL itself, for §14.2's reason: accepting it would make 「リンクに戻す」 write the
+      // bare player into an `<a href>` rather than the page the author was holding.
+      CSB_SRC,
+      'https://codesandbox.io/embed/xgzdk',
+      // Listings and profiles, none of which name a single sandbox.
+      'https://codesandbox.io/examples/package/react',
+      'https://codesandbox.io/u/compuives',
+      'https://codesandbox.io/',
+      'https://codesandbox.io/dashboard',
+      // `/s/` and `/p/sandbox/` with nothing under them.
+      'https://codesandbox.io/s/',
+      'https://codesandbox.io/p/sandbox/',
+      // A deeper path under the canonical form: the segment is not the last one, so this names
+      // something other than the sandbox itself.
+      'https://codesandbox.io/p/sandbox/xgzdk/settings',
+      // The API, whose answer would be a fetch — and this file has none (§3.2).
+      'https://codesandbox.io/api/v1/sandboxes/xgzdk',
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses a segment that cannot be one (C4)', () => {
+    for (const segment of [
+      // Past the bound, which sits far above the 26 characters of the longest slug form measured.
+      'a'.repeat(65),
+      // Characters outside the class. Each of these would otherwise reach the src, which is the
+      // reason the class is an allowlist rather than a filter (§4.2).
+      'a_b',
+      'a.b',
+      'a%20b',
+      'a+b',
+      'サンドボックス',
+      // `?` and `#` are deliberately not in this list: they never reach `url.pathname` at all, so a
+      // segment "containing" one is really the shorter segment before it, which resolves. That is
+      // the parser's job and is asserted in C1 with `?utm_source=x` rather than refused here.
+    ])
+      expect(resolveEmbed(`https://codesandbox.io/p/sandbox/${segment}`), segment).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@codesandbox.io/p/sandbox/${CSB_SEG}`,
+      `javascript:alert(1)//codesandbox.io/p/sandbox/${CSB_SEG}`,
+      `ftp://codesandbox.io/p/sandbox/${CSB_SEG}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('names the provider, an accessible name, and asks for no device (C5)', () => {
+    const target = resolveEmbed(CSB_PAGE);
+    expect(target?.provider).toBe('codesandbox');
+    expect(target?.title).not.toBe('');
+    // The segment is a slugified title or a random word rather than a name, and no start time or
+    // page exists to carry over, so `detail` is always empty here (§20.10).
+    expect(target?.label).toEqual({ lead: 'CodeSandbox', detail: '' });
+    // **Empty on purpose, and this is the assertion that would fail if someone restored
+    // CodeSandbox's own list the way Qiita and Zenn both copy it** (§20.7). A sandbox frames
+    // arbitrary third-party code; it is not handed a camera or a microphone by default.
+    expect(target?.allow).toBe('');
+    // No document of our own: the provider needs no reporter, because it has no height worth
+    // hearing (§20.6).
+    expect(target?.srcdoc).toBeNull();
+    // `allow-top-navigation` is the one absent from this list that matters — the frame must not be
+    // able to take the article somewhere else. `allow-same-origin` IS present, unlike the gist's
+    // (§18.6), because the editor and the preview need their own storage and workers.
+    expect(target?.sandbox).toBe(
+      'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+    );
+    expect(target?.sandbox).not.toContain('allow-top-navigation');
+  });
+});

@@ -757,6 +757,37 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain('allow="" allowfullscreen');
   });
 
+  // docs/embed-requirements.md §20. `react-example-xgzdk` is the sandbox measured there.
+  const CODESANDBOX = 'https://codesandbox.io/p/sandbox/react-example-xgzdk';
+
+  it('publishes a sandbox page reference with runonclick and no device permission (C6)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${CODESANDBOX}"></div>`);
+    expect(html).toContain('class="embed embed-codesandbox"');
+    // **The whole segment, and `runonclick=1` that the author never wrote** — the src is built
+    // here, and this parameter is what keeps the bundler and the preview origin from starting
+    // until a reader asks for them (§20.5).
+    expect(html).toContain('src="https://codesandbox.io/embed/react-example-xgzdk?runonclick=1"');
+    // **Empty, where CodeSandbox's own snippet asks for a camera and Qiita and Zenn both copy it**
+    // (§20.7). This is the assertion that fails if that list is ever restored.
+    expect(html).toContain('allow=""');
+    expect(html).not.toContain('camera');
+    // The sandbox whose point is the entry it does NOT contain: the frame cannot navigate the
+    // article away. `allow-same-origin` is present, unlike the gist's (§18.6).
+    expect(html).toContain(
+      'sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"',
+    );
+    expect(html).not.toContain('allow-top-navigation');
+  });
+
+  it('leaves a devbox URL to the card, as a plain link here (C3)', async () => {
+    // **Unmeasured, not unsupported** (§20.12-2). Publishing a src for a path whose embed
+    // endpoint has never been measured is the thing this refusal avoids; a link is what is left.
+    const href = 'https://codesandbox.io/p/devbox/react-new-devbox';
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`<a href="${href}" target="_blank">`);
+  });
+
   // docs/embed-requirements.md §18. `qiitan/fa7df…` is the gist measured there.
   const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae';
 

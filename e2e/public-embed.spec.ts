@@ -340,3 +340,51 @@ test('a gist that drew no files is replaced with a plain link (G10)', async ({ p
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(page.locator('#post-body iframe')).toHaveCount(0);
 });
+
+// docs/embed-requirements.md §20.6, criterion C7. The sandbox itself is never booted, for the
+// reason the deck above is never fetched: `codesandbox.io/embed/**` is routed to a blank page of
+// our own, since what this measures is the box. Booting the real thing would put 64 third-party
+// requests into the suite to assert a number that is in the stylesheet.
+const CODESANDBOX_PAGE = 'https://codesandbox.io/p/sandbox/react-example-xgzdk';
+
+test('a CodeSandbox reference is published in a fixed 500px box (C7)', async ({ page }) => {
+  await page.route('https://codesandbox.io/embed/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public codesandbox spec',
+    `本文の前。\n\n<div class="embed" data-href="${CODESANDBOX_PAGE}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-codesandbox .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  // The whole segment, and the `runonclick=1` this project adds rather than the author (§20.5).
+  await expect(iframe).toHaveAttribute(
+    'src',
+    'https://codesandbox.io/embed/react-example-xgzdk?runonclick=1',
+  );
+  // The pair measured together in §20.7: no device is asked for, and the frame cannot navigate the
+  // article away because `allow-top-navigation` is absent from this list.
+  await expect(iframe).toHaveAttribute('allow', '');
+  await expect(iframe).toHaveAttribute(
+    'sandbox',
+    'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+  );
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The box, measured rather than read off the stylesheet. **Not a ratio and not a correction**:
+  // a sandbox has no shape of its own, and its frame's resize message is unusable (§20.6), so 500
+  // is the whole answer and it does not move with the width.
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeCloseTo(500, 0);
+  // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
+  // height check while saying nothing about the column it sits in.
+  expect(box!.width).toBeGreaterThan(400);
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height, 0);
+  expect(inner!.width).toBeCloseTo(box!.width, 0);
+});

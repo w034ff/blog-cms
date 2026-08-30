@@ -565,7 +565,83 @@ const gist: Provider = {
   },
 };
 
-const PROVIDERS: readonly Provider[] = [youtube, x, slideshare, figma, speakerdeck, docswell, gist];
+// docs/embed-requirements.md §20.3. **This is the only provider here whose src is not built from an
+// extracted id**: the whole last path segment goes through untouched, because CodeSandbox's embed
+// endpoint answers to the slug form and the bare id alike (`/embed/react-example-xgzdk` and
+// `/embed/xgzdk` are the same sandbox, measured 2026-08-30) — and Zenn ships exactly that,
+// forwarding the author's `eager-proskuriakova-2lcdqm` rather than the `2lcdqm` inside it.
+//
+// **Not splitting is what keeps `react-new-devbox` safe.** A rule that took the text after the last
+// `-` would read `devbox` out of a segment that is a name rather than a slug-plus-id, and build a
+// src for a sandbox that does not exist. Leaving the segment alone makes that mistake unavailable.
+//
+// Hyphens are in the class for the same reason; the bound is far past the 26 characters of the
+// longest slug form measured, for `FIGMA_KEY`'s reason — a narrow one silently turns live
+// sandboxes into plain links. Case is not normalised: `/embed/XGZDK` resolves to `/embed/xgzdk`
+// (measured), unlike Docswell's keys.
+const CODESANDBOX_SEGMENT = /^[0-9A-Za-z-]{1,64}$/;
+// `/p/sandbox/<seg>` is the canonical page form today — `/s/new` 307s to `/p/sandbox/new` (measured
+// headed 2026-08-30) — and `/s/<seg>` is the legacy one, which carries the segment in the same
+// place. `/p/devbox/` is deliberately absent (§20.9's list): its embeddability is unmeasured, which
+// is not the same claim as unsupported.
+const CODESANDBOX_PATH = /^\/(?:p\/sandbox|s)\/([^/]+)\/?$/;
+
+// Nothing is asked for. CodeSandbox's own snippet requests `camera; microphone; geolocation; usb;
+// payment` and eleven more, and **Qiita and Zenn both copy that list verbatim** — this file does
+// not (§20.7). What a sandbox frames is arbitrary third-party code, and no reason can be given for
+// handing it a device by default; §17.4's "nothing is asked for" and §9's "minus what the author
+// did not ask for" both land here. **The divergence from those two sites is deliberate**, and it is
+// written down so the next reader does not restore it as an oversight.
+const CODESANDBOX_ALLOW = '';
+
+const codesandbox: Provider = {
+  // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30), which is the
+  // call §17.2 made for Docswell's apex.
+  hosts: ['codesandbox.io', 'www.codesandbox.io'],
+  resolve: (url) => {
+    const segment = CODESANDBOX_PATH.exec(url.pathname)?.[1] ?? null;
+    if (segment === null || !CODESANDBOX_SEGMENT.test(segment)) return null;
+    return {
+      provider: 'codesandbox',
+      // `runonclick=1` is **not in anything the author wrote** — this file adds it, which is §4's
+      // rule ("the src is built here") rather than a liberty. It defers the bundler and the preview
+      // origin until the reader clicks: 64 requests instead of 114, with `<id>.csb.app`,
+      // `prod-packager-packages` and `data.jsdelivr.com` never contacted (measured 2026-08-30).
+      // A reader who clicks pays the 112 anyway, so this defers the cost rather than removing it —
+      // and it is why §20.2 says the embed offers code now and a running result one click away.
+      //
+      // Nothing else is appended. `theme`, `fontsize`, `hidenavigation` and `view` all still work,
+      // but each would be a default chosen on this project's behalf for every author, and only
+      // `runonclick` has a measurement behind it (§20.5).
+      src: () => `https://codesandbox.io/embed/${segment}?runonclick=1`,
+      title: 'CodeSandbox のサンドボックス',
+      // No `detail` is possible: the segment is a slugified title or a random word rather than a
+      // name, and unlike YouTube's start time (§9.3) or Docswell's page (§17.3) there is nothing in
+      // the URL left to carry over.
+      label: { lead: 'CodeSandbox', detail: '' },
+      allow: CODESANDBOX_ALLOW,
+      srcdoc: null,
+      // Zenn's list, and what it buys is the absence of `allow-top-navigation`: the third party's
+      // code in the frame cannot take the article somewhere else. **`allow-same-origin` is present
+      // here, where §18.6's gist deliberately drops it** — the editor and the preview use their own
+      // storage and workers, so an opaque origin breaks them. Measured with `allow=""` beside it
+      // (2026-08-30), a pairing neither Qiita nor Zenn ships: the editor paints, and 「Click to Run」
+      // boots the preview.
+      sandbox: 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+    };
+  },
+};
+
+const PROVIDERS: readonly Provider[] = [
+  youtube,
+  x,
+  slideshare,
+  figma,
+  speakerdeck,
+  docswell,
+  gist,
+  codesandbox,
+];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

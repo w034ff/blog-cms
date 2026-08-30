@@ -440,3 +440,38 @@ test('a video still gets scrolling="no" and neither new attribute (G8)', async (
   expect(await video.getAttribute('sandbox')).toBeNull();
   expect(await video.getAttribute('srcdoc')).toBeNull();
 });
+
+// docs/embed-requirements.md §20. The sandbox page URL an author pastes from the address bar.
+const CODESANDBOX = 'https://codesandbox.io/p/sandbox/react-example-xgzdk';
+
+test('the editor builds the same sandbox frame the reader gets (C6)', async ({ page }) => {
+  // **The first provider with a `sandbox` AND a real `src`** — the gist above has a sandbox but no
+  // src, and every other provider has a src but no sandbox. So this is the placement where the two
+  // render stages could most easily disagree, which is §4.3's whole concern.
+  await openWith(page, `<${CODESANDBOX}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  await expect(page.getByRole('button', { name: '埋め込みにする' })).toBeVisible();
+  await page.getByRole('button', { name: '埋め込みにする' }).click();
+  await expect(embed(page)).toHaveClass(/embed-codesandbox/);
+
+  const iframe = embed(page).locator('iframe');
+  // The whole segment, and `runonclick=1` — which the author never wrote, so the author sees in
+  // their own NodeView exactly what a reader gets: code now, a click to run it (§20.2, §20.5).
+  await expect(iframe).toHaveAttribute(
+    'src',
+    'https://codesandbox.io/embed/react-example-xgzdk?runonclick=1',
+  );
+  await expect(iframe).toHaveAttribute(
+    'sandbox',
+    'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+  );
+  await expect(iframe).toHaveAttribute('allow', '');
+  expect(await iframe.getAttribute('srcdoc')).toBeNull();
+
+  // Fixed, and it does not move: there is no report to wait for and none is wanted (§20.6).
+  const frame = embed(page).locator('.embed-frame');
+  expect((await frame.boundingBox())!.height).toBeCloseTo(500, 0);
+
+  // 「リンクに戻す」 hands back the page URL the author pasted, not the embed form it was built into.
+  expect(await markdown(page)).toBe(`<div class="embed" data-href="${CODESANDBOX}"></div>\n\n本文`);
+});

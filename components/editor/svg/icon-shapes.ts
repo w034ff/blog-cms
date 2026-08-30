@@ -213,8 +213,25 @@ export const GITHUB_MARK_SHAPES: readonly IconShape[] = [
 // `lib/embed-message.ts` already has to name X for the protocol it speaks; SlideShare has no such
 // constant to borrow, and inventing one there would put a name in a file about postMessage for a
 // provider that never sends one.
+// CodeSandbox's square ring (docs/embed-requirements.md §20.10). **The closest-sourced mark here**:
+// it is not lifted off a brand page but out of the document CodeSandbox serves at `/embed/<id>`
+// itself, which carries the favicon inline as
+// `<svg viewBox='0 0 100 100'><path fill-rule='evenodd' d='M81.8182 18.1818V81.8182H18.1818V18.1818H81.8182ZM10 90V10H90V90H10Z'/></svg>`
+// (read 2026-08-30).
+//
+// That is an even-odd fill of two nested squares; an `IconShape` is stroke-first, so the ring is
+// re-expressed as its centreline. Outer edge 10 and inner edge 18.1818 in a 100 box put the
+// centreline at 14.0909, which scales to 3.38 with a 17.24 span in the 24 box. The ring's own width
+// (8.1818, i.e. 1.9636 at this scale) is within 2% of the `stroke-width: 2` that `buildIcon` and
+// the React icons already set, so **the line weight is the icon set's rather than the brand's** and
+// the difference does not reach a pixel at any size drawn here.
+export const CODESANDBOX_MARK_SHAPES: readonly IconShape[] = [
+  { kind: 'rect', x: 3.38, y: 3.38, width: 17.24, height: 17.24, rx: 0 },
+];
+
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
+  if (provider === 'codesandbox') return CODESANDBOX_MARK_SHAPES;
   if (provider === 'slideshare') return SLIDESHARE_MARK_SHAPES;
   if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
   if (provider === 'docswell') return DOCSWELL_MARK_SHAPES;

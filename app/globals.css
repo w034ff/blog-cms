@@ -2406,6 +2406,20 @@ body.link-menu-open .table-toolbar {
   background: #fff;
   border: 1px solid #d0d7de;
 }
+/* A sandbox has no ratio of its own, and unlike the gist and X boxes above it has no correction
+   coming either: the frame's `iframe.resize` message returns the height we gave it in the default
+   view, and did not reproduce at all across runs (docs/embed-requirements.md §20.6). So this is a
+   fixed height rather than a published guess — 500px, which CodeSandbox's own snippet, Qiita and
+   Zenn all three hand out.
+
+   **`#191d1f` is CodeSandbox's default editor ground, measured 2026-08-30**, so the rectangle
+   before the iframe arrives matches the one after. It is a dependency of the same shape as the
+   gist border above: §20.5 passes no `theme`, so if CodeSandbox flips its default to a light one,
+   this colour is what gets left behind. */
+.prose .embed-codesandbox .embed-frame {
+  height: 500px;
+  background: #191d1f;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`
