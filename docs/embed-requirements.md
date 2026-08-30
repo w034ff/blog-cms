@@ -3,7 +3,7 @@
 - 状態: **プロバイダは 7 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
 - 作成: 2026-08-21（`docs/youtube-embed-requirements.md` として書き、同日 `embed-requirements.md` に改名した。プロバイダを足す前提が先に来たため）
 - 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/editor/embed-extension.ts`（ノード + NodeView + 3 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 2）、`components/editor/link-card-extension.ts` のピッカー（入口 1）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
-- 測定（件数は数えた値。2026-08-31 時点）: `lib/embed-provider.test.ts`（52 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（22 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（20 件）、`e2e/public-embed.spec.ts`（9 件）、`e2e/editor-x-embed.spec.ts`（10 件）、`e2e/public-x-embed.spec.ts`（6 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
+- 測定（件数は数えた値。2026-08-31 時点）: `lib/embed-provider.test.ts`（52 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（22 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（22 件）、`e2e/public-embed.spec.ts`（9 件）、`e2e/editor-x-embed.spec.ts`（10 件）、`e2e/public-x-embed.spec.ts`（6 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
 - 関連: `docs/link-card-requirements.md`（本書はあちらの決定を 1 つも動かさない。借りるのはあちらの §4.2 の保存形式、§4.4 の検証の線、§6 の後段配置、§14.1 の「読者は取得しない」の 4 つで、§14.13 が本書の §3 を名指している）、`docs/link-requirements.md`（素のリンクのままにする形の行き先）
 
 行に単独で置かれた外部サービスの URL を、公開ページで再生・表示できるブロックとして出すための要件。
@@ -1498,22 +1498,25 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 
 ### 20.11 受け入れ基準（§11 と同じ形式）
 
-| id  | 基準                                                                                                                                                                                                                                                                      | 測り方                                                                                                                                                                                        |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| C1  | `/p/sandbox/<seg>` と `/s/<seg>` が `embed/<seg>?runonclick=1` になる（`www` 有無・末尾スラッシュ・クエリ・断片を含む）                                                                                                                                                   | `lib/embed-provider.test.ts`                                                                                                                                                                  |
-| C2  | 最終セグメントは分解されない — `/s/react-example-xgzdk` は `embed/react-example-xgzdk` であって `embed/xgzdk` ではない                                                                                                                                                    | `lib/embed-provider.test.ts`                                                                                                                                                                  |
-| C3  | `/p/devbox/`・埋め込みの URL 自体・`/examples/`・ユーザーページ・トップは埋め込みにならず、カード側の判定に落ちる                                                                                                                                                         | `lib/embed-provider.test.ts` / `lib/render.test.ts`                                                                                                                                           |
-| C4  | セグメントの形を外れたもの（65 文字以上・英数字とハイフン以外）は埋め込みにならない                                                                                                                                                                                       | `lib/embed-provider.test.ts`                                                                                                                                                                  |
-| C5  | プロバイダ名・`title`・ラベル・`allow`（空）・`sandbox` が §20.7 と §20.10 のとおりである                                                                                                                                                                                 | `lib/embed-provider.test.ts`                                                                                                                                                                  |
-| C6  | 公開側とエディタの NodeView が同一のフレームを組む — `embed-codesandbox` の class、`runonclick=1` 付きの `src`、§20.7 の `sandbox`、空の `allow`。**このプロバイダは `sandbox` と実在の `src` を両方持つ最初の 1 つ**なので、2 つの描画段が食い違うならここに出る（§4.3） | `lib/render.test.ts` / `e2e/editor-embed.spec.ts`                                                                                                                                             |
-| C7  | 公開された箱が高さ 500px で、フレームがその箱を埋める                                                                                                                                                                                                                     | `e2e/public-embed.spec.ts`（サンドボックスはスタブに差し替えている — 測っているのは箱であって第三者の稼働ではない。箱が本文カラムの幅を持つことも測り、基準が空振りでないことを担保している） |
+| id  | 基準                                                                                                                                                                                                                                                                      | 測り方                                                                                                                                                                                                 |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C1  | `/p/sandbox/<seg>` と `/s/<seg>` が `embed/<seg>?runonclick=1` になる（`www` 有無・末尾スラッシュ・クエリ・断片を含む）                                                                                                                                                   | `lib/embed-provider.test.ts`                                                                                                                                                                           |
+| C2  | 最終セグメントは分解されない — `/s/react-example-xgzdk` は `embed/react-example-xgzdk` であって `embed/xgzdk` ではない                                                                                                                                                    | `lib/embed-provider.test.ts`                                                                                                                                                                           |
+| C3  | `/p/devbox/`・埋め込みの URL 自体・`/examples/`・ユーザーページ・トップは埋め込みにならず、カード側の判定に落ちる                                                                                                                                                         | `lib/embed-provider.test.ts` / `lib/render.test.ts`                                                                                                                                                    |
+| C4  | セグメントの形を外れたもの（65 文字以上・英数字とハイフン以外）は埋め込みにならない                                                                                                                                                                                       | `lib/embed-provider.test.ts`                                                                                                                                                                           |
+| C5  | プロバイダ名・`title`・ラベル・`allow`（空）・`sandbox` が §20.7 と §20.10 のとおりである                                                                                                                                                                                 | `lib/embed-provider.test.ts`                                                                                                                                                                           |
+| C6  | 公開側とエディタの NodeView が同一のフレームを組む — `embed-codesandbox` の class、`runonclick=1` 付きの `src`、§20.7 の `sandbox`、空の `allow`。**このプロバイダは `sandbox` と実在の `src` を両方持つ最初の 1 つ**なので、2 つの描画段が食い違うならここに出る（§4.3） | `lib/render.test.ts` / `e2e/editor-embed.spec.ts`                                                                                                                                                      |
+| C7  | 公開された箱が高さ 500px で、フレームがその箱を埋める                                                                                                                                                                                                                     | `e2e/public-embed.spec.ts`（サンドボックスはスタブに差し替えている — 測っているのは箱であって第三者の稼働ではない。箱が本文カラムの幅を持つことも測り、基準が空振りでないことを担保している）          |
+| C8  | ブロックが選択されていてエディタにフォーカスがあるとき、打鍵は文書に届き、選ばれたノードはその文字に置き換わる（§20.14、2026-08-31 追加）                                                                                                                                 | `e2e/editor-embed.spec.ts`                                                                                                                                                                             |
+| C9  | フレームがフォーカスを持つと、打鍵も Backspace もフレームだけに届き、文書は 1 文字も変わらず、リングは出たままである（§20.14、2026-08-31 追加）                                                                                                                           | `e2e/editor-embed.spec.ts`（**まずスタブの `textarea` に文字が入ったことを確かめる** — そこが空なら測ったのはブラウザではなくハーネスであって、文書側の判定は無意味になる。E12 の CDP の穴と同じ理由） |
 
 ### 20.12 未実測のこと
 
-1. エディタが中身である埋め込みは、このリポジトリで初めてである。**ただし開いている幅は §7 が既に狭めてある** — フレームは休止状態で `pointer-events: none` であり（`.prose .embed-view .embed-frame iframe`）、ブロック自身が選択されるまでポインタは通らない。したがって著者が意図せず中の CodeMirror に入ることはなく、残る問いは 1 つに絞られる: **ブロックが選択されていてフレームがフォーカスを持っている状態で、キー入力がどちらに行くか。** §8.1（iframe が親の mousemove と mouseup を飲む、2026-08-25 修正）と同じ族だが、あちらはポインタの話で、これは測っていない
-2. §20.13 の 6.3% が今後どう動くか。原因（VM Sandbox には第三者サイト向けの埋め込みが無い）は分かったので、率は「記事に貼られるサンドボックスのうち VM のもの」の割合で決まる。VM 側の埋め込みはベータなので、正式化されれば動きうる — 追うなら `codesandbox/docs` の `vm-sandboxes/embedding.mdx` から「ベータ」の断りが消えるかどうかである
-3. 非公開サンドボックスの、ログイン済みと incognito の差（§15.2 の Figma と同じ比較）
-4. Share ダイアログが今配っている埋め込みコードの形（§20.4 の出典の穴）
+1. §20.13 の 6.3% が今後どう動くか。原因（VM Sandbox には第三者サイト向けの埋め込みが無い）は分かったので、率は「記事に貼られるサンドボックスのうち VM のもの」の割合で決まる。VM 側の埋め込みはベータなので、正式化されれば動きうる — 追うなら `codesandbox/docs` の `vm-sandboxes/embedding.mdx` から「ベータ」の断りが消えるかどうかである
+2. 非公開サンドボックスの、ログイン済みと incognito の差（§15.2 の Figma と同じ比較）
+3. Share ダイアログが今配っている埋め込みコードの形（§20.4 の出典の穴）
+
+**この一覧は 2026-08-31 に 1 つ縮んで番号がずれている。** 元の 1（キー入力の行き先）は測って §20.14 になり、以降が 1 つずつ繰り上がった — 古い `§20.12-2` は今の `§20.12-1` である。番号を動かしたのはここだけで、節番号は動かしていない。
 
 ### 20.13 フレームを拒むサンドボックスがある（実測 2026-08-30、引き受け）
 
@@ -1563,3 +1566,24 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 
 - 拒否は一様である。チャレンジを通過した人にも、していない人にも、同じく拒まれる
 - **§20.9 の壁がもう 1 つ増えるのではないか、という懸念は測って否定された。** 著者が CodeSandbox を見たあとでも、著者の NodeView は読者と同じ拒否を映す
+
+### 20.14 キー入力の行き先はフォーカスが決める（実測 2026-08-31）
+
+**CodeSandbox は、中身がエディタである最初の埋め込みである。** §7 は「フレームは休止状態で `pointer-events: none`、ブロックが選択されるまでポインタは通らない」までを決めていて、その先——フレームが生きたあと打鍵がどちらに行くか——が §20.12 の 1 番目だった。
+
+**答えはフォーカスであって、選択ではない。** 状態は 2 つあり、クリックの回数で分かれる。
+
+| 状態                                                          | `document.activeElement` | 打鍵の行き先                                     |
+| ------------------------------------------------------------- | ------------------------ | ------------------------------------------------ |
+| クリック 1 回。ブロックが選択され、エディタにフォーカスがある | エディタ本体             | 文書。選ばれたノードが打った文字に**置き換わる** |
+| クリック 2 回目がフレームの中に着地した                       | `iframe`                 | フレームだけ。文書は 1 文字も変わらない          |
+
+1 つ目は ProseMirror の NodeSelection の標準の挙動で、リンクカードと共通で、undo で戻る。**ここにキー入力のガードは足さない** — 足せば「ブロックを打鍵で置き換える」唯一の手段が消える。
+
+2 つ目では Backspace も同じくフレームに行き、**§7.3 の 1 回押しの atom 削除は起きない**。著者がサンドボックスの中で消したつもりの 1 文字が、記事のブロックごと消すことは無い。
+
+**リングは両方の状態で出たままである。** 選択は ProseMirror の state にあり、フォーカスは DOM にあるので、外枠は「次の打鍵がどこへ行くか」の合図ではない。倒れている向きは安全な側である — リングが出たまま打鍵がフレームに行くだけで、**著者がサンドボックスに打っているつもりの 1 打がブロックを消す、という向きには起きない**。
+
+**測れたのは §20.7 が `allow-same-origin` を残したからである。** フレームが不透明でないので、`page.route` でサンドボックスをスタブに差し替えたうえで、中の要素を掴んでフォーカスを渡せる。§18.6 の gist のフレームはこれができない（`e2e/public-embed.spec.ts` の注記）ので、この測り方はこのプロバイダに固有である。
+
+引き受ける帰結が 1 つある: **埋め込まれたエディタに書いたコードはどこにも残らない。** 記事が持つのは URL だけで（§20.4）、フレームの中身は CodeSandbox のものである。エディタを埋め込む以上これは避けられない。

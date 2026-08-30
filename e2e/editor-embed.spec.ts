@@ -476,6 +476,73 @@ test('the editor builds the same sandbox frame the reader gets (C6)', async ({ p
   expect(await markdown(page)).toBe(`<div class="embed" data-href="${CODESANDBOX}"></div>\n\n本文`);
 });
 
+// docs/embed-requirements.md §20.14: **CodeSandbox is the first embed whose content is itself an
+// editor**, so the question §7 leaves open is where a keystroke goes once the frame is live.
+//
+// §7 already narrows it to one state. The frame is `pointer-events: none` at rest, so the author
+// cannot fall into the sandbox's CodeMirror by accident — reaching it takes a click that selects
+// the block and a second one that lands inside. **Focus is what decides, and the two clicks give
+// two different answers**, which is why both are measured here rather than only the state §20.14
+// named.
+//
+// The sandbox is a stub of our own: what is measured is where the key went, not CodeSandbox. That
+// this is measurable at all is §20.7's doing — the sandbox keeps `allow-same-origin`, so the frame
+// is not opaque and Playwright can both route it and address what is inside, which is exactly what
+// the gist's frame refuses (§18.6, `e2e/public-embed.spec.ts`).
+const CS_STUB =
+  '<!doctype html><title>stub</title><body style="margin:0"><textarea id="t" style="width:100%;height:400px"></textarea>';
+
+async function openSandbox(page: Page): Promise<void> {
+  await page.route('https://codesandbox.io/embed/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: CS_STUB }),
+  );
+  await openWith(page, `<div class="embed" data-href="${CODESANDBOX}"></div>\n\n本文\n`);
+  // The click the §7 test already pins: it lands on the frame, which is inert, so ProseMirror makes
+  // the NodeSelection instead.
+  await embed(page).locator('.embed-frame').click();
+  await expect(embed(page)).toHaveClass(/ProseMirror-selectednode/);
+}
+
+test('with the block selected, a keystroke still goes to the document (§20.14)', async ({
+  page,
+}) => {
+  await openSandbox(page);
+  expect(await docString(page)).toBe('doc(embed, paragraph("本文"))');
+
+  // One click in, the editor keeps focus, so this is ordinary NodeSelection handling: the typed
+  // character replaces the selected node. Shared with the link card, and undoable. Recorded as the
+  // answer rather than guarded against — a keydown guard here would take away the only way to
+  // replace a block by typing over it.
+  await page.keyboard.type('X');
+  expect(await docString(page)).toBe('doc(paragraph("X"), paragraph("本文"))');
+});
+
+test("once the frame has focus, the keys are the frame's (§20.14)", async ({ page }) => {
+  await openSandbox(page);
+  const intact = await docString(page);
+  const textarea = page.frameLocator('.embed-view iframe').locator('#t');
+  await textarea.click();
+
+  await page.keyboard.type('Y');
+  // **This assertion is the discriminator, not a control.** If the click never landed inside the
+  // frame, focus stayed in the editor and the keystroke would have replaced the node — the test
+  // above's outcome — and the document assertion below would then be reporting the harness rather
+  // than the browser. CDP input is what bypasses out-of-process frame hit-testing (criterion E12),
+  // so this has to be checked before anything is concluded from the document.
+  await expect(textarea).toHaveValue('Y');
+  expect(await docString(page)).toBe(intact);
+
+  // Backspace too, which is the one that could have cost the author the block: §7.3's one-press
+  // atom delete does not fire, because the editor never sees the key.
+  await page.keyboard.press('Backspace');
+  await expect(textarea).toHaveValue('');
+  expect(await docString(page)).toBe(intact);
+
+  // **The ring stays up the whole time.** The block is still the ProseMirror selection — focus left
+  // the editor, the selection did not — so the outline is not a signal of where a key will go.
+  await expect(embed(page)).toHaveClass(/ProseMirror-selectednode/);
+});
+
 // docs/embed-requirements.md §5, and the first item §12 listed as unmeasured: **§5 decided that no
 // new slice guard was needed**, on the inference that the embed is a block atom like the card and
 // so is covered by the accordion title's `titleAcceptsSlice` and the table cell's

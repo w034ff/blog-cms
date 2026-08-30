@@ -780,7 +780,7 @@ describe('renderMdxToHtml / embed', () => {
   });
 
   it('leaves a devbox URL to the card, as a plain link here (C3)', async () => {
-    // **Unmeasured, not unsupported** (§20.12-2). Publishing a src for a path whose embed
+    // **Unmeasured, not unsupported** (§20.12-1). Publishing a src for a path whose embed
     // endpoint has never been measured is the thing this refusal avoids; a link is what is left.
     const href = 'https://codesandbox.io/p/devbox/react-new-devbox';
     const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);

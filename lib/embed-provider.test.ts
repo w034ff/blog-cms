@@ -775,7 +775,7 @@ describe('resolveEmbed / CodeSandbox', () => {
 
   it('leaves every CodeSandbox URL that is not a sandbox page to the card (C3)', () => {
     for (const href of [
-      // **A devbox.** Whether `/embed/` serves one is unmeasured, and §20.12-2 keeps that distinct
+      // **A devbox.** Whether `/embed/` serves one is unmeasured, and §20.12-1 keeps that distinct
       // from unsupported — but an unmeasured src is not one to build.
       'https://codesandbox.io/p/devbox/react-new-devbox',
       // The embed URL itself, for §14.2's reason: accepting it would make 「リンクに戻す」 write the
