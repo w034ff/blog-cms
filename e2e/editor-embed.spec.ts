@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
-import { markdown, shot } from './editor-probe';
+import { loadMarkdown, selectNode, setRange } from './editor-authoring';
+import { docString, markdown, shot } from './editor-probe';
 import { EMBED_SILENCE_MS } from '../lib/embed-message';
 
 // The YouTube embed in the live editor (docs/embed-requirements.md §9). Browser-only for the usual
@@ -474,4 +474,84 @@ test('the editor builds the same sandbox frame the reader gets (C6)', async ({ p
 
   // 「リンクに戻す」 hands back the page URL the author pasted, not the embed form it was built into.
   expect(await markdown(page)).toBe(`<div class="embed" data-href="${CODESANDBOX}"></div>\n\n本文`);
+});
+
+// docs/embed-requirements.md §5, and the first item §12 listed as unmeasured: **§5 decided that no
+// new slice guard was needed**, on the inference that the embed is a block atom like the card and
+// so is covered by the accordion title's `titleAcceptsSlice` and the table cell's
+// `carriesNonParagraphBlock`. `components/editor/embed-placement.test.ts` measures both predicates
+// against slices taken from real selections; what it cannot see is the hop before them — the guard
+// reads `$from` from `state`, and a paste is the gesture §12 named. So one route is driven end to
+// end here, through the browser's own clipboard.
+//
+// The accordion title is the one worth driving: the table cell adds no mechanism over it, and this
+// is the destination whose failure is not a refusal but a *tear* — ProseMirror does not decline
+// what will not fit into a `text*` title, it splits the accordion in two around the intruder
+// (docs/accordion-requirements.md §6.6).
+const TITLE_NO_BLOCKS = 'アコーディオンのタイトルには段落やブロックを入れられません';
+
+const WITH_ACCORDION = `<details>\n<summary>タイトル</summary>\n\n本文\n\n</details>\n\n<div class="embed" data-href="${WATCH}"></div>\n`;
+
+// The first position inside the first node of `typeName`, read from the state rather than clicked:
+// a click places the DOM caret ~20ms ahead of the state, and the guard reads the state.
+async function firstPos(page: Page, typeName: string): Promise<number> {
+  return page.evaluate((name) => {
+    const el = document.querySelector('.ProseMirror') as {
+      editor?: {
+        state: {
+          doc: { descendants(f: (n: { type: { name: string } }, pos: number) => void): void };
+        };
+      };
+    } | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    let pos = -1;
+    el.editor.state.doc.descendants((node, at) => {
+      if (pos === -1 && node.type.name === name) pos = at;
+    });
+    if (pos === -1) throw new Error(`no ${name} in the document`);
+    return pos + 1;
+  }, typeName);
+}
+
+test('an embed copied and pasted into an accordion title is refused, and the accordion is intact', async ({
+  page,
+}) => {
+  await openWith(page, WITH_ACCORDION);
+  const intact = await docString(page);
+  expect(intact).toContain('detailsSummary("タイトル")');
+  expect(intact).toContain('embed');
+
+  // A NodeSelection is what the block drag handle makes and what copies a whole block — the slice
+  // arrives closed on both sides, which is the shape the unit test pins.
+  await selectNode(page, 'embed');
+  await page.keyboard.press('Control+c');
+  await setRange(page, await firstPos(page, 'detailsSummary'));
+  await page.keyboard.press('Control+v');
+
+  const toast = page.getByRole('status');
+  await expect(toast).toBeVisible();
+  await expect(toast).toHaveText(TITLE_NO_BLOCKS);
+  // Whole-document, not `toContain`: the defect's symptom is a *second* accordion appearing, and a
+  // message-only assertion would also pass if the refusal had eaten the title's text.
+  expect(await docString(page)).toBe(intact);
+});
+
+// The control, and it is not optional: `titleAcceptsSlice` returns false for an *empty* slice too,
+// so the refusal above fires just as well when the copy never happened — leaving a test that passes
+// with a broken clipboard. This proves the same copy really carried an embed.
+//
+// The paste goes into the accordion's own body (`block+`, so an embed is legal there) rather than a
+// top-level paragraph, which makes the refusal above specific to the title rather than to the
+// accordion.
+test('the same copy still lands as an embed where one may go', async ({ page }) => {
+  await openWith(page, WITH_ACCORDION);
+  await selectNode(page, 'embed');
+  await page.keyboard.press('Control+c');
+  // +1 past `detailsContent` itself: the start of the body's first paragraph.
+  await setRange(page, (await firstPos(page, 'detailsContent')) + 1);
+  await page.keyboard.press('Control+v');
+
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(embed(page)).toHaveCount(2);
+  expect(await docString(page)).toContain('detailsContent(embed, paragraph("本文"))');
 });
