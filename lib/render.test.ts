@@ -780,8 +780,10 @@ describe('renderMdxToHtml / embed', () => {
   });
 
   it('leaves a devbox URL to the card, as a plain link here (C3)', async () => {
-    // **Unmeasured, not unsupported** (§20.12-1). Publishing a src for a path whose embed
-    // endpoint has never been measured is the thing this refusal avoids; a link is what is left.
+    // **Measured, and refused for it** (§20.13). A VM Sandbox gets a Cloudflare challenge whose
+    // own `X-Frame-Options: SAMEORIGIN` stops any third-party frame showing it, on `/p/sandbox/`
+    // and `/embed/` alike — the class, not this URL. Publishing a src for it would put the
+    // browser's own connection-refused page in the article; a link is what is left instead.
     const href = 'https://codesandbox.io/p/devbox/react-new-devbox';
     const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
     expect(html).not.toContain('<iframe');

@@ -775,8 +775,11 @@ describe('resolveEmbed / CodeSandbox', () => {
 
   it('leaves every CodeSandbox URL that is not a sandbox page to the card (C3)', () => {
     for (const href of [
-      // **A devbox.** Whether `/embed/` serves one is unmeasured, and §20.12-1 keeps that distinct
-      // from unsupported — but an unmeasured src is not one to build.
+      // **A devbox**, which is a VM Sandbox. Measured not to render in a third-party iframe on
+      // either route — `/p/sandbox/` and `/embed/` both answer with a Cloudflare challenge that
+      // carries `X-Frame-Options: SAMEORIGIN` (§20.13). The claim is about the class, not this URL:
+      // what was measured is the docs' own VM example and the six rejected ids, against a browser
+      // sandbox as the passing control. So this is refused for a known failure, not an unknown.
       'https://codesandbox.io/p/devbox/react-new-devbox',
       // The embed URL itself, for §14.2's reason: accepting it would make 「リンクに戻す」 write the
       // bare player into an `<a href>` rather than the page the author was holding.
