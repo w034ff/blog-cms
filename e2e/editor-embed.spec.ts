@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, selectNode, setRange } from './editor-authoring';
+import { loadMarkdown, moveBlockAbove, selectNode, setRange } from './editor-authoring';
 import { docString, markdown, shot } from './editor-probe';
+import { cdpNativeDrag } from './native-drag';
 import { EMBED_SILENCE_MS } from '../lib/embed-message';
 
 // The YouTube embed in the live editor (docs/embed-requirements.md §9). Browser-only for the usual
@@ -367,23 +368,37 @@ test('the deck page URL is told which Copy button it wanted (SD14)', async ({ pa
 // the element copies the name with it (§10.5's clone).
 const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae?file=hello.rb';
 
-async function reportToEditor(page: Page, height: number, files: number): Promise<void> {
-  // The id is read back out of the document the NodeView built, rather than guessed: it is minted
-  // per placement and the editor's counter is not addressable from here.
+// The name the NodeView minted for this placement, read back out of the document it built rather
+// than guessed: the editor's counter is not addressable from here.
+async function gistInstanceId(page: Page): Promise<string> {
+  const id = await page.evaluate(() => {
+    const frame = document.querySelector<HTMLIFrameElement>('.ProseMirror .embed-view iframe');
+    return /,i="([^"]+)"/.exec(frame?.getAttribute('srcdoc') ?? '')?.[1] ?? null;
+  });
+  if (id === null) throw new Error('no instance id in the frame document');
+  return id;
+}
+
+// A report delivered as the frame's own, under whichever name the caller names. `source` is the
+// frame's window because that is what the NodeView authenticates by — the gist's origin is the
+// string `"null"` (§18.5), so there is nothing else to check.
+async function reportAs(page: Page, id: string, height: number, files: number): Promise<void> {
   await page.evaluate(
-    ([h, n]) => {
+    ([name, h, n]) => {
       const frame = document.querySelector<HTMLIFrameElement>('.ProseMirror .embed-view iframe');
-      const id = /,i="([^"]+)"/.exec(frame?.getAttribute('srcdoc') ?? '')?.[1];
-      if (!id) throw new Error('no instance id in the frame document');
       window.dispatchEvent(
         new MessageEvent('message', {
-          data: { source: 'gist-embed', id, height: h, files: n },
+          data: { source: 'gist-embed', id: name, height: h, files: n },
           source: frame?.contentWindow ?? undefined,
         }),
       );
     },
-    [height, files] as const,
+    [id, height, files] as const,
   );
+}
+
+async function reportToEditor(page: Page, height: number, files: number): Promise<void> {
+  await reportAs(page, await gistInstanceId(page), height, files);
 }
 
 async function insertGist(page: Page): Promise<void> {
@@ -621,4 +636,149 @@ test('the same copy still lands as an embed where one may go', async ({ page }) 
   await expect(page.getByRole('status')).toHaveCount(0);
   await expect(embed(page)).toHaveCount(2);
   expect(await docString(page)).toContain('detailsContent(embed, paragraph("本文"))');
+});
+
+// docs/embed-requirements.md §8.4 and §12, the gist half of criterion E17. A reorder rebuilds the
+// NodeView, and the rebuild resets `answered`, `visible` and the silence clock while minting a new
+// `instanceId` into the `srcdoc` — so a gist that did not report again under the *new* name would
+// become 「取得できない gist です」 eight seconds later, on a block the author had already seen.
+//
+// **Only the parent's half is pinned here, deliberately.** GitHub's script cannot be substituted
+// inside this frame — it is sandboxed without `allow-same-origin`, so Playwright's routing does not
+// reach it (§18.6) — and a spec that asserted the real frame's answer would be asserting GitHub's
+// uptime, which `x-embed-stub.ts` states this suite must not do. What is asserted instead is what a
+// bug here would actually break: that the rebuilt NodeView is listening, and that it authenticates
+// by the id it has just minted rather than the one it retired. The frame's own half is recorded in
+// §8.4 as a live observation, not as a spec.
+//
+// The two reports below are identical but for the id, and their outcomes are opposite. That is what
+// makes this a measurement rather than an assertion that nothing happened.
+test('a rebuilt gist frame is heard under its new id, and only that one (E17)', async ({
+  page,
+}) => {
+  await insertGist(page);
+  const firstId = await gistInstanceId(page);
+
+  await page.evaluate(() => {
+    document.querySelector('.embed-view iframe')?.setAttribute('data-mark', '1');
+    document.querySelector('.embed-view .embed-frame')?.setAttribute('data-mark', '1');
+  });
+  await moveBlockAbove(page, '本文', 'embed');
+
+  // The gate: row 1 of §8.4's table rebuilds the jumped-over embed. If the stamps survived, the
+  // NodeView was never rebuilt and everything below would be measuring the original one.
+  await expect(embed(page).locator('[data-mark]')).toHaveCount(0);
+  const secondId = await gistInstanceId(page);
+  expect(secondId).not.toBe(firstId);
+
+  // The retired name is not this frame's any more. `files: 0` is the loudest thing a report can
+  // say — it is what draws the note — so if the old id were still accepted, this would show. The
+  // dispatch is synchronous, so by the time `evaluate` returns the NodeView has already had it.
+  await reportAs(page, firstId, 250, 0);
+  await expect(page.locator('.ProseMirror .embed-note')).toHaveCount(0);
+
+  // The same report under the name the rebuild minted, and now it lands.
+  await reportAs(page, secondId, 250, 0);
+  await expect(page.locator('.ProseMirror .embed-note')).toContainText('取得できない gist です');
+});
+
+// docs/embed-requirements.md §8.1's last paragraph, and the item §12 listed as unmeasured. §8.1
+// fixed the *handle* path, where the hole was the embed being dragged: grabbing a block is what
+// selects it, and `.ProseMirror-selectednode.embed-view … iframe` hands the selected block's frame
+// the pointer back — so the one frame guaranteed to be live during a handle drag was the one whose
+// box the pointer was crossing. `body.block-dragging` is what closed that, and it is not set on the
+// native path, which is why the question stayed open.
+//
+// **It is closed by the two states below, and neither needs `body.block-dragging`.** What is
+// asserted is the computed `pointer-events`, for criterion E12's reason — CDP input bypasses
+// out-of-process frame hit-testing, so the freeze itself is not observable here. The value is what
+// decides whether the frame is a hit target at all, and it is the same value §8.1 measured
+// directly (32 moves across a live frame reached the parent 0 times; inert, 32/32).
+const NATIVE_DRAG_MD = `前の段落\n\n<div class="embed" data-href="${WATCH}"></div>\n\n後の段落\n`;
+
+type DragSnapshot = {
+  selected: boolean;
+  blockDragging: boolean;
+  pointerEvents: string | null;
+  carried: string[] | null;
+};
+
+function dragSnapshot(page: Page): Promise<DragSnapshot> {
+  return page.evaluate(() => {
+    const view = document.querySelector('.ProseMirror .embed-view');
+    const frame = view?.querySelector('iframe') ?? null;
+    const editor = (
+      document.querySelector('.ProseMirror') as {
+        editor?: {
+          view: {
+            dragging: {
+              slice: { content: { forEach(f: (n: { type: { name: string } }) => void): void } };
+            } | null;
+          };
+        };
+      } | null
+    )?.editor;
+    const dragging = editor?.view.dragging ?? null;
+    let carried: string[] | null = null;
+    if (dragging) {
+      const names: string[] = [];
+      dragging.slice.content.forEach((node) => names.push(node.type.name));
+      carried = names;
+    }
+    return {
+      selected: view?.classList.contains('ProseMirror-selectednode') ?? false,
+      blockDragging: document.body.classList.contains('block-dragging'),
+      pointerEvents: frame ? getComputedStyle(frame).pointerEvents : null,
+      carried,
+    };
+  });
+}
+
+test('a natively dragged embed never gives its own frame the pointer (§8.1)', async ({ page }) => {
+  await openWith(page, NATIVE_DRAG_MD);
+  const box = (await embed(page).boundingBox())!;
+  const last = (await page.locator('.ProseMirror p').last().boundingBox())!;
+
+  let during: DragSnapshot | null = null;
+  await cdpNativeDrag(
+    page,
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    { x: last.x + 10, y: last.y + last.height / 2 },
+    async () => {
+      during = await dragSnapshot(page);
+    },
+  );
+  const seen = during as DragSnapshot | null;
+
+  // **The gate.** Without this the assertions below are the resting state, which §7 already pins:
+  // the press has to have started a real drag that picked the embed up.
+  expect(seen?.carried).toEqual(['embed']);
+  // **Grabbing does not select on this path** — the selection stays where the caret was, so the
+  // rule that hands a selected block's frame the pointer never applies. This is the whole
+  // difference from the handle path, and it is why nothing had to be added here.
+  expect(seen?.selected).toBe(false);
+  expect(seen?.pointerEvents).toBe('none');
+  // And it is not §8.1's fix doing it: that class belongs to the handle's controller.
+  expect(seen?.blockDragging).toBe(false);
+});
+
+test('a selected embed cannot start a native drag at all (§8.1)', async ({ page }) => {
+  // The other state, and the one that would freeze if it were reachable. It is not: the frame is
+  // live precisely because the block is selected (§7), so the press lands *inside the iframe* and
+  // the parent document never sees it. No `dragstart`, no drag.
+  await openWith(page, NATIVE_DRAG_MD);
+  await embed(page).locator('.embed-frame').click();
+  await expect(embed(page).locator('iframe')).toHaveCSS('pointer-events', 'auto');
+
+  const box = (await embed(page).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 8, box.y + box.height / 2 + 8, { steps: 6 });
+  const seen = await dragSnapshot(page);
+  await page.mouse.up();
+
+  expect(seen.selected).toBe(true);
+  expect(seen.pointerEvents).toBe('auto');
+  // Nothing was picked up, which is what makes the live frame harmless here.
+  expect(seen.carried).toBeNull();
 });

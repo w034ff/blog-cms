@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { loadMarkdown, moveBlockAbove } from './editor-authoring';
 import { markdown, shot } from './editor-probe';
 import {
   stubX,
@@ -276,53 +276,9 @@ test('a click beside the box selects the embed, not the next block (§8.2)', asy
 // measures the absence of, and it exists only for the two providers that answer back (§10.5, §18.5);
 // Figma and YouTube say nothing either way.
 //
-// **Moved by a transaction rather than a drag.** §8.4 measured with the block drag handle, but what
-// is being exercised is prosemirror-view's child sync (`destroyBetween` on the node-diff pass),
-// which a `delete` + `insert` reaches identically — without depending on CDP hit-testing over an
-// iframe (criterion E12). The marks below are what prove the rebuild actually happened, so nothing
-// here rests on the gesture being equivalent.
-async function moveBlockAbove(page: Page, text: string, typeName: string): Promise<void> {
-  await page.evaluate(
-    ({ needle, name }) => {
-      const el = document.querySelector('.ProseMirror') as {
-        editor?: {
-          state: {
-            tr: { delete(f: number, t: number): { insert(at: number, n: unknown): unknown } };
-            doc: {
-              forEach(
-                f: (
-                  n: { type: { name: string }; textContent: string; nodeSize: number },
-                  pos: number,
-                ) => void,
-              ): void;
-              nodeAt(pos: number): unknown;
-            };
-          };
-          view: { dispatch(tr: unknown): void };
-        };
-      } | null;
-      if (!el?.editor) throw new Error('no live editor on .ProseMirror');
-      const { state, view } = el.editor;
-      let from = -1;
-      let size = 0;
-      let over = -1;
-      state.doc.forEach((node, pos) => {
-        if (node.type.name === 'paragraph' && node.textContent === needle) {
-          from = pos;
-          size = node.nodeSize;
-        }
-        if (over === -1 && node.type.name === name) over = pos;
-      });
-      if (from === -1 || over === -1) throw new Error('nothing to move');
-      if (from < over)
-        throw new Error('the block to move must start out below the one jumped over');
-      const moved = state.doc.nodeAt(from);
-      // Deleting below `over` leaves that position untouched, so it can be reused as the insert.
-      view.dispatch(state.tr.delete(from, from + size).insert(over, moved));
-    },
-    { needle: text, name: typeName },
-  );
-}
+// The reorder is `moveBlockAbove` (editor-authoring.ts), which moves a block by transaction rather
+// than by the drag handle — see there for why. The marks below are what prove the rebuild actually
+// happened, so nothing here rests on the two gestures being equivalent.
 
 test('a frame rebuilt by a reorder announces its height again (§8.4)', async ({ page }) => {
   await openWith(

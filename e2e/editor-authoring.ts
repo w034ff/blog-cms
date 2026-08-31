@@ -193,3 +193,53 @@ export async function selectAcross(
   const { to: inner } = await innerRange(page, typeName);
   await (options.backward ? setRange(page, inner, outer) : setRange(page, outer, inner));
 }
+
+// Move the paragraph reading `text` to just before the first node of `typeName` — the reorder that
+// rebuilds the *jumped-over* block's NodeView (docs/embed-requirements.md §8.4, row 1 of its table;
+// the other direction rebuilds the moved block instead and leaves the target alone).
+//
+// A transaction rather than the block drag handle: what this exists to exercise is prosemirror-view's
+// child sync (`destroyBetween` on the node-diff pass), which a `delete` + `insert` reaches
+// identically, without depending on CDP input over an iframe (embed §8.1, criterion E12). Callers
+// that care whether the rebuild happened must check it themselves — stamping the old DOM and
+// asserting the stamp is gone is the only thing that proves this reached the diff at all.
+export function moveBlockAbove(page: Page, text: string, typeName: string): Promise<void> {
+  return page.evaluate(
+    ({ needle, name }) => {
+      const el = document.querySelector('.ProseMirror') as EditorProbe | null;
+      if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+      const { state, view } = el.editor as unknown as {
+        state: {
+          tr: { delete(f: number, t: number): { insert(at: number, n: unknown): unknown } };
+          doc: {
+            forEach(
+              f: (
+                n: { type: { name: string }; textContent: string; nodeSize: number },
+                pos: number,
+              ) => void,
+            ): void;
+            nodeAt(pos: number): unknown;
+          };
+        };
+        view: { dispatch(tr: unknown): void };
+      };
+      let from = -1;
+      let size = 0;
+      let over = -1;
+      state.doc.forEach((node, pos) => {
+        if (node.type.name === 'paragraph' && node.textContent === needle) {
+          from = pos;
+          size = node.nodeSize;
+        }
+        if (over === -1 && node.type.name === name) over = pos;
+      });
+      if (from === -1) throw new Error(`no paragraph reading ${needle}`);
+      if (over === -1) throw new Error(`no ${name} in the document`);
+      if (from < over)
+        throw new Error('the block to move must start out below the one jumped over');
+      // Deleting below `over` leaves that position untouched, so it can be reused as the insert.
+      view.dispatch(state.tr.delete(from, from + size).insert(over, state.doc.nodeAt(from)));
+    },
+    { needle: text, name: typeName },
+  );
+}

@@ -858,6 +858,68 @@ describe('renderMdxToHtml / embed', () => {
     // refuses to withhold (lib/rehype-new-tab-links.ts).
     expect(anchor?.[0]).not.toContain('rel=');
   });
+
+  it('reaches no third party while rendering, for any provider (E10)', async () => {
+    // docs/embed-requirements.md §3.2 and criterion E10: **the embed stage has no fetch in it**,
+    // which is what separates an embed from a link card. That the code contains no fetch is
+    // readable; that none runs is what this measures.
+    //
+    // `fetch` is the whole instrument because it is the whole egress: nothing under `lib/`,
+    // `app/` or `components/` imports `node:http`, `undici`, `axios` or `node-fetch` (grepped
+    // 2026-08-31), so a request that did not go through here would have to arrive with a new
+    // dependency, and that is a change this assertion is not the only thing standing in front of.
+    //
+    // The spy rejects rather than calling through. A render that started fetching would then fail
+    // loudly here rather than quietly reaching the network from a unit test.
+    //
+    // **Per render, not per process.** The processor is built once at module load (lib/render.ts),
+    // long before this spy is installed, so what is measured is what a page render does — which is
+    // what E10 claims — and not a one-time initialisation.
+    const calls: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return Promise.reject(new Error('blocked in test'));
+    }) as typeof fetch;
+
+    try {
+      // One document carrying every provider, plus the two shapes that fall out of the registry:
+      // a reference no provider claims, and one whose provider refuses it (§20.3).
+      const every = [
+        `https://www.youtube.com/watch?v=${ID}`,
+        POST,
+        DECK,
+        DESIGN,
+        SLIDES,
+        DOCSWELL,
+        CODESANDBOX,
+        GIST,
+        'https://codesandbox.io/p/devbox/react-new-devbox',
+        'https://example.com/article',
+      ]
+        .map((href) => `<div class="embed" data-href="${href}"></div>`)
+        .join('\n\n');
+      const { html } = await renderMdxToHtml(every);
+      // The render really produced embeds — without this the assertion below would also pass on a
+      // pipeline that had done nothing at all.
+      expect(html.match(/<iframe/g)?.length).toBe(8);
+      expect(calls).toEqual([]);
+
+      // **The positive control, through the same spy and the same call.** A card's resolver is
+      // injected (§6), so this is the one stage of this pipeline that is allowed to reach out — and
+      // it proves the instrument sees a fetch made from inside a render, rather than proving that
+      // `globalThis.fetch` was merely reassigned.
+      await renderMdxToHtml('<div class="link-card" data-href="https://example.com/x"></div>', {
+        resolveCard: async (href) => {
+          await fetch(href).catch(() => null);
+          return null;
+        },
+      });
+      expect(calls).toEqual(['https://example.com/x']);
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
 });
 
 // docs/link-requirements.md §7.2 — the stage that opens a link leaving this site in a new tab. It
