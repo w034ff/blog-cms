@@ -1,5 +1,5 @@
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { isIP, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 
 // The one place in this codebase that requests a URL chosen by its caller, and the guard that makes
 // that safe (docs/link-card-requirements.md §14.5, docs/link-requirements.md §5.5.10).
@@ -20,6 +20,25 @@ import { isIP } from 'node:net';
 
 const TIMEOUT_MS = 5000;
 const MAX_REDIRECTS = 3;
+
+// Node races the resolved addresses (RFC 8305) and gives each attempt
+// `autoSelectFamilyAttemptTimeout` — 250ms by default — before it starts the next one. When there
+// is no next one, that budget decides the connection, which makes it a second deadline this file
+// never declared: `TIMEOUT_MS` above is the one it means.
+//
+// **Measured 2026-08-31 against asciinema.org**, the first origin asked for here that is not behind
+// a CDN (every provider in lib/embed-provider.ts connects in ~20ms). Its AAAA is unreachable from
+// this host — `ENETUNREACH`, returned instantly, so the switch itself costs nothing — and its A
+// answers in 249–289ms, straddling the budget. With both families 2 of 3 connects failed
+// `ETIMEDOUT` at ~300ms; with the same name resolved to the A record alone 3 of 3 connected, at
+// 274–289ms, because a single address is given no budget at all. The card was therefore a coin
+// flip, and the `link_previews` row it wrote says `failed`.
+//
+// Process-global, because this is a `node:net` default and there is no per-request form without a
+// custom undici dispatcher (undici is not a dependency here). What it changes is only how long one
+// address family is given before the next is tried: a host whose first family hangs *silently* now
+// fails over after 1s rather than 250ms, still inside TIMEOUT_MS.
+setDefaultAutoSelectFamilyAttemptTimeout(1000);
 
 // Addresses the server must not be talked into fetching: loopback, link-local (including the cloud
 // metadata range), the RFC 1918 blocks, carrier-grade NAT, and their v6 equivalents. Written over
