@@ -1,7 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 import { shot } from './editor-probe';
-import { stubX, X_HEIGHT, X_MISSING_URL, X_RESIZE_URL, X_SILENT_URL } from './x-embed-stub';
+import {
+  stubX,
+  X_HEIGHT,
+  X_MISSING_URL,
+  X_RESIZE_URL,
+  X_SILENT_URL,
+  X_TALL_HEIGHT,
+  X_TALL_ID,
+} from './x-embed-stub';
 
 // The X embed on the *published* page (docs/embed-requirements.md §10.5, §10.6) — basis X5 and X6.
 //
@@ -62,6 +70,45 @@ test('a post takes the height its iframe reports (§10.5)', async ({ page }) => 
   await expect(box(page).locator('iframe')).toHaveCount(1);
   await expect.poll(() => frameHeight(page), { timeout: 15_000 }).toBe(X_HEIGHT);
   await shot(page, '01-public-post-sized');
+});
+
+// docs/embed-requirements.md §10.10, criterion X11. The editor has refused this since 2026-08-24;
+// the published page did not until 2026-09-01, and `event.origin` does not cover it — every X embed
+// on the page is served from the same origin, so the origin check says "an X frame" where the
+// question is "THIS X frame". The box is now answered only by the frame inside it.
+test('a frame answering under another box’s embedId is ignored (X11)', async ({ page }) => {
+  const href = await publish(page, 'Public X impersonation', `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`);
+  await stubX(page);
+  await page.goto(href);
+  await expect.poll(() => frameHeight(page), { timeout: 15_000 }).toBe(X_HEIGHT);
+
+  const embedId = await box(page).getAttribute('data-embed-id');
+  expect(embedId).toBeTruthy();
+
+  // A second frame at X's own origin, carrying this box's name and a height of its own. Counted as
+  // it arrives, so the assertion below cannot pass by the message never being sent.
+  await page.evaluate(
+    ([id, tallId, height]) => {
+      const w = window as unknown as { __tall: number };
+      w.__tall = 0;
+      window.addEventListener('message', (event) => {
+        if (typeof event.data === 'string' && event.data.includes(`"height":${height}`)) {
+          w.__tall += 1;
+        }
+      });
+      const rogue = document.createElement('iframe');
+      rogue.src = `https://platform.twitter.com/embed/Tweet.html?id=${tallId}&lang=ja&embedId=${id}`;
+      rogue.style.cssText = 'position:fixed;left:0;bottom:0;width:300px;height:100px';
+      document.body.appendChild(rogue);
+    },
+    [embedId!, X_TALL_ID, String(X_TALL_HEIGHT)] as const,
+  );
+
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __tall: number }).__tall))
+    .toBeGreaterThan(0);
+  // Heard by the page, refused by the box.
+  expect(await frameHeight(page)).toBe(X_HEIGHT);
 });
 
 test('an unfetchable post becomes the same link the render stage would build (X5)', async ({

@@ -39,6 +39,10 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     // being replaced with a link, which is what makes the fallback one-way: a `resize` arriving
     // afterwards has nothing left to apply to (§10.6).
     const boxes = new Map<string, HTMLElement>();
+    // The iframe inside each of those boxes, under the same key. **Kept because the id is a name,
+    // not a credential** — see `spokeFor` below, which is the only thing this map exists for
+    // besides asking a gist frame to speak.
+    const frames = new Map<string, HTMLIFrameElement>();
     // The clocks still running, and the ids that have said anything at all. **These are separate
     // from `boxes` on purpose.** A box that has reported a height is no longer at risk of being
     // mistaken for a missing post, but it must stay listening — the provider re-sends `resize`
@@ -54,7 +58,12 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       .querySelectorAll<HTMLElement>('.embed-x[data-embed-id], .embed-gist[data-embed-id]')
       .forEach((box) => {
         const id = box.dataset.embedId;
-        if (id) boxes.set(id, box);
+        if (!id) return;
+        boxes.set(id, box);
+        // A box `rehypeEmbed` built always holds one. A box without one keeps its clock — nothing
+        // can legitimately speak for it, so silence is the only answer it can give.
+        const iframe = box.querySelector('iframe');
+        if (iframe) frames.set(id, iframe);
       });
     if (boxes.size === 0) return;
 
@@ -64,9 +73,9 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     // Asked on mount for a frame already loaded, and again on `load` for one that was not (every
     // embed here is `loading="lazy"`, so below the fold that is much later).
     const asked: { iframe: HTMLIFrameElement; onLoad: () => void }[] = [];
-    boxes.forEach((box) => {
+    boxes.forEach((box, id) => {
       if (!box.classList.contains('embed-gist')) return;
-      const iframe = box.querySelector('iframe');
+      const iframe = frames.get(id);
       if (!iframe) return;
       const ask = () => iframe.contentWindow?.postMessage(gistAsk(), '*');
       iframe.addEventListener('load', ask);
@@ -97,6 +106,7 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       const href = box?.dataset.href;
       if (!box || !href) return;
       boxes.delete(id);
+      frames.delete(id);
       stopClock(id);
       const spec = embedFallbackAnchor(href);
       const anchor = document.createElement('a');
@@ -106,14 +116,30 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       box.replaceWith(anchor);
     };
 
+    // Whether this message came from the frame that owns the placement it names.
+    //
+    // **The id is a name, not a credential** (§18.5, corrected 2026-09-01). It is published in the
+    // markup as `data-embed-id` and minted as `emb-0`, `emb-1`, …, and every iframe on the page
+    // posts onto this one bus. Holding only the id was enough while every frame here held a
+    // document its own provider wrote; §20 and §21 put frames on the page whose contents are
+    // written by whoever made that sandbox or pen, and one of those can name another placement and
+    // have its box replaced with a link or its height set to anything. The editor's NodeView has
+    // asked this question since §10.10 — it holds one frame and compares against it directly — and
+    // this is the same check for the surface that holds many.
+    const spokeFor = (id: string, source: MessageEventSource | null): boolean => {
+      const frame = frames.get(id);
+      return frame !== undefined && frame.contentWindow !== null && source === frame.contentWindow;
+    };
+
     const onMessage = (event: MessageEvent) => {
       // Our own reporter first. **Its `event.origin` is the string `"null"`**, because the frame is
-      // sandboxed without `allow-same-origin` — so what authenticates it is the box the id names
-      // being one we put in the map, rather than a constant to compare the origin against (§18.5).
-      // A gist that drew no files is this provider's `no_results`: GitHub's script writes nothing
-      // at all for an id that no longer resolves.
+      // sandboxed without `allow-same-origin` — so the source window is the whole of its
+      // authentication, and there is no constant to compare an origin against (§18.5). A gist that
+      // drew no files is this provider's `no_results`: GitHub's script writes nothing at all for an
+      // id that no longer resolves.
       const gist = readGistCall(event.data);
       if (gist !== null) {
+        if (!spokeFor(gist.id, event.source)) return;
         if (gist.files === 0) fallBack(gist.id);
         else applyHeight(gist.id, gist.height);
         return;
@@ -121,6 +147,9 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       if (event.origin !== X_ORIGIN) return;
       const call = readXCall(event.data);
       if (!call?.id) return;
+      // The origin above says "an X frame", not "this X frame": every X embed on the page is served
+      // from the same origin, so without this one of them could resize or retire another (§10.10).
+      if (!spokeFor(call.id, event.source)) return;
       const height = call.params?.[0]?.height;
       // `rendered` and `results` are acknowledged only by being ignored: the two that decide
       // anything are the height and the absence of a post.

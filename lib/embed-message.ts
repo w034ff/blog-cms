@@ -82,6 +82,13 @@ export const GIST_PROVIDER = 'gist';
 // reaching the page around it — and the price is an opaque origin. So the parent authenticates by
 // the window the message came from (`event.source === iframe.contentWindow`), which is the check the
 // editor's NodeView already makes for X, rather than by a constant.
+//
+// **Both parents make that check, and the id makes none of it.** The published page held only the
+// id until 2026-09-01 — it names a box in a map, which is a name rather than a credential — and
+// that was enough while every frame on the page held a document its own provider wrote. §20 and
+// §21 ended that: a sandbox or a pen frames code written by whoever made it, and any frame can post
+// to the parent under another placement's name. The id still says WHICH placement a message is
+// about; the source window says whether the sender was entitled to speak for it.
 export const GIST_SOURCE = 'gist-embed';
 
 export type GistCall = {

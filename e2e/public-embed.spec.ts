@@ -271,14 +271,22 @@ test('a Docswell reference is published in a slide-plus-control-row box (D7)', a
 // that document for real against a script served from this file.
 const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae?file=hello.rb';
 
-// The message the reporter posts, delivered directly. The published listener authenticates a gist
-// message by the id naming a box it is holding rather than by an origin (the origin is the string
-// `"null"`), so this is the same code path the frame's own message takes.
+// The message the reporter posts, delivered directly. **`source` is the named box's own frame**,
+// because that is what the published listener authenticates by: the gist's origin is the string
+// `"null"` (§18.5), and the id alone names a placement rather than proving anything about the
+// sender — see the impersonation test below. Setting it here is what keeps this the same code path
+// the frame's own message takes, as `e2e/editor-embed.spec.ts` does for the other surface.
 async function report(page: Page, id: string, height: number, files: number): Promise<void> {
   await page.evaluate(
     ([source, embedId, h, n]) => {
+      const frame = document.querySelector<HTMLIFrameElement>(
+        `#post-body [data-embed-id="${embedId}"] iframe`,
+      );
       window.dispatchEvent(
-        new MessageEvent('message', { data: { source, id: embedId, height: h, files: n } }),
+        new MessageEvent('message', {
+          data: { source, id: embedId, height: h, files: n },
+          source: frame?.contentWindow ?? undefined,
+        }),
       );
     },
     ['gist-embed', id, height, files] as const,
@@ -320,6 +328,54 @@ test('a gist is published as a srcdoc whose box follows the report (G7)', async 
   // Wide enough that the criterion is not vacuous: a box narrower than the column would pass the
   // height check while saying nothing about the column it sits in.
   expect((await frame.boundingBox())!.width).toBeGreaterThan(400);
+});
+
+// docs/embed-requirements.md §18.5, criterion G12. **The same rule the editor's §10.10 test states,
+// for the surface that holds every box on the page at once.**
+//
+// `data-embed-id` is published in the markup and minted as `emb-0`, `emb-1`, …, and every iframe on
+// the page can post to the parent. That was harmless while every frame held a document its own
+// provider wrote; §20 and §21 put frames on the page whose contents are written by whoever made
+// that sandbox or pen. So a message is answered only when it came from the frame of the box it
+// names — which is what the rogue below is refused by, and the report after it is admitted by.
+test('a frame answering under another box’s id is ignored (G12)', async ({ page }) => {
+  const href = await publish(
+    page,
+    'Public gist impersonation spec',
+    `<div class="embed" data-href="${GIST}"></div>\n`,
+  );
+  await page.goto(href);
+  await expect(page.locator('#post-body .embed-gist')).toHaveCount(1);
+
+  // A second frame of its own, running its own script — the shape a pen's author has. It names the
+  // gist's placement and reports zero files, which is the message that retires a box (G10). The
+  // wait is on the parent having HEARD it, so the assertion below cannot pass by the message never
+  // arriving.
+  await page.evaluate(async (victim) => {
+    const rogue = document.createElement('iframe');
+    rogue.style.cssText = 'position:fixed;left:0;bottom:0;width:10px;height:10px';
+    rogue.srcdoc =
+      `<script>parent.postMessage({source:'gist-embed',id:${JSON.stringify(victim)},` +
+      `height:0,files:0},'*')</script>`;
+    document.body.appendChild(rogue);
+    await new Promise<void>((resolve) => {
+      window.addEventListener('message', function seen(event) {
+        if (event.source !== rogue.contentWindow) return;
+        window.removeEventListener('message', seen);
+        resolve();
+      });
+    });
+  }, 'emb-0');
+
+  // Heard by the page, refused by the box.
+  await expect(page.locator('#post-body .embed-gist')).toHaveCount(1);
+  await expect(page.locator(`#post-body a[href="${GIST}"]`)).toHaveCount(0);
+  // And the box still answers its own frame — without which the assertion above would pass for a
+  // listener that had stopped accepting anything at all.
+  await report(page, 'emb-0', 612, 1);
+  await expect
+    .poll(async () => (await page.locator('#post-body .embed-gist .embed-frame').boundingBox())!.height)
+    .toBeGreaterThan(600);
 });
 
 test('a gist that drew no files is replaced with a plain link (G10)', async ({ page }) => {

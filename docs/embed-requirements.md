@@ -1,9 +1,9 @@
 # 埋め込み 要件定義
 
-- 状態: **プロバイダは 7 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
+- 状態: **プロバイダは 9 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）、CodeSandbox（08-30、§20）、CodePen（08-31、§21）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
 - 作成: 2026-08-21（`docs/youtube-embed-requirements.md` として書き、同日 `embed-requirements.md` に改名した。プロバイダを足す前提が先に来たため）
-- 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/editor/embed-extension.ts`（ノード + NodeView + 3 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 2）、`components/editor/link-card-extension.ts` のピッカー（入口 1）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
-- 測定（件数は数えた値。2026-08-31 時点）: `lib/embed-provider.test.ts`（52 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（25 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（25 件）、`e2e/public-embed.spec.ts`（9 件）、`e2e/editor-x-embed.spec.ts`（11 件）、`e2e/public-x-embed.spec.ts`（6 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
+- 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/embed-message.ts`（両側が聞くメッセージ — X のプロトコルと、§18.5 の自前プロトコル）、`lib/embed-fallback.ts`（素のリンクに落ちたときの形。§10.6 の 2 つの経路が同じものを作るための 1 箇所）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/EmbedFrames.tsx`（公開ページで高さを直し、取得できない投稿をリンクにする。`app/posts/[slug]/page.tsx` が 1 行で置く）、`components/editor/embed-extension.ts`（ノード + NodeView + 4 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 1）、`components/editor/link-card-extension.ts` のピッカー（入口 2）、`lib/speakerdeck-snippet.ts` と `components/editor/speakerdeck-snippet-paste.ts`（§16.9 の 3 つ目の入口。§5 の 2 つは URL を持っている場合の入口で、こちらは埋め込みコードを貼った場合である）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
+- 測定（件数は数えた値。2026-09-01 時点）: `lib/embed-provider.test.ts`（66 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（27 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（26 件）、`e2e/public-embed.spec.ts`（12 件）、`e2e/editor-x-embed.spec.ts`（11 件）、`e2e/public-x-embed.spec.ts`（7 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
 - 関連: `docs/link-card-requirements.md`（本書はあちらの決定を 1 つも動かさない。借りるのはあちらの §4.2 の保存形式、§4.4 の検証の線、§6 の後段配置、§14.1 の「読者は取得しない」の 4 つで、§14.13 が本書の §3 を名指している）、`docs/link-requirements.md`（素のリンクのままにする形の行き先）
 
 行に単独で置かれた外部サービスの URL を、公開ページで再生・表示できるブロックとして出すための要件。
@@ -38,7 +38,7 @@
 - **カードと埋め込みの両対応** — 1 つの URL に対して結果は 1 つである（§3.3）
 - 再生・表示のオプションを著者が UI で設定すること（YouTube の開始時刻だけは URL から引き継ぐ — §9.3）
 - サムネイルを出してクリックで本体に差し替える形（ファサード）。§8 で保留として記録する
-- §9・§10 以外のプロバイダ。同じ機構で足せるが、本書は決めない
+- **本書に節を持たないプロバイダ。** 足すかどうかは §3.1 の 3 問で 1 つずつ決め、足したものは §9 以降に自分の節を持つ（2026-09-01 に現状へ合わせた）。以下は、その手順を通したうえで見送ったものである
 - **JSFiddle** — CodePen（単一ファイルのデモ）と CodeSandbox（複数ファイル・依存ありのデモ）で役割が揃っており、JSFiddle は前者と機能的に重なるだけで独自の役割を持たない。プロバイダ 1 つにつき mark・ペースト正規表現・NodeView・E2E 計測の固定コストがかかる（§14〜§17 の先例）ので見送る（2026-08-29）。既存記事の JSFiddle デモを救うなど個別の必要が出たら測り直す
 - **Claude Artifacts** — 共有設定の影響を受けやすく、案内はリンクカードで足りる（2026-08-29）
 - **Google Slides** — カードが題・説明・1 枚目のスライド画像を返すので、埋め込みが足すのは「その場でめくれる」の 1 点で、それに 1 本 82 リクエスト（`docs.google.com` に 69。SlideShare の 40 の倍で本書中最大）かかる。著者はログイン済み・読者は未ログインなので、**著者の画面では描画され、読者だけが壁を見る**状態が起こりうる — §14.6・§15.6・§16.6 が受け入れの根拠にした「著者は挿入した瞬間に同じものを見る」がここだけ成立しない。読者に PDF / PPTX ダウンロードと「エディタで開く」が出る点も他に例がない。Figma と同じ key 形（`/d/<ID>/embed`、取得なし、箱は `calc(56.25% + 36px)`）で足せること自体は実測済み（2026-08-29）。著者が自分のデッキを貼る記事が出たら測り直す
@@ -136,7 +136,7 @@
 
 ---
 
-## 5. 決定③ — 入口は既存の 2 つ。行は増やさない
+## 5. 決定③ — URL からの入口は既存の 2 つ。行は増やさない
 
 `link-card-requirements.md` §14.6 が作った 2 つの入口をそのまま使い、URL の形で結果が決まる:
 
@@ -149,7 +149,9 @@
 
 **スラッシュメニューには足さない。** URL を持っていることが前提の機能なので、貼ってから 1 クリックのほうが短い。カードのピッカー経由でも届く（入口 2）。
 
-**ペーストは引き金にしない。** `link-card-requirements.md` §14.6 が書いた 2 つ目の理由がそのまま当たる — 行に単独の URL を素のリンクとして貼る手段が無くなる。§0 の YouTube の 1 行が実際にその形である。
+**URL のペーストは引き金にしない。** `link-card-requirements.md` §14.6 が書いた 2 つ目の理由がそのまま当たる — 行に単独の URL を素のリンクとして貼る手段が無くなる。§0 の YouTube の 1 行が実際にその形である。
+
+**埋め込みコードのペーストは別で、§16.9 がそれを 3 つ目の入口にしている**（2026-08-26）。貼られるのが markup であって URL ではないので、上の理由は当たらない — 素のリンクとして URL を貼る手段は失われない。この節が数える 2 つは、著者が URL を持っているときの入口である。
 
 **置ける場所の判定は既存のものを訊く。** 挿入は `canPlaceAfterCaret`（`code-block-extension.ts`）、バブルからの置き換えは `parent.canReplaceWith(index, index + 1, type)`。`link-card-requirements.md` §14.6 が「同じ答えを出すが同じ問いではない」と書いた区別を、ここで取り違えない。
 
@@ -189,7 +191,7 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 基準 E7 は当初「表のセル・アコーディオンのタイトルには挿入できない」と書いていた。**タイトルのほうは測れない。**
 
-`detailsSummary` の内容は `marks: ''` で定義されている（`components/editor/details-extension.ts`）ので、**タイトルにはリンクが存在しえない**。入口 2 はキャレットのあるリンクから始まるものなので、そこにバブルは出ず、拒むべき操作が発生しない。
+`detailsSummary` の内容は `marks: ''` で定義されている（`components/editor/details-extension.ts`）ので、**タイトルにはリンクが存在しえない**。入口 1 はキャレットのあるリンクから始まるものなので、そこにバブルは出ず、拒むべき操作が発生しない。
 
 **したがって E7 が測るのは表のセルとリスト項目の先頭である。** どちらも `canReplaceWith` が答え、後者は `link-card-requirements.md` §14.6 が「リスト項目が頭を失う」として一度支払った形である。タイトルの側は、置ける場所の判定ではなく**スキーマがそこまで届かせない**という別の機構で閉じている。
 
@@ -606,18 +608,19 @@ YouTube 側では no-op である — プレイヤーは `<html>` と `<body>` �
 
 **X**（§10、基準は 2026-08-23 に置いた）:
 
-| id  | 基準                                                                                                                  | 測り方                                                                                                     |
-| --- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| X1  | `/<handle>/status/<ID>` と `/i/status/<ID>` が同じ `iframe src` になる                                                | `lib/embed-provider.test.ts`                                                                               |
-| X2  | プロフィール URL は埋め込みにならず、**カードになる**（§10.4）                                                        | `lib/embed-provider.test.ts` / `e2e/editor-embed.spec.ts`                                                  |
-| X3  | `twitter.com` の同形が `x.com` と同じ結果になる                                                                       | `lib/embed-provider.test.ts`                                                                               |
-| X4  | ID の形を外れたもの（非数字・20 桁以上）は埋め込みにならない                                                          | `lib/embed-provider.test.ts`                                                                               |
-| X5  | `no_results` で素のリンクに差し替わり、そのマークアップが `fallbackLink` と一致する                                   | `e2e/public-x-embed.spec.ts` / `lib/render.test.ts`（**2 つの経路の両方** — §10.6）                        |
-| X6  | どの入り方でもタイムアウトが誤爆しない（折り返しの下・アンカーで途中に着地・初回描画から可視）                        | `e2e/public-x-embed.spec.ts`（沈黙が実際にリンクに落ちることも測り、基準が空振りでないことを担保している） |
-| X7  | エディタの沈黙時計が、何も送ってこないプロバイダには張られない（YouTube の埋め込みは 8 秒を過ぎてもプレイヤーのまま） | `e2e/editor-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                    |
-| X8  | 本文カラムが 550px より広いとき、箱は 550px で止まり、左端は段落と揃う（§10.9）                                       | `e2e/public-x-embed.spec.ts`（カラムが実際に広いことも測り、基準が空振りでないことを担保している）         |
-| X9  | ドラッグ中に箱の高さが変わらず、プレビューに `iframe` が生まれず、ゴーストが投稿をアカウントで名指しする（§10.10）    | `e2e/editor-x-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                  |
-| X10 | 同じ `embedId` を名乗る別のフレームの `resize` を受け取らない（§10.10）                                               | `e2e/editor-x-embed.spec.ts`（そのメッセージがページに届いたことも数えており、基準が空振りでない）         |
+| id  | 基準                                                                                                                          | 測り方                                                                                                                                                                                                                             |
+| --- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| X1  | `/<handle>/status/<ID>` と `/i/status/<ID>` が同じ `iframe src` になる                                                        | `lib/embed-provider.test.ts`                                                                                                                                                                                                       |
+| X2  | プロフィール URL は埋め込みにならず、**カードになる**（§10.4）                                                                | `lib/embed-provider.test.ts` / `e2e/editor-embed.spec.ts`                                                                                                                                                                          |
+| X3  | `twitter.com` の同形が `x.com` と同じ結果になる                                                                               | `lib/embed-provider.test.ts`                                                                                                                                                                                                       |
+| X4  | ID の形を外れたもの（非数字・20 桁以上）は埋め込みにならない                                                                  | `lib/embed-provider.test.ts`                                                                                                                                                                                                       |
+| X5  | `no_results` で素のリンクに差し替わり、そのマークアップが `fallbackLink` と一致する                                           | `e2e/public-x-embed.spec.ts` / `lib/render.test.ts`（**2 つの経路の両方** — §10.6）                                                                                                                                                |
+| X6  | どの入り方でもタイムアウトが誤爆しない（折り返しの下・アンカーで途中に着地・初回描画から可視）                                | `e2e/public-x-embed.spec.ts`（沈黙が実際にリンクに落ちることも測り、基準が空振りでないことを担保している）                                                                                                                         |
+| X7  | エディタの沈黙時計が、何も送ってこないプロバイダには張られない（YouTube の埋め込みは 8 秒を過ぎてもプレイヤーのまま）         | `e2e/editor-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                                                                                                                                            |
+| X8  | 本文カラムが 550px より広いとき、箱は 550px で止まり、左端は段落と揃う（§10.9）                                               | `e2e/public-x-embed.spec.ts`（カラムが実際に広いことも測り、基準が空振りでないことを担保している）                                                                                                                                 |
+| X9  | ドラッグ中に箱の高さが変わらず、プレビューに `iframe` が生まれず、ゴーストが投稿をアカウントで名指しする（§10.10）            | `e2e/editor-x-embed.spec.ts`（2026-08-24 追加。修正前に赤であることを確認してから直した）                                                                                                                                          |
+| X10 | 同じ `embedId` を名乗る別のフレームの `resize` を受け取らない（§10.10）                                                       | `e2e/editor-x-embed.spec.ts`（そのメッセージがページに届いたことも数えており、基準が空振りでない）                                                                                                                                 |
+| X11 | 公開ページでも同じことが成り立つ（§10.10、§18.5、2026-09-01 追加）。`event.origin` は「X のフレームのどれか」までしか言わない | `e2e/public-x-embed.spec.ts`（そのメッセージがページに届いたことも数えており、基準が空振りでない）。**実物が最上位 document から送ることは spec の外で測ってある** — スタブも最上位から送るので、これは spec では言えない（§18.5） |
 
 ---
 
@@ -1207,7 +1210,11 @@ Qiita と Zenn が配る `<script src="….js">` を**そのまま記事に置�
 
 **reporter は名乗るだけでなく、訊かれたら答える。** document はページと一緒に構文解析されるのに対し、聞き手が張られるのは hydration の後である。名乗りを 1 回だけにしていたとき、この隙間でメッセージが落ち、箱は初期値のまま二度と動かなかった（実測 2026-08-29）。したがって親は mount 時と `load` 時に `{ask}` を投げ、reporter はそれに同じ内容で答える。名乗りのほうは重複を許す — 同じ高さを 2 度当てても何も起きない。差分を見るのは ResizeObserver の経路だけである。
 
-**メッセージの `event.origin` は文字列 `"null"` である。** `allow-same-origin` を与えていないので（§18.6）オリジンが opaque になる。したがって認証はオリジンではなく、エディタでは `event.source === iframe.contentWindow`、公開側では「その id がこちらの持っている箱を指していること」で行う。前者は X で既に使っている検査である。
+**メッセージの `event.origin` は文字列 `"null"` である。** `allow-same-origin` を与えていないので（§18.6）オリジンが opaque になる。したがって認証はオリジンではなく、**両面とも `event.source === iframe.contentWindow`**、すなわち「その配置のフレーム自身が言ったのか」で行う。X で既に使っている検査と同じものである。
+
+**id は名前であって資格ではない。** `data-embed-id` は公開マークアップに出ており、採番も `emb-0`・`emb-1`・… で、ページ上のどの iframe も親に postMessage できる。公開側は当初「その id がこちらの持っている箱を指していること」だけで認証しており、ページに載るフレームがどれもプロバイダ自身の書いた document だった間は、それで足りていた。**§20 と §21 がその前提を終わらせた** — サンドボックスやペンの中身を書くのは、それを作った第三者である。同じ記事に埋め込みが 2 つあれば、片方のフレームがもう片方の id を名乗って `files: 0` を送り、動いている埋め込みを素のリンクに差し替えられる（2026-09-01 修正、基準 G12）。X 側も同じで、`event.origin` が言えるのは「X のフレームのどれか」までである（基準 X11）。id が言うのはどの配置の話かだけで、その送り主に代弁する資格があるかを言うのは source window である。
+
+**X が本当にフレーム自身の最上位 document から送っていることは別に測った**（実測 2026-09-01）。`e2e/x-embed-stub.ts` は最上位から送るので、スタブだけでは「スタブと同じ形の送り主なら通る」しか言えず、実物が入れ子のフレームから送っていれば公開ページの X の箱は全部が初期値のまま止まる — しかも赤くならない。ローカルの親ページに `platform.twitter.com/embed/Tweet.html` を直接置いて測ったところ、`initialized`・`results`・`resize`・`rendered`・`no_results` のすべてで `event.source === iframe.contentWindow` が成立した（生きている投稿 id `20` と、返せない id `1878330297005854930` の両方）。
 
 **document は reporter の `</script>` で終わり、そのあとにタグを閉じない。** React のサーバレンダラはこの属性の中で `</script>` より後を再現せず、`</body></html>` を書いていたときは配信 HTML と RSC ペイロードが食い違って hydration の不一致が出た（React が記録する。実測 2026-08-29、YouTube だけの記事と埋め込みの無い記事では出ないことも確かめた）。どちらのタグも HTML では省略可能で、フレームの解釈は変わらない。**この document に何か足すときは、あのスクリプトより前に置く。**
 
@@ -1262,6 +1269,7 @@ gist をこちらではなく埋め込みにしたのは、**gist が書き換�
 | G9  | `srcdoc` が GitHub のスクリプトを読み込み、reporter を名乗らせ、`<base target="_blank">` を置く。`?file=` は属性を閉じられない                                                             | `lib/embed-provider.test.ts`                                                                                                                                                   |
 | G10 | 0 ファイルの報告が公開側で素のリンクになる（`target="_blank"` 付き）                                                                                                                       | `e2e/public-embed.spec.ts`                                                                                                                                                     |
 | G11 | その document を実際に走らせると、高さを名乗り、`{ask}` に答え、読み込めないスクリプトでは 0 ファイルを報せる                                                                              | `e2e/gist-reporter.spec.ts`（スクリプトはこのファイルが立てた HTTP サーバが返す — 差し替わるのは第三者だけで、走るのは出荷される reporter そのものである）                     |
+| G12 | 公開ページで、別のフレームがこの箱の id を名乗って送る 0 ファイルの報告では退役しない。その箱自身のフレームからの報告は今までどおり効く（§18.5、2026-09-01 追加）                          | `e2e/public-embed.spec.ts`（親がそのメッセージを聞いたことを待ってから測り、続けて正規の報告が通ることも測っている — 基準が空振りでないことを両側から担保している）            |
 
 ---
 
