@@ -42,6 +42,7 @@
 - **JSFiddle** — CodePen（単一ファイルのデモ）と CodeSandbox（複数ファイル・依存ありのデモ）で役割が揃っており、JSFiddle は前者と機能的に重なるだけで独自の役割を持たない。プロバイダ 1 つにつき mark・ペースト正規表現・NodeView・E2E 計測の固定コストがかかる（§14〜§17 の先例）ので見送る（2026-08-29）。既存記事の JSFiddle デモを救うなど個別の必要が出たら測り直す
 - **Claude Artifacts** — 共有設定の影響を受けやすく、案内はリンクカードで足りる（2026-08-29）
 - **Google Slides** — カードが題・説明・1 枚目のスライド画像を返すので、埋め込みが足すのは「その場でめくれる」の 1 点で、それに 1 本 82 リクエスト（`docs.google.com` に 69。SlideShare の 40 の倍で本書中最大）かかる。著者はログイン済み・読者は未ログインなので、**著者の画面では描画され、読者だけが壁を見る**状態が起こりうる — §14.6・§15.6・§16.6 が受け入れの根拠にした「著者は挿入した瞬間に同じものを見る」がここだけ成立しない。読者に PDF / PPTX ダウンロードと「エディタで開く」が出る点も他に例がない。Figma と同じ key 形（`/d/<ID>/embed`、取得なし、箱は `calc(56.25% + 36px)`）で足せること自体は実測済み（2026-08-29）。著者が自分のデッキを貼る記事が出たら測り直す
+- **StackBlitz** — 埋め込みは組めるが、**走るかどうかがランタイムで割れ、それが URL に書かれていない**（§23）。走らない側では動いているカードが拒否の告知に置き換わり、それは新規プロジェクトの既定側である。カードは両世代とも題・説明・画像を返すので、何もしないことが答えになる（2026-09-01 決定）。StackBlitz が `?embed=1` で isolation ヘッダを返すようになったら測り直す（§23.10）
 - **asciinema** — カードが題・説明・端末の静止画（`/a/<ID>.png`）を返す（実測 2026-08-31）。埋め込みが足す差は「元の速度で動き、テキストを選べる」で §3.1 の 3 問目は通るが、§0 のとおり需要がゼロで、JSFiddle と同じ固定コストが先に立つ。埋め込みの機構は未実測。端末の録画を要する記事が出たら測り直す
 
 ---
@@ -1833,3 +1834,128 @@ slug は `[A-Za-z0-9]{4,16}` で検証する（`YOUTUBE_ID` と同じ理由 — 
 ### 22.5 SlideShare の同意バナーは別の話である
 
 §14.1 の「バナーを閉じるまで 1 枚もめくれない」は本件とは独立で、どちらも「めくれない」に見える。幅 346px（本文カラム）ではバナーは 182px あり、フレーム 233px の 78% を占めてコントロール列を完全に覆う（§14.5 の 122px は 750px カラムでの値である）。**閉じるボタンは 24×24 で、✕ の線が白・背景も白なので、画面には中身のない丸だけが見える**（`.osano-cm-dialog__close`、実測 2026-08-31）。バナーを閉じた読者には §22 だけが残る。
+
+---
+
+## 23. StackBlitz（2026-09-01 決定。カードのままにする）
+
+参考にした 2 サイトは Qiita の埋め込み一覧（`qiita.com/Qiita/items/612e2e149b9f9451c144`）と Zenn の見本記事（`zenn.dev/frontendflat/articles/9d15b1b7abd524`）である。実測はすべて headed の system Chrome + Playwright + ローカル HTTP 親（アプリを経由しない形）で取った（§14 の手順）。カード側は `lib/link-title.ts` と同じ抽出器を写した fetch で測った。
+
+**埋め込みプロバイダには足さない。StackBlitz の URL はリンクカードのままである。** §3.1 の 3 番に答えが 1 つ出ないからで — 埋め込みが足すものがプロジェクトごとに違い、**その違いが URL に書かれていない** — 中身は §23.2 と §23.10、決定は §23.12 にある。`lib/embed-provider.ts` に触るものは無い（`PROVIDERS` に無いホストは `resolveEmbed` が null を返し、カード側の判定に落ちる）。
+
+### 23.1 §3.1 の 3 問を通した結果
+
+1. **この取得器でカードが動く。ここまでのコードサンドボックス系で初めてである。** `stackblitz.com/edit/<slug>` は `Accept: text/html` だけを送る `lib/guarded-fetch.ts` の形に 200 を返し、`og:title`・`og:description`・`og:image` の 3 つが揃っている（実測 2026-09-01）。UA は要らない — CodeSandbox の §20.1 が Turnstile の 403、CodePen の §21.1 が Cloudflare の 403 で、どちらもクローラを名乗らない限りカードにならなかったのとは違う。3 つとも 358〜717 バイト目にあり、`MAX_BYTES`（64KB）の内側である — **ページ自体は 11KB から 996KB まで開く**ので、内側であることは大きさではなく位置で言える
+
+   **走らない世代（§23.2）も同じくカードになる。** `edit/stackblitz-starters-a3lr3a`・`edit/vitejs-vite-e1xcjr`・`edit/node-k7fuav8c` のいずれも題・説明・プロジェクト固有の画像を返す。ただし形で出来が違う: `/github/<owner>/<repo>` と `/angular/<slug>` は題と説明こそ良い（前者の説明はリポジトリの description で、`/edit/` の依存関係の羅列より読める）が、**画像はサイト共通の share 画像**（`c.staticblitz.com/assets/social_square-…`）である。`/~/github.com/<owner>/<repo>` だけは **og が 1 つも無く**、`<title>` も `StackBlitz` なのでカードにならない
+
+2. 動くので、§3.1 の 3 番に進む。足すものを 1 行で言えなければ足さない
+
+3. 埋め込み自体は実測で動く。第三者ページの素の `iframe` に、親にスクリプトを 1 本も置かずに描画した（§23.4 の src、ローカル HTTP 親、headed Chrome）
+
+### 23.2 埋め込みが足すもの — プロジェクトの世代で答えが変わる
+
+**答えが 2 つある。** 旧ランタイム（Turbo）のプロジェクトでは「読者がその場で動いている結果を見て、左半分でソースを読める」で、CodePen の §21.2 と同じ形である。**新ランタイム（WebContainer）のプロジェクトでは「動かない」** — フレームの右半分に StackBlitz 自身の `Unable to run Embedded Project` / `Looks like this project is being embedded without proper isolation headers.` が出る（実測、機構は §23.10）。左半分のエディタは両方とも同じように描画するので、**「描画した」を成功の基準に取ると後者を成功と数えてしまう**。
+
+Qiita の記事から集めた実在 URL 18 件を 1 件ずつ別 context で読んだ結果（実測 2026-09-01）:
+
+| 判定                                   | 件数 | 例                                                                                      |
+| -------------------------------------- | ---- | --------------------------------------------------------------------------------------- |
+| 走る（プレビューが `*.stackblitz.io`） | 11   | `edit/js-5pu4rc`・`edit/react-pxk6w7`・`edit/angular-ivy-9dtsnp`・`angular/klejyjnynjj` |
+| 走らない（isolation の告知）           | 7    | `edit/vitejs-vite-e1xcjr`・`edit/stackblitz-starters-a3lr3a`・`github/gothinkster/…`    |
+
+**この 11/18 は古い側に寄った数字であって、今日の見込みではない。** 母集団は Qiita に書かれた過去の記事で、走った 11 件はほとんどが 2019〜2021 年の Angular・TypeScript・素の JS である。**現在の既定は走らない側にある** — `stackblitz-starters-a3lr3a`（Angular 18 の標準スターター）も、`vitejs-vite-*` も、`/github/<owner>/<repo>` の全件も走らない。§0 のとおりこのブログでの実使用はゼロなので、守るべき旧資産は無く、**この決定にとっての正直な率は「今日作られるプロジェクトは走らない」である**。
+
+### 23.3 受け付ける URL の形
+
+**ホストの許可リスト**: `stackblitz.com` だけである。`www.stackblitz.com` は apex へ 301 するだけで、自分では答えない（実測 2026-09-01）— Docswell の apex（§17.2）や CodeSandbox の `www`（§20.3）が 200 を返したのとは逆側で、§14.2 が `t.co` を外したのと同じ理由でここには入れない。実在 URL 72 件の内訳は `/edit/` 53、`/github/` 11、`/angular/` 4、`/~/github.com/` 2 だった。
+
+| 形                                     | 実測                                                           |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `stackblitz.com/edit/<slug>`           | 世代による（§23.2）。実在 URL の 4 分の 3 がこの形             |
+| `stackblitz.com/angular/<slug>`        | 走る。Angular Material のドキュメントが配る第 4 の形である     |
+| `stackblitz.com/github/<owner>/<repo>` | 走らない。リポジトリ由来は必ず WebContainer である             |
+| `stackblitz.com/~/github.com/<…>`      | 新エディタでの同じもの（未実測。機構は上と同じ）               |
+| `stackblitz.com/fork/<template>`       | 対象外。`/edit/<template>` へ 302 する「複製を作れ」の口である |
+| 存在しない slug                        | StackBlitz 自身の 404 がフレームに出る（§23.9）                |
+
+### 23.4 `src` はページ URL に `embed=1` を足して組む
+
+**ここまでの 9 プロバイダと構造が違う。** 他はすべてパスを組み替えて別の口（`/embed/<id>`・`<id>.js`・`/slide/<key>/embed`）を作っていたが、StackBlitz には埋め込み専用のパスが無く、同じページ URL にクエリを 1 つ足したものが埋め込みである。したがって §14.2・§17.2・§21.3 が置いた「埋め込みの URL 自体はカードにする」という区別が、ここには書けない。
+
+`embed=1` を足さないと何が起きるかも測ってある（実測、`edit/react-pxk6w7`）: フレームは描画するが、上端に `Fork` / `Share` / `Sign in` / `Get started` というサイトのヘッダが入り、114 リクエストになる。`embed=1` はビューを埋め込み用に固定するもので、§20.5 の `runonclick=1` と同じく「著者の文字列に無く、こちらが足す」値である。
+
+Zenn は 2 つを分けている。`embed=1` は**著者が貼る** — `@[stackblitz](…)` に渡すのは「各ページから取得した Embed URL」である（`zenn.dev/zenn/articles/markdown-guide`）。**`ctl=1` のほうは Zenn が足している**（§23.5）。§5 のとおりこちらは著者にページ URL を貼らせる側なので、採るなら両方こちらが足す。
+
+著者の URL に既に `embed=1` や `file=` が乗っている場合をどう正規化するかは、採ると決めてから答える問いである。
+
+### 23.5 `ctl=1` は足す価値がある — 111 → 29
+
+**`ctl=1`（クリックで読み込む）は測った中で最も効く値である。** 実測（`edit/react-pxk6w7`）: 素の埋め込みが 111 リクエスト、`ctl=1` を足すと**クリック前が 29** で、クリックすると 111 に戻る。§20.5 の CodeSandbox が 114 → 64 の 44% 減で `runonclick=1` を買ったのに対し、こちらは **74% 減**である。
+
+**クリック前に出るものも、カードより情報が多い。** 暗い板の中央に `RUN PROJECT` のボタンがあり、左上にプロジェクト名と作者が入る（`React (forked) / By cofew`、`Angular Starter / By ringtail003`）。取得しないこちらがラベルに書けない値を、フレームが自分で名乗っている。
+
+そして `ctl=1` は §23.2 の失敗の見え方も変える。WebContainer のプロジェクトでも**クリック前は同じ板である**（31 リクエスト、実測 `stackblitz-starters-a3lr3a`）。isolation の告知が出るのは読者が押した後で、押すと 108 リクエストになる。**壊れて見える状態を、読者が選んだクリックの後ろへ動かす**という買い方であって、消してはいない。
+
+**Zenn の見本記事に出ているのはこの板である**（実測 2026-09-01）。著者が書いた `edit/js-kdeapr?embed=1&file=index.js` に対して Zenn が出す `src` は `…&ctl=1` で、フレームの中は `Js (forked) / By flatsato / RUN PROJECT` である。箱は 708×436（§23.6 の比率箱）。**Zenn はサンドボックス系 3 つのうち 2 つをクリック待ちにしている** — CodeSandbox にも著者の文字列に無い `runonclick=1` を足しており（§20.5）、素で走らせているのは 10 リクエストの CodePen だけである（§21.8）。
+
+### 23.6 箱に固有の比率は無い
+
+CodePen の §21.6 と同じで、`padding-bottom: calc(<比率>% + <列>px)` の形は書けない。**フレームは高さを喋らない** — 素の形でも `ctl=1` でも postMessage は 1 通も来ないので、§10.5（X）や §18.5（gist）の受け機構に繋げる信号が無い。Qiita のガイドが載せている見本は `height="600" width="800"`、Zenn は種別によらない 1 つの比率箱（§21.6 で測った `calc(56.25% + 38px)`）を当てている。エディタとプレビューが横に並ぶので、CodePen の 300px より高い箱が要るというのが実測から言えることで、値そのものは採ると決めてから選ぶ。
+
+### 23.7 `allow` は空のままでよく、`sandbox` も §20.7 の値が通る
+
+**`allow=""` と `sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"` の組で、走るプロジェクトは走る**（実測）。エディタが描画し、プレビューが `<slug>.stackblitz.io` の入れ子フレームで動き、`Editor` / `Preview` / `Both` の切り替えが効く。§20.7・§21.7 が置いた house の組み合わせを変える必要は無い — **WebContainer が動かないのは権限の不足ではないので、`allow` に何を書いても直らない**（§23.10）。
+
+Qiita のガイドが載せている見本の iframe も `src` / `height` / `width` / `loading` だけで、`allow` も `sandbox` も書いていない。
+
+### 23.8 読者が払うもの
+
+- **走るプロジェクトで 98〜526 リクエスト**（実測 18 件、中央値はおよそ 150）。**測ったプロバイダの中で最も高い** — CodeSandbox 64/112（§20.8）、SlideShare 40（§14.5）、CodePen 10（§21.8）。上限の 526 は `edit/igx-grid-basic-features` で、旧ランタイムが npm の依存を 1 つずつ引くためである。走らないプロジェクトでも 82〜156 かかる（告知を出すまでにエディタは丸ごと読み込まれる）
+- **広告・計測のオリジンが 6 つ入る**: `www.googletagmanager.com`・`cdn.segment.com`・`www.google-analytics.com`・`googleads.g.doubleclick.net`・`cdn.mxpnl.com`＋`api-js.mixpanel.com`・`api.cdp.staticblitz.com`。**ここまでのどのプロバイダも DoubleClick を読者のブラウザに連れて来ていない**
+- **cookie が 7 件、3 つのドメインに置かれる**: `stackblitz.com` に 4 件（`CSRF-TOKEN` / `_stackblitz_session` / `ahoy_visitor` / `ahoy_visit`）、`.doubleclick.net` に `test_cookie`、プレビューのホスト `<slug>.stackblitz.io` に 2 件。親のオリジンには置かれない。`ctl=1` のクリック前は 5 件（プレビューのホストの分が出ない）
+- postMessage は §23.6 のとおり来ないので、`components/EmbedFrames.tsx` に足すものは無い
+
+### 23.9 存在しない slug は、記事の中に StackBlitz の 404 を出す
+
+形は正しいが実在しない slug は、空箱ではなく StackBlitz 自身の 404（`404: Not Found` と `If you think this is a bug or problem on our end, please file an issue`）がフレームに出る（実測、39 リクエスト）。ページ側も本物の HTTP 404 を返す。§14.6・§16.6・§17.6・§20.9・§21.9 と同じ形で、**読者側の検知もフォールバックも要らない**。
+
+### 23.10 走らない理由は親からは直せない（実測 2026-09-01）
+
+**機構は cross-origin isolation で、StackBlitz 自身が埋め込みビューでそれを降ろしている。** ヘッダを直接測った:
+
+| URL                                  | 返るヘッダ                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `stackblitz.com/edit/node`（トップ） | `cross-origin-embedder-policy: require-corp` ＋ `cross-origin-opener-policy: same-origin` |
+| `stackblitz.com/edit/node?embed=1`   | **両方とも無い**（`cross-origin-resource-policy: cross-origin` だけ）                     |
+
+isolation が無ければ `SharedArrayBuffer` が無く、WebContainer は起動できない。フレームの中で実測した値も `crossOriginIsolated: false` / `typeof SharedArrayBuffer === "undefined"` である。
+
+**親を cross-origin isolated にしても直らない。** 2 通り測った（実測、`edit/node?embed=1`）:
+
+- 親に `COOP: same-origin` ＋ `COEP: credentialless` だけを付けると、親は `crossOriginIsolated: true` になるが、**フレームは「stackblitz.com で接続が拒否されました」になる** — §20.13・§21.13 と同じ chrome-error で、要求は 2 本しか出ない
+- 親をそのままに `<iframe credentialless>` を足すと、フレームは描画するが**中は `crossOriginIsolated: false` のままで、同じ告知が出る**
+
+**子が isolated になるには子自身がヘッダを返す必要があり、それは StackBlitz のサーバの選択である。** したがってこれは「こちらのサイトに何を足せば直るか」という問いではない。仮に道があったとしても `COOP` / `COEP` はページ全体に掛かるもので、§9〜§21 の 9 プロバイダ全部の条件を組み直すことになる。
+
+### 23.11 フレームは編集できる（§20.14 の対）
+
+**打鍵はフレームの中のコードエディタに入る**（実測: 親に `contenteditable` を置いて対照を取り、フレームの内側だけに文字が入り、親の要素には入らないことを確かめた。親から見た `document.activeElement` は `IFRAME`）。§21.11 の P8 は「CodePen には `editable` を渡さないので打鍵の行き先にならない」と書けたが、**StackBlitz にその逃げ道は無い** — エディタが埋め込みビューの半分そのものだからである。§20.14 が CodeSandbox について測った「フォーカスが行き先を決める」がそのまま当たる。
+
+### 23.12 カードのままにする（2026-09-01 決定）
+
+**足すものを 1 行で言うと、条件が付く**: 「旧ランタイムのプロジェクトには動いているプレビューを足し、新ランタイムのプロジェクトには動いているカードの代わりに拒否の告知を置く」。
+
+これが他のプロバイダと違うところは 2 つある。
+
+- **どちらになるかが URL に書かれていない。** `stackblitz.com/edit/angular-abc123` を見て世代は分からず、§3.2 のとおり調べるための取得はできない
+- **落ちる先がカードである。** §14.6・§16.6・§17.6・§20.9・§21.9 はどれも「著者は挿入した瞬間に自分の NodeView で読者と同じものを見る」で引き受けたが、**そこで失われるのは素のリンクだった**。ここで失われるのは動くカードである（§23.1）
+
+したがって足さない。 §1 の Google Slides・asciinema と同じ扱いで、カードが題・説明・画像を返す以上（§23.1）、何もしないことが答えになる。§0 のとおり実使用はゼロなので、救う旧資産も無い。
+
+**再開の引き金は §23.10 の機構が消えることである** — StackBlitz が `?embed=1` で isolation ヘッダを返すようになれば、割れが無くなって §3.1 の 3 番に 1 つの答えが出る。そのとき採るなら `ctl=1` 込みで採る（§23.5 — 29 リクエストで、クリック前の板がプロジェクト名と作者を名乗る）。
+
+### 23.13 未実測のこと
+
+- **`/~/github.com/<owner>/<repo>` の実測。** `/github/<owner>/<repo>` は測って走らないことが分かっており、同じリポジトリ由来のプロジェクトなので同じはずだが、確かめてはいない
+- **走る／走らないの、今日作られたプロジェクトでの率。** §23.2 の 11/18 は Qiita に残る過去の URL の率である。**§21.12 と違ってここは計器がある** — StackBlitz は CodePen（§21.13）のようなレート制限を見せず、`/edit/` は Cloudflare の後ろにいない（`server: StackBlitz`）ので、母集団を壊さずに数えられる。止めているのは 1 件あたり 100〜500 リクエストという単価だけである
