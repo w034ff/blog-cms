@@ -582,8 +582,9 @@ const gist: Provider = {
 const CODESANDBOX_SEGMENT = /^[0-9A-Za-z-]{1,64}$/;
 // `/p/sandbox/<seg>` is the canonical page form today — `/s/new` 307s to `/p/sandbox/new` (measured
 // headed 2026-08-30) — and `/s/<seg>` is the legacy one, which carries the segment in the same
-// place. `/p/devbox/` is deliberately absent (§20.9's list): its embeddability is unmeasured, which
-// is not the same claim as unsupported.
+// place. `/p/devbox/` is deliberately absent (§20.3): VM Sandboxes do not embed off codesandbox.io
+// at all — measured, and it is the provider's product boundary, not a rule we could route around
+// (§20.13).
 const CODESANDBOX_PATH = /^\/(?:p\/sandbox|s)\/([^/]+)\/?$/;
 
 // Nothing is asked for. CodeSandbox's own snippet requests `camera; microphone; geolocation; usb;
