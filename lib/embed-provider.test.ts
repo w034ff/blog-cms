@@ -904,14 +904,6 @@ describe('resolveEmbed / CodePen', () => {
       // The embed URL itself, for §14.2's reason.
       PEN_SRC,
       `https://codepen.io/${PEN_USER}/embed/preview/${PEN_SLUG}`,
-      // **The new editor's pens, under both spellings** — the UUID fails the slug predicate, which
-      // is where they are meant to fail (§21.3). Unmeasured, so refused rather than guessed at.
-      'https://codepen.io/HanaleiMoon/pen/019f467b-060a-7fd7-a4af-707b1437b086',
-      'https://codepen.io/editor/tetsuji-ishii/pen/019f2a4c-772a-7863-84be-b43a2738f8f5',
-      // **A team's pen**, which CodePen's own official account uses. Four segments, so the path
-      // predicate drops it; `team/<team>/embed/<slug>` is likely to work and is not measured
-      // (§21.12), and this project does not build a src it has not seen render.
-      'https://codepen.io/team/codepen/pen/PoqWOwZ',
       // Listings and profiles, none of which name a single pen.
       'https://codepen.io/flatsato',
       'https://codepen.io/collection/DQvYpQ',
@@ -919,6 +911,10 @@ describe('resolveEmbed / CodePen', () => {
       'https://codepen.io/pen/',
       // A deeper path under the canonical form: the slug is not the last segment any more.
       `${PEN_PAGE}/comments`,
+      // The two four-segment forms accepted below, one segment deeper again.
+      'https://codepen.io/team/codepen/pen/PoqWOwZ/comments',
+      // `/editor/` carries only `/pen/`; the other two views were not seen under it (§21.3).
+      'https://codepen.io/editor/tetsuji-ishii/full/019f2a4c-772a-7863-84be-b43a2738f8f5',
       // Neither view exists as a page of ours to resolve.
       `https://codepen.io/${PEN_USER}/debug/${PEN_SLUG}`,
       `https://codepen.io/${PEN_USER}/pres/${PEN_SLUG}`,
@@ -935,8 +931,11 @@ describe('resolveEmbed / CodePen', () => {
       'a-b',
       'a%20b',
       'ペン',
-      // The UUID again, this time as the value rather than the URL: 36 characters and hyphenated.
-      '019f467b-060a-7fd7-a4af-707b1437b086',
+      // Hyphenated but not a UUID — the shape the second predicate exists to keep out, since a
+      // single widened class covering both would have admitted it.
+      '019f467b-060a-7fd7-a4af',
+      '019F467B-060A-7FD7-A4AF-707B1437B086',
+      'zzzzzzzz-060a-7fd7-a4af-707b1437b086',
     ])
       expect(resolveEmbed(`https://codepen.io/${PEN_USER}/pen/${slug}`), slug).toBeNull();
     // The user segment reaches the src as well, so it is checked with the same kind of predicate
@@ -945,9 +944,37 @@ describe('resolveEmbed / CodePen', () => {
       expect(resolveEmbed(`https://codepen.io/${user}/pen/${PEN_SLUG}`), user).toBeNull();
   });
 
+  it("keeps a team's prefix and drops the new editor's (P1)", () => {
+    // Both measured in the author's own browser, 2026-08-31 (§21.3). A team keeps `/team/<team>/`
+    // because that is what `/pen/` → `/embed/` produces from the page URL; `/editor/` is dropped
+    // because the same pen's canonical page URL does not have it either.
+    for (const [href, src] of [
+      [
+        'https://codepen.io/team/codepen/pen/PoqWOwZ',
+        'https://codepen.io/team/codepen/embed/PoqWOwZ',
+      ],
+      [
+        'https://codepen.io/team/codepen/full/PoqWOwZ',
+        'https://codepen.io/team/codepen/embed/PoqWOwZ',
+      ],
+      [
+        'https://codepen.io/editor/tetsuji-ishii/pen/019f2a4c-772a-7863-84be-b43a2738f8f5',
+        'https://codepen.io/tetsuji-ishii/embed/019f2a4c-772a-7863-84be-b43a2738f8f5',
+      ],
+      // The same UUID under the canonical page URL — 1 of the 4 measured pens is spelled this way,
+      // which is why the slug predicate rather than the path is what admits these (§21.3).
+      [
+        'https://codepen.io/HanaleiMoon/pen/019f467b-060a-7fd7-a4af-707b1437b086',
+        'https://codepen.io/HanaleiMoon/embed/019f467b-060a-7fd7-a4af-707b1437b086',
+      ],
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(src);
+  });
+
   it('refuses credentials and every other scheme, as the others do (E2)', () => {
     for (const href of [
       `https://user:pass@codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
+      'https://user:pass@codepen.io/team/codepen/pen/PoqWOwZ',
       `javascript:alert(1)//codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
       `ftp://codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
     ])

@@ -810,17 +810,22 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).not.toContain('allow-top-navigation');
   });
 
-  it("leaves a team's pen and the new editor's UUID to the card, as plain links here (P2)", async () => {
-    // Neither is measured (§21.12), and this project does not publish a src it has not seen
-    // render. The two fail at different predicates — the team URL has four path segments, the UUID
-    // fails the slug class — and both land in the same place.
-    for (const href of [
-      'https://codepen.io/team/codepen/pen/PoqWOwZ',
-      'https://codepen.io/HanaleiMoon/pen/019f467b-060a-7fd7-a4af-707b1437b086',
+  it("publishes a team's pen and the new editor's UUID, each in its own form (P1)", async () => {
+    // The two shapes measured in the author's browser (§21.3), asserted on the published side
+    // because they differ in what reaches the src: the team keeps its prefix, `/editor/` loses one.
+    for (const [href, src] of [
+      [
+        'https://codepen.io/team/codepen/pen/PoqWOwZ',
+        'https://codepen.io/team/codepen/embed/PoqWOwZ',
+      ],
+      [
+        'https://codepen.io/editor/tetsuji-ishii/pen/019f2a4c-772a-7863-84be-b43a2738f8f5',
+        'https://codepen.io/tetsuji-ishii/embed/019f2a4c-772a-7863-84be-b43a2738f8f5',
+      ],
     ]) {
       const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
-      expect(html, href).not.toContain('<iframe');
-      expect(html, href).toContain(`<a href="${href}" target="_blank">`);
+      expect(html, href).toContain('class="embed embed-codepen"');
+      expect(html, href).toContain(`src="${src}"`);
     }
   });
 

@@ -638,21 +638,33 @@ const codesandbox: Provider = {
 // §17.2's judgment — a predicate narrowed to one measurement turns live pens silently into plain
 // links — and it is an allowlist because this value reaches the src (§4.2).
 //
-// **It is also what excludes the new editor's pens.** Those carry a UUIDv7 (`019f2a4c-772a-…`),
-// which is 36 characters with hyphens, so it fails here rather than anywhere else. They appear
-// under `/editor/<user>/pen/<UUID>` and under the canonical `/<user>/pen/<UUID>` alike, so the path
-// alone would not have caught them. Whether they embed at all, and under which src, is unmeasured
-// (§21.12) — the Cloudflare challenge described in §21.13 stopped the measurement.
 const CODEPEN_SLUG = /^[A-Za-z0-9]{4,16}$/;
+// The new editor's pens, which carry a UUIDv7 instead (`019f2a4c-772a-7863-84be-b43a2738f8f5`).
+// **A second shape rather than a widened first one**: a class covering both would be
+// `[A-Za-z0-9-]{4,40}`, which admits every hyphenated string in between and none of them names a
+// pen. §4.2 asks for the shapes that can be expressed, and these are two shapes.
+//
+// Lowercase hex only, which is what all four measured pens spell and what a UUID is canonically
+// written as. Measured 2026-08-31 in the author's own browser: `/<user>/embed/<UUID>` renders,
+// including for a pen whose page URL is the `/editor/` form (§21.3).
+const CODEPEN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // The user segment goes into the src too, so it is checked with the same kind of predicate rather
 // than trusted from the parse. 163 usernames measured, the longest 26 characters, all inside this
 // class.
 const CODEPEN_USER = /^[\w-]{1,40}$/;
 // `/pen/` is the canonical page; `/full/` and `/details/` are the same pen under a different view
-// and carry the slug in the same place. Three segments exactly, which is what leaves
-// `/editor/<user>/pen/<slug>` and `/team/<team>/pen/<slug>` to the card (§21.3): both are four, and
-// neither is measured (§21.12).
+// and carry the slug in the same place.
 const CODEPEN_PATH = /^\/([^/]+)\/(?:pen|full|details)\/([^/]+)\/?$/;
+// A team's pens sit one segment deeper, and CodePen's own official account is a team — so this is
+// not an edge shape. The `/pen/` → `/embed/` rule applies to it literally, which is the form built
+// below; measured 2026-08-31, and `/<team>/embed/<slug>` renders too, so this keeps the spelling of
+// the page the author was holding (§21.4).
+const CODEPEN_TEAM_PATH = /^\/team\/([^/]+)\/(?:pen|full|details)\/([^/]+)\/?$/;
+// The new editor's own address bar. The `/editor/` prefix is **not** carried into the src: the
+// plain `/<user>/embed/<UUID>` renders the same pen (measured 2026-08-31), and it is the form the
+// canonical page URL of such a pen already takes. `/full/` and `/details/` are not accepted here —
+// only `/pen/` was seen under this prefix.
+const CODEPEN_EDITOR_PATH = /^\/editor\/([^/]+)\/pen\/([^/]+)\/?$/;
 
 // Nothing is asked for, for §20.7's reason with more force behind it: what a pen frames is
 // third-party code with no sandbox author in between. Zenn sets no `allow` attribute at all, which
@@ -662,10 +674,19 @@ const CODEPEN_ALLOW = '';
 const codepen: Provider = {
   hosts: ['codepen.io', 'www.codepen.io'],
   resolve: (url) => {
-    const match = CODEPEN_PATH.exec(url.pathname);
+    // Three page shapes, each naming the owner and the slug in the same two places. They cannot
+    // overlap — the first is three path segments and the other two are four, under a fixed first
+    // segment — so the order they are tried in carries no meaning.
+    const team = CODEPEN_TEAM_PATH.exec(url.pathname);
+    const match = team ?? CODEPEN_EDITOR_PATH.exec(url.pathname) ?? CODEPEN_PATH.exec(url.pathname);
     if (match === null) return null;
     const [, user, slug] = match;
-    if (!CODEPEN_USER.test(user) || !CODEPEN_SLUG.test(slug)) return null;
+    if (!CODEPEN_USER.test(user)) return null;
+    if (!CODEPEN_SLUG.test(slug) && !CODEPEN_UUID.test(slug)) return null;
+    // A team keeps its prefix in the src and a `/editor/` URL drops its own, because those are the
+    // two forms measured to render (§21.3) — and the first is what CodePen's own `/pen/` → `/embed/`
+    // rule produces when applied to the page the author was holding.
+    const owner = team ? `team/${user}` : user;
     return {
       provider: 'codepen',
       // `/pen/` → `/embed/`, which is what CodePen's own documentation says to do
@@ -682,7 +703,7 @@ const codepen: Provider = {
       // **The user segment is not checked by CodePen** — `/anon/embed/<slug>` renders the same pen
       // (measured 2026-08-31) — so it is carried rather than derived: the author's URL spells it,
       // and this file has no better spelling to offer.
-      src: () => `https://codepen.io/${user}/embed/${slug}`,
+      src: () => `https://codepen.io/${owner}/embed/${slug}`,
       title: 'CodePen のペン',
       // Empty for §20.10's reason: the slug is not a name. **The user segment is deliberately not
       // put here** — the src does not use it as the reference and CodePen does not verify it, so
