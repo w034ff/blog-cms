@@ -2282,12 +2282,19 @@ body.link-menu-open .table-toolbar {
 /* The box that holds the ratio, and the reason the iframe is wrapped at all: an `<iframe>` given
    `aspect-ratio` by itself still negotiates a size with its replaced-element defaults. The ratio
    sits on the provider's class, so a provider with a different shape adds a rule beside this one
-   instead of changing how an embed is built (§4.3). */
+   instead of changing how an embed is built (§4.3).
+
+   **No `border-radius` here: a rounded clip over a cross-origin iframe takes the reader's taps with
+   it.** Measured 2026-08-31 on a phone (Android Chrome and iPhone Chrome alike, docs/embed-requirements.md
+   §22): the CodePen tab bar and SlideShare's control row stop answering, while the copy button, the
+   footnote popover and the link card on the same page keep working. `overflow: hidden` on its own
+   is safe and stays — what breaks input is the rounding, and it breaks the same way whether it
+   comes from this box's clip or from a `border-radius` on the iframe itself. zenn.dev rounds no
+   embed either (12 iframes on one article, none clipped). */
 .prose .embed-frame {
   position: relative;
   width: 100%;
   overflow: hidden;
-  border-radius: 6px;
   /* Behind the player until it paints, and behind the pillarbox of a video that is not 16:9 —
      which a Shorts URL is, since its ratio cannot be known without a fetch (§9.6). */
   background: #000;

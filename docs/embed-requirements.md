@@ -1781,3 +1781,50 @@ slug は `[A-Za-z0-9]{4,16}` で検証する（`YOUTUBE_ID` と同じ理由 — 
 **読者の側**: **拒否は IP ではなくクライアントに付いている。** 同じ回線・同じホストで、著者の通常のブラウザは §21.7 の確認を問題なく通した — **こちらの自動化ブラウザが同時刻になお 403 を受け取っている最中に**である（実測 2026-08-31）。したがって上の 20 分は「この IP が止められた」ではなく、**Playwright が動かすクライアントが止められた**姿であり、§20.13 の automation 固有かどうかという問いは、CodePen については automation 側に落ちる。
 
 **それでも「読者が何枚まで並べられるか」は測れていない**（測ろうとすると同じ壁に当たる）。挟めているのは「1 ページに 10 枚同時は通る」と「自動化クライアントなら短時間の累計 20 枚には飛んでいる」の 2 点で、通常のブラウザの上限は分かっていない。§0 のとおり実投稿での使用はゼロなので、今のところ 1 記事に何枚並ぶかという母数自体が無い。
+
+## 22. 埋め込みの角を丸めない（2026-08-31 決定・実装）
+
+**丸いクリップが載ったクロスオリジン iframe は、スマートフォンでタップを受け取らない。** 著者の Android Chrome と iPhone Chrome の両方で、CodePen のタブ（`JS` / `Result`）も SlideShare のコントロール列も反応せず、同じページのコピーボタン・脚注ポップオーバー・リンクカードは正常に動いていた（実測 2026-08-31）。したがって `.embed-frame` から `border-radius` を落とす。`overflow: hidden` は残す。
+
+### 22.1 切り分け
+
+実機（著者のスマートフォン）で、`public/` に置いた使い捨ての静的ページに同じ CodePen ペンを並べ、1 枚ずつ読み込んでタップした。フレームは 500px 固定、`src` 以外は表に書いた差分だけである。
+
+| 形                                                                    | タップ   |
+| --------------------------------------------------------------------- | -------- |
+| same-origin の iframe（対照）                                         | 効く     |
+| クロスオリジン・ラッパーも属性も無し                                  | 効く     |
+| ラッパー CSS のみ（属性は `src` と `title` だけ）                     | 効かない |
+| 本番と同じ（ラッパー + 全属性）                                       | 効かない |
+| 本番から `scrolling="no"` を外す                                      | 効かない |
+| 本番から `allow=""` を外す                                            | 効かない |
+| 親 `position: relative` のみ + iframe 通常配置                        | 効く     |
+| 親 `overflow: hidden` + `border-radius` + iframe 通常配置             | 効かない |
+| 親 `position: relative` のみ + iframe `position: absolute`            | 効く     |
+| 親 `overflow: hidden` のみ（角丸なし）                                | 効く     |
+| 親 `border-radius` のみ（`overflow: visible` なので角は丸くならない） | 効く     |
+| iframe 自身に `border-radius: 6px`                                    | 効かない |
+| 本番の形 + iframe に `transform: translateZ(0)`                       | 効かない |
+| 親を切り抜かず、四隅を `pointer-events: none` の覆いで塗る            | 効く     |
+
+読み取れる規則は 1 つである。**iframe の箱が実際に丸く切り取られる形だけが死ぬ** — 切り抜きの出どころが親のクリップでも iframe 自身の `border-radius` でも同じで、角丸を伴わない `overflow: hidden` は無害、切り抜きを伴わない `border-radius` も無害である。属性は全部シロで、`scrolling="no"`（§10.8）も絶対配置も無関係だった。合成レイヤを持たせる定番の回避策（`transform: translateZ(0)`）も効かない。
+
+### 22.2 採った直し方
+
+`.embed-frame` の `border-radius: 6px` を消す。埋め込みの四隅は直角になる。四隅を覆いで塗って角丸を保つ形（表の最後の行）も実測では効くが、覆いの色が背後のカード（`bg-white` / `dark:bg-zinc-900`）と一致し続けなければならず、埋め込みのためにテーマ間の色の約束事を 1 本増やすことになるので採らない。
+
+リンクカード・コードブロックのカード・アコーディオンの 6px は触らない。**iframe を含まない構造は今回の問題に当たらない**（切り抜かれるのが自分の描いた内容なら、タップは失われない）。エディタの `.embed-view` の角丸も残る — あれは iframe を切り抜いていない外枠である（§7.2）。角が直角になったフレームがその丸みに食い込むこともない: `.embed-view` の padding は `0.5em 0.75em`（本文 16px で 8px / 12px）で、6px の丸みが直角から離れる範囲より内側にフレームが収まる。これは寸法から言えることで、エディタ画面を目で見て確かめてはいない。
+
+### 22.3 zenn.dev も埋め込みを切り取っていない
+
+参考記事（`zenn.dev/frontendflat/articles/9d15b1b7abd524`）の iframe 12 本すべてで、iframe 自身にもその祖先 5 段にも `border-radius` は `0px`、`overflow: hidden` も無い（実測 2026-08-31）。CodePen・jsFiddle・CodeSandbox・StackBlitz・Speaker Deck・SlideShare・Figma・YouTube と、Zenn 自前の `embed.zenn.studio` の card / tweet / mermaid が同じ扱いである。ラッパーは `span.embed-block` で `position: relative` / `overflow: visible`、iframe は `position: absolute`。角丸はこちらが足していたものである。
+
+### 22.4 この計測はハーネスでは取れない
+
+**Playwright は OOPIF の中のタップを再現できない。** `page.touchscreen.tap` も `locator.tap()` も、クロスオリジン iframe の中では `pointerdown` / `touchstart` / `pointerup` / `touchend` までしか届かず、**`click` が合成されない**（フレーム自身の CDP セッションへ `Input.dispatchTouchEvent` を直接撃っても同じ）。同一オリジンの iframe とトップレベルでは `click` まで出るので、これはクロスオリジンという軸だけで決まる。マウスなら 412px 幅でも CodePen のタブは切り替わり、SlideShare は 1/25 → 2/25 まで進む。
+
+したがって **§22 の表は実機でしか埋まらない**し、`e2e/public-embed.spec.ts` に「タップで操作できる」形の回帰テストは書けない。書けるのは `.embed-frame` の計算値が丸くないことの確認までである。
+
+### 22.5 SlideShare の同意バナーは別の話である
+
+§14.1 の「バナーを閉じるまで 1 枚もめくれない」は本件とは独立で、どちらも「めくれない」に見える。幅 346px（本文カラム）ではバナーは 182px あり、フレーム 233px の 78% を占めてコントロール列を完全に覆う（§14.5 の 122px は 750px カラムでの値である）。**閉じるボタンは 24×24 で、✕ の線が白・背景も白なので、画面には中身のない丸だけが見える**（`.osano-cm-dialog__close`、実測 2026-08-31）。バナーを閉じた読者には §22 だけが残る。
