@@ -634,7 +634,7 @@ markdown 往復（E1）はここから外れた — `e2e/editor-embed.spec.ts` �
 
 **§12.1 とは理由が違う。** あちらは測れるが追わないと決めたもので、こちらは測りたくても計器が無い。閉じてはいないが、手が空いても進まない — 進めるには第三者のアカウントが要る。
 
-- **非公開・限定公開のデッキ**（§14）。ペイロードに `isPrivate` はあるが、非公開デッキは URL で辿れず、**アカウント無しでは作れない**。§20.9 が CodeSandbox の非公開サンドボックスについて書いているのと同じ欠落で、そちらは §20.12 に残っている
+- **非公開・限定公開のデッキ**（§14）。ペイロードに `isPrivate` はあるが、非公開デッキは URL で辿れず、**アカウント無しでは作れない**。CodeSandbox の非公開サンドボックスも同じ欠落だったが、そちらはアカウントを作って測れた（§20.9 — 著者にも埋め込めない）
 - **削除済みのデッキ**（§14.6）。同じくデッキを作って消せるアカウントが要る。**仮に測れても新しい答えが出るとは限らない** — 埋め込み側で観測されている出口は §14.6 が測った 2 種類の SlideShare 404 だけで、どちらも無言（postMessage を送らない）である。削除済みがそのどちらかに落ちるのか 3 つ目なのかが、分かっていない部分である
 
 どちらも §14.6 の「引き受ける」を動かさない。**著者は挿入した瞬間に読者と同じものを見る**という根拠は、デッキがどの落ち方をしても成り立つ。
@@ -1443,9 +1443,20 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 
 `https://codesandbox.io/embed/<seg>?runonclick=1` を組む。取得も転送も要らない — ページ URL が持っているセグメントが、そのまま埋め込みのセグメントである。§3.2 がここで自明に成り立つ。
 
-**出典**: Legacy Sandboxes 向けに CodeSandbox 自身が配っている形である（`codesandbox/docs` の `legacy-sandboxes/embedding.mdx`「エディタのヘッダの Embed から」）。Qiita と Zenn が配っているのも同じ形で、実測でも 200 を返して描画する。§17.3 の「プロバイダ自身が配る形を使う」を満たす。
+**出典**: CodeSandbox 自身が今配っている形である。アプリの Share → Copy embed code がこれを出し（著者のアカウントで実測 2026-08-31）、`codesandbox/docs` の `legacy-sandboxes/embedding.mdx` も同じ形を載せている。Qiita と Zenn が配っているのも同じ形で、実測でも 200 を返して描画する。§17.3 の「プロバイダ自身が配る形を使う」を満たす。
 
-ダイアログの画面そのものは見ていない（アプリのページが §20.1 の 403 の向こうにある）が、**それは docs で置き換えられる** — `codesandbox.io/docs/…` は 403 でも、`codesandbox/docs` は public のリポジトリなので raw から読める。§20.13 の原因もこの経路で分かった。
+```html
+<iframe src="https://codesandbox.io/embed/2trj5t?view=editor+%2B+preview"
+     style="width:100%; height: 500px; border:0; border-radius: 4px; overflow:hidden;"
+     title="nifty-nobel"
+     allow="accelerometer; ambient-light-sensor; camera; encrypted-media; geolocation; gyroscope; hid; microphone; midi; payment; usb; vr; xr-spatial-tracking"
+     sandbox="allow-forms allow-modals allow-popups allow-presentation allow-same-origin allow-scripts"
+   ></iframe>
+```
+
+**これが §20.5・§20.6・§20.7 の出典でもある** — `runonclick` は無く、高さは 500px、`allow` と `sandbox` は docs のページと一致する。セグメントは slug 無しの裸の id で、サンドボックスには名前があるが（`nifty-nobel`、スニペットでは `title` 属性）、**URL からは取れない**（§20.10）。
+
+docs が書いている経路のほう（レガシーエディタのヘッダの Embed ボタン）は、もう辿れない — `/s/new` は `/p/sandbox/new` へ 307 し、`legacy-sandboxes/overview.mdx` が示す戻り方（設定の Beta editor を off）のトグルも設定画面に無い（実測 2026-08-31）。`codesandbox.io/docs/…` は §20.1 の 403 の向こうだが、`codesandbox/docs` は public のリポジトリなので raw から読める。§20.13 の原因もこの経路で分かった。
 
 ### 20.5 `runonclick=1` は著者の文字列に無く、こちらが足す
 
@@ -1459,9 +1470,11 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 | `?fontsize=14&hidenavigation=1&theme=dark`（Qiita の形） | 114        | 全部                                                                                               |
 | パラメータ無し                                           | 111        | 全部                                                                                               |
 
+`runonclick` の既定が `0` であることは docs のパラメータ表（`legacy-sandboxes/embedding.mdx`）にも、§20.4 のダイアログ出力にも表れている。
+
 **44% 減で、バンドラもプレビューの別オリジンも読者がクリックするまで起動しない。** クリック後は 112 まで戻る（実測）ので、これは総量の削減ではなく**支払いの延期**である — 押した読者は同じだけ払う。押さない読者が払わずに済むことが、この 1 語が買っているものである。
 
-**他のパラメータは付けない。** `theme` / `fontsize` / `hidenavigation` / `view` はいずれも今も生きている（ピクセルで実測 — `theme=light` はエディタを明色にし、既定は dark、`hidenavigation=1` はプレビューのアドレスバー行を消し、`fontsize=14` は 500px の箱で 18 行を 21 行にする）。Qiita と Zenn は著者が書いたクエリを通しているが、**この repo は §4 のとおり `src` を組み立てる側なので、通す道が無い。** 足すなら「全著者にとっての既定」を 1 つ決めることになり、その根拠が無い。`runonclick=1` だけが根拠を持つ — §20.6 の数字がそれである。
+**他のパラメータは付けない。** `theme` / `fontsize` / `hidenavigation` / `view` はいずれも今も生きている（`view` はダイアログが `editor + preview` を配っており、docs の表が挙げる `editor`/`split`/`preview` より広い）（ピクセルで実測 — `theme=light` はエディタを明色にし、既定は dark、`hidenavigation=1` はプレビューのアドレスバー行を消し、`fontsize=14` は 500px の箱で 18 行を 21 行にする）。Qiita と Zenn は著者が書いたクエリを通しているが、**この repo は §4 のとおり `src` を組み立てる側なので、通す道が無い。** 足すなら「全著者にとっての既定」を 1 つ決めることになり、その根拠が無い。`runonclick=1` だけが根拠を持つ — §20.6 の数字がそれである。
 
 ### 20.6 箱は 500px の固定である
 
@@ -1481,7 +1494,7 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 - 埋め込まれるのは**第三者が書いた任意のコード**である。記事の中の箱に camera / microphone / geolocation / usb / payment を既定で渡す理由が言えない
 - **この 2 つのサイトと分かれる点なので、ここに書いておく** — 次に読む人が「揃っていない」と見て戻さないように
 
-**`sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"` を張る。** Zenn が張っている値そのままで、買っているものは `allow-top-navigation` が**無い**ことである — フレームの中の第三者のコードが記事ごと別の場所へ飛ばせない。§18.6 の gist が `allow-same-origin` を**外して**第三者の markup を隔てたのとは逆で、こちらは入れる: CodeSandbox のエディタとプレビューは自分の storage と worker を使うので、不透明オリジンにすると動かない。
+**`sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"` を張る。** Zenn が張っている値そのままで、買っているものは `allow-top-navigation` が**無い**ことである（`sandbox` を張らなければフレームの中から親を飛ばせる） — フレームの中の第三者のコードが記事ごと別の場所へ飛ばせない。CodeSandbox 自身の snippet の `sandbox` との差は `allow-presentation` の 1 語だけである。§18.6 の gist が `allow-same-origin` を**外して**第三者の markup を隔てたのとは逆で、こちらは入れる: CodeSandbox のエディタとプレビューは自分の storage と worker を使うので、不透明オリジンにすると動かない。
 
 **この組み合わせ（Zenn の `sandbox` ＋ `allow=""`）は Qiita も Zenn も出荷していないので、実測した**（2026-08-30）。エディタは描画し、`Click to Run` を押すとプレビューが起動して `<id>.csb.app` が読み込まれ、TODO アプリが操作できた。§18.6 と同じく、`sandbox` はコピーではなく測った答えである。
 
@@ -1493,20 +1506,13 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 - **cookie が置かれる**: `.codesandbox.io` に 3 件（`cf_clearance` / `__cf_bm` / `_cfuvid`）。Docswell の「ブラウザ全体で 0 件」（§17.5）とは違う。親のオリジンには置かれない
 - postMessage は §20.6 のとおり当てにできないので、`components/EmbedFrames.tsx` に足すものは無い
 
-### 20.9 非公開のサンドボックスは、著者に見えない壁である（2026-08-30 引き受け）
+### 20.9 非公開のサンドボックスは埋め込めない（実測 2026-08-31、引き受け）
 
-§14.6・§17.6 が拠り所にした「著者は挿入した瞬間に、自分の NodeView で読者と同じ壊れ方を見る」という防御が、このプロバイダでは成り立たない。
+**非公開のサンドボックスは `/embed/<seg>` に出ない。著者にも出ない。** 所有者としてログイン済みのブラウザでも、CodeSandbox 自身の文言が出る — 「Not Found — We could not find the sandbox you're looking for. If the sandbox is private, you might need to sign in and reload the page to see the sandbox.」。同じサンドボックスを公開に切り替えると、そのまま描画される（著者の環境で実測、2026-08-31）。
 
-- 非公開のサンドボックスは、ログイン済みの著者のブラウザでは `codesandbox.io` の cookie が効いて**正常に描画される**
-- ログアウトした読者のフレームには CodeSandbox 自身の文言が出る — 「Not Found — We could not find the sandbox you're looking for. If the sandbox is private, you might need to sign in and reload the page to see the sandbox.」
-- つまり著者は、自分の画面では動いている埋め込みを公開できる
+したがってログイン済みと未ログインで**差は無い**。§14.6・§17.6 が拠り所にした「著者は挿入した瞬間に、自分の NodeView で読者と同じ壊れ方を見る」がここでも成り立ち、§20.13 と同じ、著者に見える壊れ方である。Google Slides を 2026-08-29 に却下した 2 つ目の理由（著者の画面でだけ描画される壁）は、このプロバイダには当たらない。
 
-**これを引き受ける（2026-08-30、著者の決定）。** Google Slides を 2026-08-29 に却下した 2 つの理由のうち、リクエスト数のほうは §20.5 の `runonclick=1` で外れたが、こちらは外れていない。引き受ける根拠は 2 つ:
-
-- **無言ではない。** SlideShare の §14.6 や Docswell の §17.6 が引き受けた「記事の中に第三者の 404 が出る」より状態が良い — 文言が原因（非公開である可能性とサインインの必要）を名指しており、読者はそれを読める
-- 足さなければ、カードが取れない以上、公開・非公開を問わず**すべての**サンドボックスが URL の文字列になる（§20.1）
-
-実際の非公開サンドボックスでは未実測である（このプロジェクトは CodeSandbox のアカウントを持っていない）。機構は上記の文言と §20.8 の cookie の挙動から確認したものである。
+**これを引き受ける。** 著者は公開に切り替えるか、「リンクに戻す」で素のリンクに戻せる。足さなければ、カードが取れない以上、公開・非公開を問わず**すべての**サンドボックスが URL の文字列になる（§20.1）。
 
 ### 20.10 マークとラベル
 
@@ -1534,8 +1540,7 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 
 ### 20.12 未実測のこと
 
-1. 非公開サンドボックスの、ログイン済みと incognito の差（§15.2 の Figma と同じ比較）
-2. Share ダイアログが今配っている埋め込みコードの形（§20.4 の出典の穴）
+無い。2 項目とも 2026-08-31 に測った — 非公開サンドボックスは §20.9、Share ダイアログの出力は §20.4、フレームの中の打鍵は §20.14 である。
 
 ### 20.13 フレームを拒むサンドボックスがある（実測 2026-08-30、引き受け）
 
@@ -1551,11 +1556,9 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 
 **引き受ける。** 根拠は §14.6・§17.6 と同じで、しかもそれらより強い:
 
-- **著者は挿入した瞬間に、自分の NodeView で読者と同じ拒否を見る。** 2 つの描画段が同じ `iframe` を組み、この拒否は cookie ではなくヘッダで決まるので、§20.9 の非公開サンドボックスの壁とは別種である。壊れていることが著者に見える
+- **著者は挿入した瞬間に、自分の NodeView で読者と同じ拒否を見る。** 2 つの描画段が同じ `iframe` を組み、この拒否は cookie ではなくヘッダで決まる。壊れていることが著者に見える
 - 6.3% は §14.6 が引き受けた率と同じ桁である
 - 直したければ「リンクに戻す」でリンクに戻せる
-
-**§20.9 との違いを取り違えないこと。** あちらは著者に見えない壁で、だからこそ「引き受ける」と明記する必要があった。こちらは見える壊れ方であり、このリポジトリが既に 2 度引き受けている形そのものである。
 
 #### 機構（実測 2026-08-30）
 
@@ -1584,7 +1587,7 @@ owner の形は §18.2 の `GIST_OWNER` と同じ理由で検証する（`src` �
 **`cf_clearance` はこれを解かない、というのがこの節の要である。** 著者の通常のブラウザで `/embed/rust-rk69p3` を*通常のタブで*開くとチャレンジを通過してエディタが表示され、`cf_clearance` が発行される。その状態で同じ `iframe` を読み直しても**やはり拒否される**（実測 2026-08-30）。したがって:
 
 - 拒否は一様である。チャレンジを通過した人にも、していない人にも、同じく拒まれる
-- **§20.9 の壁がもう 1 つ増えるのではないか、という懸念は測って否定された。** 著者が CodeSandbox を見たあとでも、著者の NodeView は読者と同じ拒否を映す
+- **著者の画面でだけ動く状態は起きない。** 著者が CodeSandbox を見たあとでも、著者の NodeView は読者と同じ拒否を映す
 
 #### 見張っていること
 
