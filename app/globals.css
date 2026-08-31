@@ -2429,8 +2429,8 @@ body.link-menu-open .table-toolbar {
 }
 /* A pen has no ratio of its own either, and no correction coming: the frame sends no message at
    all in 15 seconds, and the script that would make it report a height is a third-party `<script>`
-   on the page, which §6 rules out. So 300px is the whole answer — the value CodePen's own
-   documentation gives as the `data-height` default.
+   on the page, which §6 rules out. So the height is a chosen number rather than a computed one:
+   300px, the value CodePen's own documentation gives as the `data-height` default.
 
    Transparent rather than a ground of ours, unlike .embed-codesandbox above. The frame is a dark
    tab bar over a result area the pen paints itself, so neither colour would match more than half
@@ -2438,6 +2438,22 @@ body.link-menu-open .table-toolbar {
 .prose .embed-codepen .embed-frame {
   height: 300px;
   background: transparent;
+}
+/* Taller once the column is wide, because that is where 300px reads as squat: the tab bar and the
+   result area split a box that has stopped growing with the page around it. Zenn gives every embed
+   one ratio (`calc(56.25% + 38px)`, measured 2026-08-31: 708px wide → 436.25px), and 450px is what
+   that comes to at the column this breakpoint opens on — so the wide view matches the reference
+   site without adopting a ratio a pen does not have.
+
+   The narrow view keeps 300px rather than following the ratio down. Zenn's own box is 246.125px at
+   370px wide, and a phone loses the result area first; the provider's documented default is the
+   floor. `min-width` on the viewport rather than a container query, since this stylesheet already
+   draws its width lines that way (see the link card's `max-width: 30rem`), and 48rem is where the
+   content column stops being phone-shaped. docs/embed-requirements.md §21.6. */
+@media (min-width: 48rem) {
+  .prose .embed-codepen .embed-frame {
+    height: 450px;
+  }
 }
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and

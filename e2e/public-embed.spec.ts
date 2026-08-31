@@ -395,7 +395,7 @@ test('a CodeSandbox reference is published in a fixed 500px box (C7)', async ({ 
 // that loaded real pens would be measuring how many CodePen has served this IP lately.
 const CODEPEN_PAGE = 'https://codepen.io/flatsato/pen/VwqprLp';
 
-test('a CodePen reference is published in a fixed 300px box (P7)', async ({ page }) => {
+test('a CodePen reference is published in a 450px box that keeps 300px on a narrow column (P7)', async ({ page }) => {
   await page.route('https://codepen.io/*/embed/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
   );
@@ -420,14 +420,21 @@ test('a CodePen reference is published in a fixed 300px box (P7)', async ({ page
   await expect(iframe).toHaveAttribute('loading', 'lazy');
 
   // The box, measured rather than read off the stylesheet. Not a ratio and not a correction: the
-  // frame reports nothing at all (§21.6), so 300 is the whole answer and it does not move with the
-  // width.
+  // frame reports nothing at all (§21.6), so the height is a chosen number — two of them, since a
+  // wide column takes 450 and a narrow one keeps the provider's documented 300.
   const box = await frame.boundingBox();
   expect(box).not.toBeNull();
-  expect(box!.height).toBeCloseTo(300, 0);
+  expect(box!.height).toBeCloseTo(450, 0);
   // Wide enough that the criterion is not vacuous, as C7 above.
   expect(box!.width).toBeGreaterThan(400);
   const inner = await iframe.boundingBox();
   expect(inner!.height).toBeCloseTo(box!.height, 0);
   expect(inner!.width).toBeCloseTo(box!.width, 0);
+
+  // Below the breakpoint the same box is 300px. Measured on the published page rather than by
+  // reading the media query, which is the half that would still pass if the rule were dropped.
+  await page.setViewportSize({ width: 412, height: 915 });
+  const narrow = await frame.boundingBox();
+  expect(narrow!.height).toBeCloseTo(300, 0);
+  expect(narrow!.width).toBeLessThan(400);
 });
