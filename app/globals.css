@@ -2420,6 +2420,18 @@ body.link-menu-open .table-toolbar {
   height: 500px;
   background: #191d1f;
 }
+/* A pen has no ratio of its own either, and no correction coming: the frame sends no message at
+   all in 15 seconds, and the script that would make it report a height is a third-party `<script>`
+   on the page, which §6 rules out. So 300px is the whole answer — the value CodePen's own
+   documentation gives as the `data-height` default.
+
+   Transparent rather than a ground of ours, unlike .embed-codesandbox above. The frame is a dark
+   tab bar over a result area the pen paints itself, so neither colour would match more than half
+   of what arrives. docs/embed-requirements.md §21.6. */
+.prose .embed-codepen .embed-frame {
+  height: 300px;
+  background: transparent;
+}
 /* A post has no ratio — its height is its content's, and only its own iframe can report it
    (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
    corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`

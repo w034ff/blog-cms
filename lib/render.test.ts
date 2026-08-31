@@ -790,6 +790,40 @@ describe('renderMdxToHtml / embed', () => {
     expect(html).toContain(`<a href="${href}" target="_blank">`);
   });
 
+  // docs/embed-requirements.md §21. `flatsato/VwqprLp` is the pen measured there, and the one
+  // Zenn's own guide embeds.
+  const CODEPEN = 'https://codepen.io/flatsato/pen/VwqprLp';
+
+  it('publishes a pen page reference with no query on the src (P6)', async () => {
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${CODEPEN}"></div>`);
+    expect(html).toContain('class="embed embed-codepen"');
+    // **`/pen/` → `/embed/`, and nothing else** — this is the assertion that fails if Zenn's
+    // `embed-version=2`, or a `default-tab` chosen on every author's behalf, is ever added (§21.5).
+    expect(html).toContain('src="https://codepen.io/flatsato/embed/VwqprLp"');
+    expect(html).not.toContain('embed/VwqprLp?');
+    // Empty, where CodePen's own snippet and both reference sites hand the frame a device list.
+    expect(html).toContain('allow=""');
+    // Zenn publishes this frame with no `sandbox` at all; the divergence is the point (§21.7).
+    expect(html).toContain(
+      'sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"',
+    );
+    expect(html).not.toContain('allow-top-navigation');
+  });
+
+  it("leaves a team's pen and the new editor's UUID to the card, as plain links here (P2)", async () => {
+    // Neither is measured (§21.12), and this project does not publish a src it has not seen
+    // render. The two fail at different predicates — the team URL has four path segments, the UUID
+    // fails the slug class — and both land in the same place.
+    for (const href of [
+      'https://codepen.io/team/codepen/pen/PoqWOwZ',
+      'https://codepen.io/HanaleiMoon/pen/019f467b-060a-7fd7-a4af-707b1437b086',
+    ]) {
+      const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
+      expect(html, href).not.toContain('<iframe');
+      expect(html, href).toContain(`<a href="${href}" target="_blank">`);
+    }
+  });
+
   // docs/embed-requirements.md §18. `qiitan/fa7df…` is the gist measured there.
   const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae';
 
@@ -893,6 +927,7 @@ describe('renderMdxToHtml / embed', () => {
         SLIDES,
         DOCSWELL,
         CODESANDBOX,
+        CODEPEN,
         GIST,
         'https://codesandbox.io/p/devbox/react-new-devbox',
         'https://example.com/article',
@@ -902,7 +937,7 @@ describe('renderMdxToHtml / embed', () => {
       const { html } = await renderMdxToHtml(every);
       // The render really produced embeds — without this the assertion below would also pass on a
       // pipeline that had done nothing at all.
-      expect(html.match(/<iframe/g)?.length).toBe(8);
+      expect(html.match(/<iframe/g)?.length).toBe(9);
       expect(calls).toEqual([]);
 
       // **The positive control, through the same spy and the same call.** A card's resolver is

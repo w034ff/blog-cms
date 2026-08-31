@@ -633,6 +633,74 @@ const codesandbox: Provider = {
   },
 };
 
+// §21.3. Measured over 473 pens collected from Qiita's API (2026-08-31): 460 slugs of 7 characters
+// and 13 of 6, drawn from 33 letters with no digit among them. The class is wider than that on
+// §17.2's judgment — a predicate narrowed to one measurement turns live pens silently into plain
+// links — and it is an allowlist because this value reaches the src (§4.2).
+//
+// **It is also what excludes the new editor's pens.** Those carry a UUIDv7 (`019f2a4c-772a-…`),
+// which is 36 characters with hyphens, so it fails here rather than anywhere else. They appear
+// under `/editor/<user>/pen/<UUID>` and under the canonical `/<user>/pen/<UUID>` alike, so the path
+// alone would not have caught them. Whether they embed at all, and under which src, is unmeasured
+// (§21.12) — the Cloudflare challenge described in §21.13 stopped the measurement.
+const CODEPEN_SLUG = /^[A-Za-z0-9]{4,16}$/;
+// The user segment goes into the src too, so it is checked with the same kind of predicate rather
+// than trusted from the parse. 163 usernames measured, the longest 26 characters, all inside this
+// class.
+const CODEPEN_USER = /^[\w-]{1,40}$/;
+// `/pen/` is the canonical page; `/full/` and `/details/` are the same pen under a different view
+// and carry the slug in the same place. Three segments exactly, which is what leaves
+// `/editor/<user>/pen/<slug>` and `/team/<team>/pen/<slug>` to the card (§21.3): both are four, and
+// neither is measured (§21.12).
+const CODEPEN_PATH = /^\/([^/]+)\/(?:pen|full|details)\/([^/]+)\/?$/;
+
+// Nothing is asked for, for §20.7's reason with more force behind it: what a pen frames is
+// third-party code with no sandbox author in between. Zenn sets no `allow` attribute at all, which
+// grants the same nothing.
+const CODEPEN_ALLOW = '';
+
+const codepen: Provider = {
+  hosts: ['codepen.io', 'www.codepen.io'],
+  resolve: (url) => {
+    const match = CODEPEN_PATH.exec(url.pathname);
+    if (match === null) return null;
+    const [, user, slug] = match;
+    if (!CODEPEN_USER.test(user) || !CODEPEN_SLUG.test(slug)) return null;
+    return {
+      provider: 'codepen',
+      // `/pen/` → `/embed/`, which is what CodePen's own documentation says to do
+      // (`blog.codepen.io/documentation/embedded-pens/`) and what Zenn emits for `@[codepen](…)`.
+      //
+      // **Not one query parameter is appended**, and that is a decision rather than an omission
+      // (§21.5). Zenn adds `embed-version=2`, which CodePen documents nowhere and which the frame
+      // renders without (measured 2026-08-31). `default-tab` and `theme-id` both work, and both
+      // would be a default chosen on every author's behalf: which panel is the point of a pen
+      // differs between a CSS demo and a JS one, and the frame's own tab bar is already in the
+      // reader's hands. §20.5 added `runonclick=1` because 114 requests became 64; the same
+      // reasoning refuses `/embed/preview/` here, where the saving measured is 10 requests → 8.
+      //
+      // **The user segment is not checked by CodePen** — `/anon/embed/<slug>` renders the same pen
+      // (measured 2026-08-31) — so it is carried rather than derived: the author's URL spells it,
+      // and this file has no better spelling to offer.
+      src: () => `https://codepen.io/${user}/embed/${slug}`,
+      title: 'CodePen のペン',
+      // Empty for §20.10's reason: the slug is not a name. **The user segment is deliberately not
+      // put here** — the src does not use it as the reference and CodePen does not verify it, so
+      // the drag ghost would be naming an author on the strength of a string nobody checked.
+      label: { lead: 'CodePen', detail: '' },
+      allow: CODEPEN_ALLOW,
+      // No document of our own: the frame reports no height (measured over 15s, §21.6), and the
+      // script that would make it report one is a third-party `<script>` on the page (§6).
+      srcdoc: null,
+      // §20.7's value, and the entry that matters is again the absent `allow-top-navigation`:
+      // arbitrary JS runs in here and must not be able to take the article elsewhere. **Zenn ships
+      // no `sandbox` at all**, so this is a deliberate divergence. `allow-same-origin` stays for
+      // §20.7's reason — CodePen runs the result in a nested `cdpn.io` frame that uses storage.
+      sandbox: 'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+    };
+  },
+};
+
 const PROVIDERS: readonly Provider[] = [
   youtube,
   x,
@@ -642,6 +710,7 @@ const PROVIDERS: readonly Provider[] = [
   docswell,
   gist,
   codesandbox,
+  codepen,
 ];
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer

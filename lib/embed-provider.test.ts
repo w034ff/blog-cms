@@ -852,3 +852,125 @@ describe('resolveEmbed / CodeSandbox', () => {
     expect(target?.sandbox).not.toContain('allow-top-navigation');
   });
 });
+
+// docs/embed-requirements.md §21. `flatsato/VwqprLp` is the pen Zenn's own guide embeds and the one
+// measured throughout that section; `ohisama/yLePKeK` came out of the Qiita corpus §21.3 counts.
+const PEN_USER = 'flatsato';
+const PEN_SLUG = 'VwqprLp';
+const PEN_PAGE = `https://codepen.io/${PEN_USER}/pen/${PEN_SLUG}`;
+const PEN_SRC = `https://codepen.io/${PEN_USER}/embed/${PEN_SLUG}`;
+
+describe('resolveEmbed / CodePen', () => {
+  it('makes the embed src out of the pen page URL, in all of its shapes (P1)', () => {
+    for (const href of [
+      PEN_PAGE,
+      // `/full/` and `/details/` are the same pen under another view, with the slug in the same
+      // place — 8 and 2 of the corpus's URLs are written this way (§21.3).
+      `https://codepen.io/${PEN_USER}/full/${PEN_SLUG}`,
+      `https://codepen.io/${PEN_USER}/details/${PEN_SLUG}`,
+      `https://www.codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
+      `${PEN_PAGE}/`,
+      // Neither names any part of what is shown, and this provider carries nothing over (§21.10).
+      `${PEN_PAGE}?utm_source=x`,
+      `${PEN_PAGE}#result`,
+    ])
+      expect(resolveEmbed(href)?.src(ANY), href).toBe(PEN_SRC);
+  });
+
+  it('carries the user segment the author wrote, without deriving one (P1)', () => {
+    // CodePen does not check it — `/anon/embed/VwqprLp` renders the same pen (measured
+    // 2026-08-31) — so this asserts that the src keeps the author's spelling rather than any
+    // normal form of ours (§21.4).
+    expect(resolveEmbed('https://codepen.io/ohisama/pen/yLePKeK')?.src(ANY)).toBe(
+      'https://codepen.io/ohisama/embed/yLePKeK',
+    );
+  });
+
+  it('appends no query at all — not even the one Zenn sends (P4)', () => {
+    const src = resolveEmbed(PEN_PAGE)!.src(ANY);
+    expect(src).not.toContain('?');
+    // **The three that were measured to work and are still refused** (§21.5): Zenn's undocumented
+    // version marker, and the two that would pick a panel and a palette for every author.
+    expect(src).not.toContain('embed-version');
+    expect(src).not.toContain('default-tab');
+    expect(src).not.toContain('theme-id');
+    // `/embed/preview/` is the click-to-run form. It exists and works; the saving measured was 10
+    // requests against 8, which does not buy the running result being a click away (§21.5).
+    expect(src).not.toContain('/embed/preview/');
+  });
+
+  it('leaves every CodePen URL that is not a pen page to the card (P2)', () => {
+    for (const href of [
+      // The embed URL itself, for §14.2's reason.
+      PEN_SRC,
+      `https://codepen.io/${PEN_USER}/embed/preview/${PEN_SLUG}`,
+      // **The new editor's pens, under both spellings** — the UUID fails the slug predicate, which
+      // is where they are meant to fail (§21.3). Unmeasured, so refused rather than guessed at.
+      'https://codepen.io/HanaleiMoon/pen/019f467b-060a-7fd7-a4af-707b1437b086',
+      'https://codepen.io/editor/tetsuji-ishii/pen/019f2a4c-772a-7863-84be-b43a2738f8f5',
+      // **A team's pen**, which CodePen's own official account uses. Four segments, so the path
+      // predicate drops it; `team/<team>/embed/<slug>` is likely to work and is not measured
+      // (§21.12), and this project does not build a src it has not seen render.
+      'https://codepen.io/team/codepen/pen/PoqWOwZ',
+      // Listings and profiles, none of which name a single pen.
+      'https://codepen.io/flatsato',
+      'https://codepen.io/collection/DQvYpQ',
+      'https://codepen.io/',
+      'https://codepen.io/pen/',
+      // A deeper path under the canonical form: the slug is not the last segment any more.
+      `${PEN_PAGE}/comments`,
+      // Neither view exists as a page of ours to resolve.
+      `https://codepen.io/${PEN_USER}/debug/${PEN_SLUG}`,
+      `https://codepen.io/${PEN_USER}/pres/${PEN_SLUG}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('refuses a slug or a user that cannot be one (P3)', () => {
+    for (const slug of [
+      'abc',
+      'a'.repeat(17),
+      'a_b',
+      'a.b',
+      'a-b',
+      'a%20b',
+      'ペン',
+      // The UUID again, this time as the value rather than the URL: 36 characters and hyphenated.
+      '019f467b-060a-7fd7-a4af-707b1437b086',
+    ])
+      expect(resolveEmbed(`https://codepen.io/${PEN_USER}/pen/${slug}`), slug).toBeNull();
+    // The user segment reaches the src as well, so it is checked with the same kind of predicate
+    // (§21.3) — 163 usernames measured, the longest 26 characters.
+    for (const user of ['a'.repeat(41), 'a b', 'a/b', 'ユーザー'])
+      expect(resolveEmbed(`https://codepen.io/${user}/pen/${PEN_SLUG}`), user).toBeNull();
+  });
+
+  it('refuses credentials and every other scheme, as the others do (E2)', () => {
+    for (const href of [
+      `https://user:pass@codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
+      `javascript:alert(1)//codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
+      `ftp://codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
+  });
+
+  it('names the provider, an accessible name, and asks for no device (P5)', () => {
+    const target = resolveEmbed(PEN_PAGE);
+    expect(target?.provider).toBe('codepen');
+    expect(target?.title).not.toBe('');
+    // **The user segment is deliberately absent from the label** (§21.10): the src does not use it
+    // as the reference and CodePen does not verify it, so the ghost would name an unchecked author.
+    expect(target?.label).toEqual({ lead: 'CodePen', detail: '' });
+    expect(target?.label.detail).not.toContain(PEN_USER);
+    // Empty, where CodePen's own snippet and both reference sites hand the frame a device list.
+    expect(target?.allow).toBe('');
+    // The frame reports no height at all (§21.6), so there is no document of ours to put it in.
+    expect(target?.srcdoc).toBeNull();
+    // **Zenn ships no `sandbox` for CodePen; this diverges on purpose** (§21.7). The entry that
+    // matters is the absent one — arbitrary third-party JS must not navigate the article away.
+    expect(target?.sandbox).toBe(
+      'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+    );
+    expect(target?.sandbox).not.toContain('allow-top-navigation');
+  });
+});

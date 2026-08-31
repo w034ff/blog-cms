@@ -782,3 +782,44 @@ test('a selected embed cannot start a native drag at all (§8.1)', async ({ page
   // Nothing was picked up, which is what makes the live frame harmless here.
   expect(seen.carried).toBeNull();
 });
+
+// docs/embed-requirements.md §21. The pen page URL an author pastes from the address bar.
+const CODEPEN = 'https://codepen.io/flatsato/pen/VwqprLp';
+
+test('the editor builds the same pen frame the reader gets (P6)', async ({ page }) => {
+  // Routed for §21.13's reason rather than for speed: a suite that loaded real pens would be
+  // spending this IP's budget with CodePen's rate challenge, and a run that tripped it would fail
+  // here saying something about Cloudflare rather than about this project.
+  await page.route('https://codepen.io/*/embed/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  await openWith(page, `<${CODEPEN}>\n\n本文\n`);
+  await page.locator('.ProseMirror a').first().click();
+  const offer = page.getByRole('button', { name: '埋め込みにする' });
+  await expect(offer).toBeVisible();
+  // **The mark, which is where §14.8's trap bites**: a provider with no branch in
+  // `embedMarkShapes` gets the default play frame instead, silently. So this asserts the cube is
+  // drawn rather than that some icon is — the play mark has a `rect` and no path but the triangle.
+  await expect(offer.locator('svg rect')).toHaveCount(0);
+  await expect(offer.locator('svg path')).toHaveAttribute('d', /^M 12 22\.747/);
+  await offer.click();
+  await expect(embed(page)).toHaveClass(/embed-codepen/);
+
+  const iframe = embed(page).locator('iframe');
+  // **The author sees the reader's frame** — same user segment, same bare src with no parameter of
+  // ours appended (§21.5), same pair of attributes as the published side (§21.7).
+  await expect(iframe).toHaveAttribute('src', 'https://codepen.io/flatsato/embed/VwqprLp');
+  await expect(iframe).toHaveAttribute(
+    'sandbox',
+    'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+  );
+  await expect(iframe).toHaveAttribute('allow', '');
+  expect(await iframe.getAttribute('srcdoc')).toBeNull();
+
+  // Fixed, and it does not move: the frame reports no height and none is waited for (§21.6).
+  const frame = embed(page).locator('.embed-frame');
+  expect((await frame.boundingBox())!.height).toBeCloseTo(300, 0);
+
+  // 「リンクに戻す」 hands back the page URL the author pasted, not the embed form built from it.
+  expect(await markdown(page)).toBe(`<div class="embed" data-href="${CODEPEN}"></div>\n\n本文`);
+});

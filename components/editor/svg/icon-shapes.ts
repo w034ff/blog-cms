@@ -229,9 +229,35 @@ export const CODESANDBOX_MARK_SHAPES: readonly IconShape[] = [
   { kind: 'rect', x: 3.38, y: 3.38, width: 17.24, height: 17.24, rx: 0 },
 ];
 
+// CodePen's cube (docs/embed-requirements.md §21.10). The source is the pen page's own
+// `<link rel="mask-icon">` — `cpwebassets.codepen.io/assets/favicon/logo-pin-<digest>.svg`, a
+// single `<path>` in a `0 0 24.3 24.29` box (read 2026-08-31). **A mask-icon is monochrome by
+// definition**, so unlike §17.7's Docswell there was no two-colour drawing to flatten: this is the
+// published artwork, unaltered in shape.
+//
+// Only the frame around it is this project's. The path fills its own box edge to edge, which would
+// make it the largest mark in the set and clip it against `buildIcon`'s `0 0 24` viewBox, so it is
+// scaled by 21.5/24.3 and centred (`translate(1.25, 1.2555) scale(0.884774)`) — §17.7's 21.5 span,
+// which puts it beside X's 21.3. **The transform is baked into the coordinates** because
+// `IconShape` has none; the baked path was rendered against the same path under that `<g
+// transform>` and is identical at 16px, with the larger sizes differing only where rounding to
+// three decimals moves an antialiased edge.
+//
+// **Filled, and it needs no `fill-rule`.** The interior facets are wound against the outer hexagon,
+// so nonzero and even-odd draw the same picture (compared at 240px); `IconSvg` sets no rule, and
+// this is the shape that would have needed one.
+export const CODEPEN_MARK_SHAPES: readonly IconShape[] = [
+  {
+    kind: 'path',
+    filled: true,
+    d: 'M 12 22.747 a 1.009 1.009 0 0 1 -0.575 -0.177 l -9.733 -6.441 a 0.805 0.805 0 0 1 -0.283 -0.265 h 0 l 0 -0.044 A 1.097 1.097 0 0 1 1.25 15.253 V 8.732 a 1.088 1.088 0 0 1 0.159 -0.557 l 0 -0.053 a 0.885 0.885 0 0 1 0.283 -0.257 L 11.425 1.424 a 1.079 1.079 0 0 1 1.15 0 l 9.733 6.441 a 0.885 0.885 0 0 1 0.283 0.257 h 0 a 0.088 0.088 0 0 1 0 0.044 1.088 1.088 0 0 1 0.159 0.557 v 6.521 a 1.097 1.097 0 0 1 -0.159 0.566 l 0 0.044 a 0.885 0.885 0 0 1 -0.283 0.265 l -9.733 6.441 A 1.009 1.009 0 0 1 12 22.747 Z m 1.017 -6.937 V 19.836 l 6.884 -4.574 -3.035 -2.044 Z M 4.099 15.261 10.983 19.836 V 15.81 L 7.134 13.218 Z m 4.857 -3.265 3.044 2.044 3.044 -2.044 L 12 9.944 Z m 9.733 0 L 20.715 13.359 V 10.634 Z M 3.285 10.634 v 2.725 l 2.026 -1.363 Z m 9.733 -2.451 3.849 2.584 3.035 -2.035 L 13.017 4.158 Z M 4.099 8.732 l 3.035 2.035 L 10.983 8.183 V 4.158 Z',
+  },
+];
+
 export function embedMarkShapes(provider: string | undefined): readonly IconShape[] {
   if (provider === X_PROVIDER) return X_MARK_SHAPES;
   if (provider === 'codesandbox') return CODESANDBOX_MARK_SHAPES;
+  if (provider === 'codepen') return CODEPEN_MARK_SHAPES;
   if (provider === 'slideshare') return SLIDESHARE_MARK_SHAPES;
   if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
   if (provider === 'docswell') return DOCSWELL_MARK_SHAPES;

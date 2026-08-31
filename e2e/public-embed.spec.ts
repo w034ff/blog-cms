@@ -388,3 +388,46 @@ test('a CodeSandbox reference is published in a fixed 500px box (C7)', async ({ 
   expect(inner!.height).toBeCloseTo(box!.height, 0);
   expect(inner!.width).toBeCloseTo(box!.width, 0);
 });
+
+// docs/embed-requirements.md §21.6, criterion P7. The pen is never run, for the reason the sandbox
+// above is never booted: `codepen.io/*/embed/**` is routed to a blank page of our own, since what
+// this measures is the box. Routing it also keeps §21.13's rate challenge out of the suite — a run
+// that loaded real pens would be measuring how many CodePen has served this IP lately.
+const CODEPEN_PAGE = 'https://codepen.io/flatsato/pen/VwqprLp';
+
+test('a CodePen reference is published in a fixed 300px box (P7)', async ({ page }) => {
+  await page.route('https://codepen.io/*/embed/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  const href = await publish(
+    page,
+    'Public codepen spec',
+    `本文の前。\n\n<div class="embed" data-href="${CODEPEN_PAGE}"></div>\n\n本文の後。\n`,
+  );
+  await page.goto(href);
+
+  const frame = page.locator('#post-body .embed-codepen .embed-frame');
+  await expect(frame).toHaveCount(1);
+  const iframe = frame.locator('iframe');
+  // **`/pen/` → `/embed/` and not one parameter after it** (§21.5): the author's user segment is
+  // carried, Zenn's `embed-version=2` is not added, and no panel or palette is chosen for them.
+  await expect(iframe).toHaveAttribute('src', 'https://codepen.io/flatsato/embed/VwqprLp');
+  await expect(iframe).toHaveAttribute('allow', '');
+  await expect(iframe).toHaveAttribute(
+    'sandbox',
+    'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
+  );
+  await expect(iframe).toHaveAttribute('loading', 'lazy');
+
+  // The box, measured rather than read off the stylesheet. Not a ratio and not a correction: the
+  // frame reports nothing at all (§21.6), so 300 is the whole answer and it does not move with the
+  // width.
+  const box = await frame.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.height).toBeCloseTo(300, 0);
+  // Wide enough that the criterion is not vacuous, as C7 above.
+  expect(box!.width).toBeGreaterThan(400);
+  const inner = await iframe.boundingBox();
+  expect(inner!.height).toBeCloseTo(box!.height, 0);
+  expect(inner!.width).toBeCloseTo(box!.width, 0);
+});
