@@ -58,6 +58,15 @@ async function openEditor(page: Page): Promise<void> {
 }
 
 test('the card appears with the href when the caret is in a link', async ({ page }) => {
+  // No title, stubbed rather than assumed. `https://example.com` really answers, and a title takes
+  // the top line over (§5.5.10) — so this read "Example Domain" on a machine with a network and the
+  // URL on one without; editor-link-text-field.spec.ts records the same trap, solved there by an
+  // href nothing can answer for. Scoped to this case rather than to openEditor, because a /posts/
+  // link is answered from the database through this same route, which is what the title cases
+  // below measure.
+  await page.route('**/api/link-title**', (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ title: null }) }),
+  );
   await openEditor(page);
   await setRange(page, IN_LINK);
   await expect(card(page)).toBeVisible();
