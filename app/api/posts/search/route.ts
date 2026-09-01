@@ -63,6 +63,7 @@ function toResult(post: {
   date: string;
   draft: boolean;
   thumbnail: string;
+  category: string;
   body: string;
 }): PostSearchResult {
   return {
@@ -78,5 +79,9 @@ function toResult(post: {
     // editor and the published page would come to disagree. `listAllPosts` already selects every
     // column, so this costs no second query.
     thumbnail: resolveThumbnail(post),
+    // The column as it stands. Unlike `thumbnail` there is nothing to resolve —
+    // no label map exists, because the field is free text — so the row draws
+    // what the target post's own form holds (§5.2-5).
+    category: post.category,
   };
 }

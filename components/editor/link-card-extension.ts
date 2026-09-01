@@ -9,6 +9,7 @@ import {
   type CardImage,
 } from '@/lib/link-card-image';
 import { resolveEmbed } from '@/lib/embed-provider';
+import { DEFAULT_CATEGORY } from '@/lib/content';
 import {
   buildIcon,
   EXTERNAL_LINK_SHAPES,
@@ -683,9 +684,21 @@ function renderPicker(
   // Same band the resolved card puts its buttons in — see head().
   const controls = head();
   controls.appendChild(input);
+  // What the one field does with what you type, said once instead of being discovered. The box
+  // takes a title or a URL and decides between a card and an embed on its own (§5.2-2), and until
+  // this line the only evidence of that was the row it offered afterwards — an author who pasted a
+  // YouTube URL into 「リンクカード」 got 「この URL を埋め込みにする」 with no explanation of why
+  // the card they asked for was not on offer.
+  const hint = document.createElement('p');
+  hint.className = 'link-card-hint';
+  // Deliberately not "…and pasting into the body does the same": it does not. A bare URL in the
+  // body stays a link, and 「カードにする」 is offered by the bubble instead (LinkBubble.tsx) —
+  // `transformPastedText` is false and no input rule turns a pasted URL into a block
+  // (link-input-rule.ts answers `[text](url)` only).
+  hint.textContent = 'YouTube や X などの URL は埋め込みに、それ以外の URL はカードになります。';
   const list = document.createElement('ul');
   list.className = 'link-card-results';
-  body.append(controls, list);
+  body.append(controls, hint, list);
 
   const show = (results: PostSearchResult[]) => {
     list.replaceChildren();
@@ -705,11 +718,7 @@ function renderPicker(
     }
     for (const post of offered) {
       const row = document.createElement('li');
-      row.appendChild(
-        button(post.draft ? `${post.title}（未公開）` : post.title, () =>
-          onPick(`/posts/${post.slug}`),
-        ),
-      );
+      row.appendChild(resultRow(post, () => onPick(`/posts/${post.slug}`)));
       list.appendChild(row);
     }
   };
@@ -777,6 +786,83 @@ function renderPicker(
   // Deferred: the NodeView's DOM is not in the document yet when this runs, and focus() on a
   // detached element does nothing.
   requestAnimationFrame(() => input.focus());
+}
+
+// One row of the insert search (§5.2-5): the post's picture, its title, and the category it sits
+// in. It was a line of plain text until 2026-09-01 — the same data the card itself has drawn since
+// §13 was fetched for every row and then thrown away, so the author picked from a list of titles
+// and only saw the picture after committing to one.
+//
+// **The picture is `internalCardImage`, not `post.thumbnail`.** Every row here points at one of
+// this blog's own posts, so every row has a picture — the house mark stands in for a post with
+// none (§17). That matters more in a list than on a single card: a row with an empty frame reads
+// as a broken image next to rows that have one, and the frame is what makes the titles line up.
+//
+// **The accessible name is set explicitly and stays what it was.** A row now draws three things,
+// so its name would otherwise become "title 未公開 category" — and `e2e/editor-link-card.spec.ts`
+// asks for these rows by `getByRole('button', { name: CARD_TITLE })`, which is a full-string match.
+// The label is the title (plus the draft note, which is the one thing here a reader must not miss);
+// the category is supplementary and the picture is decorative, so neither joins it.
+function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElement {
+  const el = document.createElement('button');
+  // Not a submit button, for `button()`'s reason: PostEditor wraps the editor in one <form>.
+  el.type = 'button';
+  el.className = 'link-card-result';
+  el.setAttribute('aria-label', post.draft ? `${post.title}（未公開）` : post.title);
+
+  const text = document.createElement('span');
+  text.className = 'link-card-result-text';
+  const head = document.createElement('span');
+  head.className = 'link-card-result-head';
+  const title = document.createElement('span');
+  title.className = 'link-card-result-title';
+  title.textContent = post.title;
+  head.appendChild(title);
+  // 未公開 was appended to the title as 「（未公開）」 until this row grew a second line. A badge
+  // rather than more title text: what it says is a property of the post, not part of its name, and
+  // inside the title it was the first thing an ellipsis ate.
+  if (post.draft) {
+    const badge = document.createElement('span');
+    badge.className = 'link-card-result-badge';
+    badge.textContent = '未公開';
+    // Already in the button's own label above, so a screen reader would otherwise hear it twice.
+    badge.setAttribute('aria-hidden', 'true');
+    head.appendChild(badge);
+  }
+  text.appendChild(head);
+  // Dropped when it is the blank field's sentinel: `DEFAULT_CATEGORY` is what a post with no
+  // category has, so printing it would put "uncategorized" under most of the list and say nothing.
+  if (post.category !== DEFAULT_CATEGORY) {
+    const category = document.createElement('span');
+    category.className = 'link-card-result-category';
+    category.textContent = post.category;
+    text.appendChild(category);
+  }
+
+  el.append(resultImage(internalCardImage(post.thumbnail)), text);
+  el.addEventListener('click', onPick);
+  return el;
+}
+
+// The row's picture. Same `<picture>` mechanism the card's own image uses (§17.3) and for the same
+// reason — the house mark is the site's name in the foreground colour, so the wrong file is
+// invisible rather than merely off — but built per row rather than reused: rows are thrown away and
+// rebuilt on every keystroke, so there is no previous state for a stale `<source>` to leak from.
+function resultImage(drawn: CardImage): HTMLElement {
+  const image = document.createElement('img');
+  // Decorative: the title it belongs to is on the same row, and the button is named above.
+  image.alt = '';
+  image.className = drawn.placeholder
+    ? 'link-card-result-image link-card-result-placeholder'
+    : 'link-card-result-image';
+  image.src = drawn.src;
+  if (!drawn.placeholder) return image;
+  const picture = document.createElement('picture');
+  const darkSource = document.createElement('source');
+  darkSource.media = '(prefers-color-scheme: dark)';
+  darkSource.srcset = CARD_PLACEHOLDER_DARK_SRC;
+  picture.append(darkSource, image);
+  return picture;
 }
 
 // `icon` is what makes a band control; the picker's result rows pass none and stay plain text.

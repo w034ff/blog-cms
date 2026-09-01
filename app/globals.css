@@ -1917,8 +1917,14 @@ body.link-menu-open .table-toolbar {
 .prose .link-card-view {
   --link-card-image-width: min(16rem, 40%);
 }
-.prose a.link-card:has(img) .link-card-text,
-.prose .link-card-view:has(img) .link-card-body {
+/* **`:has(.link-card-image)`, not `:has(img)`.** This reserves the room the card's own picture is
+   positioned in, and the bare `img` matched any descendant — so once the picker's result rows grew
+   thumbnails (§5.2-5) it matched them too, and the picker held 272px (`min(16rem, 40%) + 1em`) of
+   its width empty for a picture that is not there. Measured 2026-09-02: the rows came out 460px
+   wide in a 766px card. The class is on the card's picture on both surfaces (`rehype-link-card.ts`
+   and the NodeView's `setImage`), and a row's own picture is `.link-card-result-image`. */
+.prose a.link-card:has(.link-card-image) .link-card-text,
+.prose .link-card-view:has(.link-card-image) .link-card-body {
   padding-right: calc(var(--link-card-image-width) + 1em);
 }
 /* Fixed box, cropped to fill: uploads arrive at whatever shape the author had,
@@ -1977,7 +1983,7 @@ body.link-menu-open .table-toolbar {
    Keyed on the anchor, so it does not reach the editor's NodeView. That card carries the control
    band at its top, and centring what hangs below it would put the two states' controls back out of
    line — §7.1 is what that costs. */
-.prose a.link-card:not(:has(img)) {
+.prose a.link-card:not(:has(.link-card-image)) {
   align-items: center;
 }
 .prose a.link-card:hover {
@@ -2178,7 +2184,10 @@ body.link-menu-open .table-toolbar {
   margin: 0.5em 0 0;
   padding: 0;
   list-style: none;
-  max-height: 12em;
+  /* Raised from 12em when the rows became rows (§5.2-5). A row is 53.8px now against ~22px before,
+     so the old value showed 3.5 of them where it used to show 8.7 — this is 4.75, which keeps the
+     half row that advertises the scroll and leaves the picker at ~352px while it is open. */
+  max-height: 16em;
   overflow-y: auto;
 }
 .prose .link-card-results li {
@@ -2189,6 +2198,103 @@ body.link-menu-open .table-toolbar {
   padding: 0.15em 0.6em;
   font-size: 0.875em;
   opacity: 0.7;
+}
+/* What the one field does with what you type. Sits between the band and the list rather than under
+   the list: it explains the box, and below the results it would be the first thing scrolled out of
+   sight. Dimmed rather than boxed — the reference site frames it, but a framed paragraph inside a
+   card that already has a border is two boxes deep for one sentence. */
+.prose .link-card-hint {
+  margin: 0.5em 0 0;
+  font-size: 0.8125em;
+  opacity: 0.7;
+}
+/* The insert search's result rows (docs/link-card-requirements.md §5.2-5): a picture, the title,
+   and the category under it. The row is still the shared `.link-card-results button` above — this
+   only turns it into a row and gives the parts their sizes, so the hover tint, the focus ring and
+   the full-width hit area all stay where they were.
+
+   Specificity is deliberate: the shared rule is (0,2,1) and sets `display: block`, so this has to
+   be (0,3,0) to lay the row out. Keeping the shared rule as-is is what leaves the URL and refusal
+   rows — plain text buttons with no picture — exactly as they were. */
+.prose .link-card-results .link-card-result {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.35em 0.5em;
+}
+/* A small square, not the card's 128x80 frame. A list is read down its left edge, so what matters
+   here is that every row's text starts at the same x — which is also why the house mark stands in
+   for a post with no picture (§17) rather than the frame being dropped. */
+/* The house mark arrives wrapped in a `<picture>` (§17.3), and that wrapper — not the `<img>` — is
+   the flex item. **`margin` is the whole of the fix**, confirmed by mutation 2026-09-01: with it
+   alone the rows are even, and `display: block` or `line-height: 0` in its place leaves them at
+   [54, 110]. Tailwind Typography gives `picture` the same `2em 0` it gives `img`, the reset on
+   `.link-card-result-image` does not reach the wrapper, and a flex item's margins count toward the
+   line's cross size — at this row's 14px that is 2×28px, exactly the gap between a placeholder row
+   at 109.8px and a row with a real picture at 53.8px. The card's own image never hit this: §16.3
+   took it out of the flow, so its wrapper had nothing to push against.
+
+   `flex: none` is structural rather than measured: the wrapper, not the `<img>` inside it, is what
+   a long title would otherwise squeeze. */
+.prose .link-card-result picture {
+  flex: none;
+  margin: 0;
+}
+.prose .link-card-result-image {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0;
+  border-radius: 4px;
+  object-fit: cover;
+}
+/* The house mark again, painted the way the card paints it (§17.3) — `contain` on a tint, so it
+   reads as furniture rather than as a photograph that failed to load. The padding is smaller than
+   the card's because the frame is: at 44px the card's 1.25em would leave the wordmark unreadable,
+   which is the measurement §15 already made at the other end. */
+.prose .link-card-result-image.link-card-result-placeholder {
+  object-fit: contain;
+  padding: 0.3rem;
+  background: #eaeef2;
+}
+.prose .link-card-result-text {
+  min-width: 0;
+  flex: 1;
+}
+.prose .link-card-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+/* `flex: 0 1 auto` + `min-width: 0`, so a long title ellipses and the badge stays beside it. With
+   `flex: 1` the title would take the whole row and push 未公開 out to the right margin, away from
+   the thing it is a property of. */
+.prose .link-card-result-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 未公開. A tint rather than a colour: this is not a warning — an author linking to a post they
+   have not published yet is a normal thing to do mid-writing (§5.2-4), and the card itself says
+   the consequence in words once the row is picked. */
+.prose .link-card-result-badge {
+  flex: none;
+  padding: 0.05em 0.4em;
+  border-radius: 3px;
+  background: rgba(113, 113, 122, 0.15);
+  font-size: 0.8125em;
+}
+/* One line, ellipsed, for the published card's domain-line reason: a category that does not fit
+   has already told the author which group this post is in. */
+.prose .link-card-result-category {
+  display: block;
+  font-size: 0.8125em;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The card on a narrow screen (§16.1). The height that unifies the card on a wide one is mostly
@@ -2571,8 +2677,9 @@ body.link-menu-open .table-toolbar {
   .prose a.link-card:hover {
     background: #161b22;
   }
-  /* Dark counterpart of the house mark's tint (§17.3). */
-  .prose .link-card-image.link-card-placeholder {
+  /* Dark counterpart of the house mark's tint (§17.3) — the card's frame and the search row's. */
+  .prose .link-card-image.link-card-placeholder,
+  .prose .link-card-result-image.link-card-result-placeholder {
     background: #1c2128;
   }
   .prose .link-card-view,

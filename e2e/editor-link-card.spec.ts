@@ -440,6 +440,13 @@ test('a second click on a result row a moment later leaves the card resolved (4b
     await expect(page.locator('.link-card-search')).toBeFocused();
 
     const row = page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE });
+    // Scrolled to first, because `boundingBox()` answers for a row the list has clipped just as
+    // readily as for one on screen — and the point it returns is then not on the row at all, so
+    // the click below lands wherever that spot happens to be and the sweep measures nothing. The
+    // list is a `max-height` box with `overflow-y: auto` (app/globals.css) and every test in this
+    // file autosaves a draft, so by the time this one runs there are more posts than it shows.
+    // A person scrolls the row into view before clicking it; this is that.
+    await row.scrollIntoViewIfNeeded();
     const box = await row.boundingBox();
     if (!box) throw new Error('the result row has no box');
     const point = { x: box.x + x, y: box.y + box.height / 2 };
@@ -922,4 +929,140 @@ test('カードにする asks the page again; an ordinary render does not (14.3.
   await expect.poll(() => asked.length).toBeGreaterThan(before);
   expect(asked.slice(before).every((search) => !search.includes('force=1'))).toBe(true);
   expect(fetchedAt()).toBe(second);
+});
+
+// The insert search's rows (§5.2-5 / §20). Every assertion here is on a row's *parts*: the text was
+// already right before the change, and the parts are what it added.
+//
+// A shared opener, because both of these want the picker and nothing else.
+async function openPickerOnNewPost(page: Page): Promise<void> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('/リンクカード');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await expect(page.locator('.link-card-search')).toBeFocused();
+}
+
+type RowShape = {
+  label: string | null;
+  height: number;
+  hasImage: boolean;
+  loaded: boolean;
+  placeholder: boolean;
+  category: string | null;
+  badge: string | null;
+};
+
+function rowShapes(page: Page): Promise<RowShape[]> {
+  return page.locator('.link-card-result').evaluateAll((els) =>
+    els.map((el) => {
+      const img = el.querySelector('img');
+      return {
+        label: el.getAttribute('aria-label'),
+        height: Math.round(el.getBoundingClientRect().height),
+        hasImage: img !== null,
+        // `naturalWidth`, not `src`: a 404 leaves the attribute exactly as asserted, which is the
+        // point §17 already made about the card's own picture.
+        loaded: img !== null && img.naturalWidth > 0,
+        placeholder: img?.classList.contains('link-card-result-placeholder') ?? false,
+        category: el.querySelector('.link-card-result-category')?.textContent ?? null,
+        badge: el.querySelector('.link-card-result-badge')?.textContent ?? null,
+      };
+    }),
+  );
+}
+
+test('every insert-search row carries a picture, and they are all one height (20a, 20d)', async ({
+  page,
+}) => {
+  await openPickerOnNewPost(page);
+  await expect(page.locator('.link-card-result').first()).toBeVisible();
+  const rows = await rowShapes(page);
+  expect(rows.length).toBeGreaterThan(1);
+
+  for (const row of rows) {
+    expect(row.hasImage, row.label ?? '').toBe(true);
+    expect(row.loaded, row.label ?? '').toBe(true);
+  }
+  // Both kinds have to be on screen, or the loop above says nothing about the fallback: the seeded
+  // posts include one with a picture of its own and ones with none (§17's house mark).
+  expect(rows.some((row) => row.placeholder)).toBe(true);
+  expect(rows.some((row) => !row.placeholder)).toBe(true);
+
+  // One height for every row. This is the assertion the `<picture>` margin broke — the house-mark
+  // rows stood at 109.8px against 53.8px (§20) — and an uneven list is also what makes a sweep
+  // measured from a row's own box land somewhere else (4b).
+  expect([...new Set(rows.map((row) => row.height))]).toHaveLength(1);
+});
+
+test('a draft row wears a badge and drops the empty category, and its name is unchanged (20b, 20c)', async ({
+  page,
+}) => {
+  // A draft is made here rather than seeded, for 4h's reason — and it is also the one post whose
+  // category is certain: a row created by autosave carries `DEFAULT_CATEGORY`, which is the case
+  // §20 drops the line for. Asserting that against whatever the seeded DB happens to hold would
+  // pass while showing nothing.
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const draftTitle = `未分類の下書き ${Date.now()}`;
+  await page.getByLabel('タイトル').fill(draftTitle);
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+
+  await openPickerOnNewPost(page);
+  await page.locator('.link-card-search').fill(draftTitle);
+  await expect(page.locator('.link-card-result')).toHaveCount(1);
+  const [draftRow] = await rowShapes(page);
+  expect(draftRow.badge).toBe('未公開');
+  expect(draftRow.category).toBeNull();
+  // The name is the title plus the draft note and nothing else — not the category, not the picture.
+  // `getByRole('button', { name })` is a full-string match, and the rows above are asked for that
+  // way by twelve other tests in this file.
+  expect(draftRow.label).toBe(`${draftTitle}（未公開）`);
+  await expect(
+    page.locator('.link-card-results').getByRole('button', { name: `${draftTitle}（未公開）` }),
+  ).toBeVisible();
+
+  // And the other half: a published post in a real category draws it, so the rule above is a rule
+  // about `uncategorized` rather than about the line never appearing.
+  await page.locator('.link-card-search').fill(CARD_TITLE);
+  await expect(page.locator('.link-card-result')).toHaveCount(1);
+  const [publishedRow] = await rowShapes(page);
+  expect(publishedRow.badge).toBeNull();
+  expect(publishedRow.category).toBe('tech-notes');
+});
+
+// §20 の 20f. The gutter the card holds open for its own picture must not be held open by the
+// picker, whose rows now contain pictures of their own.
+//
+// Both states in one test on purpose: "the picker has no gutter" alone would also pass if the rule
+// were deleted outright, and the resolved card would then draw its title under its own image.
+test('the picker fills the card’s width, and the resolved card still reserves its picture (20f)', async ({
+  page,
+}) => {
+  await openPickerOnNewPost(page);
+  const gutter = () =>
+    page
+      .locator('.link-card-view .link-card-body')
+      .evaluate((el) => getComputedStyle(el).paddingRight);
+  const rowWidth = () =>
+    page
+      .locator('.link-card-result')
+      .first()
+      .evaluate((el) => Math.round(el.getBoundingClientRect().width));
+  const bodyWidth = () =>
+    page
+      .locator('.link-card-view .link-card-body')
+      .evaluate((el) => Math.round(el.getBoundingClientRect().width));
+
+  expect(await gutter()).toBe('0px');
+  // The rows reach the far edge of the text column. `:has(img)` matched a row's own thumbnail and
+  // held 272px of a 766px card empty (measured 2026-09-02).
+  expect(await rowWidth()).toBe(await bodyWidth());
+
+  await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
+  await expect(page.locator('.link-card-view .link-card-title')).toHaveText(CARD_TITLE);
+  // And the other half: a resolved card keeps the room, or its title runs under its own picture.
+  expect(await gutter()).not.toBe('0px');
+  await expect(page.locator('.link-card-view .link-card-image')).toBeVisible();
 });

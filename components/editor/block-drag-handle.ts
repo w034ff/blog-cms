@@ -303,14 +303,18 @@ function createDragController(view: EditorView): DragController {
   // `.link-card-head` is the band both states put their controls in (`head()`,
   // link-card-extension.ts), so removing it takes the resolved card's three buttons and the
   // picker's search box in one stroke. `.link-card-results` is the picker's list of pressable rows,
-  // which is the same thing one level down.
+  // which is the same thing one level down. `.link-card-hint` is not pressable, but it is the same
+  // kind of thing — a sentence explaining the search box that has just been taken away — and left
+  // in it became the ghost's whole text (§5.2-5).
   //
   // That leaves the picker with nothing at all — no title, no image, no lookup to have answered —
   // and an empty bordered box is the other failure §10.10 named. So it gets a line saying what it
   // is, in the title's own slot, for the reason the embed's token gives its own: what is being
   // carried has to be named even when it cannot be shown.
   function stripCardControls(clone: HTMLElement): void {
-    clone.querySelectorAll('.link-card-head, .link-card-results').forEach((el) => el.remove());
+    clone
+      .querySelectorAll('.link-card-head, .link-card-results, .link-card-hint')
+      .forEach((el) => el.remove());
     if (!clone.classList.contains('link-card')) return;
     // `renderCard` always builds the title span, so its absence is what tells the two states apart
     // — not the `href` attribute, which the ghost has no reason to read.

@@ -61,4 +61,11 @@ export type PostSearchResult = {
   // without a session), and what crosses is the resolver's answer rather than
   // the text it read — so a search still cannot be used to read a post.
   thumbnail: string | null;
+  // The post's own category, drawn as the second line of an insert-search row
+  // (§5.2-5). The raw column, not a display name: there is no label map — the
+  // field is free text the author types — so what a row shows is what the
+  // target post's own form holds. `DEFAULT_CATEGORY` is the blank field's
+  // sentinel rather than a category anyone chose, and the row drops the line
+  // instead of printing it.
+  category: string;
 };
