@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveEmbed } from './embed-provider';
+import { EMBED_PROVIDERS, resolveEmbed } from './embed-provider';
 
 // docs/embed-requirements.md §9. `resolveEmbed` is asked from both sides — the resolve stage decides
 // whether a stored reference becomes an iframe, the editor decides whether a URL can become one —
@@ -999,5 +999,59 @@ describe('resolveEmbed / CodePen', () => {
       'allow-scripts allow-same-origin allow-forms allow-modals allow-popups',
     );
     expect(target?.sandbox).not.toContain('allow-top-navigation');
+  });
+});
+
+// §24.1. The insert dialog's table is derived from the registry rather than written beside it, and
+// these are the two properties that make deriving it worth anything.
+describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
+  it('carries every provider the resolver claims, and nothing else', () => {
+    // Both directions. Length alone would pass a list that names one provider twice, and a name
+    // check alone would pass a list missing the newest entry — which is the failure a hand-kept
+    // list has every time this file grows one (§24.1).
+    expect(EMBED_PROVIDERS.map((p) => p.name)).toEqual([
+      'YouTube',
+      'X',
+      'SlideShare',
+      'Figma',
+      'Speaker Deck',
+      'Docswell',
+      'GitHub Gist',
+      'CodeSandbox',
+      'CodePen',
+    ]);
+    for (const provider of EMBED_PROVIDERS) {
+      expect(provider.hosts.length, provider.name).toBeGreaterThan(0);
+    }
+  });
+
+  it('spells each provider the same way the drag ghost does', () => {
+    // The seven that always lead with the provider, plus the fallback branch of the two that
+    // usually lead with an account — those are the leads that must not become a second spelling.
+    // X's account form and the gist's owner form are deliberately not here: their lead is the
+    // account, not the provider (§10.4, §18).
+    // The fixtures each provider's own section above already measured, not new ones: a URL invented
+    // here that quietly stops resolving would turn this into a test of the fixture.
+    const leads: Record<string, string> = {
+      YouTube: `https://www.youtube.com/watch?v=${ID}`,
+      // The `/i/status/` form, which is the branch that leads with the provider (§10.4).
+      X: `https://x.com/i/status/${X_ID}`,
+      SlideShare: `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+      Figma: `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+      // The player URL, not the deck page — the page carries no id and is left to the card (SD2).
+      'Speaker Deck': `https://speakerdeck.com/player/${SD_ID}`,
+      Docswell: DW_PAGE,
+      // The owner-less form, for X's reason one provider over (§18).
+      'GitHub Gist': `https://gist.github.com/${GIST_ID}`,
+      CodeSandbox: CSB_PAGE,
+      CodePen: PEN_PAGE,
+    };
+    for (const provider of EMBED_PROVIDERS) {
+      const href = leads[provider.name];
+      expect(href, `no fixture for ${provider.name}`).toBeDefined();
+      const target = resolveEmbed(href);
+      expect(target, href).not.toBeNull();
+      expect(target?.label.lead, provider.name).toBe(provider.name);
+    }
   });
 });

@@ -26,12 +26,14 @@ test('the slash menu inserts a code block', async ({ page }) => {
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // `code` matches コードブロック only (no callout carries it), so the list narrows to one row.
+  // `code` now matches two rows: コードブロック, and 埋め込み through its provider keywords —
+  // CodeSandbox and CodePen both contain it (embed-requirements.md §24.1). **The order is what
+  // keeps `/code` + Enter usable**, and it is the menu's own declaration order, so this pins the
+  // thing that would actually hurt rather than the count.
   await page.keyboard.type('/code');
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(1);
-  await expect(menu).toContainText('コードブロック');
+  await expect(menu.getByRole('button')).toHaveText(['コードブロック', '埋め込み']);
 
   await page.keyboard.press('Enter');
   // The code block's NodeView wrapper (its language <select>/filename chrome) confirms insertion.
@@ -90,7 +92,7 @@ test('the slash menu hides the callout rows inside a quote, keeping the code blo
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンクカード']);
+  await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンクカード', '埋め込み']);
 });
 
 // The same check must not hide the rows where setCallout *does* work. Inside an existing
@@ -110,7 +112,8 @@ test('the slash menu still offers the callout rows inside an existing callout', 
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(5); // 3 callout types + code block + link card
+  // 3 callout types + code block + link card + embed
+  await expect(menu.getByRole('button')).toHaveCount(6);
 });
 
 // The `/` trigger is gated off inside a code block (slash-command.ts's `allow`): with

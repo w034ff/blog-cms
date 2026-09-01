@@ -203,7 +203,15 @@ describe('§3.4’s cross-provider index (docs/embed-requirements.md)', () => {
     const literal = [...marks.matchAll(MARK_ROW)]
       .map((row) => row[2].match(/`([^`]*)`/)?.[1] ?? '')
       .filter((lead) => lead.length > 0 && !lead.includes('<'));
-    expect(literal.filter((lead) => !providers.includes(`lead: '${lead}'`))).toEqual([]);
+    // Either spelling counts, because since 2026-09-02 there is only one: the leads that are the
+    // provider's own name read `Provider.name` instead of repeating the string (§3.4's naming
+    // table, §24.1). What must still hold is that the doc quotes a string this file actually
+    // contains — `embed-provider.test.ts` is what ties `name` back to the lead a URL produces.
+    expect(
+      literal.filter(
+        (lead) => !providers.includes(`lead: '${lead}'`) && !providers.includes(`name: '${lead}'`),
+      ),
+    ).toEqual([]);
   });
 
   it('reports the request counts its own §N.5 sections measured', () => {

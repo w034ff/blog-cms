@@ -74,6 +74,16 @@ export type EmbedTarget = {
 };
 
 type Provider = {
+  // How this provider is written when it is named to the author — the insert dialog's table of
+  // what can be embedded (docs/embed-requirements.md §24.1).
+  //
+  // **It lives here rather than beside each `label.lead` because it has to be readable without a
+  // URL.** `resolve` produces a `label` for one particular reference, so nothing could ask "what
+  // can be embedded at all" without inventing a URL per provider. Where `lead` is the provider's
+  // own name, that branch reads this field instead of repeating the string — the seven that always
+  // lead with the provider, and the fallback branch of the two that usually lead with an account
+  // (X, gist). One spelling per provider; `embed-provider.test.ts` holds it there.
+  name: string;
   // Matched against `URL.hostname`, which is already lowercased and punycoded by the parser.
   hosts: readonly string[];
   resolve: (url: URL) => EmbedTarget | null;
@@ -125,6 +135,7 @@ function youtubeStart(url: URL): number {
 }
 
 const youtube: Provider = {
+  name: 'YouTube',
   // `youtube-nocookie.com` and `music.youtube.com` are deliberately absent (§9.2): the allowlist
   // starts narrow, and nocookie is an output of this file rather than an input to it.
   hosts: ['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'],
@@ -144,7 +155,7 @@ const youtube: Provider = {
       // Seconds, the unit the author's own `t` and the src's `start` are both in. The video itself
       // cannot be named without a fetch — its id is not something a person reads — so the provider
       // leads and the moment follows.
-      label: { lead: 'YouTube', detail: start > 0 ? `${start} 秒から` : '' },
+      label: { lead: youtube.name, detail: start > 0 ? `${start} 秒から` : '' },
       allow: YOUTUBE_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -167,6 +178,7 @@ const X_PATH = /^\/([^/]+)\/status\/([^/]+)/;
 const X_ALLOW = '';
 
 const x: Provider = {
+  name: 'X',
   // `t.co` is absent: it is a redirector, and resolving one would put a request on the wire, which
   // §3.2 forbids. The old domain is present because links to it are still written and it 301s to
   // `x.com` (§10.1) — following that redirect is the same forbidden request, so the shapes are
@@ -190,7 +202,7 @@ const x: Provider = {
       // The account, which the URL already carries. `/i/status/<ID>` is the form that does not, and
       // there the provider leads and the bare id is all there is to add.
       label:
-        path?.[1] === 'i' ? { lead: 'X', detail: id } : { lead: `@${path?.[1] ?? ''}`, detail: '' },
+        path?.[1] === 'i' ? { lead: x.name, detail: id } : { lead: `@${path?.[1] ?? ''}`, detail: '' },
       allow: X_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -217,6 +229,7 @@ const SLIDESHARE_PATH = /^\/slideshow\/[^/]+\/([^/]+)\/?$/;
 const SLIDESHARE_ALLOW = '';
 
 const slideshare: Provider = {
+  name: 'SlideShare',
   // Narrow on purpose, as §9.2's list is: the locale hosts (`es.slideshare.net` and its siblings)
   // redirect to `www` and carry the id in the same place, but they are an open-ended set, and a URL
   // from one becomes a card rather than nothing.
@@ -237,7 +250,7 @@ const slideshare: Provider = {
       // not a name: a Japanese title slugifies to bare digits, and many slugs end in the id again
       // (embed-requirements.md §14.8). YouTube leads with the provider for the same reason — the item cannot be named
       // without a fetch.
-      label: { lead: 'SlideShare', detail: '' },
+      label: { lead: slideshare.name, detail: '' },
       allow: SLIDESHARE_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -279,6 +292,7 @@ const FIGMA_EMBED_HOST = 'tech-blog';
 const FIGMA_ALLOW = '';
 
 const figma: Provider = {
+  name: 'Figma',
   // `embed.figma.com` is deliberately absent for `youtube-nocookie.com`'s reason (§9.2): it is an
   // output of this file, not an input to it. `figma.site` is a different product — a published
   // site, not a file — and naming it here would claim a shape nothing has measured.
@@ -302,7 +316,7 @@ const figma: Provider = {
       title: 'Figma のデザイン',
       // The provider and nothing else, for SlideShare's reason: the file cannot be named without a
       // fetch. The slug is the author's title slugified, and the node id (`5-2`) is not a name.
-      label: { lead: 'Figma', detail: '' },
+      label: { lead: figma.name, detail: '' },
       allow: FIGMA_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -332,6 +346,7 @@ const SPEAKERDECK_PATH = /^\/player\/([^/]+)\/?$/;
 const SPEAKERDECK_ALLOW = '';
 
 const speakerdeck: Provider = {
+  name: 'Speaker Deck',
   // `www` is present because it answers and 301s to the apex, which is where the id sits in the
   // same place (measured 2026-08-26) — the same call §14.2 made for `slideshare.net`.
   hosts: ['speakerdeck.com', 'www.speakerdeck.com'],
@@ -348,7 +363,7 @@ const speakerdeck: Provider = {
       title: 'Speaker Deck のスライド',
       // The provider and nothing else, for SlideShare's reason: the deck cannot be named without a
       // fetch, and this URL does not even carry a slug to be tempted by (§16.7).
-      label: { lead: 'Speaker Deck', detail: '' },
+      label: { lead: speakerdeck.name, detail: '' },
       allow: SPEAKERDECK_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -396,6 +411,7 @@ function docswellPage(url: URL, path: RegExpExecArray): number {
 }
 
 const docswell: Provider = {
+  name: 'Docswell',
   // The apex is present because it answers directly rather than redirecting, and carries the key in
   // the same place (measured 2026-08-26) — the call §14.2 made for `slideshare.net`.
   hosts: ['www.docswell.com', 'docswell.com'],
@@ -415,7 +431,7 @@ const docswell: Provider = {
       title: 'Docswell のスライド',
       // The provider, then the page if the author named one — YouTube's shape, and for its reason:
       // the deck cannot be named without a fetch, and the slug is the title slugified (§17.7).
-      label: { lead: 'Docswell', detail: page > 1 ? `${page} ページ目から` : '' },
+      label: { lead: docswell.name, detail: page > 1 ? `${page} ページ目から` : '' },
       allow: DOCSWELL_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -515,6 +531,7 @@ function gistDocument(src: string, instanceId: string): string {
 }
 
 const gist: Provider = {
+  name: 'GitHub Gist',
   // One host. `gist.githubusercontent.com` is deliberately absent: it serves the raw file as
   // `text/plain` under `x-frame-options: deny` and CSP `sandbox`, so it is not an embed of anything
   // — and it is an output of this file's own `view raw` link rather than an input to it.
@@ -552,7 +569,7 @@ const gist: Provider = {
       // back to the provider with the bare id behind it.
       label:
         owner === null
-          ? { lead: 'GitHub Gist', detail: file ?? id }
+          ? { lead: gist.name, detail: file ?? id }
           : { lead: owner, detail: file ?? '' },
       allow: GIST_ALLOW,
       // §18.6. `allow-scripts` because both the gist's own `document.write` and the reporter beside
@@ -596,6 +613,7 @@ const CODESANDBOX_PATH = /^\/(?:p\/sandbox|s)\/([^/]+)\/?$/;
 const CODESANDBOX_ALLOW = '';
 
 const codesandbox: Provider = {
+  name: 'CodeSandbox',
   // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30), which is the
   // call §17.2 made for Docswell's apex.
   hosts: ['codesandbox.io', 'www.codesandbox.io'],
@@ -619,7 +637,7 @@ const codesandbox: Provider = {
       // No `detail` is possible: the segment is a slugified title or a random word rather than a
       // name, and unlike YouTube's start time (§9.3) or Docswell's page (§17.3) there is nothing in
       // the URL left to carry over.
-      label: { lead: 'CodeSandbox', detail: '' },
+      label: { lead: codesandbox.name, detail: '' },
       allow: CODESANDBOX_ALLOW,
       srcdoc: null,
       // Zenn's list, and what it buys is the absence of `allow-top-navigation`: the third party's
@@ -672,6 +690,7 @@ const CODEPEN_EDITOR_PATH = /^\/editor\/([^/]+)\/pen\/([^/]+)\/?$/;
 const CODEPEN_ALLOW = '';
 
 const codepen: Provider = {
+  name: 'CodePen',
   hosts: ['codepen.io', 'www.codepen.io'],
   resolve: (url) => {
     // Three page shapes, each naming the owner and the slug in the same two places. They cannot
@@ -708,7 +727,7 @@ const codepen: Provider = {
       // Empty for §20.10's reason: the slug is not a name. **The user segment is deliberately not
       // put here** — the src does not use it as the reference and CodePen does not verify it, so
       // the drag ghost would be naming an author on the strength of a string nobody checked.
-      label: { lead: 'CodePen', detail: '' },
+      label: { lead: codepen.name, detail: '' },
       allow: CODEPEN_ALLOW,
       // No document of our own: the frame reports no height (measured over 15s, §21.6), and the
       // script that would make it report one is a third-party `<script>` on the page (§6).
@@ -733,6 +752,19 @@ const PROVIDERS: readonly Provider[] = [
   codesandbox,
   codepen,
 ];
+
+// What can be embedded at all, for the insert dialog's table (docs/embed-requirements.md §24.1).
+//
+// **Derived from the registry, never written twice.** A hand-kept list would have been wrong four
+// times in the month this file grew Figma, the gist, CodeSandbox and CodePen — and wrong is worse
+// here than absent, since the table is the only place an author is told what is supported. `hosts`
+// rides along because it is the same data: it says which addresses match without a second string
+// to keep in step with the matcher.
+export type EmbedProviderInfo = { name: string; hosts: readonly string[] };
+export const EMBED_PROVIDERS: readonly EmbedProviderInfo[] = PROVIDERS.map((provider) => ({
+  name: provider.name,
+  hosts: provider.hosts,
+}));
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

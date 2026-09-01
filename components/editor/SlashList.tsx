@@ -11,7 +11,12 @@ export type SlashItem = {
   id: string;
   title: string;
   keywords: string[];
-  run: (chain: ChainedCommands) => ChainedCommands;
+  // The range the `/query` occupies, handed along because a row may need to say *where* it acts
+  // rather than relying on where the caret ends up: the chain focuses the editor first, and a
+  // focus that follows a blur (the row was clicked) does not reliably restore the old selection —
+  // measured 2026-09-02, it landed at the end of the document about one run in six.
+  // `range.from` is that place, and it is the same before and after `deleteRange`.
+  run: (chain: ChainedCommands, range: { from: number; to: number }) => ChainedCommands;
 };
 
 // Imperative handle so the suggestion plugin's render.onKeyDown can drive the highlight

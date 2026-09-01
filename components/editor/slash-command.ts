@@ -5,6 +5,7 @@ import Suggestion, { exitSuggestion, type SuggestionProps } from '@tiptap/sugges
 import { SlashList, type SlashItem, type SlashListRef } from './SlashList';
 import { CALLOUT_MENU_ORDER } from './callout-extension';
 import { CALLOUT_TITLES, type CalloutType } from '@/lib/callout-types';
+import { EMBED_PROVIDERS } from '@/lib/embed-provider';
 
 // Extra search terms per callout type, beyond the visible "囲み枠（…）" label (which already
 // matches `/囲み`) — so `/info`, `/danger`, `/callout`, `/コ` all filter sensibly. Aligned with
@@ -82,6 +83,38 @@ const ITEMS: SlashEntry[] = [
     run: (chain) => chain.setLinkCard(),
     available: (editor) => editor.can().setLinkCard(),
   },
+  {
+    // The embed's own door (docs/embed-requirements.md §24.1). Until this row existed, the only
+    // way to reach an embed from this menu was 「リンクカード」 — the row is named after the block
+    // it usually makes, and a URL a provider claims quietly becomes something else. A picker's
+    // explanatory line was carrying that news, which is a symptom being treated.
+    //
+    // **The keywords carry the discoverability the reference site buys with a permanent 「+」
+    // button.** That button exists because its editor writes markdown and the syntax cannot be
+    // remembered; here the provider is derived from the URL, so what an author needs is to find
+    // this row while thinking 「youtube」 or 「スライド」 — which is a search, not a button. Every
+    // provider name is a keyword, so the list grows with `EMBED_PROVIDERS`.
+    //
+    // `openEmbedInsert` inserts nothing; it asks the host for the dialog and reports whether an
+    // embed could land here at all, so a table cell drops the row rather than opening a dialog
+    // whose insert would then refuse.
+    id: 'embed',
+    title: '埋め込み',
+    keywords: [
+      'embed',
+      '埋め込み',
+      '動画',
+      'スライド',
+      ...EMBED_PROVIDERS.map((provider) => provider.name),
+      // The spellings a provider's own name does not cover: X's former name, and the two whose
+      // registry name carries a space or a vendor.
+      'twitter',
+      'speakerdeck',
+      'gist',
+    ],
+    run: (chain, range) => chain.openEmbedInsert(range.from),
+    available: (editor) => editor.can().openEmbedInsert(),
+  },
 ];
 
 // Whether the menu has anything at all to offer at the caret. Drives the trigger below, so a
@@ -138,7 +171,7 @@ export const SlashCommand = Extension.create({
         dismissOnOutsideClick: true,
         items: ({ query, editor }) => filterItems(query, editor),
         command: ({ editor, range, props }) => {
-          props.run(editor.chain().focus().deleteRange(range)).run();
+          props.run(editor.chain().focus().deleteRange(range), range).run();
         },
         render: () => {
           let component: ReactRenderer<SlashListRef, SuggestionProps<SlashItem, SlashItem>> | null =

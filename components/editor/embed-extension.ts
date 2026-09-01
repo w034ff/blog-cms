@@ -17,6 +17,14 @@ import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
 
+// The one string the extension and its host share. Exported rather than written twice, for the
+// reason `GIST_SOURCE` is (lib/embed-message.ts): a name that has to match in two files is a name
+// that gets misspelled in one of them.
+export const EMBED_INSERT_EVENT = 'editor:open-embed-insert';
+
+// Where the embed goes when the dialog comes back with a URL.
+export type EmbedInsertDetail = { at: number };
+
 // The embed (docs/embed-requirements.md): a block that plays or shows an external item in place,
 // rather than naming it with a line of link text.
 //
@@ -219,6 +227,55 @@ export const Embed = Node.create({
             .insertContentAt(at, { type: this.name, attrs: { href } })
             .setNodeSelection(at)
             .run();
+        },
+
+      // Ask the host to open the insert dialog (docs/embed-requirements.md §24.1). It inserts
+      // nothing: the embed needs a URL, and unlike the link card there is no half-made state to
+      // put in the document while the author finds one — an empty `href` renders 「参照がありません」,
+      // which is an error, not an invitation.
+      //
+      // **The placement rule is asked, never restated**: `can().setEmbed('')` is the same predicate
+      // the insert itself will meet, with an href that is never used because nothing is dispatched.
+      // Restating it here is how the slash row and the command would drift apart, which is the
+      // thing `slash-command.ts` keeps saying about `available`.
+      //
+      // A DOM event rather than storage or a callback option: `editor.storage` does not re-render
+      // React, assigning to what `useEditor` returned trips `react-hooks/immutability`, and an
+      // extension option is fixed when the extension array is built (the link card's `ownSlug`
+      // is the record of both — docs/link-card-requirements.md §18). The host listens on
+      // `editor.view.dom`, which it already reaches through `editorRef`.
+      openEmbedInsert:
+        (at?: number) =>
+        ({ can, dispatch, editor }: CommandProps): boolean => {
+          if (!can().setEmbed('')) return false;
+          // Null under `can()`, which is what makes this safe to ask from the menu's `available`.
+          if (dispatch) {
+            // **The caret rides along.** The author types in a dialog outside the editor, and
+            // `focus()` with no argument restores whatever selection the view happens to hold by
+            // then — measured 2026-09-02 as a flake that put the embed at the end of the document
+            // roughly one run in three. Carrying the position makes the insert say where it goes
+            // instead of asking.
+            //
+            // **The caller says where, and the selection is only the fallback.** The slash menu
+            // hands `range.from` — the place the `/query` started, which is where the caret is once
+            // that text is gone, and which does not depend on the focus the chain performs first.
+            // That focus follows a blur (the author clicked a menu row), and instrumented over six
+            // runs 2026-09-02 it restored the old selection five times and jumped to the end of the
+            // document once, taking the embed with it. Reading the selection here reproduced the
+            // same one-in-six however it was read — before the chain, from its transaction, or in a
+            // microtask after it landed.
+            // The slash row always passes one; the fallback is for a caller that has no range to
+            // give, and is the unreliable read described above — so it is a default, not a path
+            // anything currently takes.
+            const target = at ?? editor.state.selection.from;
+            editor.view.dom.dispatchEvent(
+              new CustomEvent<EmbedInsertDetail>(EMBED_INSERT_EVENT, {
+                bubbles: true,
+                detail: { at: target },
+              }),
+            );
+          }
+          return true;
         },
 
       // Undo the embed without losing the reference — the caret cannot enter an atom, so without
@@ -557,6 +614,7 @@ declare module '@tiptap/core' {
       linkToEmbed: (range: { from: number; to: number }, href: string) => ReturnType;
       nodeToEmbed: (at: number, href: string) => ReturnType;
       setEmbed: (href: string) => ReturnType;
+      openEmbedInsert: (at?: number) => ReturnType;
       unsetEmbed: (at?: number) => ReturnType;
     };
   }
