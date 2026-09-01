@@ -1,6 +1,6 @@
 # 埋め込み 要件定義
 
-- 状態: **プロバイダは 9 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）、CodeSandbox（08-30、§20）、CodePen（08-31、§21）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
+- 状態: **プロバイダは 9 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）、CodeSandbox（08-30、§20）、CodePen（08-31、§21）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降で、**プロバイダを横断して比べる表は §3.4 にある**。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
 - 作成: 2026-08-21（`docs/youtube-embed-requirements.md` として書き、同日 `embed-requirements.md` に改名した。プロバイダを足す前提が先に来たため）
 - 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/embed-message.ts`（両側が聞くメッセージ — X のプロトコルと、§18.5 の自前プロトコル）、`lib/embed-fallback.ts`（素のリンクに落ちたときの形。§10.6 の 2 つの経路が同じものを作るための 1 箇所）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/EmbedFrames.tsx`（公開ページで高さを直し、取得できない投稿をリンクにする。`app/posts/[slug]/page.tsx` が 1 行で置く）、`components/editor/embed-extension.ts`（ノード + NodeView + 4 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 1）、`components/editor/link-card-extension.ts` のピッカー（入口 2）、`lib/speakerdeck-snippet.ts` と `components/editor/speakerdeck-snippet-paste.ts`（§16.9 の 3 つ目の入口。§5 の 2 つは URL を持っている場合の入口で、こちらは埋め込みコードを貼った場合である）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
 - 測定（件数は数えた値。2026-09-01 時点）: `lib/embed-provider.test.ts`（66 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（27 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（26 件）、`e2e/public-embed.spec.ts`（12 件）、`e2e/editor-x-embed.spec.ts`（11 件）、`e2e/public-x-embed.spec.ts`（7 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
@@ -10,7 +10,7 @@
 
 **実測していないことは実測していないと書いてある**（§12）。§0・§2・§9 は 2026-08-21 に、§10 は 2026-08-21 と 2026-08-23 に実測した。
 
-**§ 番号の読み方**: 番号だけの `§…` は本書の節（§0〜§13）を指す。`docs/link-card-requirements.md` の節を指すときは、文書名か「あちらの」を必ず添えてある。
+**§ 番号の読み方**: 番号だけの `§…` は本書の節（§0〜§23）を指す。`docs/link-card-requirements.md` の節を指すときは、文書名か「あちらの」を必ず添えてある。
 
 ---
 
@@ -83,6 +83,77 @@
 **選ばせるものが増えることのほうが代償である。** 動画に対して「カードにする」を押す理由を著者に説明できない。`link-card-requirements.md` §14.3 が手動リフレッシュ UI を非目標に置いたときの論法がそのまま当たる — 押せるものを増やすと、押さない場合の意味が変わる。
 
 言及するだけで再生させたくない場合の逃げ道は、カードではなく素のテキストリンクである。 それは既にあり、何も足さずに使える。
+
+---
+
+### 3.4 プロバイダ横断の索引（2026-09-01 追加）
+
+**§9 以降の各節が持つ 3 つの小節は、問いが 1 つずつで、プロバイダごとに違うのは値だけである。**節を統合せず、ここに 3 枚の表として索引を置く（`docs/accordion-requirements.md` §6.5 と同じ形）。各節は自分の値の根拠と実測日を持ち続け、**プロバイダ同士を比べる文だけをここに集める。**
+
+理由は節の側の実測である（2026-09-01 に数えた）。**他プロバイダを参照する本数は、節が追加された順と r = 0.82 で相関する。**節に占める割合でも §9 の 3% から §21 の 35% まで上がっている。比較の置き場が無いので、新しい節が毎回それを作り直しているためで、**この索引が無いかぎり、次の 11 番目のプロバイダは 10 に対して自分を書くことになる**（プロバイダの節は §9・§10・§14〜§18・§20・§21・§23 の 10 で、§19 は取り込み、§22 は角の決定である）。
+
+#### 読者が払うもの（§N.5）
+
+安い順。数字は「埋め込み 1 本・単独フレーム・コールドキャッシュ」での実測で、出どころは各節にある。`—` はその節が記していないことを指す。
+
+| プロバイダ                     | リクエスト               | cookie                            | 同意バナー                       | 高さの postMessage           |
+| ------------------------------ | ------------------------ | --------------------------------- | -------------------------------- | ---------------------------- |
+| GitHub Gist（§18.7）           | 2                        | 置かない                          | 出ない                           | **自前で報せる**（§18.5）    |
+| CodePen（§21.8）               | 10（preview 形は 8）     | `.codepen.io` 4・`.cdpn.io` 1     | —                                | 来ない                       |
+| X（§13）                       | 17（条件が違う。下記）   | —                                 | —                                | **受ける**（§10.5）          |
+| Speaker Deck（§16.5）          | 23                       | 置かない                          | 出ない                           | 来ない                       |
+| Docswell（§17.5）              | 26                       | ブラウザ全体で 0                  | 出ない                           | 来ない                       |
+| Figma（§15.5）                 | 36                       | —                                 | 出ない                           | `INITIAL_LOAD` のみ、高さ無し |
+| SlideShare（§14.5）            | 40                       | 親に 0                            | **出る**（`.osano-cm-dialog`）   | 来ない                       |
+| CodeSandbox（§20.8）           | 64、クリックで 112       | `.codesandbox.io` 3               | —                                | 当てにできない（§20.6）      |
+| StackBlitz（§23.8、採らない）  | 98〜526（中央値 約 150） | 7 件・3 ドメイン                  | —                                | 来ない                       |
+| YouTube（§9）                  | 未測定                   | —                                 | —                                | 来ない（基準 X7）            |
+
+**記録のある範囲で、親のオリジンに cookie を置いたプロバイダは無い。**バナーが出ると記されているのも SlideShare だけで、そちらは閉じた状態がブラウザに残るので読者 1 人につき 1 回である（§14.5）。**X の 17 だけは条件が違う** — §13 が測ったのはドラッグハンドルを掴んだときにゴーストの実 `iframe` が出す本数で、この表の他の行（埋め込み 1 本を載せたページの読み込み）とは揃っていない。**高さを言うのは 2 つだけで、機構は別物である** — X は向こうが送ってくるものを受け（§10.5）、gist は言わないので、こちらの document に報せ手を置いている（§18.5）。
+
+#### マークとラベル（§N.7）
+
+**既定はこの 5 つで、表は既定からの差だけを持つ。**
+
+- マークは `embedMarkShapes` の分岐が決める。**足さなければ既定の再生マーク（`PLAY_SHAPES`）が黙って出る。**
+- **形は書き起こさず、公開されているパスを使う**（例外は Figma だけで、理由は §15.7）。
+- **横幅 21.5 に縮めて 24 の箱の中央に置く** — X の 21.3×19.5 に占有を揃えるためである。`IconShape` は transform を持たないので、変換は座標に焼き込む。
+- **`lead` はプロバイダ名である。** slug も ID も名前ではなく、取得しなければ item を名指せない。例外は URL が持ち主を持つ X と gist（§10.4・§18.8）。
+- `detail` は URL から引き継げる値があるときだけ埋まり、無ければ `''` である。表の `—` は「その節が記していない」を指す。
+
+| プロバイダ            | 定数                       | 出典                                            | 原寸 → 24 の箱             | `lead` / `detail`                  |
+| --------------------- | -------------------------- | ----------------------------------------------- | -------------------------- | ---------------------------------- |
+| YouTube（§9.3）       | `PLAY_SHAPES`（既定）      | —                                               | —                          | `YouTube` / `<n> 秒から`           |
+| X（§10.4）            | `X_MARK_SHAPES`            | 公式パス                                        | 21.3×19.5                  | `@<account>` / `''`（`/i/status/` は `X` / `<id>`） |
+| SlideShare（§14.8）   | `SLIDESHARE_MARK_SHAPES`   | CDN の `favicon.*.svg`（橙の円は落とす）        | 109×86 → 21.5×16.96        | `SlideShare` / `''`                   |
+| Figma（§15.7）        | `FIGMA_MARK_SHAPES`        | 書き起こし（r = 3.4 の 3 行グリッド、隙間 1.2） | —                          | `Figma` / `''`                        |
+| Speaker Deck（§16.7） | `SPEAKERDECK_MARK_SHAPES`  | CDN の `mark-*.svg`                             | 32×20 → 21.5 幅            | `Speaker Deck` / `''`                 |
+| Docswell（§17.7）     | `DOCSWELL_MARK_SHAPES`     | `images/logo_yoko.svg` の 7 パス中 6 本         | 35.21×32 → 21.5×19.54      | `Docswell` / `<n> ページ目から`    |
+| GitHub Gist（§18.8）  | `GITHUB_MARK_SHAPES`       | `primer/octicons` の `mark-github-24.svg`       | bbox 0.5〜23.5 → 21.5×20.82 | `<owner>` / `<file>`（owner が無ければ `GitHub Gist` / `<file>` か `<id>`） |
+| CodeSandbox（§20.10） | `CODESANDBOX_MARK_SHAPES`  | `/embed/<id>` にインラインの favicon            | リング中心線 → `3.38`・17.24 幅 | `CodeSandbox` / `''`              |
+| CodePen（§21.10）     | `CODEPEN_MARK_SHAPES`      | `logo-pin-<digest>.svg`（`0 0 24.3 24.29`）     | 21.5/24.3 に縮小 → 21.5 幅 | `CodePen` / `''`                      |
+
+パスの実体は `components/editor/svg/icon-shapes.ts` にあり、gist だけは `lib/github-mark.ts` である（公開側のコードブロックのヘッダが同じ形を描き、両側から import できるのが `lib/` だけであるため。§19.4）。
+
+#### 受け入れ基準の所在（§N.8）
+
+**id はプロバイダごとに接頭辞が分かれているので、これは引き先の表であって基準の統合ではない。**
+
+| 接頭辞 | 対象                             | 件数 | 節     |
+| ------ | -------------------------------- | ---- | ------ |
+| E      | 共通（プロバイダによらない）     | 18   | §11    |
+| Y      | YouTube                          | 5    | §11    |
+| X      | X                                | 11   | §11    |
+| S      | SlideShare                       | 6    | §14.9  |
+| F      | Figma                            | 8    | §15.8  |
+| SD     | Speaker Deck                     | 14   | §16.8  |
+| D      | Docswell                         | 7    | §17.8  |
+| G      | GitHub Gist                      | 12   | §18.10 |
+| B      | GitHub の blob（§19。埋め込みではない） | 20   | §19.6  |
+| C      | CodeSandbox                      | 9    | §20.11 |
+| P      | CodePen                          | 8    | §21.11 |
+
+**§11 が持つのは共通・YouTube・X の 3 つだけである。**節の名前は「受け入れ基準」だが、§14 以降は各プロバイダが自分の節に置いている — §11 を書いた 2026-08-21 にはそれらがまだ無く、§11 の番号は動かせないためで、この表がその所在である。StackBlitz（§23）は採らないので基準を持たない。
 
 ---
 
@@ -715,7 +786,7 @@ markdown 往復（E1）はここから外れた — `e2e/editor-embed.spec.ts` �
 
 ### 14.5 読者が払うもの
 
-- **埋め込み 1 本で 40 リクエスト**（`public.slidesharecdn.com` 25、`slideshare.net` 6、osano の CMP 4、sentry 1、`wa.slideshare.net` 1）。X の 17（§13）の倍以上ある。親のオリジンに cookie は 1 つも置かれない
+- **埋め込み 1 本で 40 リクエスト**（`public.slidesharecdn.com` 25、`slideshare.net` 6、osano の CMP 4、sentry 1、`wa.slideshare.net` 1）。親のオリジンに cookie は 1 つも置かれない
 - **iframe の中に Cookie 同意バナーが出る**（`.osano-cm-dialog`、122px）。SlideShare 自身のもので、親サイトからは消せない。zenn.dev も同じものを出す
 - バナーは ✕ で閉じられ、**閉じた状態はブラウザに残り、他サイトの SlideShare 埋め込みにも引き継がれる**（ローカル親で閉じた後、同じブラウザで zenn.dev の埋め込みが既に非表示だった）。cookie は 0 件なので保持先は localStorage 等である。つまり「読者 1 人につき 1 回」であって毎回ではない
 
@@ -816,9 +887,9 @@ markdown 往復（E1）はここから外れた — `e2e/editor-embed.spec.ts` �
 
 ### 15.5 読者が払うもの
 
-- **埋め込み 1 本を載せたページで 36 リクエスト**（SlideShare の 40 と同水準、X の 17 の倍）。`www.figma.com` / `static.figma.com` / `embed.figma.com` のほか、`errors.figma.com` と Datadog の RUM に出る
+- **埋め込み 1 本を載せたページで 36 リクエスト**。`www.figma.com` / `static.figma.com` / `embed.figma.com` のほか、`errors.figma.com` と Datadog の RUM に出る
 - postMessage は `INITIAL_LOAD` という文字列が 1 回来るだけで、高さの通知は無い。したがって §10.5 の `components/EmbedFrames.tsx` に足すものは無い
-- iframe の中に同意バナーの類は出ない（§14.5 の SlideShare との差である）
+- iframe の中に同意バナーの類は出ない
 
 ### 15.6 公開アクセス可能でないファイルは、記事の中に Figma の案内を出す
 
@@ -912,9 +983,9 @@ ID は `[0-9a-f]{24,32}` である。長さが 2 通りあるのは世代の差�
 
 ### 16.5 読者が払うもの
 
-- **埋め込み 1 本で 23 リクエスト**（`speakerdeck.com` 7、`files.speakerdeck.com` 5、`d1eu30co0ohy4w.cloudfront.net` 4、fonts 3、GTM 2、GA 1、s3 1）。SlideShare の 40（§14.5）、Figma の 36（§15.5）より安く、X の 17 に近い
+- **埋め込み 1 本で 23 リクエスト**（`speakerdeck.com` 7、`files.speakerdeck.com` 5、`d1eu30co0ohy4w.cloudfront.net` 4、fonts 3、GTM 2、GA 1、s3 1）
 - **広告は 1 本も出ない。** デッキページのほうは prebid / doubleclick / criteo などを呼ぶが、プレイヤーはそれらを持たない
-- 親のオリジンに cookie は置かれず、同意バナーも出ない（§14.5 の SlideShare との差である）
+- 親のオリジンに cookie は置かれず、同意バナーも出ない
 - postMessage は来ない。したがって §10.5 の `components/EmbedFrames.tsx` に足すものは無い
 
 ### 16.6 存在しない ID は、記事の中に Speaker Deck の 404 を出す
@@ -1089,8 +1160,8 @@ key は `[0-9A-Z]{1,32}` である。実測した 92 件（トップ・タグ 2 
 
 ### 17.5 読者が払うもの
 
-- **埋め込み 1 本で 26 リクエスト**（`bcdn.docswell.com` 13、`www.docswell.com` 3、GTM 3、video.js の CDN 2、GA・Cloudflare Insights・`t.docswell.com`・`www.google.com` 各 1）。SlideShare の 40（§14.5）と Figma の 36（§15.5）より安く、Speaker Deck の 23（§16.5）に近い
-- 親のオリジンに cookie は置かれず、ブラウザ全体でも 0 件である。同意バナーも出ない（§14.5 の SlideShare との差である）
+- **埋め込み 1 本で 26 リクエスト**（`bcdn.docswell.com` 13、`www.docswell.com` 3、GTM 3、video.js の CDN 2、GA・Cloudflare Insights・`t.docswell.com`・`www.google.com` 各 1）
+- 親のオリジンに cookie は置かれず、ブラウザ全体でも 0 件である。同意バナーも出ない
 - postMessage は来ない。したがって §10.5 の `components/EmbedFrames.tsx` に足すものは無い
 
 ### 17.6 動画と、存在しない key
@@ -1230,7 +1301,7 @@ Qiita と Zenn が配る `<script src="….js">` を**そのまま記事に置�
 
 ### 18.7 読者が払うもの
 
-- **埋め込み 1 本で 2 リクエスト**（`gist.github.com` に 1、`github.githubassets.com` の CSS に 1。CSS は複数の埋め込みで共有される）。**本書中で最も安い** — Speaker Deck 23（§16.5）、Docswell 26（§17.5）、Figma 36（§15.5）、SlideShare 40（§14.5）に対する 2 である
+- **埋め込み 1 本で 2 リクエスト**（`gist.github.com` に 1、`github.githubassets.com` の CSS に 1。CSS は複数の埋め込みで共有される）。**本書中で最も安い**（§3.4）
 - 親のオリジンにも、ブラウザ全体にも cookie は置かれない。同意バナーも出ない
 - **JavaScript が無いと箱は空のまま 250px で残る。** `.pibb` なら JS 抜きでも描画された（§18.3）ので、これは可変の高さと引き換えに払っているものである。記事のほかの部分（リンクカード・コードブロック・脚注）はサーバで組まれるので、この 1 ブロックだけの性質である
 
@@ -1514,10 +1585,10 @@ docs が書いている経路のほう（レガシーエディタのヘッダの
 
 ### 20.8 読者が払うもの
 
-- **クリックするまで 64 リクエスト、押すと 112**（単独フレーム・コールドキャッシュ、実測）。Speaker Deck 23（§16.5）・Docswell 26（§17.5）・Figma 36（§15.5）・SlideShare 40（§14.5）より高く、**測った中で最も高い**。押さない読者の 64 は、Google Slides を却下したときの 82 を下回る（※ 82 の数え方が `blob:`/`data:` を含むかは確認していないので、比較は概算）
+- **クリックするまで 64 リクエスト、押すと 112**（単独フレーム・コールドキャッシュ、実測）。**埋め込むと決めたプロバイダの中では最も高い**（§3.4。より高い StackBlitz は §23.12 で採らないと決めた）。押さない読者の 64 は、Google Slides を却下したときの 82 を下回る（※ 82 の数え方が `blob:`/`data:` を含むかは確認していないので、比較は概算）
 - 内訳（クリック後）: `codesandbox.io` 81、`prod-packager-packages.codesandbox.io` 7、`<id>.csb.app` 5、`cdn.jsdelivr.net` 5、`data.jsdelivr.com` 4、`raw.githubusercontent.com` 4、`fonts.gstatic.com` 3、`fonts.googleapis.com` 2、`static.cloudflareinsights.com` / `screenshots.codesandbox.io` / `col.csbops.io` / `stats.codesandbox.io` 各 1
 - 高い理由は構造的で削れない — 埋め込みがバンドラを起動し、npm パッケージを CDN から解決し、プレビュー用に別オリジンを立ち上げる
-- **cookie が置かれる**: `.codesandbox.io` に 3 件（`cf_clearance` / `__cf_bm` / `_cfuvid`）。Docswell の「ブラウザ全体で 0 件」（§17.5）とは違う。親のオリジンには置かれない
+- **cookie が置かれる**: `.codesandbox.io` に 3 件（`cf_clearance` / `__cf_bm` / `_cfuvid`）。親のオリジンには置かれない
 - postMessage は §20.6 のとおり当てにできないので、`components/EmbedFrames.tsx` に足すものは無い
 
 ### 20.9 非公開のサンドボックスは埋め込めない（実測 2026-08-31、引き受け）
@@ -1736,9 +1807,9 @@ slug は `[A-Za-z0-9]{4,16}` で検証する（`YOUTUBE_ID` と同じ理由 — 
 
 ### 21.8 読者が払うもの
 
-- **埋め込み 1 本で 10 リクエスト**（`codepen.io` 5、`cpwebassets.codepen.io` 3、`cdpn.io` 1、ペン自身が引く外部画像 1）。preview 形は 8（`shots.codepen.io` 1 を含む）。**測ったプロバイダの中で最も安い** — Speaker Deck 23（§16.5）、Docswell 26（§17.5）、Figma 36（§15.5）、SlideShare 40（§14.5）、CodeSandbox 64/112（§20.8）
+- **埋め込み 1 本で 10 リクエスト**（`codepen.io` 5、`cpwebassets.codepen.io` 3、`cdpn.io` 1、ペン自身が引く外部画像 1）。preview 形は 8（`shots.codepen.io` 1 を含む）。**第三者のフレームを直に置くプロバイダの中では最も安い**（§3.4。gist の 2 は、こちらの document を挟んだ形である — §18.3）
 - 安い理由も構造的である。CodePen はペンの HTML・CSS・JS を配って読者のブラウザに走らせるだけで、§20.8 の CodeSandbox のようにバンドラも npm の解決も起動しない
-- **cookie が置かれる**: `.codepen.io` に 4 件（`cf_clearance` / `__cf_bm` / `_cfuvid` / `cp_session`）と `.cdpn.io` に 1 件（`_cfuvid`）。親のオリジンには置かれない。Docswell の「ブラウザ全体で 0 件」（§17.5）とは違う
+- **cookie が置かれる**: `.codepen.io` に 4 件（`cf_clearance` / `__cf_bm` / `_cfuvid` / `cp_session`）と `.cdpn.io` に 1 件（`_cfuvid`）。親のオリジンには置かれない
 - postMessage は §21.6 のとおり来ないので、`components/EmbedFrames.tsx` に足すものは無い
 
 ### 21.9 存在しない slug は、記事の中に CodePen の 404 を出す
@@ -1919,7 +1990,7 @@ Qiita のガイドが載せている見本の iframe も `src` / `height` / `wid
 
 ### 23.8 読者が払うもの
 
-- **走るプロジェクトで 98〜526 リクエスト**（実測 18 件、中央値はおよそ 150）。**測ったプロバイダの中で最も高い** — CodeSandbox 64/112（§20.8）、SlideShare 40（§14.5）、CodePen 10（§21.8）。上限の 526 は `edit/igx-grid-basic-features` で、旧ランタイムが npm の依存を 1 つずつ引くためである。走らないプロジェクトでも 82〜156 かかる（告知を出すまでにエディタは丸ごと読み込まれる）
+- **走るプロジェクトで 98〜526 リクエスト**（実測 18 件、中央値はおよそ 150）。**測ったプロバイダの中で最も高い**（§3.4）。上限の 526 は `edit/igx-grid-basic-features` で、旧ランタイムが npm の依存を 1 つずつ引くためである。走らないプロジェクトでも 82〜156 かかる（告知を出すまでにエディタは丸ごと読み込まれる）
 - **広告・計測のオリジンが 6 つ入る**: `www.googletagmanager.com`・`cdn.segment.com`・`www.google-analytics.com`・`googleads.g.doubleclick.net`・`cdn.mxpnl.com`＋`api-js.mixpanel.com`・`api.cdp.staticblitz.com`。**ここまでのどのプロバイダも DoubleClick を読者のブラウザに連れて来ていない**
 - **cookie が 7 件、3 つのドメインに置かれる**: `stackblitz.com` に 4 件（`CSRF-TOKEN` / `_stackblitz_session` / `ahoy_visitor` / `ahoy_visit`）、`.doubleclick.net` に `test_cookie`、プレビューのホスト `<slug>.stackblitz.io` に 2 件。親のオリジンには置かれない。`ctl=1` のクリック前は 5 件（プレビューのホストの分が出ない）
 - postMessage は §23.6 のとおり来ないので、`components/EmbedFrames.tsx` に足すものは無い
