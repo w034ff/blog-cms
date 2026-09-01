@@ -392,12 +392,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
             are BubbleMenus that portal themselves to <body> — neither renders here. */}
         {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
-        {editor && (
-          <EmbedInsertDialog
-            editor={editor}
-            at={embedInsertAt}
-            onClose={closeEmbedInsert}
-          />
+        {/* Mounted only while it is open, so closing throws the dialog's state away rather than
+            leaving it for the next open to clear. */}
+        {editor && embedInsertAt !== null && (
+          <EmbedInsertDialog editor={editor} at={embedInsertAt} onClose={closeEmbedInsert} />
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 import type { Editor } from '@tiptap/react';
 import { markdown, settle } from './editor-probe';
@@ -13,6 +13,15 @@ const YOUTUBE = 'https://www.youtube.com/watch?v=hDPybQwAuVo';
 const CODEPEN = 'https://codepen.io/flatsato/pen/VwqprLp';
 const UNCLAIMED = 'https://example.com/an-article';
 
+// The refusal's own words, in one place. **Asserted as the whole sentence, not a fragment of it**:
+// every negative below is a `not.toContainText`, and a fragment that stopped matching would make
+// all of them pass while measuring nothing. Held together by the positives — reword the dialog
+// without touching this and they fail first, which is the only order that cannot go quiet.
+const REFUSAL = 'このURLは埋め込めません。リンクカードにしてください。';
+
+// For `paste` above. Chromium does not hand a page the clipboard on its own.
+test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+
 async function openMenu(page: Page, query: string): Promise<void> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -23,6 +32,16 @@ async function openMenu(page: Page, query: string): Promise<void> {
 
 function dialog(page: Page) {
   return page.getByRole('dialog');
+}
+
+// **A real paste, not a `fill`.** The dialog treats a pasted URL as finished and a typed one as
+// still being typed (§24.1), and `fill` is neither — it sets the value in one change event with no
+// paste before it, which is the shape of neither thing the author does. The clipboard is granted
+// per file below.
+async function paste(page: Page, field: Locator, text: string): Promise<void> {
+  await field.click();
+  await page.evaluate((value: string) => navigator.clipboard.writeText(value), text);
+  await page.keyboard.press('ControlOrMeta+V');
 }
 
 // **This is the whole argument for not adding a permanent button.** The reference site opens its
@@ -54,7 +73,7 @@ test('the embed row is not offered where an embed cannot land (24b)', async ({ p
   expect(await markdown(page)).toContain('/');
 });
 
-test('the dialog names the provider a URL resolves to, and refuses one no provider claims (24c)', async ({
+test('the dialog lights the provider a URL resolves to, and refuses one no provider claims (24c)', async ({
   page,
 }) => {
   await openMenu(page, 'embed');
@@ -62,19 +81,95 @@ test('the dialog names the provider a URL resolves to, and refuses one no provid
   await expect(dialog(page)).toBeVisible();
 
   const submit = dialog(page).getByRole('button', { name: '挿入する' });
-  const field = dialog(page).getByLabel('埋め込みたいページの URL');
+  const field = dialog(page).getByLabel('埋め込みにするURL');
+  const lit = dialog(page).locator('li[aria-current="true"]');
+  // **The alert exists before it says anything.** A live region has to be in the tree when its
+  // text arrives, so this is asserted on the empty dialog — mounting the container together with
+  // the refusal is the bug this measures, and it looks identical on screen.
+  const alert = dialog(page).locator('[role="alert"]');
+  await expect(alert).toHaveCount(1);
+  await expect(alert).toHaveText('');
+  // Where the table sits before anything has been said, for the no-shift assertion below.
+  const listBefore = (await dialog(page).locator('ul').boundingBox())!.y;
+  await expect(field).toHaveAttribute('aria-invalid', 'false');
+  // The field points at the alert whether or not it holds anything: an `aria-describedby` that
+  // comes and goes on a focused element is what does not get read.
+  const describedBy = await field.getAttribute('aria-describedby');
+  expect(describedBy).toBeTruthy();
+  expect(await alert.getAttribute('id')).toBe(describedBy);
   await expect(submit).toBeDisabled();
+
+  // **Typed rather than filled, and not judged while it is on its way.** `fill` sets the value in
+  // one event, so it cannot show that a half-typed URL says nothing — which is what was reported.
+  await field.click();
+  await page.keyboard.type('https://www.you');
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+
+  // **Pasted, and answered at once.** The URL arrives whole, so there is nothing to wait for — and
+  // this is how a URL reaches this field nearly every time. Waiting for a blur here is what made
+  // the dialog feel silent (reported 2026-09-02); the field still has focus when this is asserted.
+  await field.fill('');
+  await paste(page, field, UNCLAIMED);
+  await expect(dialog(page)).toContainText(REFUSAL);
+  await expect(field).toBeFocused();
+  // **The refusal is announced, and the field says it is the one at fault.** Success already had
+  // this treatment — the lit row carries `aria-current` because colour alone reaches neither a
+  // reader who does not see it nor one who hears the page — and this is the other half of it.
+  await expect(alert).toHaveText(REFUSAL);
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  // **And nothing moved to make room for it.** The alert holds its line while empty, so the table
+  // sits where it did before the refusal arrived. Measured as a `y` rather than asserted on the
+  // class, because the property is "the table did not move" and a reservation can be lost to a
+  // wrapper's gap without the `min-h` going anywhere (both were needed — §24.1).
+  const listAfter = (await dialog(page).locator('ul').boundingBox())!.y;
+  expect(listAfter).toBe(listBefore);
+
+  // **Re-pasting the same URL changes nothing, so React raises no change event** — and the flag
+  // that says "this was pasted" is consumed there. Left set, it would judge the next keystroke as
+  // finished and bring the refusal back mid-typing, which is the report this gate exists for
+  // (measured 2026-09-02).
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.press('ControlOrMeta+V');
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('h');
+  await expect(dialog(page)).not.toContainText(REFUSAL);
 
   await field.fill(YOUTUBE);
-  await expect(dialog(page)).toContainText('YouTube として埋め込みます。');
+  // **The confirmation is the lit row and the button becoming pressable, and nothing else** — the
+  // label used to name the provider and the row used to say 「これになります」, which was the same
+  // fact three times (§24.1). One row lights, and it is the provider that answered.
+  await expect(lit).toHaveCount(1);
+  await expect(lit).toContainText('YouTube');
   await expect(submit).toBeEnabled();
-  // The row for the provider that answered says so, and only that row.
-  await expect(dialog(page).getByText('これになります')).toHaveCount(1);
+  // `toHaveText`, not the role name: `getByRole` matches a substring, so 「YouTube として挿入する」
+  // would resolve the same locator and the naming could come back unmeasured.
+  await expect(submit).toHaveText('挿入する');
 
+  // **A URL that is on its way to being typed is not judged.** The refusal waits for the author to
+  // leave the field or press Enter; `fill` does neither, so nothing is said yet.
   await field.fill(UNCLAIMED);
-  await expect(dialog(page)).toContainText('対応するサービスがありません');
   await expect(submit).toBeDisabled();
-  await expect(dialog(page).getByText('これになります')).toHaveCount(0);
+  await expect(lit).toHaveCount(0);
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+
+  // Enter is the author saying they are done with it, so now the reason appears.
+  await field.press('Enter');
+  await expect(dialog(page)).toContainText(REFUSAL);
+  expect(await markdown(page)).not.toContain(UNCLAIMED);
+  // And editing it away takes the reason with it, rather than leaving it standing over a URL it is
+  // no longer about.
+  await field.fill(YOUTUBE);
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+
+  // Nothing is said when there is nothing to say: an empty field draws no line at all, which is
+  // the state the dialog opens in — even after a refusal has been shown.
+  await field.fill(UNCLAIMED);
+  await field.blur();
+  await expect(dialog(page)).toContainText(REFUSAL);
+  await field.fill('');
+  await field.blur();
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+  await expect(dialog(page)).not.toContainText('貼り付けてください');
 });
 
 // The table is the only place an author is told what can be embedded, and it is generated from the
@@ -132,7 +227,7 @@ test('the dialog inserts at the line the menu was opened on (24e)', async ({ pag
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
 
-  await dialog(page).getByLabel('埋め込みたいページの URL').fill(CODEPEN);
+  await dialog(page).getByLabel('埋め込みにするURL').fill(CODEPEN);
   await dialog(page).getByRole('button', { name: '挿入する' }).click();
   await expect(dialog(page)).toHaveCount(0);
   await settle(page);
@@ -148,7 +243,7 @@ test('the dialog inserts at the line the menu was opened on (24e)', async ({ pag
 test('Escape and the backdrop close the dialog without inserting (24f)', async ({ page }) => {
   await openMenu(page, 'embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
-  await dialog(page).getByLabel('埋め込みたいページの URL').fill(YOUTUBE);
+  await dialog(page).getByLabel('埋め込みにするURL').fill(YOUTUBE);
   await page.keyboard.press('Escape');
   await expect(dialog(page)).toHaveCount(0);
   expect(await markdown(page)).not.toContain(YOUTUBE);
@@ -157,7 +252,7 @@ test('Escape and the backdrop close the dialog without inserting (24f)', async (
   // whole of the half-made state here, unlike the card, which leaves an unfinished block behind.
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
-  await expect(dialog(page).getByLabel('埋め込みたいページの URL')).toHaveValue('');
+  await expect(dialog(page).getByLabel('埋め込みにするURL')).toHaveValue('');
   await page.locator('div[role="dialog"]').press('Escape');
   await expect(dialog(page)).toHaveCount(0);
 });

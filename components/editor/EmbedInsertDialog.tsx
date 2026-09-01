@@ -22,16 +22,25 @@ export function EmbedInsertDialog({
   onClose,
 }: {
   editor: Editor;
-  // Where the embed goes, captured when the slash row ran — and `null` when the dialog is closed,
-  // which is the same fact said once instead of as a second `open` flag that could disagree.
-  at: number | null;
+  // Where the embed goes, captured when the slash row ran.
+  at: number;
   onClose: () => void;
 }) {
-  const open = at !== null;
   const [href, setHref] = useState('');
+  // Whether what is in the field is finished — it was pasted, or the author moved away from it or
+  // pressed Enter on it. **Only then does the refusal appear** (reported 2026-09-02): a URL is not a
+  // URL until it is whole, and judging every keystroke means telling an author who has typed
+  // 「https://www.you」 that nothing supports it. Cleared on the next keystroke, not on focus:
+  // clicking back into the field to fix the URL must not take the reason away before it is read.
+  const [attempted, setAttempted] = useState(false);
+  // Whether the change about to arrive is a paste. **A ref, and read in `onChange` rather than
+  // acted on in `onPaste`**: the paste event fires before the field's value has changed, so setting
+  // `attempted` there would be undone by the `onChange` that follows it a moment later.
+  const pasted = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const headingId = useId();
   const fieldId = useId();
+  const refusalId = useId();
 
   // The dialog opens on an empty line the slash menu has just cleared, and the author then types
   // somewhere outside the editor. ProseMirror keeps its selection while the DOM focus is
@@ -42,10 +51,6 @@ export function EmbedInsertDialog({
   // dialog is gone, the editor is not focused, and the next keystroke goes to the document rather
   // than the post (measured 2026-09-02: a second `/` after Escape opened no menu at all).
   const close = () => {
-    // **Cleared, not remembered.** Keeping the abandoned URL would look like resuming, but the
-    // dialog opens at wherever the caret is *now* — so the next open would offer to insert the
-    // previous URL at a different place, which is the one outcome nobody asked for.
-    setHref('');
     editor.commands.focus();
     onClose();
   };
@@ -56,31 +61,28 @@ export function EmbedInsertDialog({
     // `focus(at)`, not `focus()`. The caret has been outside the editor while the author typed,
     // and a bare focus restores whatever selection the view holds by then — which put the embed at
     // the end of the document about one run in three (§24.1).
-    editor
-      .chain()
-      .focus(at ?? undefined)
-      .setEmbed(value)
-      .run();
-    setHref('');
+    editor.chain().focus(at).setEmbed(value).run();
     onClose();
   };
 
+  // **Closed means gone.** PostEditor renders this only while it is open, so neither the abandoned
+  // URL nor the refusal it earned can outlive a close — there is no way out of the dialog that has
+  // to remember to clear them, and no fifth one to be added later that forgets. Not remembered on
+  // purpose: the next open is at wherever the caret is *now*, so offering the previous URL would be
+  // offering to insert it somewhere else.
   useEffect(() => {
-    if (!open) return;
     // Deferred a frame: the element is rendered in this same commit, and focus() on a node the
     // browser has not laid out yet does nothing.
     const id = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(id);
-  }, [open]);
+  }, []);
 
   useEffect(() => {
-    if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       // Stopped, or the editor's own Escape handling runs too — and the last thing a dialog should
       // do on the way out is move the caret it is about to insert at.
       event.stopPropagation();
-      setHref('');
       editor.commands.focus();
       onClose();
     };
@@ -88,26 +90,39 @@ export function EmbedInsertDialog({
     return () => document.removeEventListener('keydown', onKey, true);
     // `onClose` is stable (PostEditor wraps it), so this registers once per open rather than once
     // per render — a ref to keep it stable instead is what `react-hooks/refs` refuses.
-  }, [open, editor, onClose]);
+  }, [editor, onClose]);
 
-  if (!open) return null;
-
-  const target = href.trim() === '' ? null : resolveEmbed(href.trim());
-  // Which row lights up, and the name the status line uses. **Found by host rather than read from
-  // `target.label.lead`**: that field is the strongest thing the URL says about the item, which for
-  // X and the gist is the account, not the provider (§10.4, §18). The table names providers.
+  const value = href.trim();
+  const target = value === '' ? null : resolveEmbed(value);
+  // Which row lights up. **Found by host rather than read from `target.label.lead`**: that field is
+  // the strongest thing the URL says about the item, which for X and the gist is the account, not
+  // the provider (§10.4, §18). The table names providers.
+  //
+  // **Gated on `target`, so a row lights only when the URL can actually be inserted** — `x.com`
+  // claims both `/user` and `/user/status/1` and only the second resolves, so lighting by host
+  // alone would light X for an account URL beside a disabled button (measured 2026-09-02). A
+  // resolved target always has a row: `resolveEmbed` answers only when a registry host matched, so
+  // the `?? null` is for the type, not for a state the dialog draws differently.
   const matched =
     target === null
       ? null
-      : (EMBED_PROVIDERS.find((provider) => provider.hosts.includes(hostOf(href))) ?? null);
-  const status =
-    href.trim() === ''
-      ? 'URL を貼り付けてください。'
-      : matched
-        ? `${matched.name} として埋め込みます。`
-        : target
-          ? 'このURLは埋め込みになります。'
-          : 'このURLに対応するサービスがありません。リンクカードにしてください。';
+      : (EMBED_PROVIDERS.find((provider) => provider.hosts.includes(hostOf(value))) ?? null);
+  // **The line appears only when something is wrong, and only once the author is done typing.** It
+  // said three things and two of them were already on screen: with an empty field the label, the
+  // placeholder and the disabled button all say "paste a URL", and on a match the table's row is
+  // lit. What is left is the one state nothing else explains — a disabled button with no reason
+  // and no next move.
+  //
+  // **It says the URL cannot be embedded, not that no service matches.** Five registered hosts
+  // resolve for some URL shapes and not others — Speaker Deck, SlideShare's regional hosts, Figma
+  // proto/board/slides, Docswell video, CodeSandbox '/p/devbox/' — and the table is showing those
+  // provider names three lines below, so "no service matches" reads as a contradiction there. And
+  // **the second sentence is the half that is always true**: for Speaker Deck it is the only
+  // recovery, since a deck page carries no id and re-reading the URL cannot fix it (§16.3).
+  const refusal =
+    attempted && value !== '' && target === null
+      ? 'このURLは埋め込めません。リンクカードにしてください。'
+      : null;
 
   return (
     <div
@@ -150,28 +165,89 @@ export function EmbedInsertDialog({
             desktop the dialog is `h-auto`, so this takes only what the content needs. */}
         <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3'>
           <label htmlFor={fieldId} className='text-xs font-bold'>
-            埋め込みたいページの URL
+            埋め込みにするURL
           </label>
-          <input
-            id={fieldId}
-            ref={inputRef}
-            type='url'
-            value={href}
-            onChange={(event) => setHref(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
+          {/* **The field and its message, in a wrapper of their own.** As a direct child of the
+              `gap-2` column the message would take an 8px gap on both sides *even while empty*, and
+              it is always mounted (below) — so its reserved line would have cost 28px rather than
+              the 20px it is worth. Nesting buys the difference and nothing else: the reservation
+              below is what keeps the table still. */}
+          <div className='flex flex-col'>
+            <input
+              id={fieldId}
+              ref={inputRef}
+              type='url'
+              value={href}
+              onPaste={() => {
+                pasted.current = true;
+              }}
+              onChange={(event) => {
+                setHref(event.target.value);
+                // **A pasted URL is judged at once; a typed one waits.** Pasting is a finished action
+                // — the URL arrives whole — and it is how a URL gets into this field nearly every
+                // time, so making it wait for a blur is what made the dialog feel silent (reported
+                // 2026-09-02). A keystroke is not finished, which is the whole reason for the wait.
+                setAttempted(pasted.current);
+                pasted.current = false;
+              }}
+              onBlur={() => setAttempted(true)}
+              onKeyDown={(event) => {
+                // **A keystroke is never a paste.** `onChange` is what consumes the flag, and React
+                // raises no change event when a paste does not alter the value — so re-pasting the
+                // same URL to check it took would leave the flag set, and the next keystroke would be
+                // judged as if it were finished (measured 2026-09-02: the refusal came back mid-typing,
+                // which is the report this whole gate exists for). Ctrl+V's own keydown clears it a
+                // moment before its paste sets it, so this costs the paste path nothing.
+                pasted.current = false;
+                if (event.key !== 'Enter') return;
                 event.preventDefault();
+                // Set before the branch: Enter on a URL nothing claims does not insert, and silence
+                // is the one answer that leaves the author with nothing to do next.
+                setAttempted(true);
                 if (target) insert();
-              }
-            }}
-            placeholder='https://…'
-            autoComplete='off'
-            // Detached from PostEditor's form, so a publish running while this is open cannot
-            // blank it (React 19 resets form controls after a server action).
-            form='__embed-insert-detached'
-            className='rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
-          />
-          <p className='text-xs text-zinc-500 dark:text-zinc-400'>{status}</p>
+              }}
+              placeholder='https://…'
+              autoComplete='off'
+              // **Announced by the message's own `role='alert'`, not by this.** On the path that
+              // matters the URL is pasted, so the field already has focus when the refusal appears —
+              // and a description added to an already-focused element is not reliably read. This is
+              // for the author who comes back to the field afterwards, which is why it points at the
+              // container whether or not it holds anything: an attribute that appears and disappears
+              // on a focused element is the shape that goes unread.
+              aria-describedby={refusalId}
+              aria-invalid={refusal !== null}
+              // Detached from PostEditor's form, so a publish running while this is open cannot
+              // blank it (React 19 resets form controls after a server action).
+              form='__embed-insert-detached'
+              className='rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
+            />
+            {/* **Rendered whether or not it says anything.** A `role='alert'` container has to be
+              in the accessibility tree *before* its text arrives — mounting it together with the
+              text, or hiding it with `display: none`, is what makes the announcement miss.
+
+              **And it holds its one line's height while empty, so nothing moves when the refusal
+              arrives.** This is the reservation that was refused twice, and what changed is the
+              wording: at 「対応するサービスがありません」 the line was 1 row on a desktop and 2 on a
+              phone, so no single reservation fitted both and the worst case put 32px of nothing
+              under the field on the smaller screen. The shorter sentence is 279px against the
+              343px a 390px-wide phone gives it — **one line on both**, which is what makes a fixed
+              `min-h-4` exact rather than a guess. **At 320px it wraps back to two and the table moves
+              16px** (measured 2026-09-03) — the reservation holds from 390px up, not everywhere.
+
+              20px of quiet space under a text field is not the thing that was removed from here.
+              **That was a sentence** — it competed for the eye and, being the empty state's, was
+              the first thing read and the least worth reading (§24.1). Whitespace makes no claim.
+
+              **The refusal is announced, the same way the lit row is.** Success got `aria-current`
+              and a left bar because colour alone reached neither a reader who does not see it nor
+              one who hears the page; this is that standard applied to the other half. */}
+            <p
+              id={refusalId}
+              role='alert'
+              className='mt-1 min-h-4 text-xs text-zinc-500 dark:text-zinc-400'>
+              {refusal}
+            </p>
+          </div>
 
           <ul className='divide-y divide-zinc-200 overflow-hidden rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'>
             {EMBED_PROVIDERS.map((provider) => {
@@ -179,18 +255,21 @@ export function EmbedInsertDialog({
               return (
                 <li
                   key={provider.name}
-                  className={`flex items-center gap-3 px-3 py-1.5 text-xs ${
-                    on ? 'bg-blue-50 dark:bg-blue-950/40' : ''
+                  // **The one row that answered, said in something other than colour.** With
+                  // 「これになります」 gone the tint was the whole signal, and `bg-blue-50` on white
+                  // is 1.05:1 — invisible to a reader who does not see colour and unannounced to one
+                  // who hears the page. `aria-current` says it to a screen reader, the left bar says
+                  // it to the eye, and the spec asks for the row by the same attribute.
+                  aria-current={on ? 'true' : undefined}
+                  className={`flex items-center gap-3 border-l-2 py-1.5 pr-3 pl-2.5 text-xs ${
+                    on
+                      ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40'
+                      : 'border-transparent'
                   }`}>
                   <span className='w-28 flex-none font-bold'>{provider.name}</span>
                   <span className='min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400'>
                     {provider.hosts.join(' / ')}
                   </span>
-                  {on && (
-                    <span className='flex-none text-[11px] font-bold text-blue-600 dark:text-blue-400'>
-                      これになります
-                    </span>
-                  )}
                 </li>
               );
             })}
@@ -201,6 +280,10 @@ export function EmbedInsertDialog({
           <span className='text-xs text-zinc-500 dark:text-zinc-400'>
             対応 {EMBED_PROVIDERS.length} 件
           </span>
+          {/* **The label does not change with the URL.** It named the provider for a while
+              (「YouTube として挿入する」), which put text that moves and resizes on the control the
+              author is aiming at, and said a third time what the lit row and the enabled button
+              already say (reported 2026-09-02). */}
           <button
             type='button'
             onClick={insert}
