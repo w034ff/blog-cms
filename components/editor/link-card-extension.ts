@@ -684,21 +684,9 @@ function renderPicker(
   // Same band the resolved card puts its buttons in — see head().
   const controls = head();
   controls.appendChild(input);
-  // What the one field does with what you type, said once instead of being discovered. The box
-  // takes a title or a URL and decides between a card and an embed on its own (§5.2-2), and until
-  // this line the only evidence of that was the row it offered afterwards — an author who pasted a
-  // YouTube URL into 「リンクカード」 got 「この URL を埋め込みにする」 with no explanation of why
-  // the card they asked for was not on offer.
-  const hint = document.createElement('p');
-  hint.className = 'link-card-hint';
-  // Deliberately not "…and pasting into the body does the same": it does not. A bare URL in the
-  // body stays a link, and 「カードにする」 is offered by the bubble instead (LinkBubble.tsx) —
-  // `transformPastedText` is false and no input rule turns a pasted URL into a block
-  // (link-input-rule.ts answers `[text](url)` only).
-  hint.textContent = 'YouTube や X などの URL は埋め込みに、それ以外の URL はカードになります。';
   const list = document.createElement('ul');
   list.className = 'link-card-results';
-  body.append(controls, hint, list);
+  body.append(controls, list);
 
   const show = (results: PostSearchResult[]) => {
     list.replaceChildren();

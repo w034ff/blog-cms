@@ -2199,15 +2199,6 @@ body.link-menu-open .table-toolbar {
   font-size: 0.875em;
   opacity: 0.7;
 }
-/* What the one field does with what you type. Sits between the band and the list rather than under
-   the list: it explains the box, and below the results it would be the first thing scrolled out of
-   sight. Dimmed rather than boxed — the reference site frames it, but a framed paragraph inside a
-   card that already has a border is two boxes deep for one sentence. */
-.prose .link-card-hint {
-  margin: 0.5em 0 0;
-  font-size: 0.8125em;
-  opacity: 0.7;
-}
 /* The insert search's result rows (docs/link-card-requirements.md §5.2-5): a picture, the title,
    and the category under it. The row is still the shared `.link-card-results button` above — this
    only turns it into a row and gives the parts their sizes, so the hover tint, the focus ring and
