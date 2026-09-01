@@ -816,9 +816,11 @@ test('the editor builds the same pen frame the reader gets (P6)', async ({ page 
   await expect(iframe).toHaveAttribute('allow', '');
   expect(await iframe.getAttribute('srcdoc')).toBeNull();
 
-  // Fixed, and it does not move: the frame reports no height and none is waited for (§21.6).
+  // Chosen rather than computed: the frame reports no height and none is waited for, so §21.6
+  // picks the number — 300px on a narrow column, 450px from 48rem. The default viewport is above
+  // that line, which is the same box public-embed.spec.ts measures on the reader's side (P7).
   const frame = embed(page).locator('.embed-frame');
-  expect((await frame.boundingBox())!.height).toBeCloseTo(300, 0);
+  expect((await frame.boundingBox())!.height).toBeCloseTo(450, 0);
 
   // 「リンクに戻す」 hands back the page URL the author pasted, not the embed form built from it.
   expect(await markdown(page)).toBe(`<div class="embed" data-href="${CODEPEN}"></div>\n\n本文`);
