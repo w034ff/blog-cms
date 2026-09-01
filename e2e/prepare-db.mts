@@ -18,7 +18,7 @@ if (!dest || !username || !password) {
 // Next patches the tsconfig it uses to register generated types. The E2E server
 // is pointed at this throwaway file (next.config typescript.tsconfigPath) so the
 // real tsconfig.json stays untouched; it must extend the base to inherit @/* paths.
-const e2eTsconfig = path.join(process.cwd(), 'tsconfig.e2e.json');
+const e2eTsconfig = path.join(process.cwd(), process.env.NEXT_TSCONFIG_PATH ?? 'tsconfig.e2e.json');
 if (!fs.existsSync(e2eTsconfig)) {
   fs.writeFileSync(e2eTsconfig, `${JSON.stringify({ extends: './tsconfig.json' }, null, 2)}\n`);
 }

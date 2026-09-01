@@ -20,12 +20,15 @@
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-# Next redirects its tsconfig auto-edits here during E2E (keeps tsconfig.json clean)
+# Next redirects its tsconfig auto-edits here during E2E (keeps tsconfig.json clean).
+# One per E2E server, since a sharded run has several at once.
 /tsconfig.e2e.json
+/tsconfig.e2e.*.json
 
 # next.js
 /.next/
 /.next-e2e/
+/.next-e2e-*/
 /out/
 
 # production
