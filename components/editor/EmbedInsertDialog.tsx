@@ -111,7 +111,7 @@ export function EmbedInsertDialog({
 
   return (
     <div
-      className='fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-start sm:p-8'
+      className='fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 p-0 sm:items-start sm:p-8'
       // A click on the sheet itself must not reach this — mousedown rather than click for the
       // reason the link card's rows learned the hard way: a control that unmounts on mousedown
       // lets the mouseup fall through to the document.
@@ -122,10 +122,13 @@ export function EmbedInsertDialog({
         role='dialog'
         aria-modal='true'
         aria-labelledby={headingId}
-        // A sheet on a phone, a card on a desktop. The narrow form is not the desktop dialog made
-        // smaller: with the soft keyboard up there is ~319px of usable height at 390px, so a
-        // centred card is the wrong shape (§24, measured 2026-09-02).
-        className='flex max-h-full w-full flex-col overflow-hidden rounded-t-lg border border-zinc-300 bg-white shadow-xl sm:max-w-lg sm:rounded-lg dark:border-zinc-700 dark:bg-zinc-900'
+        // **Full screen on a phone, a card on a desktop.** It was a bottom sheet first, and that
+        // was wrong for this dialog's contents: nine provider rows make it 478px of a 700px screen,
+        // so it sat in the bottom 68% with the form fields showing above it — reported 2026-09-02,
+        // and with a soft keyboard up (~319px of usable height, §24) it would not have fitted at
+        // all. Filling the screen has no dead space to explain, keeps the URL field directly under
+        // the header where the keyboard cannot reach it, and lets the table scroll in the middle.
+        className='flex h-full w-full flex-col overflow-hidden border-zinc-300 bg-white shadow-xl sm:h-auto sm:max-h-full sm:max-w-lg sm:rounded-lg sm:border dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
           <h2 id={headingId} className='text-sm font-bold'>
@@ -142,7 +145,10 @@ export function EmbedInsertDialog({
           </button>
         </div>
 
-        <div className='flex min-h-0 flex-col gap-2 overflow-y-auto px-4 py-3'>
+        {/* `flex-1` so the footer is pinned to the bottom of a full-screen sheet instead of
+            following the table and leaving 250px of white under it (measured at 390x700). On a
+            desktop the dialog is `h-auto`, so this takes only what the content needs. */}
+        <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3'>
           <label htmlFor={fieldId} className='text-xs font-bold'>
             埋め込みたいページの URL
           </label>

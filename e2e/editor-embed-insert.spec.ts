@@ -161,3 +161,50 @@ test('Escape and the backdrop close the dialog without inserting (24f)', async (
   await page.locator('div[role="dialog"]').press('Escape');
   await expect(dialog(page)).toHaveCount(0);
 });
+
+// §24.1's shape rule. The dialog was a bottom sheet first, and with nine provider rows that came to
+// 478px of a 700px screen — it sat in the bottom 68% with the editor's own form fields showing
+// above it (reported 2026-09-02), and with a soft keyboard up it would not have fitted at all.
+//
+// Both viewports in one test on purpose: "it fills the screen" alone would also pass if the
+// desktop dialog had become a full-height slab, which is the other way to get this wrong.
+test.describe('the dialog is a full screen on a phone and a card on a desktop (24g)', () => {
+  const openDialog = async (page: Page) => {
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    await page.locator('.ProseMirror').click();
+    await page.keyboard.type('/embed');
+    await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    return page.getByRole('dialog').evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const host = el.parentElement?.getBoundingClientRect();
+      return {
+        height: Math.round(box.height),
+        // The backdrop rather than `innerHeight`: a headless window counts its scrollbar in the
+        // latter, and what the dialog is measured against is the fixed layer it sits in.
+        available: Math.round(host?.height ?? 0),
+        width: Math.round(box.width),
+        outerWidth: Math.round(host?.width ?? 0),
+      };
+    });
+  };
+
+  test.describe('narrow', () => {
+    test.use({ viewport: { width: 390, height: 700 } });
+    test('fills it', async ({ page }) => {
+      const box = await openDialog(page);
+      expect(box.height).toBe(box.available);
+      expect(box.width).toBe(box.outerWidth);
+    });
+  });
+
+  test.describe('wide', () => {
+    test.use({ viewport: { width: 1280, height: 800 } });
+    test('does not', async ({ page }) => {
+      const box = await openDialog(page);
+      expect(box.height).toBeLessThan(box.available);
+      expect(box.width).toBeLessThan(box.outerWidth);
+    });
+  });
+});
