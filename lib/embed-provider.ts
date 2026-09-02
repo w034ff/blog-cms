@@ -86,16 +86,42 @@ type Provider = {
   name: string;
   // Matched against `URL.hostname`, which is already lowercased and punycoded by the parser.
   hosts: readonly string[];
-  // **What the insert dialog's table prints in this row instead of `hosts`** (§16.10, §24.1).
-  // Absent for eight of the nine, whose hosts are the whole answer: copy the address bar, paste it.
+  // **What the insert dialog's table prints beside the name** (§24.1, 2026-09-03). One noun naming
+  // the kind of thing this provider embeds, and nothing about the URL.
   //
-  // It exists for the one provider where the bare hosts mislead — printing `speakerdeck.com` is
-  // what invites the address-bar URL, which is the one shape that cannot work (§16.3). **It stays
-  // in the hosts column's register**: a path shape, not a sentence, so the row still reads as the
-  // other eight do rather than as an exception with prose in it.
+  // **The hosts used to be here, and they answered the wrong question.** A row printing
+  // `www.youtube.com / youtube.com / m.youtube.com / youtu.be` says which *site* matches, while
+  // every URL an author actually gets wrong is about which *page* on it: `x.com/<user>` claims the
+  // host and does not resolve (§10.4), and so do a gist user page, a CodePen profile, a YouTube
+  // playlist, Figma's `/proto/`, Docswell's video and CodeSandbox's devbox. The kind answers the
+  // question the author brings instead — 「スライドを貼りたい、どれが使える」 — which a list of
+  // nine brand names cannot, and which the slash row already assumes by carrying 「スライド」 as a
+  // keyword.
   //
-  // `hosts` stays populated either way — it is what the matcher and the dialog's lit row read.
-  shape?: string;
+  // **Nine rows spell five words**, and the repetition is the point: three say 「スライド」 and
+  // three say 「コード」, so the reverse lookup lands on a group rather than on one name.
+  //
+  // **A kind is true without a URL**, which is why this can sit in the registry beside `name`
+  // instead of being a second string that has to keep step with the matcher. A printed URL shape
+  // cannot: only three of the nine have one form (X, SlideShare, Speaker Deck), YouTube has five,
+  // and Docswell's video wears the same path as its deck (§17.2), so no shape can separate them.
+  kind: string;
+  // **The one provider whose address bar is not the answer** (§16.10). Printed in parentheses after
+  // the kind, and absent everywhere else: for the other eight the address bar is the whole answer,
+  // so a note on every row would repeat what the reader already has.
+  //
+  // A deck page carries no id, so `/player/<id>` exists nowhere an author can copy it except inside
+  // the embed code (§16.3) — this is the only row where "what to paste" has to be said *before* the
+  // paste. **It names the code rather than a button**, because `speakerdeckSnippetHref` takes both
+  // of Speaker Deck's Share buttons (iframe and JS) and naming one would be false for the other;
+  // which button to press is the refusal's to say, at the moment the author has actually pasted the
+  // wrong thing.
+  //
+  // **This replaced a printed path shape** (`speakerdeck.com/player/<id>`, 2026-09-03). That string
+  // existed because the column printed hosts and `speakerdeck.com` on its own invited the address
+  // bar; with the hosts gone there is no lie left to correct, and the path was never something the
+  // author could produce anyway.
+  note?: string;
   // **What the dialog's refusal says about a URL on this provider's hosts that did not resolve**,
   // or null to leave it to the generic sentence (§24.1). Asked per URL rather than per provider
   // because a provider's refusal answers for *every* shape that fails on its hosts — the file
@@ -162,6 +188,7 @@ function youtubeStart(url: URL): number {
 
 const youtube: Provider = {
   name: 'YouTube',
+  kind: '動画',
   // `youtube-nocookie.com` and `music.youtube.com` are deliberately absent (§9.2): the allowlist
   // starts narrow, and nocookie is an output of this file rather than an input to it.
   hosts: ['www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'],
@@ -205,6 +232,7 @@ const X_ALLOW = '';
 
 const x: Provider = {
   name: 'X',
+  kind: '投稿',
   // `t.co` is absent: it is a redirector, and resolving one would put a request on the wire, which
   // §3.2 forbids. The old domain is present because links to it are still written and it 301s to
   // `x.com` (§10.1) — following that redirect is the same forbidden request, so the shapes are
@@ -258,6 +286,7 @@ const SLIDESHARE_ALLOW = '';
 
 const slideshare: Provider = {
   name: 'SlideShare',
+  kind: 'スライド',
   // Narrow on purpose, as §9.2's list is: the locale hosts (`es.slideshare.net` and its siblings)
   // redirect to `www` and carry the id in the same place, but they are an open-ended set, and a URL
   // from one becomes a card rather than nothing.
@@ -321,6 +350,7 @@ const FIGMA_ALLOW = '';
 
 const figma: Provider = {
   name: 'Figma',
+  kind: 'デザインファイル',
   // `embed.figma.com` is deliberately absent for `youtube-nocookie.com`'s reason (§9.2): it is an
   // output of this file, not an input to it. `figma.site` is a different product — a published
   // site, not a file — and naming it here would claim a shape nothing has measured.
@@ -387,16 +417,25 @@ const SPEAKERDECK_ALLOW = '';
 
 const speakerdeck: Provider = {
   name: 'Speaker Deck',
+  kind: 'スライド',
   // `www` is present because it answers and 301s to the apex, which is where the id sits in the
   // same place (measured 2026-08-26) — the same call §14.2 made for `slideshare.net`.
   hosts: ['speakerdeck.com', 'www.speakerdeck.com'],
-  // **The row prints the shape rather than the hosts, and the refusal names the button** (§16.10).
-  // A deck page's URL carries no id, so `speakerdeck.com/<user>/<slug>` — the address bar, and what
+  // **The row says the paste is not a URL, and the refusal names the button** (§16.10). A deck
+  // page's URL carries no id, so `speakerdeck.com/<user>/<slug>` — the address bar, and what
   // 「Copy link」 hands over — never resolves; `/player/<id>` is the only shape there is, and it
-  // exists nowhere an author can copy it except inside the embed code. The shape says that much in
-  // the column's own register; which button produces it is what the refusal adds, at the moment the
-  // author has actually pasted the wrong thing.
-  shape: 'speakerdeck.com/player/<id>',
+  // exists nowhere an author can copy it except inside the embed code. The note says that much
+  // before the paste; which button produces it is what the refusal adds, at the moment the author
+  // has actually pasted the wrong thing.
+  //
+  // **The note names the code, the refusal names one button, and those differ on purpose.**
+  // `speakerdeckSnippetHref` takes either Share button's output (§16.9), so a note saying
+  // 「iframe コード」 would be false for the author holding the JS one. **The refusal names one
+  // button because it is a recipe** (§16.10, 2026-09-03): what an author needs there is one path
+  // that works, and the note above has already told them the code is what to paste, so the one
+  // holding the JS snippet is not sent to a dead end. Naming both lengthens a sentence that has to
+  // stay one line at 390px (§24.1).
+  note: '埋め込みコード',
   refusal: () => 'Share →「Copy iframe code」の内容を貼ってください。',
   resolve: (url) => {
     const id = SPEAKERDECK_PATH.exec(url.pathname)?.[1] ?? null;
@@ -463,6 +502,7 @@ function docswellPage(url: URL, path: RegExpExecArray): number {
 
 const docswell: Provider = {
   name: 'Docswell',
+  kind: 'スライド',
   // The apex is present because it answers directly rather than redirecting, and carries the key in
   // the same place (measured 2026-08-26) — the call §14.2 made for `slideshare.net`.
   hosts: ['www.docswell.com', 'docswell.com'],
@@ -594,6 +634,7 @@ function gistDocument(src: string, instanceId: string): string {
 
 const gist: Provider = {
   name: 'GitHub Gist',
+  kind: 'コード',
   // One host. `gist.githubusercontent.com` is deliberately absent: it serves the raw file as
   // `text/plain` under `x-frame-options: deny` and CSP `sandbox`, so it is not an embed of anything
   // — and it is an output of this file's own `view raw` link rather than an input to it.
@@ -678,6 +719,7 @@ const CODESANDBOX_ALLOW = '';
 
 const codesandbox: Provider = {
   name: 'CodeSandbox',
+  kind: 'コード',
   // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30), which is the
   // call §17.2 made for Docswell's apex.
   hosts: ['codesandbox.io', 'www.codesandbox.io'],
@@ -761,6 +803,7 @@ const CODEPEN_ALLOW = '';
 
 const codepen: Provider = {
   name: 'CodePen',
+  kind: 'コード',
   hosts: ['codepen.io', 'www.codepen.io'],
   resolve: (url) => {
     // Three page shapes, each naming the owner and the slug in the same two places. They cannot
@@ -827,14 +870,23 @@ const PROVIDERS: readonly Provider[] = [
 //
 // **Derived from the registry, never written twice.** A hand-kept list would have been wrong four
 // times in the month this file grew Figma, the gist, CodeSandbox and CodePen — and wrong is worse
-// here than absent, since the table is the only place an author is told what is supported. `hosts`
-// rides along because it is the same data: it says which addresses match without a second string
-// to keep in step with the matcher.
-export type EmbedProviderInfo = { name: string; hosts: readonly string[]; shape?: string };
+// here than absent, since the table is the only place an author is told what is supported.
+//
+// **`hosts` rides along even though the dialog no longer prints them** (§24.1, 2026-09-03). It is
+// what the lit row is looked up by — a resolved reference's host against this list — and it is the
+// matcher's own data rather than a second string, so carrying it costs nothing and asking the
+// dialog to reach for `PROVIDERS` instead would hand it the whole registry.
+export type EmbedProviderInfo = {
+  name: string;
+  hosts: readonly string[];
+  kind: string;
+  note?: string;
+};
 export const EMBED_PROVIDERS: readonly EmbedProviderInfo[] = PROVIDERS.map((provider) => ({
   name: provider.name,
   hosts: provider.hosts,
-  shape: provider.shape,
+  kind: provider.kind,
+  note: provider.note,
 }));
 
 // What the insert dialog says about a reference it cannot embed, or null when it has nothing to add

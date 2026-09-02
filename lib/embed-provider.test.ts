@@ -1025,20 +1025,41 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     }
   });
 
-  it('shapes the one row whose bare hosts mislead (SD8)', () => {
-    // §16.10. Speaker Deck's row is the only one an author cannot act on by reading its hosts: the
-    // deck page at `speakerdeck.com/<user>/<slug>` carries no id, so nothing there resolves and
-    // `/player/<id>` is reachable only from inside the embed code. The dialog draws this string
-    // (`e2e/editor-embed-insert.spec.ts`, 24h); what is held here is that the registry owns it.
-    const shaped = EMBED_PROVIDERS.filter((provider) => provider.shape !== undefined);
-    expect(shaped.map((provider) => provider.name)).toEqual(['Speaker Deck']);
-    expect(shaped[0].shape).toBe('speakerdeck.com/player/<id>');
+  it('names a kind for every row, out of a vocabulary that groups them (SD8)', () => {
+    // §24.1 (2026-09-03). The column stopped printing hosts, which answered "which site" while
+    // every URL an author gets wrong is about which page on it. **The assertion is the vocabulary,
+    // not the mapping**: nine rows spell five words, and the three-and-three repetition is what
+    // makes 「スライドを貼りたい、どれが使える」 land on a group instead of on one brand name. A
+    // per-provider kind cannot be checked against the matcher the way a URL shape could — it makes
+    // no claim about any URL — so what is held here is coverage and spelling.
+    expect(EMBED_PROVIDERS.map((provider) => provider.kind)).toEqual([
+      '動画',
+      '投稿',
+      'スライド',
+      'デザインファイル',
+      'スライド',
+      'スライド',
+      'コード',
+      'コード',
+      'コード',
+    ]);
+    expect(new Set(EMBED_PROVIDERS.map((provider) => provider.kind)).size).toBe(5);
+  });
+
+  it('notes the one provider whose address bar is not the answer (SD8)', () => {
+    // §16.10. Speaker Deck's row is the only one an author cannot act on by copying the address
+    // bar: the deck page at `speakerdeck.com/<user>/<slug>` carries no id, so nothing there
+    // resolves and `/player/<id>` is reachable only from inside the embed code. The dialog draws
+    // this in parentheses after the kind (`e2e/editor-embed-insert.spec.ts`, 24h); what is held
+    // here is that the registry owns it.
+    const noted = EMBED_PROVIDERS.filter((provider) => provider.note !== undefined);
+    expect(noted.map((provider) => provider.name)).toEqual(['Speaker Deck']);
+    // **It names the code, not a button.** `speakerdeckSnippetHref` takes either Share button's
+    // output (§16.9), so 「iframe コード」 here would be false for the author holding the JS one.
+    expect(noted[0].note).toBe('埋め込みコード');
     // **The other eight carry none, and that is the assertion.** For them the address bar is the
-    // answer, so a shape would only repeat the hosts beside it.
-    expect(EMBED_PROVIDERS.length - shaped.length).toBe(8);
-    // The shape is a claim about the matcher, so it is asked of the matcher rather than trusted:
-    // the host it names is one this provider actually claims.
-    expect(shaped[0].hosts).toContain(shaped[0].shape!.split('/')[0]);
+    // answer, so a note would only repeat what the reader already has.
+    expect(EMBED_PROVIDERS.length - noted.length).toBe(8);
   });
 
   it('answers a refused URL in the words of the provider that claimed it (SD9)', () => {

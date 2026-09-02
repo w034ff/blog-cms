@@ -294,16 +294,23 @@ export function EmbedInsertDialog({
                   }`}>
                   <div className='flex items-center gap-3'>
                     <span className='w-28 flex-none font-bold'>{provider.name}</span>
-                    {/* **The hosts, or the shape that stands in for them** (§16.10). Only Speaker
-                        Deck has the second form, because its deck page carries no id and printing
-                        `speakerdeck.com` beside it is precisely what invites the URL that cannot
-                        work. It replaces the hosts rather than joining them — a row saying both
-                        would contradict itself — and it is a path rather than a sentence, so the
-                        column stays one register and this row still reads as the other eight do.
-                        Which button produces that shape is the refusal's to say, when the author
-                        has actually pasted the wrong thing. */}
-                    <span className='min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400'>
-                      {provider.shape ?? provider.hosts.join(' / ')}
+                    {/* **What kind of thing this provider embeds** (§24.1, 2026-09-03). The hosts
+                        were here until this date and answered the wrong question — which site
+                        matches, when every URL an author gets wrong is about which page on it —
+                        and at 390px the column had about 210px, so YouTube's and X's host lists
+                        were truncated on top of that. The kind is per-provider truth, so it needs
+                        no second string kept in step with the matcher.
+
+                        **The note, in parentheses, is Speaker Deck's alone**: the one provider
+                        whose address bar is not the answer (§16.10). One text node rather than a
+                        nested span, so `e2e/editor-embed-insert.spec.ts` can assert the cell by
+                        its exact text. No `font-mono` any more — the column is Japanese nouns
+                        now, which is also what lets the note sit in it without breaking register,
+                        the objection that kept a sentence out of the hosts column. */}
+                    <span className='min-w-0 flex-1 truncate text-zinc-500 dark:text-zinc-400'>
+                      {provider.note === undefined
+                        ? provider.kind
+                        : `${provider.kind}（${provider.note}）`}
                     </span>
                   </div>
                 </li>
