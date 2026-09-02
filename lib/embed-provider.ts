@@ -86,6 +86,32 @@ type Provider = {
   name: string;
   // Matched against `URL.hostname`, which is already lowercased and punycoded by the parser.
   hosts: readonly string[];
+  // **What the insert dialog's table prints in this row instead of `hosts`** (§16.10, §24.1).
+  // Absent for eight of the nine, whose hosts are the whole answer: copy the address bar, paste it.
+  //
+  // It exists for the one provider where the bare hosts mislead — printing `speakerdeck.com` is
+  // what invites the address-bar URL, which is the one shape that cannot work (§16.3). **It stays
+  // in the hosts column's register**: a path shape, not a sentence, so the row still reads as the
+  // other eight do rather than as an exception with prose in it.
+  //
+  // `hosts` stays populated either way — it is what the matcher and the dialog's lit row read.
+  shape?: string;
+  // **What the dialog's refusal says about a URL on this provider's hosts that did not resolve**,
+  // or null to leave it to the generic sentence (§24.1). Asked per URL rather than per provider
+  // because a provider's refusal answers for *every* shape that fails on its hosts — the file
+  // browser, the user page, the search results — and a sentence about the one shape the author
+  // probably had would be false for the rest.
+  //
+  // Two kinds of answer, and the difference is whether the author can act:
+  //
+  //   - **The URL is fixable.** Say what is embeddable, and drop 「リンクカードにしてください」: the
+  //     card is a fallback where a fix exists. Figma and Speaker Deck.
+  //   - **The reference cannot be embedded at all.** Keep the card — it really is the next move —
+  //     and add the reason the generic sentence cannot give. Docswell's video, CodeSandbox's devbox.
+  //
+  // The URL is already parsed by `resolveEmbed`, and it is passed rather than reparsed so this
+  // cannot disagree with the matcher about what the path is.
+  refusal?: (url: URL) => string | null;
   resolve: (url: URL) => EmbedTarget | null;
 };
 
@@ -202,7 +228,9 @@ const x: Provider = {
       // The account, which the URL already carries. `/i/status/<ID>` is the form that does not, and
       // there the provider leads and the bare id is all there is to add.
       label:
-        path?.[1] === 'i' ? { lead: x.name, detail: id } : { lead: `@${path?.[1] ?? ''}`, detail: '' },
+        path?.[1] === 'i'
+          ? { lead: x.name, detail: id }
+          : { lead: `@${path?.[1] ?? ''}`, detail: '' },
       allow: X_ALLOW,
       srcdoc: null,
       sandbox: null,
@@ -297,6 +325,18 @@ const figma: Provider = {
   // output of this file, not an input to it. `figma.site` is a different product — a published
   // site, not a file — and naming it here would claim a shape nothing has measured.
   hosts: ['www.figma.com', 'figma.com'],
+  // **The one other provider where the author can fix the URL themselves** (§24.1). `/proto/`,
+  // `/board/` and `/slides/` are the same file seen through a different view, so the design URL
+  // exists and Figma's own UI hands it over — which is what makes a sentence worth more here than
+  // the generic 「リンクカードにしてください」.
+  //
+  // **Phrased as what is embeddable, not as what went wrong**, because a provider's refusal answers
+  // for *every* URL on its hosts that does not resolve — the file browser, the community pages and
+  // a malformed key land here too, and 「プロトタイプは対応していません」 would be false for those.
+  //
+  // No `shape`: unlike Speaker Deck's, Figma's hosts are not misleading. The address bar of a
+  // design file works, which is what the row's hosts already promise.
+  refusal: () => '埋め込めるのは /design/ か /file/ の URL です。',
   resolve: (url) => {
     const key = FIGMA_PATH.exec(url.pathname)?.[1] ?? null;
     if (key === null || !FIGMA_KEY.test(key)) return null;
@@ -350,6 +390,14 @@ const speakerdeck: Provider = {
   // `www` is present because it answers and 301s to the apex, which is where the id sits in the
   // same place (measured 2026-08-26) — the same call §14.2 made for `slideshare.net`.
   hosts: ['speakerdeck.com', 'www.speakerdeck.com'],
+  // **The row prints the shape rather than the hosts, and the refusal names the button** (§16.10).
+  // A deck page's URL carries no id, so `speakerdeck.com/<user>/<slug>` — the address bar, and what
+  // 「Copy link」 hands over — never resolves; `/player/<id>` is the only shape there is, and it
+  // exists nowhere an author can copy it except inside the embed code. The shape says that much in
+  // the column's own register; which button produces it is what the refusal adds, at the moment the
+  // author has actually pasted the wrong thing.
+  shape: 'speakerdeck.com/player/<id>',
+  refusal: () => 'Share →「Copy iframe code」の内容を貼ってください。',
   resolve: (url) => {
     const id = SPEAKERDECK_PATH.exec(url.pathname)?.[1] ?? null;
     if (id === null || !SPEAKERDECK_ID.test(id)) return null;
@@ -384,6 +432,9 @@ const speakerdeck: Provider = {
 // `LK7J5V` is the deck, so accepting lowercase could only ever build a src that shows Docswell's own
 // 404 page inside the article.
 const DOCSWELL_KEY = /^[0-9A-Z]{1,32}$/;
+// The same key with the video's `v` in front — the shape `DOCSWELL_KEY` turns away, named here so
+// the refusal can tell a video apart from a user page or a search result (§24.1).
+const DOCSWELL_VIDEO_KEY = /^v[0-9A-Z]{1,32}$/;
 // `/s/<user>/<key>-<slug>`, the deck page — the URL the address bar holds. The slug is optional
 // because the key alone resolves (`/s/<user>/<key>` 302s to the full form), and it is separated from
 // the key by the first `-`, which is why the key group excludes it. The trailing `/<n>` is the page
@@ -415,6 +466,17 @@ const docswell: Provider = {
   // The apex is present because it answers directly rather than redirecting, and carries the key in
   // the same place (measured 2026-08-26) — the call §14.2 made for `slideshare.net`.
   hosts: ['www.docswell.com', 'docswell.com'],
+  // **The video, and only the video.** `DOCSWELL_KEY` excludes lowercase precisely so a video's
+  // `v`-prefixed key falls out (§17.2), and this recognises the shape that fell out — a deck path
+  // whose key is a video's. **The card stays the answer**: a video is a different endpoint that
+  // does not frame at all, so unlike Figma there is no URL for the author to reach instead. What
+  // the generic sentence cannot say is *why*, and that is all this adds.
+  refusal: (url) => {
+    const key = DOCSWELL_PATH.exec(url.pathname)?.[1];
+    return key !== undefined && DOCSWELL_VIDEO_KEY.test(key)
+      ? '動画は埋め込めません。リンクカードにしてください。'
+      : null;
+  },
   resolve: (url) => {
     const path = DOCSWELL_PATH.exec(url.pathname);
     const key = path?.[1] ?? null;
@@ -603,6 +665,8 @@ const CODESANDBOX_SEGMENT = /^[0-9A-Za-z-]{1,64}$/;
 // at all — measured, and it is the provider's product boundary, not a rule we could route around
 // (§20.13).
 const CODESANDBOX_PATH = /^\/(?:p\/sandbox|s)\/([^/]+)\/?$/;
+// The shape the line above deliberately excludes, named so the refusal can say why (§24.1).
+const DEVBOX_PATH = /^\/p\/devbox\/[^/]+\/?$/;
 
 // Nothing is asked for. CodeSandbox's own snippet requests `camera; microphone; geolocation; usb;
 // payment` and eleven more, and **Qiita and Zenn both copy that list verbatim** — this file does
@@ -617,6 +681,12 @@ const codesandbox: Provider = {
   // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30), which is the
   // call §17.2 made for Docswell's apex.
   hosts: ['codesandbox.io', 'www.codesandbox.io'],
+  // **The devbox, and only the devbox.** `CODESANDBOX_PATH` leaves `/p/devbox/` out because a VM
+  // Sandbox does not frame off codesandbox.io at all — the provider's own product boundary, not a
+  // rule to route around (§20.13). **So the card stays the answer** and this only supplies the
+  // reason; there is no other URL for the same sandbox.
+  refusal: (url) =>
+    DEVBOX_PATH.test(url.pathname) ? 'Devbox は埋め込めません。リンクカードにしてください。' : null,
   resolve: (url) => {
     const segment = CODESANDBOX_PATH.exec(url.pathname)?.[1] ?? null;
     if (segment === null || !CODESANDBOX_SEGMENT.test(segment)) return null;
@@ -760,11 +830,33 @@ const PROVIDERS: readonly Provider[] = [
 // here than absent, since the table is the only place an author is told what is supported. `hosts`
 // rides along because it is the same data: it says which addresses match without a second string
 // to keep in step with the matcher.
-export type EmbedProviderInfo = { name: string; hosts: readonly string[] };
+export type EmbedProviderInfo = { name: string; hosts: readonly string[]; shape?: string };
 export const EMBED_PROVIDERS: readonly EmbedProviderInfo[] = PROVIDERS.map((provider) => ({
   name: provider.name,
   hosts: provider.hosts,
+  shape: provider.shape,
 }));
+
+// What the insert dialog says about a reference it cannot embed, or null when it has nothing to add
+// and the generic sentence stands (§24.1). **Asked only of a URL `resolveEmbed` has refused** — a
+// provider that claimed the host is what makes a specific answer possible, and a provider that did
+// not is why most references get the generic one.
+//
+// The parse is repeated rather than shared with `resolveEmbed`: this runs once per keystroke at
+// most, against a string the author is looking at, and the alternative is a second return channel
+// through a function every caller in both render stages already uses for something else.
+export function embedRefusal(href: string): string | null {
+  const value = href.trim();
+  if (value === '') return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const provider = PROVIDERS.find((candidate) => candidate.hosts.includes(url.hostname));
+  return provider?.refusal?.(url) ?? null;
+}
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer
 // for a URL no provider claims, a provider's URL that names no single item, and a string that is

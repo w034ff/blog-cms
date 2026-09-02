@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
-import { EMBED_PROVIDERS, resolveEmbed } from '@/lib/embed-provider';
+import { EMBED_PROVIDERS, embedRefusal, resolveEmbed } from '@/lib/embed-provider';
+import { speakerdeckSnippetHref } from '@/lib/speakerdeck-snippet';
 
 // The embed's insert dialog (docs/embed-requirements.md §24.1).
 //
@@ -55,13 +56,14 @@ export function EmbedInsertDialog({
     onClose();
   };
 
-  const insert = () => {
-    const value = href.trim();
-    if (value === '') return;
+  // Takes the resolved reference rather than the field's text, so a pasted embed snippet stores
+  // the player URL it names and not the markup around it.
+  const insert = (reference: string) => {
+    if (reference === '') return;
     // `focus(at)`, not `focus()`. The caret has been outside the editor while the author typed,
     // and a bare focus restores whatever selection the view holds by then — which put the embed at
     // the end of the document about one run in three (§24.1).
-    editor.chain().focus(at).setEmbed(value).run();
+    editor.chain().focus(at).setEmbed(reference).run();
     onClose();
   };
 
@@ -93,7 +95,17 @@ export function EmbedInsertDialog({
   }, [editor, onClose]);
 
   const value = href.trim();
-  const target = value === '' ? null : resolveEmbed(value);
+  // **What the author pasted, turned into the reference it names.** For eight providers that is
+  // the string itself; for Speaker Deck the author has no other move — a deck page's URL carries no
+  // id, so `/player/<id>` exists nowhere they can copy it except inside the embed code (§16.3,
+  // §16.9). The editor already took that snippet as a paste into the body; this dialog was a fourth
+  // entrance that had not been given it.
+  //
+  // **`speakerdeckSnippetHref` decides nothing about validity** — it only finds a candidate, and
+  // what it returns goes straight back through `resolveEmbed` below. So the set of references that
+  // can be stored is unchanged; what widened is the shape that may be pasted (§16.9).
+  const reference = value === '' ? '' : (speakerdeckSnippetHref(value) ?? value);
+  const target = reference === '' ? null : resolveEmbed(reference);
   // Which row lights up. **Found by host rather than read from `target.label.lead`**: that field is
   // the strongest thing the URL says about the item, which for X and the gist is the account, not
   // the provider (§10.4, §18). The table names providers.
@@ -103,10 +115,15 @@ export function EmbedInsertDialog({
   // alone would light X for an account URL beside a disabled button (measured 2026-09-02). A
   // resolved target always has a row: `resolveEmbed` answers only when a registry host matched, so
   // the `?? null` is for the type, not for a state the dialog draws differently.
+  //
+  // **Read from `reference`, not from the field.** An embed snippet is not a URL, so `hostOf` of
+  // what the author pasted is `''` — asking the field would have resolved the deck, enabled the
+  // button and lit no row, which is exactly the contradiction the paragraph above says cannot
+  // happen.
   const matched =
     target === null
       ? null
-      : (EMBED_PROVIDERS.find((provider) => provider.hosts.includes(hostOf(value))) ?? null);
+      : (EMBED_PROVIDERS.find((provider) => provider.hosts.includes(hostOf(reference))) ?? null);
   // **The line appears only when something is wrong, and only once the author is done typing.** It
   // said three things and two of them were already on screen: with an empty field the label, the
   // placeholder and the disabled button all say "paste a URL", and on a match the table's row is
@@ -119,9 +136,15 @@ export function EmbedInsertDialog({
   // provider names three lines below, so "no service matches" reads as a contradiction there. And
   // **the second sentence is the half that is always true**: for Speaker Deck it is the only
   // recovery, since a deck page carries no id and re-reading the URL cannot fix it (§16.3).
+  //
+  // **A provider that claimed the host may answer in its own words** (`embedRefusal`, §24.1). Two
+  // shapes of answer: where the author can reach a URL that works, it names that and drops the card
+  // (Figma, Speaker Deck); where nothing can embed the reference at all, it keeps the card — which
+  // really is the next move — and supplies the reason this sentence cannot (Docswell's video,
+  // CodeSandbox's devbox). Null for everything else, which is most references.
   const refusal =
     attempted && value !== '' && target === null
-      ? 'このURLは埋め込めません。リンクカードにしてください。'
+      ? (embedRefusal(reference) ?? 'このURLは埋め込めません。リンクカードにしてください。')
       : null;
 
   return (
@@ -165,7 +188,7 @@ export function EmbedInsertDialog({
             desktop the dialog is `h-auto`, so this takes only what the content needs. */}
         <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3'>
           <label htmlFor={fieldId} className='text-xs font-bold'>
-            埋め込みにするURL
+            URL または埋め込みコード
           </label>
           {/* **The field and its message, in a wrapper of their own.** As a direct child of the
               `gap-2` column the message would take an 8px gap on both sides *even while empty*, and
@@ -176,7 +199,10 @@ export function EmbedInsertDialog({
             <input
               id={fieldId}
               ref={inputRef}
-              type='url'
+              // `text`, not `url`: a Speaker Deck embed snippet is markup, and `url` would have the
+              // browser mark the one paste this field exists to accept for that provider as
+              // malformed.
+              type='text'
               value={href}
               onPaste={() => {
                 pasted.current = true;
@@ -204,7 +230,7 @@ export function EmbedInsertDialog({
                 // Set before the branch: Enter on a URL nothing claims does not insert, and silence
                 // is the one answer that leaves the author with nothing to do next.
                 setAttempted(true);
-                if (target) insert();
+                if (target) insert(reference);
               }}
               placeholder='https://…'
               autoComplete='off'
@@ -261,15 +287,25 @@ export function EmbedInsertDialog({
                   // who hears the page. `aria-current` says it to a screen reader, the left bar says
                   // it to the eye, and the spec asks for the row by the same attribute.
                   aria-current={on ? 'true' : undefined}
-                  className={`flex items-center gap-3 border-l-2 py-1.5 pr-3 pl-2.5 text-xs ${
+                  className={`border-l-2 py-1.5 pr-3 pl-2.5 text-xs ${
                     on
                       ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40'
                       : 'border-transparent'
                   }`}>
-                  <span className='w-28 flex-none font-bold'>{provider.name}</span>
-                  <span className='min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400'>
-                    {provider.hosts.join(' / ')}
-                  </span>
+                  <div className='flex items-center gap-3'>
+                    <span className='w-28 flex-none font-bold'>{provider.name}</span>
+                    {/* **The hosts, or the shape that stands in for them** (§16.10). Only Speaker
+                        Deck has the second form, because its deck page carries no id and printing
+                        `speakerdeck.com` beside it is precisely what invites the URL that cannot
+                        work. It replaces the hosts rather than joining them — a row saying both
+                        would contradict itself — and it is a path rather than a sentence, so the
+                        column stays one register and this row still reads as the other eight do.
+                        Which button produces that shape is the refusal's to say, when the author
+                        has actually pasted the wrong thing. */}
+                    <span className='min-w-0 flex-1 truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400'>
+                      {provider.shape ?? provider.hosts.join(' / ')}
+                    </span>
+                  </div>
                 </li>
               );
             })}
@@ -286,7 +322,7 @@ export function EmbedInsertDialog({
               already say (reported 2026-09-02). */}
           <button
             type='button'
-            onClick={insert}
+            onClick={() => insert(reference)}
             disabled={target === null}
             className='rounded bg-blue-600 px-4 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40'>
             挿入する

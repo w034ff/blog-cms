@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMBED_PROVIDERS, resolveEmbed } from './embed-provider';
+import { EMBED_PROVIDERS, embedRefusal, resolveEmbed } from './embed-provider';
 
 // docs/embed-requirements.md §9. `resolveEmbed` is asked from both sides — the resolve stage decides
 // whether a stored reference becomes an iframe, the editor decides whether a URL can become one —
@@ -1023,6 +1023,61 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     for (const provider of EMBED_PROVIDERS) {
       expect(provider.hosts.length, provider.name).toBeGreaterThan(0);
     }
+  });
+
+  it('shapes the one row whose bare hosts mislead (SD8)', () => {
+    // §16.10. Speaker Deck's row is the only one an author cannot act on by reading its hosts: the
+    // deck page at `speakerdeck.com/<user>/<slug>` carries no id, so nothing there resolves and
+    // `/player/<id>` is reachable only from inside the embed code. The dialog draws this string
+    // (`e2e/editor-embed-insert.spec.ts`, 24h); what is held here is that the registry owns it.
+    const shaped = EMBED_PROVIDERS.filter((provider) => provider.shape !== undefined);
+    expect(shaped.map((provider) => provider.name)).toEqual(['Speaker Deck']);
+    expect(shaped[0].shape).toBe('speakerdeck.com/player/<id>');
+    // **The other eight carry none, and that is the assertion.** For them the address bar is the
+    // answer, so a shape would only repeat the hosts beside it.
+    expect(EMBED_PROVIDERS.length - shaped.length).toBe(8);
+    // The shape is a claim about the matcher, so it is asked of the matcher rather than trusted:
+    // the host it names is one this provider actually claims.
+    expect(shaped[0].hosts).toContain(shaped[0].shape!.split('/')[0]);
+  });
+
+  it('answers a refused URL in the words of the provider that claimed it (SD9)', () => {
+    // §24.1. Which kind a provider gets turns on whether the author can act. **A fixable URL is
+    // told what works and loses the card** — it is a fallback where a fix exists.
+    expect(embedRefusal(`https://www.figma.com/proto/${FIGMA_KEY_SAMPLE}/a-file`)).toBe(
+      '埋め込めるのは /design/ か /file/ の URL です。',
+    );
+    expect(embedRefusal('https://speakerdeck.com/soudai/pgcon21j-tutorial')).toBe(
+      'Share →「Copy iframe code」の内容を貼ってください。',
+    );
+    // **A reference nothing can embed keeps the card and gains the reason.** A Docswell video and
+    // a devbox have no working URL to reach instead (§17.2, §20.13), so taking the card away
+    // would leave the author with a diagnosis and no move.
+    expect(embedRefusal('https://www.docswell.com/s/someone/vLK7J5V-a-video')).toBe(
+      '動画は埋め込めません。リンクカードにしてください。',
+    );
+    expect(embedRefusal('https://codesandbox.io/p/devbox/eager-proskuriakova-2lcdqm')).toBe(
+      'Devbox は埋め込めません。リンクカードにしてください。',
+    );
+
+    // **The narrow half.** A provider answers per URL, not per host, because its refusal meets
+    // every shape that fails there — so the sentences above must not reach a user page or a
+    // search result, which they would describe wrongly.
+    for (const href of [
+      'https://www.docswell.com/user/somebody',
+      'https://www.docswell.com/s/someone/LK7J5V-a-deck/999999',
+      'https://codesandbox.io/u/someone',
+      'https://codesandbox.io/examples/package/react',
+    ]) {
+      expect(resolveEmbed(href), href).toBeNull();
+      expect(embedRefusal(href), href).toBeNull();
+    }
+    // A host no provider claims has nothing specific to say, which is most references — and so
+    // does a string that is not a URL, the shape the dialog holds while an author is typing.
+    expect(embedRefusal('https://example.com/an-article')).toBeNull();
+    expect(embedRefusal('es.slideshare.net/slideshow/x/1')).toBeNull();
+    expect(embedRefusal('https://www.you')).toBeNull();
+    expect(embedRefusal('')).toBeNull();
   });
 
   it('spells each provider the same way the drag ghost does', () => {

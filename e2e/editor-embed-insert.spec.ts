@@ -12,6 +12,32 @@ import { markdown, settle } from './editor-probe';
 const YOUTUBE = 'https://www.youtube.com/watch?v=hDPybQwAuVo';
 const CODEPEN = 'https://codepen.io/flatsato/pen/VwqprLp';
 const UNCLAIMED = 'https://example.com/an-article';
+// A Figma URL the provider claims but cannot embed: a prototype is the same file behind a different
+// view, so `/design/` exists and the author can reach it — which is what earns this provider a
+// sentence of its own instead of the generic 「リンクカードにしてください」 (§24.1).
+const FIGMA_PROTO = 'https://www.figma.com/proto/7or4V8Tl8YbEFRmMSF3pXe/a-file';
+const FIGMA_REFUSAL = '埋め込めるのは /design/ か /file/ の URL です。';
+// The other kind of provider sentence: a Docswell video cannot be embedded by any URL (§17.2), so
+// the card stays the answer and the sentence only supplies the reason the generic one cannot.
+const DOCSWELL_VIDEO = 'https://www.docswell.com/s/someone/vLK7J5V-a-video';
+const DOCSWELL_REFUSAL = '動画は埋め込めません。リンクカードにしてください。';
+// Same host, a shape with no sentence of its own — the provider answers per URL, not per host.
+const DOCSWELL_USER = 'https://www.docswell.com/user/somebody';
+// Speaker Deck, the one provider whose hosts do not tell the whole truth (§16.10). The deck page
+// is what an author reaches for and what 「Copy link」 hands over, and it never resolves; the id
+// lives only inside the embed code. **The snippet is Speaker Deck's own output**, the same string
+// `lib/speakerdeck-snippet.test.ts` reads — a hand-written one measures this file’s idea of the
+// markup rather than the button's.
+const SPEAKERDECK_ID = '9de2f18094b14cbb91b07331eb085e4f';
+const SPEAKERDECK_PLAYER = `https://speakerdeck.com/player/${SPEAKERDECK_ID}`;
+const SPEAKERDECK_PAGE = 'https://speakerdeck.com/soudai/pgcon21j-tutorial';
+// The two strings the registry gives that row — the shape its column prints instead of the bare
+// hosts, and the refusal it earns in place of 「リンクカードにしてください」. Spelled out here as
+// the provider names below are: `lib/embed-provider.test.ts` holds the registry to carrying them,
+// and this file measures that the dialog draws them.
+const SPEAKERDECK_SHAPE = 'speakerdeck.com/player/<id>';
+const SPEAKERDECK_REFUSAL = 'Share →「Copy iframe code」の内容を貼ってください。';
+const SPEAKERDECK_IFRAME = `<iframe class="speakerdeck-iframe" frameborder="0" src="${SPEAKERDECK_PLAYER}" title="実際に使うSQLの書き方 徹底解説 / pgcon21j-tutorial" allowfullscreen="true" allow="web-share" style="border: 0px; width: 100%; height: auto; aspect-ratio: 560 / 315;" data-ratio="1.7777777777777777"></iframe>`;
 
 // The refusal's own words, in one place. **Asserted as the whole sentence, not a fragment of it**:
 // every negative below is a `not.toContainText`, and a fragment that stopped matching would make
@@ -81,7 +107,7 @@ test('the dialog lights the provider a URL resolves to, and refuses one no provi
   await expect(dialog(page)).toBeVisible();
 
   const submit = dialog(page).getByRole('button', { name: '挿入する' });
-  const field = dialog(page).getByLabel('埋め込みにするURL');
+  const field = dialog(page).getByLabel('URL または埋め込みコード');
   const lit = dialog(page).locator('li[aria-current="true"]');
   // **The alert exists before it says anything.** A live region has to be in the tree when its
   // text arrives, so this is asserted on the empty dialog — mounting the container together with
@@ -161,6 +187,32 @@ test('the dialog lights the provider a URL resolves to, and refuses one no provi
   await field.fill(YOUTUBE);
   await expect(dialog(page)).not.toContainText(REFUSAL);
 
+  // **A URL on a claimed host is refused in that provider's own words.** The generic sentence sends
+  // the author to the link card, and for a Figma prototype that is a fallback rather than a fix —
+  // the same file has a `/design/` URL and Figma's own UI hands it over. Measured beside the
+  // generic case above, because what separates them is only whether a provider claimed the host.
+  await field.fill(FIGMA_PROTO);
+  await field.press('Enter');
+  await expect(dialog(page).locator('[role="alert"]')).toHaveText(FIGMA_REFUSAL);
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+  await expect(submit).toBeDisabled();
+  // No row lights: the host matched, the URL did not resolve, and those are not the same question.
+  await expect(lit).toHaveCount(0);
+
+  // **The other kind: nothing can embed this, so the card stays and only the reason is added.**
+  // Taking 「リンクカードにしてください」 away here would leave a diagnosis with no move behind it,
+  // which is the opposite of what the Figma sentence above does (§24.1).
+  await field.fill(DOCSWELL_VIDEO);
+  await field.press('Enter');
+  await expect(dialog(page).locator('[role="alert"]')).toHaveText(DOCSWELL_REFUSAL);
+
+  // **And it is narrow.** A provider's refusal meets every shape that fails on its hosts, so a
+  // sentence about videos must not answer for a user page — which the generic one describes
+  // correctly and this one would not.
+  await field.fill(DOCSWELL_USER);
+  await field.press('Enter');
+  await expect(dialog(page)).toContainText(REFUSAL);
+
   // Nothing is said when there is nothing to say: an empty field draws no line at all, which is
   // the state the dialog opens in — even after a refusal has been shown.
   await field.fill(UNCLAIMED);
@@ -170,6 +222,63 @@ test('the dialog lights the provider a URL resolves to, and refuses one no provi
   await field.blur();
   await expect(dialog(page)).not.toContainText(REFUSAL);
   await expect(dialog(page)).not.toContainText('貼り付けてください');
+});
+
+// **The row an author cannot read off its hosts, and the paste that row asks for** (§16.10,
+// §24.1). Speaker Deck is the only provider where the address bar is not the answer: a deck page
+// carries no id, so `/player/<id>` exists nowhere the author can copy it except inside the embed
+// code. The editor already took that snippet as a paste into the body (§16.9); this dialog was a
+// fourth entrance that had not been given it, while the table went on naming `speakerdeck.com` as
+// though any URL there would do.
+//
+// **The note and the paste are measured together on purpose.** A row that says "paste the embed
+// code" over a field that refuses markup is a worse lie than the one it replaced.
+test('the Speaker Deck row asks for the embed code, and the field takes it (24h)', async ({
+  page,
+}) => {
+  await openMenu(page, 'embed');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
+  await expect(dialog(page)).toBeVisible();
+
+  const field = dialog(page).getByLabel('URL または埋め込みコード');
+  const submit = dialog(page).getByRole('button', { name: '挿入する' });
+  const row = dialog(page).getByRole('listitem').filter({ hasText: 'Speaker Deck' });
+  // The shape is on the row before anything has been pasted, in place of the bare hosts: printing
+  // `speakerdeck.com` on its own is what invites the address bar, which is the one URL this
+  // provider cannot take. **Asserted as the cell’s exact text**, since `toContainText` would
+  // also pass for a row that had gone back to printing the bare host beside it.
+  await expect(row.locator('span').nth(1)).toHaveText(SPEAKERDECK_SHAPE);
+  // The other eight still print their hosts — without this, dropping the column everywhere passes.
+  await expect(dialog(page).getByRole('listitem').filter({ hasText: 'YouTube' })).toContainText(
+    'youtube.com',
+  );
+
+  // The deck page still refuses: nothing here widened what can be stored (§16.9). **And it refuses
+  // in this provider's own words** — the generic sentence sends the author to the link card, which
+  // for a deck page is a fallback rather than a fix, since the id they need is not in that URL at
+  // all. Said here rather than on the row because this is the moment they have actually pasted the
+  // wrong thing.
+  await paste(page, field, SPEAKERDECK_PAGE);
+  await expect(submit).toBeDisabled();
+  await expect(dialog(page).locator('[role="alert"]')).toHaveText(SPEAKERDECK_REFUSAL);
+  await expect(dialog(page)).not.toContainText(REFUSAL);
+
+  // The embed code resolves, and it lights the row — `hostOf` of the markup is '', so a dialog
+  // that asked the field rather than the resolved reference would enable the button beside nine
+  // unlit rows.
+  await field.fill('');
+  await paste(page, field, SPEAKERDECK_IFRAME);
+  await expect(submit).toBeEnabled();
+  await expect(dialog(page).locator('li[aria-current="true"]')).toContainText('Speaker Deck');
+  await expect(dialog(page).locator('[role="alert"]')).toHaveText('');
+
+  // **What is stored is the player URL, not the markup.** The snippet only ever names a
+  // candidate; the reference that lands in the document is rebuilt from the id (§16.9).
+  await submit.click();
+  await expect(dialog(page)).toHaveCount(0);
+  const body = await markdown(page);
+  expect(body).toContain(SPEAKERDECK_PLAYER);
+  expect(body).not.toContain('<iframe');
 });
 
 // The table is the only place an author is told what can be embedded, and it is generated from the
@@ -227,7 +336,7 @@ test('the dialog inserts at the line the menu was opened on (24e)', async ({ pag
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
 
-  await dialog(page).getByLabel('埋め込みにするURL').fill(CODEPEN);
+  await dialog(page).getByLabel('URL または埋め込みコード').fill(CODEPEN);
   await dialog(page).getByRole('button', { name: '挿入する' }).click();
   await expect(dialog(page)).toHaveCount(0);
   await settle(page);
@@ -243,7 +352,7 @@ test('the dialog inserts at the line the menu was opened on (24e)', async ({ pag
 test('Escape and the backdrop close the dialog without inserting (24f)', async ({ page }) => {
   await openMenu(page, 'embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
-  await dialog(page).getByLabel('埋め込みにするURL').fill(YOUTUBE);
+  await dialog(page).getByLabel('URL または埋め込みコード').fill(YOUTUBE);
   await page.keyboard.press('Escape');
   await expect(dialog(page)).toHaveCount(0);
   expect(await markdown(page)).not.toContain(YOUTUBE);
@@ -252,7 +361,7 @@ test('Escape and the backdrop close the dialog without inserting (24f)', async (
   // whole of the half-made state here, unlike the card, which leaves an unfinished block behind.
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: '埋め込み' }).click();
-  await expect(dialog(page).getByLabel('埋め込みにするURL')).toHaveValue('');
+  await expect(dialog(page).getByLabel('URL または埋め込みコード')).toHaveValue('');
   await page.locator('div[role="dialog"]').press('Escape');
   await expect(dialog(page)).toHaveCount(0);
 });
