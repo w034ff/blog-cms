@@ -11,6 +11,7 @@ import {
 import { resolveEmbed } from '@/lib/embed-provider';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import {
+  BACK_SHAPES,
   buildIcon,
   EXTERNAL_LINK_SHAPES,
   PENCIL_SHAPES,
@@ -291,6 +292,17 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
 
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
 
+      // 「変更」 no longer touches the document at all (§7-3.1): it used to clear `href` outright,
+      // which made opening the picker itself an edit — the only way back to the card it had just
+      // been was undo, twice once a new target had also been picked. This flag is the whole fix:
+      // it is local chrome state, not a node attribute, so flipping it costs no transaction and
+      // needs none to reverse. `render` is the only thing that reads it.
+      let editing = false;
+      // What `render` was last called with, so the cancel button and the outside-click handler
+      // below — neither of which is inside a render pass — can ask for a fresh draw of the node as
+      // it stands now rather than the one closed over when the NodeView was built.
+      let current = node;
+
       // Deferred by a frame so the DOM under the pointer is not rebuilt while the browser is still
       // dispatching the click that hit it: without this, `update` → `render` → `replaceChildren`
       // runs synchronously inside the result row's own handler.
@@ -310,6 +322,10 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
         requestAnimationFrame(() => {
           const pos = getPos();
           if (typeof pos !== 'number') return;
+          // A pick is always the end of editing, whether it started from an empty card or from
+          // 「変更」 on a resolved one — `update` is about to redraw this NodeView with the new
+          // href, and there is nothing left to cancel back to.
+          editing = false;
           editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'href', href));
         });
       };
@@ -327,24 +343,71 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
       };
 
       const render = (n: PMNode) => {
+        current = n;
         body.replaceChildren();
         // Both states start without one: the picker never has an image, and a resolved card puts
         // it back only once the lookup says the target has one.
         setImage(null);
         const href = currentHref(n);
-        if (!href) renderPicker(body, editor, setHref, toEmbed, ownSlug());
-        else
+        if (!editing && href)
           renderCard(
             body,
             href,
             editor,
-            () => setHref(''),
+            () => {
+              editing = true;
+              render(current);
+            },
             () => getPos(),
             setImage,
             ownSlug(),
           );
+        // The cancel button only where there is a card to cancel back to: a freshly-inserted card
+        // reaches this branch with `editing` still false and `href` already empty, and gets none.
+        else
+          renderPicker(
+            body,
+            editor,
+            setHref,
+            toEmbed,
+            ownSlug(),
+            editing ? cancelEditAndFocus : null,
+          );
       };
       render(node);
+
+      // 「変更」／Escape／キャンセル all mean "stay in the editor, just abandon the edit" — so this
+      // puts both the selection and the focus back on the card, exactly where a click on its body
+      // would have put them. Without the reselect, `editor.view.dom.focus()` alone reveals whatever
+      // the document's *actual* selection still was — pressing 変更 never moves it, since a click on
+      // a button inside a `contenteditable="false"` island cannot place a native caret — and that
+      // stale position can be anywhere in the document the author last typed or clicked. Measured:
+      // Escape jumped the scrollbar to wherever that was, not to the card the author was looking at.
+      const cancelEditAndFocus = () => {
+        editing = false;
+        render(current);
+        const pos = getPos();
+        if (typeof pos === 'number') editor.chain().setNodeSelection(pos).focus().run();
+      };
+
+      // The other way to leave the picker without picking anything (§7-3.1's sibling to Escape):
+      // Docs closes its own card the same way. Only live while there is somewhere to go back to —
+      // a freshly-inserted card's picker has no cancel target, so a stray click elsewhere is left
+      // alone rather than deleting it.
+      //
+      // **No focus grab here**, unlike `cancelEditAndFocus` above: the press that triggers this has
+      // already put focus wherever the author's mouse landed — often a field outside the editor
+      // entirely (the post title, say) — and pulling it back to the card would fight the very thing
+      // the author's click just did.
+      const onOutsidePointerDown = (event: MouseEvent) => {
+        if (!editing) return;
+        const target = event.target;
+        // `globalThis.Node`, not this file's own tiptap `Node` import — the DOM interface.
+        if (target instanceof globalThis.Node && dom.contains(target)) return;
+        editing = false;
+        render(current);
+      };
+      document.addEventListener('mousedown', onOutsidePointerDown);
 
       // What `stopEvent` below claims — stated once, because the drop refusal has to refuse exactly
       // what the claim takes out of ProseMirror's reach and no more (refuseChromeDrops).
@@ -378,6 +441,9 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           const target = event.target;
           return target instanceof HTMLElement && claimsEvent(target);
         },
+        // Every card adds a document-level listener above; without this it outlives the card a
+        // delete or an undo takes out, and stacks one per NodeView ProseMirror ever builds for it.
+        destroy: () => document.removeEventListener('mousedown', onOutsidePointerDown),
       };
     };
   },
@@ -676,6 +742,11 @@ function renderPicker(
   onPick: (href: string) => void,
   onEmbed: (href: string) => void,
   ownSlug: string,
+  // Set only when 「変更」 opened this picker on a card that already had a reference (§7-3's
+  // sibling): the author can still get back to it without touching the document at all, so this
+  // puts the control up and takes nothing else down. Null for a freshly-inserted, never-resolved
+  // card, which has nothing to go back to.
+  onCancel: (() => void) | null,
 ): void {
   const input = document.createElement('input');
   input.type = 'search';
@@ -684,6 +755,7 @@ function renderPicker(
   // Same band the resolved card puts its buttons in — see head().
   const controls = head();
   controls.appendChild(input);
+  if (onCancel) controls.appendChild(button('キャンセル', onCancel, { icon: BACK_SHAPES }));
   const list = document.createElement('ul');
   list.className = 'link-card-results';
   body.append(controls, list);
@@ -765,10 +837,19 @@ function renderPicker(
     else if (cardHref !== null) showReference('この URL をカードにする', () => onPick(cardHref));
     else void search(input.value);
   });
-  // Escape hands focus back to the document rather than closing anything — there is nothing to
-  // close, and leaving focus in the box means the next keystroke is still swallowed by stopEvent.
+  // Escape hands focus back to the document. Where there is a card to go back to, `onCancel`
+  // already puts both the selection and the focus on it (link-card-extension.ts's
+  // `cancelEditAndFocus`) — calling the raw `dom.focus()` on top of that was the bug §7.4.1 fixed:
+  // it reveals whatever the document's *actual* selection still is, which 「変更」 never moved and
+  // which can be anywhere, rather than the card the author is looking at. The raw fallback is only
+  // for the card-less picker, which has never had a selection of its own to lose.
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') editor.view.dom.focus();
+    if (event.key !== 'Escape') return;
+    if (onCancel) {
+      onCancel();
+      return;
+    }
+    editor.view.dom.focus();
   });
   void search('');
   // Deferred: the NodeView's DOM is not in the document yet when this runs, and focus() on a

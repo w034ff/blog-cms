@@ -50,6 +50,15 @@ export const UNLINK_SHAPES: readonly IconShape[] = [
   { kind: 'line', x1: 2, y1: 2, x2: 22, y2: 22 },
 ];
 
+// A leftward arrow — "back to what this replaced". The link card's picker uses it for 「キャンセル」
+// (link-card-extension.ts): not the X monogram above (a brand mark, not a close glyph) and not a
+// bare ✕, which would sit one control away from 「変更」/「リンクに戻す」 and risk the confusion an
+// icon-only 取り消し already caused once next to 解除 (LinkBubble.tsx).
+export const BACK_SHAPES: readonly IconShape[] = [
+  { kind: 'line', x1: 19, y1: 12, x2: 5, y2: 12 },
+  { kind: 'path', d: 'M11 5l-7 7 7 7' },
+];
+
 // A box with an arrow leaving it — "open elsewhere". The box is drawn as one open path with its
 // top-right corner missing, so the arrow leaves through the gap instead of crossing a line: at
 // 16px a crossing there fills in and the two shapes read as one blob.

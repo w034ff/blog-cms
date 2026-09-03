@@ -1066,3 +1066,84 @@ test('the picker fills the card’s width, and the resolved card still reserves 
   expect(await gutter()).not.toBe('0px');
   await expect(page.locator('.link-card-view .link-card-image')).toBeVisible();
 });
+
+// §7.4.1. 「変更」 used to be `setHref('')` — an editing transaction in its own right, fired the
+// moment the button was pressed and before the author had picked anything to replace the card
+// with. The only way back from it was undo, and picking a new target first meant undoing twice.
+// This is the fix: opening the picker from a resolved card costs no transaction at all, so there
+// is nothing for these three exits to undo — each just redraws the same node.
+for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
+  test(`「変更」 costs no undo step, and ${exit} restores the card intact (4m)`, async ({
+    page,
+  }) => {
+    await openWithCard(page);
+    await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+    await closeHistory(page);
+    const before = (await historyState(page)).undoDepth;
+
+    await card(page).getByRole('button', { name: '変更' }).click();
+    await expect(page.locator('.link-card-search')).toBeFocused();
+    // The whole point: the node's href is still what it was while the picker is up, not cleared
+    // the way `setHref('')` used to clear it — `markdown()` reads the live doc, not the chrome.
+    expect(await markdown(page)).toContain(CARD_MD);
+    expect((await historyState(page)).undoDepth).toBe(before);
+
+    if (exit === 'cancel button') {
+      await card(page).getByRole('button', { name: 'キャンセル' }).click();
+    } else if (exit === 'Escape') {
+      await page.keyboard.press('Escape');
+    } else {
+      // Outside the card, and outside the picker's own search box — the post's title field is
+      // neither, and clicking it is a press a real author would make while abandoning the picker.
+      await page.getByLabel('タイトル').click();
+    }
+
+    await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+    await expect(page.locator('.link-card-search')).toHaveCount(0);
+    expect(await markdown(page)).toContain(CARD_MD);
+    // Nothing was ever dispatched, so there is nothing Ctrl+Z should undo here — the depth is
+    // unchanged from before 「変更」 was even pressed.
+    expect((await historyState(page)).undoDepth).toBe(before);
+
+    // §7.4.1's second half: the raw `dom.focus()` this used to end on revealed whatever the
+    // document's real selection still was — never moved by pressing 変更 in the first place — which
+    // is what sent the scrollbar somewhere the author was not looking. `cancelEditAndFocus` puts a
+    // NodeSelection on the card itself instead, for the two exits that mean "stay in the editor."
+    const selectedNode = await page.evaluate(() => {
+      const el = document.querySelector('.ProseMirror') as
+        | (Element & {
+            editor?: { state: { selection: { node?: { type: { name: string }; attrs: object } } } };
+          })
+        | null;
+      const node = el?.editor?.state.selection.node;
+      return node ? { type: node.type.name, attrs: node.attrs } : null;
+    });
+    if (exit === 'outside click') {
+      // The press that triggered this already said where the author wants to be — pulling
+      // selection back onto the card here would fight that press.
+      await expect(page.getByLabel('タイトル')).toBeFocused();
+      expect(selectedNode).toBeNull();
+    } else {
+      expect(selectedNode).toEqual({ type: 'linkCard', attrs: { href: CARD_HREF } });
+    }
+  });
+}
+
+// The other half of §7.4.1: a card that has never resolved has no card to cancel back to, and the
+// picker it already shows (§5.2-3) must not grow a button that undoes nothing or, worse, reads as
+// a way to back out of the insertion itself.
+test('a freshly-inserted card’s picker has no キャンセル (4m)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('/リンクカード');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await expect(page.locator('.link-card-search')).toBeFocused();
+
+  await expect(card(page).getByRole('button', { name: 'キャンセル' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.getByLabel('タイトル').click();
+  // Still there, still unresolved — Escape and an outside click are no-ops with no card behind them.
+  await expect(page.locator('.link-card-search')).toBeVisible();
+});
