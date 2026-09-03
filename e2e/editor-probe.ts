@@ -82,6 +82,50 @@ export function caretPos(page: Page): Promise<number> {
   });
 }
 
+// `[from, to]` of the current selection. **The probe a spec needs when the gesture under test is a
+// range**: a Shift-arrow selection reaches ProseMirror's state through the 20ms DOM-sync debounce,
+// so a spec that pastes in the same tick is measuring a collapsed caret and can pass for the wrong
+// reason (the paste-over-selection specs, 2026-09-03). Asserting `to > from` after `settle` is what
+// makes those measurements non-vacuous.
+export function selectionSpan(page: Page): Promise<[number, number]> {
+  return page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & { editor?: { state: { selection: { from: number; to: number } } } })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const { from, to } = el.editor.state.selection;
+    return [from, to] as [number, number];
+  });
+}
+
+// How many *document-changing* transactions an action dispatches. **The probe for a handler that
+// stages an edit and then decides not to make it**: the end state cannot tell "the transaction was
+// dropped whole" from "it was dispatched and the fall-through did the same thing", and the count
+// can. Selection-only transactions are ignored, so ProseMirror's DOM-sync traffic cannot make the
+// number wobble.
+export async function countDocChanges(page: Page, action: () => Promise<void>): Promise<number> {
+  await page.evaluate(() => {
+    const el = document.querySelector('.ProseMirror') as
+      | (Element & {
+          editor?: {
+            on(
+              event: 'transaction',
+              handler: (props: { transaction: { docChanged: boolean } }) => void,
+            ): void;
+          };
+        })
+      | null;
+    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
+    const counted = window as Window & { __docChanges?: number };
+    counted.__docChanges = 0;
+    el.editor.on('transaction', ({ transaction }) => {
+      if (transaction.docChanged) counted.__docChanges = (counted.__docChanges ?? 0) + 1;
+    });
+  });
+  await action();
+  return page.evaluate(() => (window as Window & { __docChanges?: number }).__docChanges ?? -1);
+}
+
 // As much of prosemirror-history's plugin state as these tests need: `undoDepth`'s
 // `hist.done.eventCount`, and the grouping clock (`this.prevTime = prevTime`) that decides whether
 // the next change joins the event before it or starts its own — `newGroup = history.prevTime == 0 ||

@@ -126,6 +126,15 @@ function innerRange(page: Page, typeName: string): Promise<{ from: number; to: n
   }, typeName);
 }
 
+// The inline-content start of the first node of `typeName`. `selectInside` is the whole-node form;
+// this is one endpoint on its own, for a range that *crosses* into a node — which is the shape the
+// isolating edge has to be measured at (a selection running from the paragraph above the footnotes
+// to where the first definition's text begins).
+export async function contentStartOf(page: Page, typeName: string): Promise<number> {
+  const { from } = await innerRange(page, typeName);
+  return from;
+}
+
 // Select the content of the first node of `typeName` — inside it, nothing outside.
 export async function selectInside(page: Page, typeName: string): Promise<void> {
   const { from, to } = await innerRange(page, typeName);

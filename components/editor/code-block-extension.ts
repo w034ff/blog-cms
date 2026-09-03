@@ -35,6 +35,10 @@ declare module '@tiptap/core' {
 export function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
   const { $from, empty } = state.selection;
   // Only for a caret: with a range, "after the textblock" is not where the author is pointing.
+  // **A paste is the exception, and it collapses before asking rather than widening this** — for a
+  // paste, replacing the selection *is* the gesture (speakerdeck-snippet-paste.ts, which deletes
+  // the range and then asks this question about the caret the deletion left). The rule below stays
+  // what the slash menu, the bubble and the link card get.
   if (!empty || $from.depth < 1) return false;
   const parent = $from.node($from.depth - 1);
   const index = $from.index($from.depth - 1);

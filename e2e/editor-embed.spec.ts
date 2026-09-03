@@ -1,6 +1,20 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, moveBlockAbove, selectNode, setRange } from './editor-authoring';
-import { docString, markdown, shot } from './editor-probe';
+import {
+  contentStartOf,
+  loadMarkdown,
+  moveBlockAbove,
+  selectNode,
+  setRange,
+} from './editor-authoring';
+import {
+  caretPos,
+  countDocChanges,
+  docString,
+  markdown,
+  selectionSpan,
+  settle,
+  shot,
+} from './editor-probe';
 import { cdpNativeDrag } from './native-drag';
 import { EMBED_SILENCE_MS } from '../lib/embed-message';
 
@@ -217,6 +231,15 @@ const SD_SCRIPT = `<script defer class="speakerdeck-embed" data-id="${SD_ID}" da
 // The clipboard is synthesised rather than driven through the OS, the way e2e/editor-vscode-paste.ts
 // does it. `text/plain` alone is what Speaker Deck's own buttons put there (`data-clipboard-text`,
 // measured 2026-08-26), so that is what these carry.
+// **The gesture has to still be a range when the paste lands.** A Shift-arrow selection reaches
+// ProseMirror's state through the 20ms DOM-sync debounce, and a synthetic paste dispatched in the
+// same tick would be read against the caret the click left — which passes for the wrong reason,
+// since the caret path places the same embed in the blank-line case.
+async function expectRange(page: Page): Promise<void> {
+  const [from, to] = await selectionSpan(page);
+  expect(to).toBeGreaterThan(from);
+}
+
 async function pasteText(page: Page, text: string): Promise<void> {
   await page.evaluate((data) => {
     const transfer = new DataTransfer();
@@ -308,12 +331,115 @@ test('a paste this is not stays exactly what it is today (SD12)', async ({ page 
   await expect(embed(page)).toHaveCount(0);
   expect(await markdown(page)).toContain('speakerdeck-iframe');
 
-  // A snippet pasted over a selection is not a caret asking for a block either, and `setEmbed`
-  // refuses it: the selection is replaced with the text, which is what pasting anything else does.
+  // **A range in the same cell is refused only after a deletion has been staged**, so what has to
+  // be measured is that the staged deletion is thrown away rather than dispatched on its own
+  // (`preventDispatch`, speakerdeck-snippet-paste.ts). **The end state cannot show it**: the
+  // fall-through paste replaces the selection either way, so the cell reads the same in both
+  // stories. The count of document-changing transactions can — one, the fall-through paste.
+  // Removing the meta makes it two (measured 2026-09-03), which is the negative control this
+  // number exists for.
+  await openWith(page, '| A | B |\n| --- | --- |\n| c1 | c2 |\n');
+  const cell = page.locator('.ProseMirror td').first();
+  await cell.click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+ArrowLeft');
+  await settle(page);
+  await expectRange(page);
+  const changes = await countDocChanges(page, () => pasteText(page, SD_IFRAME));
+  await expect(embed(page)).toHaveCount(0);
+  expect(changes).toBe(1);
+  await expect(cell).toContainText('c<iframe');
+});
+
+test('a snippet pasted over a selection replaces it (SD15)', async ({ page }) => {
+  await page.route('https://speakerdeck.com/player/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  // **The gesture that reported this** (2026-09-03): the author drags over the blank lines the
+  // embed is meant to fill and pastes onto them. `setEmbed` is caret-only, so before this the
+  // snippet landed there as text — §16.9's own table said 「今までどおり」, and that was the bug.
+  await openWith(page, '本文\n');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  // From the second blank line back over the first — the keyboard equivalent of that drag.
+  await page.keyboard.press('Shift+ArrowUp');
+  await settle(page);
+  await expectRange(page);
+  await pasteText(page, SD_IFRAME);
+
+  await expect(embed(page)).toHaveCount(1);
+  // **Both blank lines are consumed, not one**: the deletion joins them before the embed replaces
+  // what is left, so no empty paragraph survives in the markdown (SD10's rule, reached the other
+  // way — an empty paragraph is invisible in the editor and real in the file).
+  expect(await markdown(page)).toBe(`本文\n\n<div class="embed" data-href="${SD_HREF}"></div>`);
+
+  // A selection carrying text is replaced too, which is what pasting anything else over it does.
   await openWith(page, '本文\n');
   await page.keyboard.press('Control+a');
+  await expectRange(page);
   await pasteText(page, SD_IFRAME);
+  await expect(embed(page)).toHaveCount(1);
+  expect(await markdown(page)).toBe(`<div class="embed" data-href="${SD_HREF}"></div>`);
+});
+
+test('a range reaching into the footnotes still makes the embed (SD16)', async ({ page }) => {
+  await page.route('https://speakerdeck.com/player/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
+  );
+  // **The gesture that reported this** (2026-09-03): the last line above the footnotes, dragged.
+  // Its selection ends at the first definition's content start — one line is highlighted, and
+  // nothing of the footnote is inside the range — but the range does cross the definition's
+  // isolating edge, and an unclamped deletion left the caret inside the definition, where no embed
+  // may go. The paste fell through and landed as text.
+  const source = '本文[^1]\n\n最終段落\n\n[^1]: 脚注の中身\n';
+  const stored = `<div class="embed" data-href="${SD_HREF}"></div>`;
+
+  await openWith(page, source);
+  // Endpoints by position, not by pixels: the drag's own end is decided by font metrics, and what
+  // has to be exact here is *which* edge the range reaches.
+  await page.locator('.ProseMirror > p').last().click();
+  await page.keyboard.press('Home');
+  await settle(page);
+  const lineStart = await caretPos(page);
+  const footnoteStart = await contentStartOf(page, 'footnoteDefinition');
+  await setRange(page, lineStart, footnoteStart);
+  await pasteText(page, SD_IFRAME);
+
+  await expect(embed(page)).toHaveCount(1);
+  // The footnote keeps every character, because none of them was in the range — what the clamp
+  // protects is the join, not the text.
+  expect(await markdown(page)).toBe(`本文[^1]\n\n${stored}\n\n[^1]: 脚注の中身`);
+
+  // **A range that really does reach into the footnote text takes it, exactly as any other paste
+  // over the same range does.** Measured against a plain paste rather than asserted from the
+  // clamp's rules: two characters of the definition are inside the range, and both stories lose
+  // the same two.
+  await openWith(page, source);
+  await page.locator('.ProseMirror > p').last().click();
+  await page.keyboard.press('Home');
+  await settle(page);
+  await setRange(
+    page,
+    await caretPos(page),
+    (await contentStartOf(page, 'footnoteDefinition')) + 2,
+  );
+  await pasteText(page, SD_IFRAME);
+  await expect(embed(page)).toHaveCount(1);
+  expect(await markdown(page)).toBe(`本文[^1]\n\n${stored}\n\n[^1]: の中身`);
+
+  await openWith(page, source);
+  await page.locator('.ProseMirror > p').last().click();
+  await page.keyboard.press('Home');
+  await settle(page);
+  await setRange(
+    page,
+    await caretPos(page),
+    (await contentStartOf(page, 'footnoteDefinition')) + 2,
+  );
+  await pasteText(page, 'ただの文字');
   await expect(embed(page)).toHaveCount(0);
+  expect(await markdown(page)).toBe('本文[^1]\n\nただの文字\n\n[^1]: の中身');
 });
 
 test('the deck page URL is told which Copy button it wanted (SD14)', async ({ page }) => {
