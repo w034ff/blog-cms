@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { EMBED_PROVIDERS, embedRefusal, resolveEmbed } from '@/lib/embed-provider';
+import { EmbedProviderIcon } from './embed-provider-icon';
 import { speakerdeckSnippetHref } from '@/lib/speakerdeck-snippet';
 
 // The embed's insert dialog (docs/embed-requirements.md §24.1).
@@ -144,7 +145,7 @@ export function EmbedInsertDialog({
   // CodeSandbox's devbox). Null for everything else, which is most references.
   const refusal =
     attempted && value !== '' && target === null
-      ? (embedRefusal(reference) ?? 'このURLは埋め込めません。リンクカードにしてください。')
+      ? (embedRefusal(reference) ?? 'この URL は埋め込めません。リンクカードにしてください。')
       : null;
 
   return (
@@ -287,12 +288,13 @@ export function EmbedInsertDialog({
                   // who hears the page. `aria-current` says it to a screen reader, the left bar says
                   // it to the eye, and the spec asks for the row by the same attribute.
                   aria-current={on ? 'true' : undefined}
-                  className={`border-l-2 py-1.5 pr-3 pl-2.5 text-xs ${
+                  className={`border-l-2 py-2.5 pr-3 pl-2.5 text-xs ${
                     on
                       ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40'
                       : 'border-transparent'
                   }`}>
                   <div className='flex items-center gap-3'>
+                    <EmbedProviderIcon name={provider.name} />
                     <span className='w-28 flex-none font-bold'>{provider.name}</span>
                     {/* **What kind of thing this provider embeds** (§24.1, 2026-09-03). The hosts
                         were here until this date and answered the wrong question — which site
@@ -301,22 +303,35 @@ export function EmbedInsertDialog({
                         were truncated on top of that. The kind is per-provider truth, so it needs
                         no second string kept in step with the matcher.
 
-                        **The note, in parentheses, is Speaker Deck's alone**: the one provider
-                        whose address bar is not the answer (§16.10). One text node rather than a
-                        nested span, so `e2e/editor-embed-insert.spec.ts` can assert the cell by
-                        its exact text. No `font-mono` any more — the column is Japanese nouns
-                        now, which is also what lets the note sit in it without breaking register,
-                        the objection that kept a sentence out of the hosts column. */}
-                    <span className='min-w-0 flex-1 truncate text-zinc-500 dark:text-zinc-400'>
-                      {provider.note === undefined
-                        ? provider.kind
-                        : `${provider.kind}（${provider.note}）`}
+                        **Every row is one bare kind now** (§24.6, 2026-09-03) — Speaker Deck's
+                        parenthetical note used to sit inline here, the one row shaped like a
+                        sentence in a column of nouns. A footnote mark stands in for it instead,
+                        and the note itself moved to the legend below the list. Found by
+                        `data-embed-kind` (§24.4), not position, since the provider icon added a
+                        span of its own before this one. */}
+                    <span
+                      data-embed-kind
+                      className='min-w-0 flex-1 truncate text-zinc-500 dark:text-zinc-400'>
+                      {provider.kind}
+                      {provider.note !== undefined && <sup className='font-bold'>＊</sup>}
                     </span>
                   </div>
                 </li>
               );
             })}
           </ul>
+
+          {/* **The note, spelled out once per marked row, below the table it annotates.** Kept
+              generic over `provider.note` — today only Speaker Deck has one — rather than
+              hand-written for that name, so a second noted provider would not need a second
+              paragraph added by hand. Always mounted: unlike the refusal message, nothing here
+              depends on what the author has typed, so there is no state to reserve height for. */}
+          {EMBED_PROVIDERS.filter((provider) => provider.note !== undefined).map((provider) => (
+            <p key={provider.name} className='px-0.5 text-[11px] text-zinc-500 dark:text-zinc-400'>
+              <sup className='font-bold'>＊</sup> {provider.name} は URL ではなく{provider.note}
+              を貼ってください
+            </p>
+          ))}
         </div>
 
         <div className='flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800'>

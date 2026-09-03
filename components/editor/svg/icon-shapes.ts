@@ -68,6 +68,17 @@ export const PLAY_SHAPES: readonly IconShape[] = [
   { kind: 'path', d: 'M10.5 9.5l4.5 2.5-4.5 2.5z', filled: true },
 ];
 
+// The same frame as `PLAY_SHAPES`, filled with two content lines instead of a play triangle —
+// Docswell's mark (embed-requirements.md §17.7) until 2026-09-03, when their terms turned up a
+// requirement to ask permission before using it on an external site, which this repo has not done.
+// A play triangle reads as video, which `docswell`'s kind ("スライド") is not, so this draws the
+// generic shape of a slide rather than falling back to `PLAY_SHAPES`.
+export const SLIDE_SHAPES: readonly IconShape[] = [
+  { kind: 'rect', x: 3, y: 5, width: 18, height: 14, rx: 2 },
+  { kind: 'line', x1: 7, y1: 10, x2: 15, y2: 10 },
+  { kind: 'line', x1: 7, y1: 14, x2: 12, y2: 14 },
+];
+
 // The X monogram (docs/embed-requirements.md §7.3). The one mark here that is a brand's rather than
 // a drawn shape, and the one with no frame: at 16px a frame leaves about 5 rendered pixels for what
 // sits inside it, which is not enough for a letterform. **Drawn filled** — under this file's usual
@@ -146,54 +157,6 @@ export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
   },
 ];
 
-// Docswell's own mark, taken as published rather than re-derived, for SPEAKERDECK_MARK_SHAPES'
-// reason (embed-requirements.md §17.7). The source is the mark half of `images/logo_yoko.svg` on
-// Docswell's CDN — the seven paths left of the wordmark, minus one that measures 0.05×0.08 in the
-// source's own units and renders as nothing at any size.
-//
-// **The two blues become one `currentColor`, and the drawing survives that** because the cube's
-// right face is published as an outline rather than a solid: flattened, it still reads as a face
-// behind the ribbon instead of merging into it (compared against the two-tone original at
-// 16/24/40px in both schemes, 2026-08-26).
-//
-// The refit is the same one number as Speaker Deck's. The mark is 35.21×32 in the source and near
-// square, so it is scaled to a 21.5 span *by width* and centred in the 24 box, which lands it at
-// 21.5×19.54 — X's own footprint (21.3×19.5) and the span the marks beside it hold. The transform
-// is baked into the coordinates because an IconShape carries no transform; rounding to 2 decimals
-// was diffed against the un-baked render and differs in 0 pixels at 16 and 24px, 1 at 40px.
-export const DOCSWELL_MARK_SHAPES: readonly IconShape[] = [
-  {
-    kind: 'path',
-    d: 'M14.79 2.83L18.21 4.67L22.75 7.12V12V16.88L18.21 19.33L14.79 21.17V17.04L16.29 16.24L18.92 14.82V12V9.18L16.29 7.76L14.79 6.96',
-    filled: true,
-  },
-  {
-    kind: 'path',
-    d: 'M9.81 19.69L13.67 21.77L14.79 21.17V17.04V6.96V2.83L13.67 2.23L9.81 4.31V19.69Z',
-    filled: true,
-  },
-  {
-    kind: 'path',
-    d: 'M9.81 15.54L6.72 10.21L5.39 7.91L4.57 7.94L3.09 10.34L8.05 18.92L9.81 18.86V15.54Z',
-    filled: true,
-  },
-  {
-    kind: 'path',
-    d: 'M6.65 16.5L6.62 16.47L3.26 14.2L1.88 13.27L1.43 13.51L1.25 15.27L6.38 18.73L7.58 18.1L6.65 16.5Z',
-    filled: true,
-  },
-  {
-    kind: 'path',
-    d: 'M4.11 12.1L3.26 12.55L1.88 13.27L3.26 14.2L3.86 13.88L4.84 13.37L4.11 12.1Z',
-    filled: true,
-  },
-  {
-    kind: 'path',
-    d: 'M9.81 7.78L7.89 7.84L5.39 7.91L6.72 10.21L7.82 10.18L9.74 10.12L9.81 10.24V7.78Z',
-    filled: true,
-  },
-];
-
 // GitHub's own mark. The path itself is `lib/github-mark.ts` — the published code-block header
 // draws the same one, and only `lib/` is importable from both sides (§19.4).
 export const GITHUB_MARK_SHAPES: readonly IconShape[] = [
@@ -260,7 +223,7 @@ export function embedMarkShapes(provider: string | undefined): readonly IconShap
   if (provider === 'codepen') return CODEPEN_MARK_SHAPES;
   if (provider === 'slideshare') return SLIDESHARE_MARK_SHAPES;
   if (provider === 'speakerdeck') return SPEAKERDECK_MARK_SHAPES;
-  if (provider === 'docswell') return DOCSWELL_MARK_SHAPES;
+  if (provider === 'docswell') return SLIDE_SHAPES;
   if (provider === 'gist') return GITHUB_MARK_SHAPES;
   return provider === 'figma' ? FIGMA_MARK_SHAPES : PLAY_SHAPES;
 }

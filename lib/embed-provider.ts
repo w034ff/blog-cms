@@ -854,13 +854,18 @@ const codepen: Provider = {
   },
 };
 
+// Grouped by `kind` (§24.5, 2026-09-03) — the three スライド rows and the three コード rows sit
+// together rather than being split by Figma or Speaker Deck landing between them. Adjacent repeats
+// read as a deliberate group; the same three words scattered through the list read as accidental.
+// Speaker Deck sits last in its group, not first, so the one row with a note is the group's tail
+// rather than its opening example.
 const PROVIDERS: readonly Provider[] = [
   youtube,
   x,
   slideshare,
-  figma,
-  speakerdeck,
   docswell,
+  speakerdeck,
+  figma,
   gist,
   codesandbox,
   codepen,

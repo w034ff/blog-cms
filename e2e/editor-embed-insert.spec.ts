@@ -31,11 +31,12 @@ const DOCSWELL_USER = 'https://www.docswell.com/user/somebody';
 const SPEAKERDECK_ID = '9de2f18094b14cbb91b07331eb085e4f';
 const SPEAKERDECK_PLAYER = `https://speakerdeck.com/player/${SPEAKERDECK_ID}`;
 const SPEAKERDECK_PAGE = 'https://speakerdeck.com/soudai/pgcon21j-tutorial';
-// The two strings the registry gives that row — the cell its column prints (the kind, then the
-// note in parentheses) and the refusal it earns in place of 「リンクカードにしてください」.
+// The cell its column prints (§24.6: the kind plus a footnote mark, not a parenthetical), the
+// legend line the mark points to, and the refusal it earns in place of 「リンクカードにしてください」.
 // Spelled out here as the provider names below are: `lib/embed-provider.test.ts` holds the
 // registry to carrying them, and this file measures that the dialog draws them.
-const SPEAKERDECK_CELL = 'スライド（埋め込みコード）';
+const SPEAKERDECK_CELL = 'スライド＊';
+const SPEAKERDECK_LEGEND = '＊ Speaker Deck は URL ではなく埋め込みコードを貼ってください';
 const SPEAKERDECK_REFUSAL = 'Share →「Copy iframe code」の内容を貼ってください。';
 const SPEAKERDECK_IFRAME = `<iframe class="speakerdeck-iframe" frameborder="0" src="${SPEAKERDECK_PLAYER}" title="実際に使うSQLの書き方 徹底解説 / pgcon21j-tutorial" allowfullscreen="true" allow="web-share" style="border: 0px; width: 100%; height: auto; aspect-ratio: 560 / 315;" data-ratio="1.7777777777777777"></iframe>`;
 
@@ -43,7 +44,7 @@ const SPEAKERDECK_IFRAME = `<iframe class="speakerdeck-iframe" frameborder="0" s
 // every negative below is a `not.toContainText`, and a fragment that stopped matching would make
 // all of them pass while measuring nothing. Held together by the positives — reword the dialog
 // without touching this and they fail first, which is the only order that cannot go quiet.
-const REFUSAL = 'このURLは埋め込めません。リンクカードにしてください。';
+const REFUSAL = 'この URL は埋め込めません。リンクカードにしてください。';
 
 // For `paste` above. Chromium does not hand a page the clipboard on its own.
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
@@ -243,16 +244,18 @@ test('the Speaker Deck row asks for the embed code, and the field takes it (24h)
   const field = dialog(page).getByLabel('URL または埋め込みコード');
   const submit = dialog(page).getByRole('button', { name: '挿入する' });
   const row = dialog(page).getByRole('listitem').filter({ hasText: 'Speaker Deck' });
-  // The note is on the row before anything has been pasted: this is the one provider whose address
+  // The mark is on the row before anything has been pasted: this is the one provider whose address
   // bar is not the answer, and the only place that can be said *before* the paste. **Asserted as
   // the cell's exact text**, since `toContainText` would also pass for a row that had kept the
-  // kind and dropped the note. It names the code rather than a button — either Share button's
-  // output resolves (§16.9), so 「iframe コード」 would be false for half the authors.
-  await expect(row.locator('span').nth(1)).toHaveText(SPEAKERDECK_CELL);
-  // The other eight carry a bare kind — without this, putting a note on every row passes, which
-  // would be the column repeating what the address bar already answers for them (§16.10).
+  // kind and dropped the mark. The legend below the list spells out what the mark points to,
+  // rather than the row itself carrying a sentence (§24.6).
+  await expect(row.locator('[data-embed-kind]')).toHaveText(SPEAKERDECK_CELL);
+  await expect(dialog(page).getByText(SPEAKERDECK_LEGEND, { exact: true })).toBeVisible();
+  // The other eight carry a bare kind and earn no legend line — without this, putting a mark on
+  // every row passes, which would be the column repeating what the address bar already answers
+  // for them (§16.10).
   await expect(
-    dialog(page).getByRole('listitem').filter({ hasText: 'YouTube' }).locator('span').nth(1),
+    dialog(page).getByRole('listitem').filter({ hasText: 'YouTube' }).locator('[data-embed-kind]'),
   ).toHaveText('動画');
 
   // The deck page still refuses: nothing here widened what can be stored (§16.9). **And it refuses
