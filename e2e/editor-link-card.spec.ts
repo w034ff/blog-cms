@@ -214,8 +214,8 @@ test('the card can be opened, and opening it leaves the card alone (4i)', async 
   expect(await markdown(page)).toContain(`data-href="${CARD_HREF}"`);
 });
 
-// §7.4's other half: the band's controls trade their labels for icons below 30rem, and the label
-// they stop showing is the accessible name every other test in this file selects them by. Hiding it
+// §7.4's other half: below 30rem the band drops the label and keeps the icon alone, and the label
+// it stops showing is the accessible name every other test in this file selects them by. Hiding it
 // with `display: none` would read identically in a screenshot and take the name with it — a
 // regression a wide-viewport spec cannot see, because the rule it breaks only applies narrow.
 test('the band keeps its names when it shows icons (4j)', async ({ page }) => {
@@ -243,6 +243,68 @@ test('the band keeps its names when it shows icons (4j)', async ({ page }) => {
   expect(band.labelWidth).toBeLessThan(2);
   // The destructive control is the only one wearing a colour of its own.
   expect(band.dangerColor).not.toBe(band.plainColor);
+});
+
+// The band's other width: above 30rem both the icon and the label show, not the label alone.
+test('the wide band shows icons alongside its labels', async ({ page }) => {
+  await openWithCard(page);
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+
+  for (const name of ['開く', '変更', 'リンクに戻す']) {
+    await expect(card(page).getByRole('button', { name })).toBeVisible();
+  }
+  const band = await card(page).evaluate((el) => {
+    const buttons = [...el.querySelectorAll('.link-card-head button')];
+    const label = el.querySelector('.link-card-action-label') as HTMLElement;
+    return {
+      icons: buttons.filter((b) => getComputedStyle(b.querySelector('svg')!).display === 'block')
+        .length,
+      labelWidth: label.getBoundingClientRect().width,
+    };
+  });
+  expect(band.icons).toBe(3);
+  expect(band.labelWidth).toBeGreaterThan(2);
+});
+
+// The 40rem fallback (app/globals.css, `:has(.link-card-image)`): a card with a picture runs out of
+// room for three labels well above 30rem, and 550px is inside that squeeze zone. The band must fall
+// back to icon-only there rather than let `text-overflow: ellipsis` drop a character per button, and
+// its height must still match the picker's — the invariant §7.1 exists for — at that same width.
+test('a card with a picture falls back to icons before its labels squeeze (4n)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 550, height: 800 });
+  await openWithCard(page);
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await expect(card(page).locator('.link-card-image')).toBeVisible();
+
+  for (const name of ['開く', '変更', 'リンクに戻す']) {
+    await expect(card(page).getByRole('button', { name })).toBeVisible();
+  }
+  const band = await card(page).evaluate((el) => {
+    const buttons = [...el.querySelectorAll('.link-card-head button')];
+    const label = el.querySelector('.link-card-action-label') as HTMLElement;
+    return {
+      icons: buttons.filter((b) => getComputedStyle(b.querySelector('svg')!).display === 'block')
+        .length,
+      labelWidth: label.getBoundingClientRect().width,
+      headHeight: el.querySelector('.link-card-head')!.getBoundingClientRect().height,
+    };
+  });
+  expect(band.icons).toBe(3);
+  // Hidden by size, not by `display` — same reasoning as 4j, at this narrower width.
+  expect(band.labelWidth).toBeLessThan(2);
+
+  await page.goto('/admin/posts/new');
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('/リンクカード');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  const picker = card(page);
+  await expect(picker.locator('.link-card-search')).toBeVisible();
+  const pickerHeadHeight = await picker
+    .locator('.link-card-head')
+    .evaluate((el) => el.getBoundingClientRect().height);
+  expect(pickerHeadHeight).toBeCloseTo(band.headHeight, 0);
 });
 
 // §7.3, and the answer to what §10 used to list as unmeasured. A card is an atom, so

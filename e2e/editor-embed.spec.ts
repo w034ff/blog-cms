@@ -128,6 +128,27 @@ test('リンクに戻す hands the reference back verbatim', async ({ page }) =>
   await expect(link).toHaveText(href);
 });
 
+// 「リンクに戻す」 carries an icon and a label both, matching the link card's band and the code
+// block's own copy of the same button (link-card-requirements.md §7.4) — but not their width rule.
+// This is the row's only control, so unlike those two it keeps both at every width (§7.4 in this
+// document): measured 2026-09-04, the head still has far more room than the button needs at 320px.
+test('リンクに戻す carries its icon and label at every width (E19)', async ({ page }) => {
+  await openWith(page, `<div class="embed" data-href="${WATCH}"></div>\n\n本文\n`);
+  const button = () => embed(page).getByRole('button', { name: 'リンクに戻す' });
+  await expect(button()).toBeVisible();
+  const iconDisplay = () =>
+    embed(page).evaluate((el) => getComputedStyle(el.querySelector('.embed-head svg')!).display);
+  expect(await iconDisplay()).toBe('block');
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect(button()).toBeVisible();
+  expect(await iconDisplay()).toBe('block');
+  const labelWidth = await embed(page).evaluate(
+    (el) => el.querySelector('.embed-to-link-label')!.getBoundingClientRect().width,
+  );
+  expect(labelWidth).toBeGreaterThan(2);
+});
+
 test('the stored form survives the round trip (E1)', async ({ page }) => {
   // `&` is written as `&amp;` by the serializer and read back by markdown-it, which is the one
   // character in a reference that can be lost silently.

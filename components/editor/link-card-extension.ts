@@ -936,11 +936,12 @@ function resultImage(drawn: CardImage): HTMLElement {
 
 // `icon` is what makes a band control; the picker's result rows pass none and stay plain text.
 //
-// **A control carries its icon AND its label at every width.** Which of the two is visible is the
-// stylesheet's business (`app/globals.css`: the label below 30rem, the icon above it), and it is
-// visually-hidden rather than `display: none` on purpose — the label is the button's accessible
-// name, so removing it from the tree at narrow widths would leave three unnamed buttons for a
-// screen reader and take every `getByRole('button', { name: … })` in the specs with it (§7.4).
+// **A control carries its icon AND its label at every width.** Both show above 30rem — and above
+// 40rem for a card with a picture, which has far less of the card's width to itself (§7.4.2). Below
+// either, the stylesheet's business (`app/globals.css`) hides the label and keeps the icon alone.
+// The label is visually-hidden rather than `display: none` on purpose — it is the button's
+// accessible name, so removing it from the tree at narrow widths would leave three unnamed buttons
+// for a screen reader and take every `getByRole('button', { name: … })` in the specs with it (§7.4).
 //
 // `danger` tints the control instead of filling it. That is how this editor already says
 // "destructive" — the bubble's 解除 and the toolbar's テーブルを削除 both wear the same red text

@@ -2131,11 +2131,50 @@ body.link-menu-open .table-toolbar {
   border: none;
   text-align: left;
 }
-/* The band's controls carry an icon and a label both (link-card-extension.ts's `button`). Which one
-   shows is a width question and lives in the 30rem block below; the icon is out of the flow up
-   here so a wide card is unchanged from what it was before the icons existed. */
+/* The band's controls carry an icon and a label both (link-card-extension.ts's `button`), shown
+   together at every width — the 30rem block below hides the label on every card, and the 40rem
+   block further down does the same earlier for a card with a picture (that block says why).
+   `inline-flex` + `gap` is what keeps the icon and the label centered on one baseline instead of
+   the default inline layout's mismatched vertical alignment.
+
+   `min-width: 0` and `.link-card-action-label`'s `white-space: nowrap`/ellipsis below are a height
+   guard, not a rendering this band is meant to show: without them, three labels that do not fit one
+   line wrap instead, and the band's height — fixed by §7.1, shared with the picker's search row —
+   grows with it (measured 2026-09-04: 35px become 51-96px). The 30rem/40rem fallbacks are what keep
+   that from being reached in practice; this is what stops it from being *silent* if a future label,
+   button, or picture-less card's width ever slips past both. */
+.prose .link-card-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-width: 0;
+}
 .prose .link-card-head button svg {
-  display: none;
+  display: block;
+  flex: none;
+  height: 1rem;
+  width: 1rem;
+}
+.prose .link-card-action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* The embed's own 「リンクに戻す」 (embed-extension.ts), carrying the same icon as the link card's
+   band and the code block's `.code-block-to-link` — but not their width rule. This is the row's
+   only button, and it stays icon-and-label at every width: measured 2026-09-04, the head still
+   has 213px at a 320px viewport against the button's own ~113px, so there is no squeeze here to
+   hide the label for — unlike those two, which hide it because their row is genuinely short of
+   room at some width. */
+.prose .embed-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.prose .embed-head button svg {
+  display: block;
+  flex: none;
   height: 1rem;
   width: 1rem;
 }
@@ -2332,9 +2371,6 @@ body.link-menu-open .table-toolbar {
     padding: 0.25em;
     line-height: 0;
   }
-  .prose .link-card-head button svg {
-    display: block;
-  }
   .prose .link-card-action-label,
   /* The code block header's way back out of an import (§19.4) collapses on the same rule and for
      the same reason: what a cramped header owes its width to is the file it names. */
@@ -2365,6 +2401,42 @@ body.link-menu-open .table-toolbar {
   }
   .prose .code-block-header .code-block-source-path::before {
     content: none;
+  }
+}
+
+/* A second, narrower band breakpoint than 30rem — not a second definition of "the card is narrow"
+   (that one stays 30rem, unconditionally, for §16.1's height and description). This one exists for
+   a different reason: a card *with a picture* (`:has(.link-card-image)`) has its head's own width
+   cut down by `--link-card-image-width: min(16rem, 40%)` (§16.3, read back by this file's own
+   `.link-card-view:has(.link-card-image) .link-card-body` rule above), and runs out of room for
+   three labels well above 30rem. `text-overflow: ellipsis` fails badly under a few px of deficit —
+   the code-block header's `.code-block-to-link` hit the identical shape (measured 2026-08-29: two
+   halves shrinking together into `fac…` / `pack…`, naming neither, fixed by dropping
+   `.code-block-source-repo` instead of letting both truncate) and its fix there was the same one
+   applied here: stop truncating and drop to the clean fallback instead of the squeeze.
+
+   Measured 2026-09-04 with this repo's exact three labels (開く/変更/リンクに戻す): the band's
+   natural content width is ~262px; a card with a picture has that much head room at a 605px
+   viewport and 259px at 600px — one pixel short is enough for `text-overflow: ellipsis` to drop a
+   whole character (開く → 開…), since CJK truncation is per-glyph, not fractional. 40rem leaves
+   comfortable headroom above the measured 605px cliff for a font or label change. A card with no
+   picture never hits this — its head has the run of the whole card width — so the selector stays
+   scoped to `:has(.link-card-image)` rather than moving 30rem itself. */
+@media (max-width: 40rem) {
+  .prose .link-card-view:has(.link-card-image) .link-card-head button {
+    padding: 0.25em;
+    line-height: 0;
+  }
+  .prose .link-card-view:has(.link-card-image) .link-card-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 

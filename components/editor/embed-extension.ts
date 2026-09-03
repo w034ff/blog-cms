@@ -15,6 +15,7 @@ import {
 } from '@/lib/embed-message';
 import { canPlaceAfterCaret } from './code-block-extension';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { buildIcon, UNLINK_SHAPES } from './svg/icon-shapes';
 import { refuseChromeDrops } from './useDragContainment';
 
 // The one string the extension and its host share. Exported rather than written twice, for the
@@ -330,7 +331,14 @@ export const Embed = Node.create({
       // Not a submit button: PostEditor wraps the whole editor in one <form>, so a default-type
       // button inside it submits the post.
       unset.type = 'button';
-      unset.textContent = 'リンクに戻す';
+      // Icon and label both, matching the link card's band and the code block's own 「リンクに戻す」
+      // (link-card-requirements.md §7.4, code-block-extension.ts's `toLink`) — the same action wears
+      // the same shape everywhere it appears. Unlike the card's, this button never shares its row
+      // with anything else, so it carries no danger colour and no width-based fallback.
+      const unsetLabel = document.createElement('span');
+      unsetLabel.className = 'embed-to-link-label';
+      unsetLabel.textContent = 'リンクに戻す';
+      unset.append(buildIcon(UNLINK_SHAPES), unsetLabel);
       unset.addEventListener('click', () => {
         const pos = getPos();
         editor.commands.unsetEmbed(typeof pos === 'number' ? pos : undefined);
