@@ -229,13 +229,17 @@ body {
    the pointer, not the screen. A laptop with a touchscreen and a mouse reports `hover: hover` and
    keeps the current look — the same test the tooltip rule above is written against. */
 @media (hover: none) {
-  .toolbar-button {
+  .toolbar-button,
+  .prose .link-card-head button,
+  .prose .embed-head button {
     box-shadow: inset 0 0 0 1px #d4d4d8; /* zinc-300 */
   }
 }
 
 @media (hover: none) and (prefers-color-scheme: dark) {
-  .toolbar-button {
+  .toolbar-button,
+  .prose .link-card-head button,
+  .prose .embed-head button {
     box-shadow: inset 0 0 0 1px #52525b; /* zinc-600 */
   }
 }
@@ -2118,7 +2122,6 @@ body.link-menu-open .table-toolbar {
 .prose .embed-head button,
 .prose .link-card-results button {
   padding: 0.15em 0.6em;
-  border: 1px solid #d0d7de;
   border-radius: 4px;
   background: none;
   color: inherit;
@@ -2128,7 +2131,6 @@ body.link-menu-open .table-toolbar {
 .prose .link-card-results button {
   display: block;
   width: 100%;
-  border: none;
   text-align: left;
 }
 /* The band's controls carry an icon and a label both (link-card-extension.ts's `button`), shown
@@ -2692,6 +2694,7 @@ body.link-menu-open .table-toolbar {
 .prose .embed-head {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5em;
   min-height: 2.2em;
 }
