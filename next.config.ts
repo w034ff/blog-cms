@@ -11,10 +11,11 @@ const nextConfig: NextConfig = {
 
 // In E2E mode (NEXT_DIST_DIR set) the harness runs a second dev server, and Next
 // auto-writes its generated-type includes into the tsconfig it uses. Redirect that
-// to a throwaway tsconfig.e2e.json (gitignored, created by e2e/prepare-db.mts) so
-// the tracked tsconfig.json is never rewritten.
+// to a throwaway tsconfig.e2e.<port>.json (gitignored, created by e2e/prepare-db.mts)
+// so the tracked tsconfig.json is never rewritten. One per server, because sharded
+// runs have several at once and Next rewrites the file it is pointed at.
 if (process.env.NEXT_DIST_DIR) {
-  nextConfig.typescript = { tsconfigPath: 'tsconfig.e2e.json' };
+  nextConfig.typescript = { tsconfigPath: process.env.NEXT_TSCONFIG_PATH || 'tsconfig.e2e.json' };
 }
 
 export default nextConfig;

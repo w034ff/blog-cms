@@ -96,10 +96,27 @@ describe('getPostForEdit', () => {
       description: 'd',
       category: 'cat',
       tags: ['x'],
+      thumbnail: '',
       body: 'pending body',
     };
     const id = seed({ slug: 'p', draft: false, draftContent: pending });
     expect((await getPostForEdit(id))?.draftContent?.title).toBe('Pending');
+  });
+
+  it('fills in a field a working copy predates', async () => {
+    // `draft_content` is JSON and its type is an assertion, not a check: every row stashed before
+    // `thumbnail` existed is missing the key, and the editor read `undefined` as "an image was
+    // chosen" — the field showed 「なし」 next to a label saying the opposite, and the body fallback
+    // never ran. Cast because the whole point is a stored value that does not match the type.
+    const legacy = {
+      title: 'Pending',
+      description: 'd',
+      category: 'cat',
+      tags: ['x'],
+      body: 'pending body',
+    } as DraftContent;
+    const id = seed({ slug: 'p', draft: false, draftContent: legacy });
+    expect((await getPostForEdit(id))?.draftContent?.thumbnail).toBe('');
   });
 
   it('returns null draftContent when there are no pending edits', async () => {

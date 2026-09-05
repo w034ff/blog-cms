@@ -3,9 +3,16 @@ import { visit } from 'unist-util-visit';
 
 // rehype-pretty-code reads a code block's title from the code element's `data.meta`
 // (`title="…"`). Augment hast's element data so setting it below type-checks.
+//
+// **The type has to match `mdast-util-to-hast`'s own declaration of this property, character for
+// character.** That package (pulled in by remark-rehype) augments the same `ElementData` with
+// `meta?: string | null | undefined`, and TypeScript requires every declaration of one property to
+// agree — a bare `string` here is a TS2717 across the whole build, not just in this file. The
+// augmentation is kept rather than dropped in favour of that one so this module states the field it
+// writes instead of inheriting it from whichever dependency happens to be in the program.
 declare module 'hast' {
   interface ElementData {
-    meta?: string;
+    meta?: string | null | undefined;
   }
 }
 

@@ -10,6 +10,7 @@ const emptyInitial: PostEditorInitial = {
   category: DEFAULT_CATEGORY,
   tags: [],
   body: '',
+  thumbnail: '',
 };
 
 export default function NewPostPage() {

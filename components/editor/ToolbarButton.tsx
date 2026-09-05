@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { EditorTooltip } from './EditorTooltip';
 
 // Client-only component (the toolbar mounts after the client editor exists), so
 // navigator is available; the guard just keeps any SSR pass from throwing.
@@ -50,6 +51,8 @@ export function ToolbarButton({
   destructive,
   tooltipHidden,
   compact,
+  accent,
+  round,
   children,
 }: {
   onClick: () => void;
@@ -70,17 +73,29 @@ export function ToolbarButton({
   // Red tint for a destructive action (e.g. delete the whole table), so it reads as
   // "danger" and isn't mistaken for the neutral controls beside it.
   destructive?: boolean;
+  // The same shape in the link blue, for the one control in a surface that commits what the
+  // author typed there (the link card's 適用). The label carries the colour and the background
+  // stays clear until hover — a filled button was tried and taken back out, because nothing else
+  // in this editor's chrome is filled. Measured against the surfaces it sits on: 5.19 at rest and
+  // 6.26 on hover in the light scheme, 4.81 and 6.50 in the dark one.
+  accent?: boolean;
   // Suppress the visible tooltip while keeping the accessible name. Dropdown triggers
   // set this when open so the tooltip doesn't collide with the panel directly below.
   tooltipHidden?: boolean;
   // Tighter hit area (px-1.5 py-0.5 instead of px-2 py-1) for the tightly-packed
   // inline-mark cluster (B/I/S/code), where the default padding reads oversized.
   compact?: boolean;
+  // Circular hover target instead of the rounded rectangle, for icon-only buttons that
+  // sit in a floating card rather than in a row of the toolbar (LinkBubble). The square
+  // hover fill reads as a segmented control when only three buttons share a card.
+  round?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
     ? 'text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300'
-    : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
+    : accent
+      ? 'text-[#0969da] hover:bg-blue-50 hover:text-[#0757ba] dark:text-[#4493f8] dark:hover:bg-blue-950 dark:hover:text-[#6cb0ff]'
+      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
   const mac = isMac();
   const shortcutLabel = shortcut ? formatShortcut(shortcut, mac) : undefined;
   const hasTip = Boolean(title || shortcutLabel) && !tooltipHidden;
@@ -96,23 +111,16 @@ export function ToolbarButton({
       disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      className={`group/tt relative rounded text-xs ${compact ? 'px-1 py-1' : 'px-2 py-1'} ${tone} ${
+      // `toolbar-button` carries no styling of its own here: it is the hook for the touch-only ring
+      // in globals.css (`@media (hover: none)`), which is where that rule can be written once for
+      // every menu that uses this button.
+      className={`toolbar-button group/tt relative text-xs ${
+        round ? 'rounded-full p-1.5' : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
+      } ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>
       {children}
-      {hasTip && (
-        // Centered below (left-1/2 + -translate-x-1/2, top-full). pointer-events-none
-        // so it never blocks hover/click; z-50 clears the sticky header's own content.
-        // A short delay on appearance mimics a native tooltip; it hides immediately.
-        <span
-          aria-hidden='true'
-          className='pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-1.5 py-1 text-[10px] leading-none text-white opacity-0 shadow-sm transition-opacity duration-100 group-hover/tt:opacity-100 group-hover/tt:delay-300 dark:bg-zinc-700'>
-          {title}
-          {shortcutLabel && (
-            <span className={title ? 'ml-1.5 text-white/60' : undefined}>{shortcutLabel}</span>
-          )}
-        </span>
-      )}
+      {hasTip && <EditorTooltip label={title} shortcut={shortcutLabel} />}
     </button>
   );
 }

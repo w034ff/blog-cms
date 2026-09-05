@@ -4,39 +4,14 @@ import { useActionState, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import { TableKit } from '@tiptap/extension-table';
-import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
-import { MarkdownTable, ParagraphTableCell, ParagraphTableHeader } from './editor/table-extensions';
-import { Callout } from './editor/callout-extension';
-import {
-  MarkdownDetails,
-  MarkdownDetailsContent,
-  MarkdownDetailsSummary,
-} from './editor/details-extension';
-import { DropCursorGuard } from './editor/drop-cursor-guard';
-import { IsolatingBoundary } from './editor/isolating-boundary';
-import { Blockquote } from './editor/blockquote-extension';
-import { TrailingNode } from './editor/trailing-node-extension';
-import { Image } from './editor/image-extension';
-import { AccentEmphasis } from './editor/accent-emphasis-extension';
-import { FootnoteLiteral } from './editor/footnote-literal-extension';
-import {
-  Document,
-  FootnoteDefinition,
-  FootnoteReference,
-  FootnoteSection,
-} from './editor/footnote-extension';
+import { postEditorExtensions } from './editor/extensions';
+import { ThumbnailField } from './editor/ThumbnailField';
 import { isPublishableUri } from './editor/link-protocols';
-import { Bold, Italic, Strike, Code } from './editor/guarded-toggle-marks';
-import { Heading, BulletList, OrderedList } from './editor/guarded-block-toggles';
-import { SlashCommand } from './editor/slash-command';
-import { CodeBlockWithLanguage } from './editor/code-block-extension';
-import { ClearNodes } from './editor/clear-nodes-extension';
-import { BlockDragHandle } from './editor/block-drag-handle';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
+import { InsertDialog } from './editor/InsertDialog';
+import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
@@ -44,14 +19,6 @@ import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
 import type { PostFormState } from '@/app/actions/posts';
-
-// tiptap-markdown adds a `markdown` storage exposing getMarkdown(), but ships no
-// type augmentation for it — register it here so editor.storage.markdown is typed.
-declare module '@tiptap/core' {
-  interface Storage {
-    markdown: MarkdownStorage;
-  }
-}
 
 export type PostEditorInitial = {
   // Null in create mode; the row id in edit mode.
@@ -62,6 +29,7 @@ export type PostEditorInitial = {
   category: string;
   tags: string[];
   body: string;
+  thumbnail: string;
 };
 
 type Props = {
@@ -95,6 +63,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
+  // The author's explicit card image ('' = none chosen). Held in React rather
+  // than left uncontrolled like the text fields, because the picker writes it
+  // and the preview reads it back.
+  const [thumbnail, setThumbnail] = useState(initial.thumbnail);
   // The opaque public slug, only needed to build the 表示 link. Empty in create
   // mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
@@ -102,6 +74,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // editor mounted (content intact) and prompt a re-login. Cleared by any
   // successful autosave/publish (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
+  // Whether the shared insert dialog is up. Held here rather than in the extension because it is
+  // React that renders it, and `editor.storage` does not re-render.
+  const [insertDialogAt, setInsertDialogAt] = useState<number | null>(null);
+  // Stable, so the dialog's Escape listener registers once per open instead of once per render.
+  const closeInsertDialog = useCallback(() => setInsertDialogAt(null), []);
 
   // The post's server identity (row id). Null in create mode until the first
   // autosave (or a publish) materializes the row; from then on edits update it.
@@ -122,9 +99,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // a one-time address-bar sync once they gain an identity.
   const urlSyncedRef = useRef(mode === 'edit');
   const publishedRef = useRef(isPublished);
-  // The editor's onUpdate handler (set once at editor creation) reaches the
-  // latest markEdited through this ref, avoiding a stale capture without
-  // re-creating the editor.
+  // A hedge, not a requirement: nothing here can capture a stale markEdited today.
+  // @tiptap/react wraps every option callback at editor creation, so the onUpdate
+  // below is invoked through `this.options.current.onUpdate` — re-read on each
+  // render ("Always call the most recent version of the callback function by
+  // default", @tiptap/react's own words) — and markEdited is identity-stable
+  // regardless, its useCallback deps all being stable. Kept because the failure it
+  // guards against is silent: were markEdited to stop being stable, a stale closure
+  // would leave autosave quietly no longer recording edits.
   const markEditedRef = useRef<() => void>(() => {});
   // The live editor instance, handed to the image-upload hook (set from an
   // effect once useEditor delivers it).
@@ -141,7 +123,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
 
   // Autosave wiring: the hook owns the dirty/debounce/save machinery; the
   // publish-flow state stays here and is updated through these callbacks.
-  const handleCreated = useCallback((id: number) => setCommittedId(id), []);
+  const handleCreated = useCallback((id: number, createdSlug: string) => {
+    setCommittedId(id);
+    // The slug the row was created with (§18). Nothing on screen changes — 表示 is gated on
+    // `isPublished` — but from here the card picker can tell this post apart from every other.
+    if (createdSlug !== '') setSlug(createdSlug);
+  }, []);
   // An edit to a live post is a pending publish until pushed public again.
   const handleDirty = useCallback(() => {
     if (publishedRef.current) setPendingPublish(true);
@@ -200,157 +187,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const editor = useEditor({
     immediatelyRender: false, // required under Next SSR
     shouldRerenderOnTransaction: true, // keep toolbar active states in sync
-    extensions: [
-      // heading/bulletList/orderedList are replaced by the guarded versions below (same
-      // nodes, but they refuse to convert a code block into prose — see
-      // guarded-block-toggles.ts), so disable StarterKit's own to avoid a double
-      // registration. Heading keeps its level restriction there rather than here.
-      // codeBlock is replaced by CodeBlockWithLanguage (adds an in-editor language
-      // picker); disable StarterKit's so the `codeBlock` node isn't registered twice.
-      // blockquote is likewise replaced by our Blockquote (StarterKit's copy bundles a
-      // duplicate prosemirror-state whose Backspace join breaks `instanceof` — see
-      // blockquote-extension.ts), so disable it here to avoid a double registration.
-      // underline is disabled outright: it had no toolbar button (reachable only via the
-      // undocumented Mod-u), and rehype-sanitize's schema (lib/render.ts) doesn't allow a
-      // bare <u> tag, so it silently vanished on publish — a WYSIWYG lie with no UI to fix.
-      // bold/italic/strike/code are replaced by the guarded versions below (same behavior,
-      // but toggling one that's excluded by accentEmphasis is a true no-op — see
-      // guarded-toggle.ts), so disable StarterKit's own to avoid a double registration.
-      // trailingNode is replaced by ours below: same appended paragraph, but it waits while a
-      // just-fired input rule can still be undone, so Backspace after a block shortcut typed at
-      // the end of the document restores what was typed — see trailing-node-extension.ts.
-      StarterKit.configure({
-        heading: false,
-        bulletList: false,
-        orderedList: false,
-        codeBlock: false,
-        blockquote: false,
-        bold: false,
-        italic: false,
-        strike: false,
-        code: false,
-        underline: false,
-        trailingNode: false,
-        // document is replaced by ours: the same top node, but its content expression admits the
-        // footnote definitions' section as an optional last child — see footnote-extension.ts.
-        document: false,
-        // link is kept (it is what makes a pasted URL a link) but must not open on click: the
-        // default sends a left click to window.open, so a link inside the editor could not be
-        // clicked into and the caret could never be placed in it — the text was uneditable and,
-        // with no toolbar control for links either, unremovable. Only this option is overridden,
-        // so autolink/linkOnPaste keep their defaults (docs/link-requirements.md §3, §4).
-        // What this gave up — "open this link" from inside the editor — is handed back by the link
-        // card (editor/LinkBubble.tsx), which the caret placement this enables is what triggers.
-        //
-        // isAllowedUri narrows the schemes a link may use to the ones the public sanitizer will
-        // actually publish — see editor/link-protocols.ts for which six drop out and why the gap
-        // is closed at this end.
-        link: {
-          openOnClick: false,
-          isAllowedUri: (url, ctx) => isPublishableUri(url, ctx.defaultValidate),
-        },
-      }),
-      Document,
-      // Directly under Document because it exists to answer for Document's content expression:
-      // `block+ footnoteSection?` makes `ContentMatch.defaultType` return `footnoteSection` past
-      // the first child, and TipTap's own `clearNodes` takes that unchecked and throws. Replaces
-      // the command with upstream's body picking a *textblock* instead — see
-      // clear-nodes-extension.ts. Reachable as Mod-Alt-0 on almost any line of a post.
-      ClearNodes,
-      TrailingNode,
-      // TableKit bundles the table/cell nodes too, but we replace them: MarkdownTable
-      // (same node, extended to serialize column alignment) and the paragraph-only
-      // cells (markdown can't store block structure inside a cell), so disable its own.
-      TableKit.configure({ table: false, tableCell: false, tableHeader: false }),
-      // allowTableNodeSelection: prosemirror-tables' tableEditing() otherwise coerces any
-      // NodeSelection wrapping a whole `table` into a CellSelection spanning it (an
-      // appendTransaction — see its normalizeSelection). BlockDragHandle's drag itself no longer
-      // depends on this — it captures the node/range directly at mousedown, so a coerced selection
-      // wouldn't break the move — but without this flag the table's "picked up" highlight would
-      // flicker from a clean NodeSelection into a CellSelection the instant you grab its handle.
-      // Purely cosmetic now; kept for that visual consistency.
-      MarkdownTable.configure({ allowTableNodeSelection: true, onBlocked: showNotice }),
-      ParagraphTableCell,
-      ParagraphTableHeader,
-      DropCursorGuard,
-      // Keeps a ranged edit (Backspace/Delete over a selection, typing or pasting over one) from
-      // closing over a callout's or code block's edge — `isolating` only guards where a slice may
-      // be *placed*, not what a replacement joins. See isolating-boundary.ts.
-      //
-      // Its position here is load-bearing, in both directions. ExtensionManager reverses this array
-      // before gathering plugins, so a later entry is asked first: it must stay *above* Callout, so
-      // that guard's handlePaste still gets a callout-carrying slice first (handlePaste is
-      // first-wins), and it must stay in this array at all, so its keys beat the core Keymap
-      // extension's baseKeymap deleteSelection.
-      IsolatingBoundary,
-      // Replaces the bare @tiptap/extension-image: same node, but its markdown serializer closes
-      // the block, so a quote/fence right after an image isn't glued onto the image's line —
-      // see image-extension.ts.
-      Image,
-      Markdown.configure({ html: true, bulletListMarker: '-', linkify: false, breaks: false }),
-      // The backstop under the footnote nodes below, not a leftover from before them. Every
-      // definition markdown-it-footnote accepts is claimed before this is asked; what it still
-      // catches is the shapes the plugin declines — a label containing a space among them — which
-      // `reference` would otherwise take as a link reference definition, turning the note's words
-      // into a URL. See footnote-literal-extension.ts.
-      FootnoteLiteral,
-      // Footnotes (docs/footnote-requirements.md). The reference lives in the prose, the
-      // definitions in one section pinned to the end of the document, and `Document` above is
-      // replaced only to say that in the schema (`block+ footnoteSection?`, §3.2).
-      // FootnoteLiteral above is not in competition with these: markdown-it-footnote registers
-      // footnote_def *before* the `reference` rule it patches, so it is only ever asked about the
-      // lines the plugin refused (§7.2).
-      FootnoteReference.configure({ onBlocked: showNotice, onNotice: showNotice }),
-      FootnoteDefinition.configure({ onBlocked: showNotice }),
-      FootnoteSection,
-      // GitHub-style alert callouts as a real node: the `[!NOTE]` marker shows as a
-      // non-editable label chip and only the body is editable, so it can't be broken
-      // by typing after the `]`. Serializes back to `> [!TYPE]` markdown, so storage
-      // and the public render pipeline are unchanged. `onBlocked` is the same reporter the table
-      // guards use: a drop carrying a callout into a quote or another callout is refused, and a
-      // refused gesture changes nothing, so the notice is the whole of the feedback.
-      Callout.configure({ onBlocked: showNotice }),
-      // Replaces StarterKit's blockquote (disabled above): same node/input rule/commands, but
-      // its Backspace join uses the canonical TextSelection so the caret survives `instanceof`.
-      Blockquote,
-      // Zenn-style folding block, stored as raw `<details>`/`<summary>` HTML (markdown has no
-      // syntax for it — see docs/accordion-requirements.md). `onBlocked` is the shared notice: a
-      // drop carrying an accordion into a quote, list, callout or cell is refused, and a refused
-      // gesture changes nothing, so the message is the whole of the feedback.
-      MarkdownDetails.configure({ onBlocked: showNotice }),
-      MarkdownDetailsSummary,
-      MarkdownDetailsContent,
-      // `/` at the start of a line opens a small block-insert menu (callouts + code block);
-      // choosing a row deletes the `/query` and runs that block's command.
-      SlashCommand,
-      // Plain code block + an editor-only language <select> (drives Shiki highlighting on
-      // the public page); the `language` attribute still round-trips as a ```lang fence.
-      CodeBlockWithLanguage,
-      // Hover-revealed left-gutter grip on blockquotes/callouts/images/tables/code blocks:
-      // click-drag the whole block to reorder it. Editor-only chrome, no markdown/model impact.
-      BlockDragHandle,
-      // Bold + the site's red accent as one toggle ("強調"). No native markdown syntax, so it
-      // round-trips as raw `<span class="accent-emphasis">` (safe under this Markdown
-      // extension's `html: true` above) — see accent-emphasis-extension.ts.
-      AccentEmphasis,
-      // Guarded replacements for StarterKit's bold/italic/strike (disabled above) — see
-      // guarded-toggle-marks.ts and guarded-toggle.ts.
-      Bold,
-      Italic,
-      Strike,
-      // Guarded replacements for StarterKit's heading/bulletList/orderedList (disabled above):
-      // same nodes, but each refuses inside a code block instead of shredding it into prose —
-      // see guarded-block-toggles.ts. Body headings stay limited to the two levels the toolbar
-      // exposes (大見出し = H2, 小見出し = H3): the post title is the page's only H1, so this
-      // also stops a stray `# `/`#### ` markdown shortcut from injecting an H1/H4+.
-      Heading.configure({ levels: [2, 3] }),
-      BulletList,
-      OrderedList,
-      // Turn off the browser's native spellcheck for inline `code` marks — code tokens aren't
-      // dictionary words, so it paints them with red squiggles (the code block's <code> is
-      // likewise opted out in CodeBlockWithLanguage). Prose keeps spellcheck.
-      Code.configure({ HTMLAttributes: { spellcheck: 'false' } }),
-    ],
+    extensions: postEditorExtensions(showNotice),
     content: initial.body,
     editorProps: {
       attributes: {
@@ -402,6 +239,35 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
 
   useEffect(() => {
     editorRef.current = editor;
+  }, [editor]);
+
+  // The post's own address, handed to the link card so it can refuse to point at it
+  // (docs/link-card-requirements.md §18). Written into the editor's storage rather than passed
+  // with the extension list: the list `useEditor` keeps is the one built on the first render, and
+  // in create mode the slug does not exist until autosave has created the row.
+  //
+  // Through `editorRef` for the reason every other imperative reach into the editor goes through
+  // it (the upload hook, the drag containment): it is the handle for work outside React's render
+  // flow, and the effect above — declared first, so it runs first — has already filled it.
+  useEffect(() => {
+    const live = editorRef.current;
+    if (live) live.storage.linkCard.ownSlug = slug;
+  }, [editor, slug]);
+
+  // The shared insert dialog opens from the slash menu, which reaches React the only way an
+  // extension can: a DOM event on the editor's own element (embed-extension.ts's
+  // `openInsertDialog`, docs/embed-requirements.md §24.2). Listened for through `editorRef` for the
+  // reason the effect above uses it — the handle for work outside React's render flow.
+  useEffect(() => {
+    const live = editorRef.current;
+    if (!live) return;
+    const dom = live.view.dom;
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<InsertDialogDetail>).detail;
+      setInsertDialogAt(detail.at);
+    };
+    dom.addEventListener(INSERT_DIALOG_EVENT, open);
+    return () => dom.removeEventListener(INSERT_DIALOG_EVENT, open);
   }, [editor]);
 
   // Sync the address bar to a newly created post's edit URL without navigating
@@ -492,6 +358,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         <Field label='説明'>
           <input name='description' defaultValue={initial.description} className={inputClass} />
         </Field>
+        <ThumbnailField value={thumbnail} onChange={setThumbnail} body={body} />
       </div>
 
       <div className='space-y-2'>
@@ -524,7 +391,17 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         {editor && <TableToolbar editor={editor} />}
         {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
             are BubbleMenus that portal themselves to <body> — neither renders here. */}
-        {editor && <LinkBubble editor={editor} onNotice={showNotice} />}
+        {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
+        {/* Mounted only while it is open, so closing throws the dialog's state away rather than
+            leaving it for the next open to clear. */}
+        {editor && insertDialogAt !== null && (
+          <InsertDialog
+            editor={editor}
+            at={insertDialogAt}
+            onClose={closeInsertDialog}
+            ownSlug={slug}
+          />
+        )}
       </div>
 
       <input type='hidden' name='body' value={body} />

@@ -1,5 +1,6 @@
-import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
+import { Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { createBoxSliceRepair } from './box-slice-repair';
 import { resolveDropTarget } from './drop-target';
 import { replaceSelectionClamped } from './isolating-boundary';
 
@@ -36,10 +37,12 @@ export function wouldNestDetails($pos: ResolvedPos, slice: Slice): boolean {
 // meant to move — the same problem halfSelectedEdges settles for the callout, and the same answer:
 // the box comes off, its contents come over.
 //
-// The repair itself cannot be shared, and this is the trap the design document calls out. The
-// callout's version splices `child.content` one level into the parent fragment, which is valid
-// because a callout is `block+`. An accordion's children are `[detailsSummary, detailsContent]`,
-// and neither may live at the top level: splicing them up produces a document ProseMirror refuses.
+// This is the half that does not generalise, and it is what `unwrap` carries into
+// box-slice-repair.ts. The callout's answer splices `child.content` one level into the parent
+// fragment, which is valid because a callout is `block+`. An accordion's children are
+// `[detailsSummary, detailsContent]`, and neither may live at the top level: splicing them up
+// produces a document ProseMirror refuses. §6.2 records this as the reason the two guards took
+// this long to share anything.
 //
 // So the unwrap goes two levels — the *body's* children are what survive — and the title has to be
 // answered separately, since it is text that would otherwise vanish. It becomes a paragraph ahead
@@ -60,83 +63,31 @@ function detailsUnwrapped(details: PMNode, schema: PMNode['type']['schema']): PM
   return out;
 }
 
-// "Half" is read off the open depths, exactly as the callout guard reads them: an accordion at the
-// first (or last) child position with a non-zero depth on that side was entered part-way by the
-// selection. One cut on both sides is not this rule's business — dropOpenWrappers (slice-placement)
-// has already taken that wrapper off before any of this runs.
-function halfSelectedEdges(slice: Slice): { start: boolean; end: boolean } {
-  const { content, openStart, openEnd } = slice;
-  const first = content.firstChild;
-  const last = content.lastChild;
-  if (!first || !last) return { start: false, end: false };
-  const start = openStart > 0 && first.type.name === DETAILS_NAME;
-  const end = openEnd > 0 && last.type.name === DETAILS_NAME;
-  if (content.childCount === 1 && start && end) return { start: false, end: false };
-  return { start, end };
-}
+// Both repairs are box-slice-repair.ts's, specialised for this box. What differs from the callout's
+// is entirely in these three fields.
+//
+// `depthDrop: 2`, because the slice was cut through `details` *and* `detailsContent` and both of
+// those levels go with the unwrap — where a callout's `block+` children come up through one.
+//
+// `recurseIntoRemoved: false` keeps what this has always done: `flattenClosed` does not re-scan the
+// blocks it lifts out of an accordion's body. An accordion cannot nest in an accordion, so the only
+// shape it changes is a box carried *inside* the body being lifted, and that is left alone
+// (`slice-guard-composition.test.ts` pins it). The callout recurses because `> > [!NOTE]` puts one
+// callout inside another in stored markdown, which has no counterpart here.
+const repair = createBoxSliceRepair({
+  nodeName: DETAILS_NAME,
+  unwrap: (node) => detailsUnwrapped(node, node.type.schema),
+  depthDrop: 2,
+  recurseIntoRemoved: false,
+});
 
-export function unwrapHalfSelectedDetails(slice: Slice): Slice {
-  const { start, end } = halfSelectedEdges(slice);
-  if (!start && !end) return slice;
-  const lastIndex = slice.content.childCount - 1;
-  const children: PMNode[] = [];
-  slice.content.forEach((child, _offset, index) => {
-    if ((start && index === 0) || (end && index === lastIndex)) {
-      detailsUnwrapped(child, child.type.schema).forEach((block) => children.push(block));
-    } else {
-      children.push(child);
-    }
-  });
-  // Both open depths drop by two, not one: the slice was cut through `details` *and*
-  // `detailsContent`, and both of those levels are gone now. Clamped at zero, since a slice cut at
-  // a block boundary on that side has nothing left to close.
-  return new Slice(
-    Fragment.fromArray(children),
-    start ? Math.max(slice.openStart - 2, 0) : slice.openStart,
-    end ? Math.max(slice.openEnd - 2, 0) : slice.openEnd,
-  );
-}
+export const unwrapHalfSelectedDetails = repair.unwrapHalfSelected;
 
 // The paste-side answer to a *whole* accordion headed somewhere it may not go: the box is dropped
 // and its contents kept, which is what a paste should do — the caret is where the text was asked
 // for, and there is no second place it could land. Every depth, since an accordion can sit inside
 // a quote in loaded markdown (legal to store, refused to author).
-//
-// A node on an open edge must not be removed: openStart/openEnd describe paths down the slice's
-// first and last child, and shortening one leaves those counts pointing at content that is no
-// longer there. So an accordion is removable only where both counts have run out.
-function flattenDetails(fragment: Fragment, openStart: number, openEnd: number): Fragment {
-  const lastIndex = fragment.childCount - 1;
-  const children: PMNode[] = [];
-  let changed = false;
-  fragment.forEach((child, _offset, index) => {
-    const startOpen = index === 0 ? openStart : 0;
-    const endOpen = index === lastIndex ? openEnd : 0;
-    if (startOpen === 0 && endOpen === 0 && child.type.name === DETAILS_NAME) {
-      changed = true;
-      detailsUnwrapped(child, child.type.schema).forEach((block) => children.push(block));
-      return;
-    }
-    const inner = flattenDetails(
-      child.content,
-      Math.max(startOpen - 1, 0),
-      Math.max(endOpen - 1, 0),
-    );
-    if (inner === child.content) {
-      children.push(child);
-      return;
-    }
-    changed = true;
-    children.push(child.copy(inner));
-  });
-  return changed ? Fragment.fromArray(children) : fragment;
-}
-
-function flattenClosedDetails(slice: Slice): Slice {
-  const { content, openStart, openEnd } = slice;
-  const flattened = flattenDetails(content, openStart, openEnd);
-  return flattened === content ? slice : new Slice(flattened, openStart, openEnd);
-}
+export const flattenClosedDetails = repair.flattenClosed;
 
 // Is `$pos` inside an accordion's title? Asked of every ancestor rather than of `$pos.parent`,
 // because a drop position resolved by `resolveDropTarget` can sit at the title's edge rather than
@@ -238,8 +189,9 @@ export function detailsSliceGuard(notify: (message: string) => void): Plugin {
         const $target = resolveDropTarget(view, coords.pos, slice, moved);
         // Same rule as the paste above, asked of where the pointer is rather than of the caret —
         // at drop time `state.selection` is still the *dragged* range. A drag whose selection
-        // crossed a paragraph boundary is the reachable form of this (verified by hand in a real
-        // browser; the harness cannot start an in-editor drag, see §6.8).
+        // crossed a paragraph boundary is the reachable form of this. Drivable end to end, despite
+        // what §6.8 used to say: `dragSelect` + `cdpNativeDrag` in e2e/native-drag.ts complete the
+        // gesture, and what `page.mouse` alone cannot deliver is the `drop`, not the `dragstart`.
         if (isInDetailsTitle($target) && !titleAcceptsSlice(slice)) {
           notify(DETAILS_TITLE_NO_BLOCKS);
           event.preventDefault();

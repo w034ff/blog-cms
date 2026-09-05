@@ -21,7 +21,13 @@ const DB_PATH = resolveDbPath();
 
 const UPLOAD_REF = /\/uploads\/([A-Za-z0-9._-]+)/g;
 
-type PostTextRow = { body: string | null; description: string | null; title: string | null };
+type PostTextRow = {
+  body: string | null;
+  description: string | null;
+  title: string | null;
+  thumbnail: string | null;
+  draft_content: string | null;
+};
 
 function parseGraceHours(args: string[]): number {
   const flag = args.find((a) => a.startsWith('--grace-hours='));
@@ -33,6 +39,16 @@ function parseGraceHours(args: string[]): number {
 // Filenames anything could point at: the live DB post bodies (the editor's
 // source of truth) AND the version-controlled .mdx (the seed copy). Taking the
 // union errs on the side of keeping a file.
+//
+// Two of the five columns are here because a reference can hide outside the
+// published body. `thumbnail` holds a card image the body need not mention at
+// all — that is the whole point of choosing one — so a sweep blind to it deletes
+// exactly the image the author picked. `draft_content` is the private working
+// copy of a *published* post's pending edits: an image added in an edit that has
+// not been published yet is referenced nowhere else, and once the file ages past
+// the grace period the sweep would take it while the author is still writing.
+// Both are unreferenced-looking and both are in use, which is the failure this
+// function exists to prevent.
 function collectReferenced(): { refs: Set<string>; dbPresent: boolean } {
   const refs = new Set<string>();
 
@@ -44,12 +60,19 @@ function collectReferenced(): { refs: Set<string>; dbPresent: boolean } {
   const dbPresent = existsSync(DB_PATH);
   if (dbPresent) {
     const db = new Database(DB_PATH, { readonly: true });
-    const rows = db.prepare('SELECT body, description, title FROM posts').all() as PostTextRow[];
+    const rows = db
+      .prepare('SELECT body, description, title, thumbnail, draft_content FROM posts')
+      .all() as PostTextRow[];
     db.close();
     for (const row of rows) {
       addFrom(row.body);
       addFrom(row.description);
       addFrom(row.title);
+      addFrom(row.thumbnail);
+      // Scanned as raw JSON text rather than parsed: every field in it is a
+      // string, `UPLOAD_REF` is looking for a substring, and a shape change in
+      // DraftContent must not be able to quietly narrow what this sees.
+      addFrom(row.draft_content);
     }
   }
 

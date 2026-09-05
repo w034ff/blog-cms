@@ -31,6 +31,33 @@ html {
   }
 }
 
+/* Every button gets the hand, including the ones written after this. Tailwind v4's preflight
+   leaves `<button>` on the UA's own `auto` — the arrow — and that is how the editor's chrome came
+   to answer this question two different ways: the controls written in this file said
+   `cursor: pointer` by hand (the accordion toggle, the link card's buttons, the code block's diff
+   toggle, the public page's copy button) while every control built from ToolbarButton's Tailwind
+   classes silently kept the arrow. The split ran along which file a control happened to be written
+   in, which is nothing a reader can see, so it is answered once here instead of per component —
+   and those hand-written declarations are gone, this rule being the only one left to change.
+
+   `:not(:disabled)`, because a control that cannot be pressed should not advertise a press.
+   ToolbarButton's disabled branch also sets `pointer-events-none`, so the cursor there comes from
+   whatever is underneath either way.
+
+   In `@layer base` rather than unlayered, which is what keeps it *losable*: unlayered CSS outranks
+   every Tailwind layer regardless of specificity, so a `cursor-*` utility on a button would stop
+   working. What still carries a cursor of its own below is every time an element this rule cannot
+   reach has to state one: the language `<select>`, the accordion's `<summary>` (pointer on the
+   public page, `text` in the editor, where the click places the caret rather than folding
+   anything), the block drag handle's `grab`, and the footnote reference's `default` — an atom, not
+   a link. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -161,14 +188,71 @@ body {
   content: none;
 }
 
+/* Editor-only chrome: the tooltip (`EditorTooltip`) is laid out even while it is invisible, and on a
+   touch device it can never become visible at all.
+
+   `opacity: 0` keeps a box, and an absolutely positioned box still counts toward the scrollable
+   overflow of the page. The tooltip is centred under its button (`left-1/2 -translate-x-1/2`) and
+   sized to its own text, so on any width where a toolbar button lands near the right edge, an
+   invisible 95px label hangs past it and **the page gains a horizontal scroll nothing explains** —
+   measured at 360px on an emulated phone: document 366px against a 360px screen, and the offender
+   invisible (docs/link-requirements.md §5.5.19). Whether it happens depends on where the toolbar
+   wraps, which is why 412px, 390px, 375px and 320px are all clean and 360px — the commonest Android
+   width — is not.
+
+   `display: none` rather than a narrower cap, because on `hover: none` the tooltip is not merely
+   overflowing: it is unreachable. Its content is duplicated in the button's `aria-label`, so
+   nothing is lost. A laptop with both a touchscreen and a mouse reports `hover: hover` and keeps
+   it. */
+@media (hover: none) {
+  .editor-tooltip {
+    display: none;
+  }
+}
+
+/* Editor chrome, touch only: outline every toolbar button so its pressable area can be seen.
+   Where there is no hover there is no `hover:bg-zinc-100` either, and the buttons are then bare
+   text separated by 2px gaps — nothing on screen says where one control ends and the next begins
+   (reported 2026-08-22, after the table toolbar's labels became 「＋行」-sized).
+
+   `box-shadow`, not `border`: a border is 2px of layout per button, and the table toolbar has
+   seven — measured at 360px, that is 315px → 329px against a 328px cap, which puts the row back on
+   two lines (table-requirements.md §12.1 bought exactly that width back). An inset shadow draws the
+   same 1px and costs nothing, and it follows `border-radius`, so the link card's `round` buttons
+   come out as circles.
+
+   Not a background tint, which was the other candidate: `active` already means a filled button
+   (`bg-zinc-200`), and tinting every button at rest would put "pressable" and "currently on" on the
+   same axis. Compared on screen at 360px before choosing.
+
+   `hover: none` rather than a width: what is missing is the hover state itself, so the question is
+   the pointer, not the screen. A laptop with a touchscreen and a mouse reports `hover: hover` and
+   keeps the current look — the same test the tooltip rule above is written against. */
+@media (hover: none) {
+  .toolbar-button,
+  .prose .link-card-head button,
+  .prose .embed-head button {
+    box-shadow: inset 0 0 0 1px #d4d4d8; /* zinc-300 */
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .toolbar-button,
+  .prose .link-card-head button,
+  .prose .embed-head button {
+    box-shadow: inset 0 0 0 1px #52525b; /* zinc-600 */
+  }
+}
+
 /* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
    each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
 .ProseMirror {
   position: relative;
 }
 
-/* Editor-only chrome: a hover-revealed grip in the left gutter of blockquotes, callouts, images,
-   tables, and code blocks (components/editor/block-drag-handle.ts) — click-drag the whole block
+/* Editor-only chrome: a hover-revealed grip in the left gutter of every type in
+   `DRAGGABLE_TYPES` — blockquotes, callouts, accordions, images, tables, code blocks and link cards
+   (components/editor/block-drag-handle.ts) — click-drag the whole block
    to reorder it. Each handle is a widget decoration placed immediately before its target, so it's
    a real DOM sibling; `top` is set in JS to match the target's own `offsetTop` (see
    block-drag-handle.ts), but the horizontal offset is this fixed left value, since every target
@@ -201,6 +285,12 @@ body {
     0.9
   ); /* zinc-700-ish; same shade at rest as on hover, just no background */
   cursor: grab;
+  /* The handle must never be a native drag source. The drag it starts is DragController's own
+     (block-drag-handle.ts), driven by mousemove/mouseup — and a native HTML5 drag beginning on top
+     of that one strands it, because the OS drag loop swallows both of those events for the rest of
+     the gesture and the session then never ends. The controller cancels such a dragstart wherever
+     it comes from; this keeps the browser from starting one here in the first place. */
+  -webkit-user-drag: none;
   opacity: 0;
   transition:
     opacity 0.12s ease,
@@ -264,6 +354,42 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   }
 }
 
+/* Editor-only chrome: the source block drawn as **cut out of the document**, for as long as the
+   drag has a real target to land on. `markCut` (block-drag-handle.ts) lays this over the block, and
+   the indicator draws at the destination, so the two together state the move: this leaves here,
+   that is where it lands. Neither is shown over the stretch whose only candidate is the gap the
+   block already sits in — a drop there takes nothing out of anywhere.
+   A box over the block rather than a class on it, for the reason markCut states at length: the
+   block's own DOM is ProseMirror's and gets rebuilt out from under a class mid-drag. `position:
+   fixed` + `pointer-events: none` for `.block-drag-indicator`'s reasons, and below both it (40) and
+   the ghost (41), since it is the backdrop of this state rather than its subject.
+   The fade is on `::before` rather than on this element, so the dashed outline stays at full
+   strength instead of being washed out along with everything it surrounds. `outline-offset` pulls
+   the outline back in by exactly the inflation markCut adds (CUT_INFLATE), landing it on the
+   block's real edge while the box itself covers the selection ring outside it. */
+.block-drag-cut {
+  position: fixed;
+  z-index: 39;
+  display: none;
+  pointer-events: none;
+  border-radius: 0.5rem;
+  outline: 2px dashed rgba(113, 113, 122, 0.75);
+  outline-offset: -4px;
+}
+.block-drag-cut::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--background);
+  opacity: 0.6;
+}
+@media (prefers-color-scheme: dark) {
+  .block-drag-cut {
+    outline-color: rgba(161, 161, 170, 0.75);
+  }
+}
+
 /* Editor-only chrome: a cursor-following clone of the block DragController (block-drag-handle.ts)
    is dragging — positive visual continuity, since the source block itself stays put (no
    collapse/reflow) while dragging. `position: fixed` + `pointer-events: none` for the same
@@ -284,6 +410,79 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   background: var(--background);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0.95;
+}
+/* The card is the one ghost that has to be *given* a width (docs/link-card-requirements.md §7.5).
+   Its controls came off (`stripCardControls`, block-drag-handle.ts), and they were what happened to
+   be holding the box open — without them the shrink-to-fit preview collapsed to 114px and the card
+   came out a vertical splinter, which is the same trap `docs/embed-requirements.md` §10.10 hit at
+   92px. Stated rather than derived from the block's own width: the card is as wide as the body
+   column (768px here), so "the card at its real width" is only ever the 480px cap, and measured at
+   that width the ghost reads stretched — the title has a whole empty line to itself beside a
+   fixed-size picture. 400px was picked against 320 and 480 from the three side by side
+   (2026-08-25); 320 leaves the title squeezed against the image. `max-width` above still wins on a
+   narrow window, so this never overhangs the viewport. */
+.block-drag-preview:has(.link-card) {
+  width: 400px;
+}
+/* And the one that has to be *shortened*. The card's box is built for the document: `margin: 1.25em
+   0` is the space between it and the paragraphs around it, and `min-height: 8.5rem` is the floor
+   that keeps the editor's cards from differing from each other (§16.4). Neither means anything to a
+   box held under the cursor with nothing above or below it, and together they were most of its
+   height — measured 2026-08-25, of 192px: 40px margin, 136px floor, 16px the preview's own padding.
+   The margin goes entirely. The floor is lowered rather than dropped: at 0 a card whose target has
+   only a title comes to 72px and its picture is a 54px letterbox crop, which shows nothing. 4.5rem
+   leaves the picture 70px and binds only on that shortest card — one with a host line under the
+   title is taller than the floor on its own. The result is 88px against the 192px it was.
+   `.block-drag-preview.prose` rather than `.block-drag-preview`: the rules being overridden are
+   `.prose`-scoped and come later in this file, and the preview carries `prose` itself (it is put
+   there by ensurePreview so a cloned block keeps its typography). */
+.block-drag-preview.prose .link-card-view {
+  margin: 0;
+  min-height: 4.5rem;
+}
+
+/* What the cursor carries for an embed (block-drag-handle.ts's `previewContent`,
+   docs/embed-requirements.md §10.10). A cloned `<iframe>` is a live browsing context rather than a
+   picture of one, so the block is named rather than reproduced: the provider's mark, then the
+   strongest thing its URL says about this particular item. One line, sized by its own content —
+   the block's box is deliberately not restated, since a 480x300 slab of empty white says nothing
+   that this line does not. */
+/* Drawn a step larger than the surrounding prose rather than at its size: this is a label held
+   under the cursor, read while the pointer is moving and while the eye is on the drop indicator
+   somewhere else. Measured 2026-08-24 — the token's own box goes 149x39 to 200x57 for a post — and
+   it is still a chip, not a panel. */
+.block-drag-preview .embed-drag-token {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.35em 0.4em;
+  max-width: 24em;
+}
+.block-drag-preview .embed-drag-token svg {
+  width: 1.8em;
+  height: 1.8em;
+  flex: none;
+}
+.block-drag-preview .embed-drag-token-body {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  min-width: 0;
+}
+.block-drag-preview .embed-drag-token-lead {
+  flex: none;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+/* What is left worth saying — a moment, or the URL of a reference no provider claims, which is the
+   one case that can run past the token's width and so is the one that gives way. */
+.block-drag-preview .embed-drag-token-detail {
+  min-width: 0;
+  font-size: 1em;
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Editor-only chrome: while DragController (block-drag-handle.ts) has an active drag, it toggles
@@ -307,6 +506,23 @@ body.block-dragging .table-toolbar {
   display: none !important;
 }
 
+/* Editor-only chrome: no `<iframe>` may be the hit target while a block drag is in progress
+   (docs/embed-requirements.md §8.1). The drag is driven by `mousemove` on the *window*
+   (block-drag-handle.ts), and an iframe swallows the pointer outright — measured 2026-08-25: 32
+   moves sent across one, 0 reached the parent, and the `mouseup` went with them. The ghost stops
+   dead over the box, the drop indicator stops answering, and the release is lost (the session ends
+   on the next move outside, where `event.buttons === 0` aborts it).
+   The frame below is already inert at rest, but `.ProseMirror-selectednode.embed-view … iframe`
+   hands it back the pointer for the selected block — and picking a block up *is* what selects it,
+   so the one embed guaranteed to be live during a drag is the one being dragged, whose own box the
+   pointer crosses immediately. `!important` because that rule is the more specific of the two.
+   CSS rather than a JS pass at drag start: an embed can resolve and attach its frame mid-gesture,
+   and a `querySelectorAll` taken at pickup would not see it. `postMessage` is untouched, so the
+   height handshake and the silence clock (§10.5) run exactly as before. */
+body.block-dragging .embed-frame iframe {
+  pointer-events: none !important;
+}
+
 /* Editor-only chrome: the same suppression for the other floating menu that can want the same
    space. A link inside a table cell satisfies both menus' `shouldShow` at once, and the decision
    (docs/link-requirements.md §5.5.4-2) is that the link card wins there — it is the more specific
@@ -316,6 +532,33 @@ body.block-dragging .table-toolbar {
    `shouldShow` would never be asked again. */
 body.link-menu-open .table-toolbar {
   display: none !important;
+}
+
+/* Editor-only chrome: the text the link card is currently about (docs/link-requirements.md §5.5.7).
+   Pushed in as a decoration by link-highlight-extension.ts, never as a class on the rendered <a>.
+   Docs tints the linked text the same way, and it answers a real ambiguity — the card is anchored
+   under the <a>, but with two links on one line, or with the URL field open over a selection that
+   is not a link yet, nothing else says which text the buttons are aimed at.
+
+   The tint sits *behind link-coloured text*, so its strength is bounded by contrast, not by taste.
+   §7.1 settled `#0969da` / `#4493f8` against the two surfaces and neither had much room left:
+   darkening the light surface and lightening the dark one both eat the ratio from the wrong side.
+   Measured 2026-08-16 against the real surfaces (#fff and #0a0a0a): light 6% → 4.54:1, dark 10% →
+   5.10:1, both over the 4.5:1 AA floor. Dark is the tighter of the two despite the healthier
+   number — it fails at 14% (4.49:1), where light still holds. Raise either only with the ratio
+   recomputed. `border-radius` and the negative side margins let it read as a chip around the words
+   rather than a rectangle butting the neighbouring text. */
+.ProseMirror .link-bubble-target {
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 2px;
+  margin-inline: -1px;
+  padding-inline: 1px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ProseMirror .link-bubble-target {
+    background: rgba(255, 255, 255, 0.1);
+  }
 }
 
 /* Editor-only chrome: clicking a drag handle without dragging leaves the whole block node-selected
@@ -390,6 +633,10 @@ body.link-menu-open .table-toolbar {
 }
 .prose .code-block-header .code-block-lang {
   flex: 0 0 auto;
+  /* Holds the right-hand cluster against the right edge whatever is to its left. With the filename
+     `<input>` showing there is no free space and this resolves to nothing; with the source link,
+     which is only as wide as its text, this is what keeps the header's shape (2026-08-30). */
+  margin-left: auto;
   cursor: pointer;
   /* Unlike the filename (a quiet caption, muted until hover/focus), the select's chosen
      language is content you want to read at a glance — fixed to the same bright color used
@@ -417,6 +664,135 @@ body.link-menu-open .table-toolbar {
   color: rgba(173, 184, 199, 0.55);
 }
 
+/* The header a code block wears when its filename is a GitHub blob URL: a link to the file, in
+   place of the filename field (docs/embed-requirements.md §19.4). The block was imported from that
+   file, so what the header has to say is where the code came from — the field is hidden rather
+   than filled with a URL nobody wants to read or rename.
+
+   Sized and coloured as the filename it replaces, not as a link: it sits in a header of quiet
+   captions, and the ordinary link blue would make it the loudest thing in the block it heads. The
+   underline appears on hover, which is where "this is a link" belongs here. */
+.prose .code-block-header .code-block-source {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  /* **Sized to its text**, unlike the filename `<input>` it stands in for: that field could fill
+     the bar for free, since a stray click only focused it, and a link cannot — the same area opens
+     a tab. Filling the row made the box 500px wide whatever the file was called, so `o/r › a.ts`
+     had the whole header as a target (measured 2026-08-30); it is 108px now.
+
+     **The controls stay at the right edge**, which is what a shorter name would otherwise cost:
+     they are pushed there by `margin-left: auto` on the language `<select>` below rather than by
+     this anchor growing, so the space between the two belongs to neither. `min-width: 0` stays, so
+     a name too long for the row truncates instead of pushing the controls off it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  color: #e6edf3;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  line-height: 1.5;
+  text-decoration: none;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.prose .code-block-header .code-block-source:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e6edf3;
+  text-decoration: underline;
+}
+.prose .code-block-header .code-block-source svg {
+  flex: 0 0 auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  /* buildIcon draws for the toolbar, where every icon is a stroke; this mark is a solid area. */
+  fill: currentColor;
+  stroke: none;
+}
+/* **One colour for the whole name.** The repository half and the path half were painted
+   differently — GitHub's muted grey against the block's own text colour — and read as two things
+   rather than one reference (2026-08-29, author's call). What separates them is the `/`, which is
+   punctuation and stays muted; what is left is one line of text at one weight.
+
+   The earlier form also had an opacity on top of an already-muted colour and measured 1.70:1
+   against the light header, where 4.5:1 is the floor. Whatever the two halves are, they are one
+   stated colour now — the same one the published side uses. */
+.prose .code-block-header .code-block-source-repo {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose .code-block-header .code-block-source-path {
+  /* Not stretching either — with `1 1 auto` the span filled the anchor, so shrinking the anchor
+     alone would have left the hit area where it was. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* **A chevron, not a slash.** The two halves are joined by us, and a `/` here is the same glyph
+   GitHub itself wrote inside `owner/repo` and inside the path — one character meaning two
+   different things, with only the spacing to tell them apart (2026-08-29, author's call). The
+   space before it is the flex `gap`; the space after it is this padding. */
+.prose .code-block-header .code-block-source-path::before {
+  content: '›';
+  padding-right: 0.375rem;
+  /* The chevron is a small glyph at the caption's own size, so it is stepped up — **1.2em is the
+     largest step that moves nothing**: measured 2026-08-29, the header holds 38px and the link's
+     box 23.5px up to here, and 1.35em grows the box to 24.5px. `line-height: 1` is what keeps the
+     taller glyph from claiming a taller line. */
+  font-size: 1.2em;
+  line-height: 1;
+  /* Keeps the hover underline off the chevron. **`text-decoration: none` here would do
+     nothing** — the line is painted by the `<a>` and flows over its descendants, the same fact
+     `.prose a .accent-emphasis` records about colour. An inline-block is an atomic inline and
+     the parent's decoration does not enter one (measured 2026-08-29, both ways). */
+  display: inline-block;
+}
+
+/* The way back out of an import (§19.4), in the header of a block that has a reference to return
+   to. Quiet like the caption it sits beside rather than destructive-red: what it undoes is one
+   Ctrl-Z away, and it is not deleting anything the author cannot get back. */
+.prose .code-block-header .code-block-to-link {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 0 0 auto;
+  border: 1px solid rgba(160, 160, 160, 0.25);
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: #adbac7;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+.prose .code-block-header .code-block-to-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6edf3;
+}
+.prose .code-block-header .code-block-to-link:focus-visible {
+  outline: none;
+  color: #e6edf3;
+  box-shadow: inset 0 0 0 1px rgba(140, 140, 140, 0.4);
+}
+/* The icon is out of the flow at this width, the way the link card's band keeps its own out
+   (`.prose .link-card-head button svg`): a header with room for the words does not need the
+   picture too. Which of the two shows is a width question, answered in the 30rem block below. */
+.prose .code-block-header .code-block-to-link svg {
+  display: none;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
 /* Diff-display toggle (components/editor/code-block-extension.ts's NodeView): a compact pill
    switch appended after the language <select>, grouped with it as the header's right-aligned
    controls (the filename fills the bar as a title on the left; both the <select> and this
@@ -434,7 +810,6 @@ body.link-menu-open .table-toolbar {
   border: 0;
   background: transparent;
   padding: 0.125rem;
-  cursor: pointer;
 }
 .prose .code-block-header .code-block-diff-toggle-track {
   display: inline-flex;
@@ -546,6 +921,29 @@ body.link-menu-open .table-toolbar {
   .prose .code-block-header .code-block-filename {
     color: #57606a;
   }
+  /* The source header and the way back out of it, which had no light values at all until this was
+     measured — they were showing the dark scheme's #adbac7 on the light header's #eaeef2. The
+     header is one colour across both halves of the name; the button beside it stays quiet, being a
+     control rather than part of the name. */
+  .prose .code-block-header .code-block-source {
+    color: #24292f;
+  }
+  .prose .code-block-header .code-block-to-link {
+    color: #57606a;
+  }
+  .prose .code-block-header .code-block-source:hover,
+  .prose .code-block-header .code-block-to-link:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #24292f;
+  }
+  .prose .code-block-header .code-block-to-link {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  .prose .code-block-header .code-block-to-link:focus-visible {
+    color: #24292f;
+    box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  }
   .prose .code-block-header .code-block-filename:hover,
   .prose .code-block-header .code-block-lang:hover {
     background: rgba(0, 0, 0, 0.06);
@@ -631,6 +1029,79 @@ body.link-menu-open .table-toolbar {
   }
 }
 
+/* The published half of the same header (lib/rehype-code-source.ts, §19.4). The caption keeps its
+   own background and divider; what changes is that its text becomes a link with GitHub's mark. Not
+   painted in the body's link blue, for the reason the editor's copy is not: it heads a block, and
+   the colour would make the header louder than the code under it. */
+[data-rehype-pretty-code-title].code-source {
+  padding: 0;
+}
+.prose a.code-source-link {
+  /* Inline, so the link is as wide as what it says — the editor's copy of this header is sized
+     the same way. A caption-wide anchor is a caption-wide tap target, and what it does is take the
+     reader out of the article; measured 2026-08-30, filling the caption made the box 748px
+     whatever the file was called, `o/r › a.ts` included. It is 127px now. */
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.4rem 1rem;
+  /* Beats `.prose a`'s blue and @tailwindcss/typography's weight and underline, the way
+     `.prose a.link-card` beats them: this anchor is a caption that happens to be a link, and in
+     the body's link colour it reads louder than the code it heads. Same specificity trick, same
+     reason.
+     **The colour is stated rather than inherited.** `inherit` reaches the `<figcaption>`, and
+     @tailwindcss/typography paints that with `--tw-prose-captions` — a grey around L*48, measured
+     2026-08-29, which is what made the header look faint. These are the figure's own two colours,
+     the same pair the editor's copy of this header uses. */
+  color: #e6edf3;
+  font-weight: inherit;
+  text-decoration: none;
+}
+@media (prefers-color-scheme: light) {
+  .prose a.code-source-link {
+    color: #24292f;
+  }
+}
+.prose a.code-source-link:hover {
+  text-decoration: underline;
+}
+.code-source-mark {
+  flex: 0 0 auto;
+}
+.code-source-repo {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-source-path {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The chevron the editor's copy of this header uses, for the reason recorded there. */
+.code-source-path::before {
+  content: '›';
+  padding-right: 0.375rem;
+  font-size: 1.2em;
+  line-height: 1;
+  /* An atomic inline, so the anchor's hover underline stops at it — see the editor's copy. */
+  display: inline-block;
+}
+/* Same trade as the editor's copy of this header, at the same breakpoint. */
+@media (max-width: 30rem) {
+  .code-source-repo {
+    display: none;
+  }
+  .code-source-path::before {
+    content: none;
+  }
+}
+
 /* Copy button injected into each code block by components/CodeCopyButtons.tsx. Always visible
    but subtle; a keyboard focus ring is kept for a11y. Pinned to the figure's top-right so it
    stays put while the code scrolls horizontally. On a successful copy, "Copied!" text appears to
@@ -653,7 +1124,6 @@ body.link-menu-open .table-toolbar {
   color: #8b949e;
   font-size: 0.72rem;
   line-height: 1;
-  cursor: pointer;
   transition: background-color 0.12s ease;
 }
 /* Enlarge the tap target without growing the visible box: an invisible halo extends the
@@ -925,6 +1395,36 @@ body.link-menu-open .table-toolbar {
   color: #0969da;
 }
 
+/* 強調 inside a link keeps its weight and gives up its hue (2026-08-18, reversing the "it stays
+   red" half of §7.1's audit — reported as the text and the underline being different colours).
+
+   The mismatch is not a specificity accident and no rule on the span can fix it. The underline is
+   the `<a>`'s (@tailwindcss/typography's `a: { … textDecoration: 'underline' … }`), and a
+   text-decoration is painted in the colour of the element that *declared* it, not of the descendant
+   it flows over — so the span's `color: #cf222e` reaches the glyphs and can never reach the line
+   under them. Only two things line up: the underline turns red, or the text turns blue.
+
+   Blue, because on a link the colour is the affordance — it is what says "this is pressable" on
+   both surfaces — while the red is one of two cues 強調 carries, and the other one (700 weight)
+   survives intact here. This is the same trade the mark already makes elsewhere: it replaces
+   bold/italic/strike rather than stacking with them (accent-emphasis-extension.ts), on the same
+   reasoning that a mark may lose part of itself where keeping it would cost more.
+
+   `inherit` rather than the blue written twice: it takes whichever colour `.prose a` resolved to,
+   so the dark scheme needs no counterpart and the pair cannot drift. At (0,2,1) it outranks the
+   unscoped `.accent-emphasis` in both schemes, which is the point — the dark rule (0,1,0) would
+   otherwise keep painting #f85149 here.
+
+   The cost, stated: on a link, 強調 and 太字 look the same. Accepted — 強調 on a link is rare, and
+   a link that is not link-coloured is a worse thing to ship than two marks that coincide inside
+   one. Pinned by 基準 5f・5g of §7.1's group — the letters restart per feature group there, so the
+   card's own 5f/5g are different rows. The toolbar's 強調 glyph is unreached by design: it is a
+   `<span class="accent-emphasis">` inside a `<button>` (Toolbar.tsx), outside `.prose` entirely,
+   which is what the unscoped rule above exists for. */
+.prose a .accent-emphasis {
+  color: inherit;
+}
+
 /* Table of contents (components/TocNav.tsx), post page only — not `.prose`-scoped since it
    sits outside the article body. `scroll-mt` gives a jumped-to heading a little breathing room
    from the viewport edge; there's no fixed site header to clear, so a small value is enough.
@@ -945,6 +1445,15 @@ body.link-menu-open .table-toolbar {
    need to see cells to edit them. Applies to both surfaces (both use .prose). */
 .prose table {
   border-collapse: collapse;
+  /* Column widths come from the grid, not from what is typed into it. The typography
+     plugin pairs `width: 100%` with `table-layout: auto` (its src/styles.js, `table:`),
+     and a table that cannot grow makes one column's gain its neighbours' loss — measured
+     while typing ~80 characters into a 3-column table, the other two went 255px → 44px.
+     Auto layout also sizes columns from min-content, which `overflow-wrap: break-word`
+     (above) deliberately does not affect, so an unbroken token pushed the table 1618px
+     past the editor frame. Settling the width first answers both. The cost, and why the
+     widths are not made tunable instead, are in docs/table-requirements.md §11. */
+  table-layout: fixed;
 }
 
 .prose th,
@@ -1017,9 +1526,9 @@ body.link-menu-open .table-toolbar {
 /* Mask the browser's native text-selection highlight inside a table CellSelection.
    prosemirror-tables tags each selected cell with `.selectedCell` (the overlay
    above), but the native highlight is meant to be hidden by prosemirror-view's
-   `.ProseMirror-hideselection` ::selection rule — which we don't import, and which
-   in any case is only added after mouseup (its selectionToDOM bails on a focus check
-   mid-drag). So during a cross-cell drag the browser keeps painting a raw text
+   `.ProseMirror-hideselection` ::selection rule — which @tiptap/core does inject (verified in the
+   CSSOM 2026-08-22; an earlier note here said it was missing), but which is only added after
+   mouseup, its selectionToDOM bailing on a focus check mid-drag. So during a cross-cell drag the browser keeps painting a raw text
    highlight across the dragged-over cells, on top of the overlay — it reads as the
    head cell's text being "stuck" selected. `.selectedCell` is present for the whole
    drag, so key the mask on it. ::selection and ::-moz-selection must be separate
@@ -1265,7 +1774,6 @@ body.link-menu-open .table-toolbar {
      they would resolve against the UA's own smaller button font-size and the marker would sit
      off-centre from the public one. */
   font: inherit;
-  cursor: pointer;
   transition: background-color 0.12s ease;
 }
 .prose [data-type='details'] > button::before {
@@ -1357,7 +1865,906 @@ body.link-menu-open .table-toolbar {
   pointer-events: none;
 }
 
+/* Link card (docs/link-card-requirements.md). Same card as the accordion and the code block —
+   1px #d0d7de border, 6px radius, #f6f8fa on hover — so a third block construct adds no palette
+   of its own. A text column and, beside it, the target's image when it has one (§8.2) — the row
+   that places them is on the rule below.
+
+   `color` and `text-decoration` are reset deliberately, and the selector's specificity is the
+   reason this works. `.prose a { color: #0969da }` above is (0,1,1) and Tailwind Typography's
+   own underline comes in through a `:where()` wrapper at (0,0,0); `.prose a.link-card` is (0,2,1)
+   and outranks both. Without the reset the whole card — title and description alike — renders
+   blue and underlined, because the `<a>` wraps all of it (that wrapping is what makes the card one
+   click target). This is the same trap the footnote jump link is in, one rule up. */
+.prose a.link-card {
+  /* A row, so the target's image can sit beside the text. A card without one has
+     a single flex child and lays out exactly as the old block card did. */
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
+  margin: 1.25em 0;
+  padding: 0.75em 1em;
+  /* The picture is positioned against this box, and the text column is held clear of it by the same
+     width — declared once here so the two cannot disagree (§16.3). */
+  position: relative;
+  /* One height for every card, which is what makes a card read as a part rather than as a box that
+     grows with its text (Zenn and Qiita both fix theirs; measured 2026-08-19, §16). `min-height`
+     rather than `height`, so content nobody predicted grows the card instead of being cut by the
+     `overflow` below — the clamps two rules down are what keep that from happening: title 2 lines
+     + description 1 + domain is 102.45px against the 110px this leaves inside. */
+  min-height: 8.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  /* The image runs to the card's edges, so the corners have to be cut by the box rather than by
+     the picture — an `<img>` with its own radius would still square off the 1px border it sits
+     against. Nothing else here overflows. */
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.12s ease;
+}
+/* `min-width: 0` is what lets the text column shrink: a flex item's floor is its
+   content's min-content width, so without it a long unbroken title (a URL, a
+   code identifier) pushes the image off the card's edge instead of ellipsing. */
+.prose .link-card-text {
+  min-width: 0;
+  flex: 1;
+}
+/* The width the picture occupies, and the room the text leaves for it. `min()` rather than a
+   breakpoint: 16rem is what keeps the box at the og:image's own ratio against the card's height
+   (§15), and the 40% is what stops a fixed 256px eating a phone's card whole.
+
+   Set on the cards rather than on `:root` so the two rules below read against the same box the
+   picture is positioned in. Cards with no picture leave the padding at 0 — the text has the whole
+   width, which is what §16.2's centred column is measured in. */
+.prose a.link-card,
+.prose .link-card-view {
+  --link-card-image-width: min(16rem, 40%);
+}
+/* **`:has(.link-card-image)`, not `:has(img)`.** This reserves the room the card's own picture is
+   positioned in, and the bare `img` matched any descendant — so once the picker's result rows grew
+   thumbnails (§5.2-5) it matched them too, and the picker held 272px (`min(16rem, 40%) + 1em`) of
+   its width empty for a picture that is not there. Measured 2026-09-02: the rows came out 460px
+   wide in a 766px card. The class is on the card's picture on both surfaces (`rehype-link-card.ts`
+   and the NodeView's `setImage`), and a row's own picture is `.link-card-result-image`. */
+.prose a.link-card:has(.link-card-image) .link-card-text,
+.prose .link-card-view:has(.link-card-image) .link-card-body {
+  padding-right: calc(var(--link-card-image-width) + 1em);
+}
+/* Fixed box, cropped to fill: uploads arrive at whatever shape the author had,
+   and a card whose height follows its picture would make a list of cards ragged.
+   `align-self` keeps it at the top so a two-line card does not stretch it.
+   Keyed on the class, not on the anchor, so the editor's NodeView gets the same
+   box from this one rule — the two surfaces disagreeing about the size is the
+   thing showing the image in the editor was meant to rule out (§13). */
+.prose .link-card-image {
+  /* Out of flow, pinned to the card's padding box — which is the inside of its border, so the
+     picture meets it on three sides without cancelling the padding by hand (§16.3).
+  
+     **Being out of flow is what makes one rule fit both surfaces.** As a flex item the picture's
+     own aspect ratio joined the row's height, so it needed a ceiling to stop a tall upload
+     inflating the card — and that ceiling was the published card's height, which the editor's card
+     (taller by its control band) then hit 7px short of its own border. Positioned, the picture
+     takes the height it is given and contributes none, so no ceiling, no floor, and nothing to keep
+     in step between the two. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* `height: 100%`, not `bottom: 0`. An `<img>` is a replaced element, so an auto height resolves
+     to the picture's own and `bottom` is then dropped as over-constrained — measured 2026-08-19,
+     that left the editor's card exactly the 7px short this rule exists to fix. A percentage
+     resolves against the containing block, which here is the card's padding box. */
+  height: 100%;
+  width: var(--link-card-image-width);
+  margin: 0;
+  object-fit: cover;
+}
+/* The house mark, shown by a card to one of this blog's own posts when the post has neither a
+   chosen thumbnail nor an image in its body (docs/link-card-requirements.md §17). It is furniture,
+   not the target's picture, so it is drawn as a mark on a tint rather than cropped to fill the
+   frame: `contain` and the padding are what keep it a logo instead of a photograph, and the tint is
+   what stops the empty frame from reading as a picture that failed to load.
+
+   The tint is this stylesheet's half of the colour scheme; the mark itself is two files, and the
+   `<picture>` the card emits is what picks between them (§17.3) — the wordmark is the site's
+   foreground colour, so the wrong file is invisible rather than merely off. The dark value here is
+   deliberately not the card's hover fill: the picture area has to stay distinguishable from the
+   card while the pointer is on it.
+
+   Both surfaces again: keyed on the class, so the editor's NodeView gets the identical box. */
+.prose .link-card-image.link-card-placeholder {
+  object-fit: contain;
+  padding: 1.25em;
+  background: #eaeef2;
+}
+/* A card whose target has no picture (§16.2) — an external page with no og:image, which since §17
+   is the only kind left: a card pointing at this blog always carries the house mark. The fixed
+   height is spent on three lines of text and the rest falls to the bottom, which reads as a missing
+   element rather than as room — so the column is centred and the same slack sits above and below it
+   instead. Nothing else moves: the height, the clamps and the text are what they are on every
+   other card.
+
+   Keyed on the anchor, so it does not reach the editor's NodeView. That card carries the control
+   band at its top, and centring what hangs below it would put the two states' controls back out of
+   line — §7.1 is what that costs. */
+.prose a.link-card:not(:has(.link-card-image)) {
+  align-items: center;
+}
+.prose a.link-card:hover {
+  background: #f6f8fa;
+}
+.prose .link-card-title {
+  font-weight: 600;
+  /* Two lines at most. Without a clamp a long title wraps as far as it likes, and against a fixed
+     height that is not a taller card any more — it is a title the `overflow` cuts silently. Two
+     rather than one because the title is what earns the click; the description below gives up its
+     second line instead. `block` is the fallback if the clamp is ever dropped. */
+  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* The secondary line: smaller and dimmed rather than given a colour, so the card needs no dark
+   counterpart for it — `opacity` rides whatever the body colour is on either surface. */
+.prose .link-card-description {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+  margin-top: 0.25em;
+  /* One line. It was two until the height was fixed (§16), and the line it gave up went to the
+     title: a description is free text, and on the sites measured it is as often the opening of the
+     body cut mid-sentence as it is a summary someone wrote. `display` is restated below and wins;
+     the `block` above is what the span falls back to if the clamp is ever dropped, so it does not
+     rejoin the title's line. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
+}
+/* The provenance line, on external cards only (docs/link-card-requirements.md §14.4). Keyed on the
+   class rather than on the anchor, like .link-card-image and for the same reason: the editor's
+   NodeView draws the same line and the two surfaces must not disagree about it.
+
+   One line, ellipsed: a host name that does not fit is a host name that has already told the
+   reader which site this is. The description above it is the part allowed to wrap. */
+.prose .link-card-domain {
+  display: block;
+  font-size: 0.8125em;
+  opacity: 0.6;
+  margin-top: 0.35em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The editor's card (link-card-extension.ts's NodeView). Same box as the published one above, but
+   it is a <div> rather than an <a> — there is nothing to click through to while editing — so the
+   border and radius are restated here instead of being inherited from that rule. Everything inside
+   is chrome: the title rule above already reaches it, since it is keyed on the class rather than on
+   the anchor. */
+.prose .link-card-view {
+  /* The same row as the published card, for the same reason (§13): what the author is looking at
+     while editing should be what the reader gets. The picker state, and a card whose target has no
+     image, have a single child and lay out exactly as this card did before it became a row. */
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
+  margin: 1.25em 0;
+  padding: 0.75em 1em;
+  position: relative;
+  /* §16's one height, on this surface too (§16.4). Restated rather than inherited, like the border
+     below: §16 keyed it on the anchor and this card is a <div>, so it went without a floor and sat
+     at whatever its lines came to — measured 90.78px with a title alone and 116.13px with a host
+     line, against the published 136px. Since §16.3 the picture takes its height from the card, so
+     that difference was a different crop of the same `<img src>`.
+
+     A floor, not a height: the control band adds ~35px that the reader never sees, so a card with
+     a note line still stands taller than the published one. What this removes is the editor's
+     cards differing from *each other*. */
+  min-height: 8.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  /* Restated for the same reason the border is: the shared image rule bleeds to the edges here
+     too, and this is a <div>, so it inherits none of the anchor's rule. */
+  overflow: hidden;
+}
+/* The text column. `min-width: 0` is what lets it shrink — same floor problem as
+   `.link-card-text` on the published card, and the reason a long title does not push the image
+   out of the box. */
+.prose .link-card-view .link-card-body {
+  min-width: 0;
+  flex: 1;
+}
+/* The state line under the title, editor-only: present only when the target is a draft or cannot
+   be found (§13.1), absent otherwise — which is why the top margin lives here rather than on the
+   title. `.link-card-meta` used to be shared with the published card, which spent it on the
+   target's date until that was dropped 2026-08-15 (lib/rehype-link-card.ts says why), so the class
+   survives scoped to the editor. */
+.prose .link-card-view .link-card-meta {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+  margin-top: 0.5em;
+}
+/* The whole card is one drag/selection target (it is an atom), so the selected state is drawn on
+   the box rather than by the browser's text highlight, which has nothing to paint inside a node
+   with no text of its own. */
+.ProseMirror-selectednode.link-card-view {
+  outline: 2px solid rgba(9, 105, 218, 0.5);
+  outline-offset: 1px;
+}
+/* The control band, shared by both of the NodeView's states (link-card-extension.ts's head()).
+   This rule is a fix, not a nicety, and it is the one that carries it — the deferral in that file
+   is not sufficient on its own, this is (measured both ways).
+
+   A resolved card is three lines and the picker is a search box plus a list, so anything anchored
+   to the foot of the card moves *up* into the band the result rows occupied as soon as the card
+   resolves. That shipped: 「変更」 and 「リンクに戻す」 landed within 3px of the first result row,
+   and a second click on a row — the row the author had just picked — cleared or dissolved the
+   card. Holding the controls at the top in a band of fixed height puts them where the picker keeps
+   its search input, which is the one part of that state a stray click can safely hit.
+
+   So `min-height` is load-bearing: without it the band sizes to its content, the two states differ
+   by a few px, and that is all it takes. `e2e/editor-link-card.spec.ts` goes red if it is dropped. */
+.prose .link-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 2.2em;
+}
+.prose .link-card-view .link-card-title {
+  margin-top: 0.25em;
+}
+.prose .link-card-head button,
+.prose .embed-head button,
+.prose .link-card-results button {
+  padding: 0.15em 0.6em;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875em;
+}
+.prose .link-card-results button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+/* The band's controls carry an icon and a label both (link-card-extension.ts's `button`), shown
+   together at every width — the 30rem block below hides the label on every card, and the 40rem
+   block further down does the same earlier for a card with a picture (that block says why).
+   `inline-flex` + `gap` is what keeps the icon and the label centered on one baseline instead of
+   the default inline layout's mismatched vertical alignment.
+
+   `min-width: 0` and `.link-card-action-label`'s `white-space: nowrap`/ellipsis below are a height
+   guard, not a rendering this band is meant to show: without them, three labels that do not fit one
+   line wrap instead, and the band's height — fixed by §7.1, shared with the picker's search row —
+   grows with it (measured 2026-09-04: 35px become 51-96px). The 30rem/40rem fallbacks are what keep
+   that from being reached in practice; this is what stops it from being *silent* if a future label,
+   button, or picture-less card's width ever slips past both. */
+.prose .link-card-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-width: 0;
+}
+.prose .link-card-head button svg {
+  display: block;
+  flex: none;
+  height: 1rem;
+  width: 1rem;
+}
+.prose .link-card-action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+/* The embed's own 「リンクに戻す」 (embed-extension.ts), carrying the same icon as the link card's
+   band and the code block's `.code-block-to-link` — but not their width rule. This is the row's
+   only button, and it stays icon-and-label at every width: measured 2026-09-04, the head still
+   has 213px at a 320px viewport against the button's own ~113px, so there is no squeeze here to
+   hide the label for — unlike those two, which hide it because their row is genuinely short of
+   room at some width. */
+.prose .embed-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.prose .embed-head button svg {
+  display: block;
+  flex: none;
+  height: 1rem;
+  width: 1rem;
+}
+/* 「リンクに戻す」 destroys the card, and it sits between two controls that do not. The red is the
+   one `ToolbarButton`'s `destructive` uses (red-600 / red-400), which the bubble's 解除 wears for
+   the same action one surface over — the border is left alone, because colouring the label says it
+   at the weight the rest of this chrome is drawn at and a fill does not (LinkBubble.tsx says why).
+   The icon follows for free: it strokes with `currentColor`. */
+.prose .link-card-head button.link-card-action-danger {
+  color: #dc2626;
+}
+.prose .link-card-head button.link-card-action-danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+/* Same hover tint and focus ring the editor's other chrome uses (the drag handle, the accordion
+   toggle, the code block's diff toggle) — no colour of the card's own. */
+.prose .link-card-head button:hover,
+.prose .embed-head button:hover,
+.prose .link-card-results button:hover {
+  background: rgba(113, 113, 122, 0.15);
+}
+.prose .link-card-head button:focus-visible,
+.prose .embed-head button:focus-visible,
+.prose .link-card-results button:focus-visible,
+.prose .link-card-search:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(140, 140, 140, 0.5);
+}
+.prose .link-card-search {
+  /* Fills the band rather than sizing it: `min-height` on .link-card-head is what pins the
+     band's height, and a `width: 100%` here would fight the flex row it now sits in. */
+  flex: 1;
+  min-width: 0;
+  padding: 0.3em 0.6em;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9375em;
+}
+.prose .link-card-results {
+  /* Overrides Tailwind Typography's list rules: these are menu rows, not prose. */
+  margin: 0.5em 0 0;
+  padding: 0;
+  list-style: none;
+  /* Raised from 12em when the rows became rows (§5.2-5). A row is 53.8px now against ~22px before,
+     so the old value showed 3.5 of them where it used to show 8.7 — this is 4.75, which keeps the
+     half row that advertises the scroll and leaves the picker at ~352px while it is open. */
+  max-height: 16em;
+  overflow-y: auto;
+}
+.prose .link-card-results li {
+  margin: 0;
+  padding: 0;
+}
+.prose .link-card-empty {
+  padding: 0.15em 0.6em;
+  font-size: 0.875em;
+  opacity: 0.7;
+}
+/* The insert search's result rows (docs/link-card-requirements.md §5.2-5): a picture, the title,
+   and the category under it. The row is still the shared `.link-card-results button` above — this
+   only turns it into a row and gives the parts their sizes, so the hover tint, the focus ring and
+   the full-width hit area all stay where they were.
+
+   Specificity is deliberate: the shared rule is (0,2,1) and sets `display: block`, so this has to
+   be (0,3,0) to lay the row out. Keeping the shared rule as-is is what leaves the URL and refusal
+   rows — plain text buttons with no picture — exactly as they were. */
+.prose .link-card-results .link-card-result {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.35em 0.5em;
+}
+/* A small square, not the card's 128x80 frame. A list is read down its left edge, so what matters
+   here is that every row's text starts at the same x — which is also why the house mark stands in
+   for a post with no picture (§17) rather than the frame being dropped. */
+/* The house mark arrives wrapped in a `<picture>` (§17.3), and that wrapper — not the `<img>` — is
+   the flex item. **`margin` is the whole of the fix**, confirmed by mutation 2026-09-01: with it
+   alone the rows are even, and `display: block` or `line-height: 0` in its place leaves them at
+   [54, 110]. Tailwind Typography gives `picture` the same `2em 0` it gives `img`, the reset on
+   `.link-card-result-image` does not reach the wrapper, and a flex item's margins count toward the
+   line's cross size — at this row's 14px that is 2×28px, exactly the gap between a placeholder row
+   at 109.8px and a row with a real picture at 53.8px. The card's own image never hit this: §16.3
+   took it out of the flow, so its wrapper had nothing to push against.
+
+   `flex: none` is structural rather than measured: the wrapper, not the `<img>` inside it, is what
+   a long title would otherwise squeeze. */
+.prose .link-card-result picture {
+  flex: none;
+  margin: 0;
+}
+.prose .link-card-result-image {
+  flex: none;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin: 0;
+  border-radius: 4px;
+  object-fit: cover;
+}
+/* The house mark again, painted the way the card paints it (§17.3) — `contain` on a tint, so it
+   reads as furniture rather than as a photograph that failed to load. The padding is smaller than
+   the card's because the frame is: at 44px the card's 1.25em would leave the wordmark unreadable,
+   which is the measurement §15 already made at the other end. */
+.prose .link-card-result-image.link-card-result-placeholder {
+  object-fit: contain;
+  padding: 0.3rem;
+  background: #eaeef2;
+}
+.prose .link-card-result-text {
+  min-width: 0;
+  flex: 1;
+}
+.prose .link-card-result-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+}
+/* `flex: 0 1 auto` + `min-width: 0`, so a long title ellipses and the badge stays beside it. With
+   `flex: 1` the title would take the whole row and push 未公開 out to the right margin, away from
+   the thing it is a property of. */
+.prose .link-card-result-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 未公開. A tint rather than a colour: this is not a warning — an author linking to a post they
+   have not published yet is a normal thing to do mid-writing (§5.2-4), and the card itself says
+   the consequence in words once the row is picked. */
+.prose .link-card-result-badge {
+  flex: none;
+  padding: 0.05em 0.4em;
+  border-radius: 3px;
+  background: rgba(113, 113, 122, 0.15);
+  font-size: 0.8125em;
+}
+/* One line, ellipsed, for the published card's domain-line reason: a category that does not fit
+   has already told the author which group this post is in. */
+.prose .link-card-result-category {
+  display: block;
+  font-size: 0.8125em;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The card on a narrow screen (§16.1). The height that unifies the card on a wide one is mostly
+   text: at 390px the column is 165px, so title + description + domain stack to 102px and the card
+   is 136px — taller than either card measured on a phone (Zenn 122px, gadgeteer 88px).
+
+   The description is what goes. A one-line clamp in a 165px column shows a dozen characters, which
+   is not worth the 26px it costs, and dropping it takes the card to 104px. The title keeps both of
+   its lines: it is what earns the click, and cutting it to one buys 26px more at the price of a
+   title that ends after about ten characters.
+
+   The picture is not the reason for any of this, but it gets better anyway — a shorter card is a
+   less portrait box, so the crop measured on the phone goes from 43% of the og:image's width to
+   57%.
+
+   The picture takes no ceiling of its own here. §16.3 moved it out of the flow, so it takes the
+   height it is given and contributes none — while a `max-height` derived from this tier's
+   *published* height held the editor's taller card 13.13px short of its own bottom border, the one
+   thing §16.3 exists to prevent (measured 2026-08-21, §16.4).
+
+   This is the first width breakpoint in this stylesheet. It is set where a one-line description
+   stops being worth its height, not at a device size. */
+@media (max-width: 30rem) {
+  .prose a.link-card,
+  .prose .link-card-view {
+    min-height: 6.5rem;
+  }
+  .prose .link-card-description {
+    display: none;
+  }
+  /* The mark keeps its own size here rather than shrinking with the frame. At 320px the picture
+     box is 94.8x102 (measured 2026-08-22), and the wide value would leave 54.8px of artwork — a
+     wordmark drawn at about 9px, which is the height §15 recorded as unreadable when it measured
+     Qiita's baked-in text. The padding is the only term that can give the mark room back, since
+     the frame's width belongs to §16.1. */
+  .prose .link-card-image.link-card-placeholder {
+    padding: 0.5em;
+  }
+  /* The band goes to icons where the card is at its most cramped — three words of chrome above a
+     clamped title is most of what a narrow card shows otherwise. The label stays in the tree,
+     hidden the visually-hidden way rather than with `display: none`, because it is the button's
+     accessible name (§7.4). */
+  .prose .link-card-head button {
+    padding: 0.25em;
+    line-height: 0;
+  }
+  .prose .link-card-action-label,
+  /* The code block header's way back out of an import (§19.4) collapses on the same rule and for
+     the same reason: what a cramped header owes its width to is the file it names. */
+  .prose .code-block-to-link-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .prose .code-block-header .code-block-to-link {
+    padding: 0.25rem;
+    gap: 0;
+  }
+  .prose .code-block-header .code-block-to-link svg {
+    display: block;
+  }
+  /* The repository half goes, rather than both halves truncating to nothing: measured 2026-08-29
+     at 420px, the two shrank together into `fac… / pack…`, which names neither. Two blocks from
+     the same repository differ in their paths, so the path is the half worth the width — and the
+     whole reference is still on the link's `title` and one tap away. */
+  .prose .code-block-header .code-block-source-repo {
+    display: none;
+  }
+  .prose .code-block-header .code-block-source-path::before {
+    content: none;
+  }
+}
+
+/* A second, narrower band breakpoint than 30rem — not a second definition of "the card is narrow"
+   (that one stays 30rem, unconditionally, for §16.1's height and description). This one exists for
+   a different reason: a card *with a picture* (`:has(.link-card-image)`) has its head's own width
+   cut down by `--link-card-image-width: min(16rem, 40%)` (§16.3, read back by this file's own
+   `.link-card-view:has(.link-card-image) .link-card-body` rule above), and runs out of room for
+   three labels well above 30rem. `text-overflow: ellipsis` fails badly under a few px of deficit —
+   the code-block header's `.code-block-to-link` hit the identical shape (measured 2026-08-29: two
+   halves shrinking together into `fac…` / `pack…`, naming neither, fixed by dropping
+   `.code-block-source-repo` instead of letting both truncate) and its fix there was the same one
+   applied here: stop truncating and drop to the clean fallback instead of the squeeze.
+
+   Measured 2026-09-04 with this repo's exact three labels (開く/変更/リンクに戻す): the band's
+   natural content width is ~262px; a card with a picture has that much head room at a 605px
+   viewport and 259px at 600px — one pixel short is enough for `text-overflow: ellipsis` to drop a
+   whole character (開く → 開…), since CJK truncation is per-glyph, not fractional. 40rem leaves
+   comfortable headroom above the measured 605px cliff for a font or label change. A card with no
+   picture never hits this — its head has the run of the whole card width — so the selector stays
+   scoped to `:has(.link-card-image)` rather than moving 30rem itself. */
+@media (max-width: 40rem) {
+  .prose .link-card-view:has(.link-card-image) .link-card-head button {
+    padding: 0.25em;
+    line-height: 0;
+  }
+  .prose .link-card-view:has(.link-card-image) .link-card-action-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* Embed (docs/embed-requirements.md §9.5). The published block and the editor's NodeView build the
+   same two elements, so these rules serve both surfaces — which is what makes §7's "what the author
+   is looking at is what the reader gets" true of the box and not only of the player. Nothing here
+   is a colour of the embed's own: the unresolved state borrows the card's border, and the control
+   band borrows the card's chrome rules above. */
+.prose .embed {
+  margin: 1.25em 0;
+}
+/* The box that holds the ratio, and the reason the iframe is wrapped at all: an `<iframe>` given
+   `aspect-ratio` by itself still negotiates a size with its replaced-element defaults. The ratio
+   sits on the provider's class, so a provider with a different shape adds a rule beside this one
+   instead of changing how an embed is built (§4.3).
+
+   **No `border-radius` here: a rounded clip over a cross-origin iframe takes the reader's taps with
+   it.** Measured 2026-08-31 on a phone (Android Chrome and iPhone Chrome alike, docs/embed-requirements.md
+   §22): the CodePen tab bar and SlideShare's control row stop answering, while the copy button, the
+   footnote popover and the link card on the same page keep working. `overflow: hidden` on its own
+   is safe and stays — what breaks input is the rounding, and it breaks the same way whether it
+   comes from this box's clip or from a `border-radius` on the iframe itself. zenn.dev rounds no
+   embed either (12 iframes on one article, none clipped). */
+.prose .embed-frame {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  /* Behind the player until it paints, and behind the pillarbox of a video that is not 16:9 —
+     which a Shorts URL is, since its ratio cannot be known without a fetch (§9.6). */
+  background: #000;
+}
+.prose .embed-youtube .embed-frame {
+  aspect-ratio: 16 / 9;
+}
+/* A deck has no ratio of its own either, and the box is built from the two parts the player has:
+   a slide area, and a control row that is 38px whatever the box is (measured 2026-08-25 here and
+   on zenn.dev). So the height is the slide area's ratio plus that row, not one ratio over the whole
+   frame — which is what `aspect-ratio: 597 / 486` was, and why a 16:9 deck sat in 78px of bands.
+
+   16:9 for the slide area, because that is what decks are published at now. zenn.dev computes the
+   same thing the same way (`padding-bottom: calc(56.25% + 38px)` on `span.embed-slideshare`,
+   measured at 708px wide → 436.25px). A deck that is not 16:9 still gets bands — the player
+   letterboxes inside whatever it is given (§9.6's Shorts URL), and its own ratio cannot be known
+   without a fetch (§3.2). `height: 0` + `padding-bottom` rather than `aspect-ratio`, since the two
+   parts cannot be added inside one ratio; the iframe is positioned against the padding box and
+   fills it.
+
+   No black behind it, for .embed-x's reason: the player paints its own light card, and #000 shows
+   as a dark rectangle for as long as the iframe takes to arrive. */
+.prose .embed-slideshare .embed-frame {
+  height: 0;
+  padding-bottom: calc(56.25% + 38px);
+  background: transparent;
+}
+/* A design file has no ratio of its own, and Figma hands one over as SlideShare does: the file page
+   declares 800×450 for its own player (`twitter:player:width` / `:height`, measured 2026-08-25 on
+   the sample), which is 16:9. The viewer then fills whatever box it is given and scales the design
+   to fit inside it — measured at 360×640 and 1000×300, where the canvas is the box's size exactly
+   and the design sits centred in it — so one rule serves every file, the way §9.6's Shorts URL is
+   served (docs/embed-requirements.md §15.3).
+
+   No black behind it, for .embed-slideshare's reason: the viewer paints its own light canvas, and
+   #000 shows as a dark rectangle for as long as the iframe takes to arrive.
+
+   **The border is this box's, because the viewer has no edge of its own.** Figma paints white to
+   all four sides — a control row at the top, a file name at the foot — so on the article's white
+   page the block ends nowhere (measured 2026-08-25 against a screenshot: the top bar, the footer
+   and the page are the same white). The line is the card's and the editor's box's, which is what
+   the author already sees around the same frame (§15.4). `box-sizing` is border-box here, so the
+   ratio still describes the block the reader sees and the iframe sits 1px inside it. */
+.prose .embed-figma .embed-frame {
+  aspect-ratio: 16 / 9;
+  background: transparent;
+  border: 1px solid #d0d7de;
+}
+/* A deck has no ratio of its own here either, and unlike SlideShare's player there is no control
+   row to add: Speaker Deck draws its controls over the slide, so the frame is the slide area and
+   one ratio describes the whole of it (measured 2026-08-26 — `.sd-player-slide` carries
+   `background-size: contain`, and a 16:9 deck fills a 16:9 box edge to edge with the arrows, the
+   share button and the full-screen button floating on top of it).
+
+   16:9 because that is what decks are published at now — Speaker Deck's own iframe snippet writes
+   `aspect-ratio: 560 / 315`, which is 16:9, and `data-ratio` was 1.7778 on four of the five decks
+   measured. `contain` is also what makes the miss survivable: a deck that is not 16:9 is drawn
+   whole with bands rather than cropped (measured with the 1.3333 deck
+   `cf29dcf084890130af0d12313d053a9e`), which is §9.6's Shorts URL again. The ratio cannot be known
+   without a fetch (§3.2) — `data-ratio` lives in the deck page's markup, not in the reference.
+
+   **No black behind it, and here that is not a preference.** The player paints no background at
+   all: `html` and `body` inside the iframe are both `rgba(0, 0, 0, 0)` (measured 2026-08-26), so
+   whatever this rule sets is what the reader sees in the bands and for as long as the slide takes
+   to arrive — with `#000` the whole box is a black rectangle, which is what the measurement showed.
+   docs/embed-requirements.md §16.4. */
+.prose .embed-speakerdeck .embed-frame {
+  aspect-ratio: 16 / 9;
+  background: transparent;
+}
+/* SlideShare's shape again, with a taller row: Docswell's player is a slide area plus a control bar
+   that is 56px whatever the box is (measured 2026-08-26 at 750px and at 400px, and it neither hides
+   nor moves — sampled every 3s for 24s with no interaction, and again with the pointer over the
+   frame). Given `56.25% + 56px` the bar lands exactly on the slide's lower edge: at 750px wide the
+   slide is 750×421.9 and the bar's top is at 422. Take the row away and the same bar draws over the
+   bottom 56px of every slide instead, since it is anchored to the frame rather than to the slide.
+
+   16:9 for the slide area, because that is what decks are published at: of the 18 slide decks
+   sampled 2026-08-26, 17 carry a `data-aspect` of 0.5625 or within 0.001 of it.
+
+   **A deck that is not 16:9 loses its lower part — it does not gain bands.** This is where Docswell
+   differs from §14.4 and §16.4, and the reason those two could accept a missed ratio does not carry
+   over: this player fits the slide to the frame's *width* and clips what will not fit
+   (`#player-main` measures 750×1061 inside a 750×478 frame for the A4-portrait deck `K8NL49`), so
+   the reader sees the top 40% of the page and no more. `?mode=extend` does not change the fit
+   (measured on the same deck). The deck's own ratio lives in the deck page's markup, not in the
+   reference, so it cannot be known without a fetch (§3.2) — and no message comes back from the
+   iframe to correct the box with (§10.5's mechanism has nothing to listen to here).
+
+   No black behind it, for .embed-slideshare's reason: the player's own `body` is white, so #000
+   would show as a dark rectangle for as long as the iframe takes to arrive.
+   docs/embed-requirements.md §17.4. */
+.prose .embed-docswell .embed-frame {
+  height: 0;
+  padding-bottom: calc(56.25% + 56px);
+  background: transparent;
+}
+/* A gist has no ratio, and its height is its content's — the shape X's post has
+   (docs/embed-requirements.md §18.4). So this is a published guess, corrected in the reader's
+   browser by components/EmbedFrames.tsx and in the editor by the NodeView, both from the reporter
+   inside the frame's own document (§18.5).
+
+   **250px, the same guess X's box takes, and for a weaker reason.** X's is the measured cluster of
+   real posts; a gist has no cluster to take one from — 45 public gists measured from 59px to
+   223,378px — so this is a value chosen to be a small jump for the short snippet an article usually
+   carries (250px is about 10 lines, and a gist measures `37 + 22 × 行数`), rather than a
+   measurement. The jump when the correction lands is accepted, as it is on X.
+
+   White rather than transparent, and bordered. GitHub's markup paints its code area white to all
+   four sides and carries no edge of its own, so on the article's white page the block would end
+   nowhere — the Figma case of §15.4. **The border is `#d0d7de` in both schemes deliberately:**
+   GitHub hard-codes `data-color-mode="light"` and no query changes it (§18.3), so this is a light
+   card on a dark page, and a dark border would outline it as something it is not. */
+.prose .embed-gist .embed-frame {
+  height: 250px;
+  background: #fff;
+  border: 1px solid #d0d7de;
+}
+/* A sandbox has no ratio of its own, and unlike the gist and X boxes above it has no correction
+   coming either: the frame's `iframe.resize` message returns the height we gave it in the default
+   view, and did not reproduce at all across runs (docs/embed-requirements.md §20.6). So this is a
+   fixed height rather than a published guess — 500px, which CodeSandbox's own snippet, Qiita and
+   Zenn all three hand out.
+
+   **`#191d1f` is CodeSandbox's default editor ground, measured 2026-08-30**, so the rectangle
+   before the iframe arrives matches the one after. It is a dependency of the same shape as the
+   gist border above: §20.5 passes no `theme`, so if CodeSandbox flips its default to a light one,
+   this colour is what gets left behind. */
+.prose .embed-codesandbox .embed-frame {
+  height: 500px;
+  background: #191d1f;
+}
+/* A pen has no ratio of its own either, and no correction coming: the frame sends no message at
+   all in 15 seconds, and the script that would make it report a height is a third-party `<script>`
+   on the page, which §6 rules out. So the height is a chosen number rather than a computed one:
+   300px, the value CodePen's own documentation gives as the `data-height` default.
+
+   Transparent rather than a ground of ours, unlike .embed-codesandbox above. The frame is a dark
+   tab bar over a result area the pen paints itself, so neither colour would match more than half
+   of what arrives. docs/embed-requirements.md §21.6. */
+.prose .embed-codepen .embed-frame {
+  height: 300px;
+  background: transparent;
+}
+/* Taller once the column is wide, because that is where 300px reads as squat: the tab bar and the
+   result area split a box that has stopped growing with the page around it. Zenn gives every embed
+   one ratio (`calc(56.25% + 38px)`, measured 2026-08-31: 708px wide → 436.25px), and 450px is what
+   that comes to at the column this breakpoint opens on — so the wide view matches the reference
+   site without adopting a ratio a pen does not have.
+
+   The narrow view keeps 300px rather than following the ratio down. Zenn's own box is 246.125px at
+   370px wide, and a phone loses the result area first; the provider's documented default is the
+   floor. `min-width` on the viewport rather than a container query, since this stylesheet already
+   draws its width lines that way (see the link card's `max-width: 30rem`), and 48rem is where the
+   content column stops being phone-shaped. docs/embed-requirements.md §21.6. */
+@media (min-width: 48rem) {
+  .prose .embed-codepen .embed-frame {
+    height: 450px;
+  }
+}
+/* A post has no ratio — its height is its content's, and only its own iframe can report it
+   (docs/embed-requirements.md §10.5). So the box is published at the measured cluster's value and
+   corrected in the reader's browser by components/EmbedFrames.tsx, which writes an inline `height`
+   over this one. 250px is where 3 of the 4 measured posts sat (225/225/249, with one long post at
+   473); the jump when the correction lands is accepted, as it is on Zenn and Qiita.
+
+   No black behind it: unlike a video, a post paints its own light card, and #000 would show as a
+   dark band for as long as the iframe takes to arrive. */
+.prose .embed-x {
+  /* X lays its card out at 548px and stops; 550 is the widget's own cap. One value, because the
+     published frame and the editor's box around it have to end at the same place (§10.9). */
+  --embed-x-width: 550px;
+}
+.prose .embed-x .embed-frame {
+  height: 250px;
+  background: transparent;
+  /* §10.9. The widget lays its card out at 548px and stops there: measured 2026-08-24, the card is
+     548 wide in a 750px frame and in a 550px one, and only shrinks below that. So a full-width box
+     on a 750px article column leaves ~200px that paints nothing and still swallows the pointer,
+     since it is iframe all the way across.
+
+     Left, not centred. A block narrower than the column keeps the left rail here — an image
+     narrower than the column already does, having no rule of its own. Zenn centres this embed, but
+     it centres a narrow image too (measured on `zenn.dev/zenn/articles/markdown-guide`: a 250px
+     image sits in a 708px column with 229px on each side), so that is one page-wide rule rather
+     than a decision about embeds. Adopting it here would be `margin-inline: auto` plus the same
+     answer for images. */
+  max-width: var(--embed-x-width);
+}
+/* The editor's box takes the same cap, and needs one the published block does not: its border is
+   drawn, so width the player does not use is emptiness inside a visible frame. The padding and
+   border added below are .embed-view's own (0.75em each side, 1px each side) — this box has to end
+   where the player ends. */
+.prose .embed-x.embed-view {
+  max-width: calc(var(--embed-x-width) + 1.5em + 2px);
+}
+.prose .embed-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  display: block;
+}
+/* The editor's embed (embed-extension.ts's NodeView): the published block, plus the control band
+   the card also keeps at its top (link-card-requirements.md §7.1) rather than at its foot — and a
+   box around the two.
+
+   **The box is for the band, not for the player.** Without it 「リンクに戻す」 floats above a
+   full-bleed black rectangle with no line saying which block it belongs to, and the block is an
+   atom: clicking anywhere in it selects the whole thing, so where it ends is something the author
+   has to be able to see. The border is the one every other block construct here already carries
+   (1px #d0d7de, 6px radius — the accordion, the code block card, the link card), so a fourth
+   construct still adds no palette of its own.
+
+   The published block has no border, and this is the one place the two surfaces differ on purpose:
+   the band is editor-only, so the box that holds it is too. The cost is that the player sits one
+   padding narrower than the published one — see docs/embed-requirements.md §7.2. */
+.prose .embed-view {
+  position: relative;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.5em 0.75em;
+}
+.prose .embed-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5em;
+  min-height: 2.2em;
+}
+/* §7. An `<iframe>` swallows the pointer, and with it the drag handle's grab and any selection
+   dragged across the block. The player is inert until the block itself is the selection, which is
+   one click away — the click lands on the frame, which belongs to the NodeView, so ProseMirror
+   makes the NodeSelection that then hands the pointer to the player. */
+.prose .embed-view .embed-frame iframe {
+  pointer-events: none;
+}
+.ProseMirror-selectednode.embed-view .embed-frame iframe {
+  pointer-events: auto;
+}
+/* The block is an atom, so the selected state is drawn on the box: the browser's text highlight
+   has nothing to paint inside a node with no text of its own. The card's rule, restated because
+   the two classes are siblings rather than one. */
+.ProseMirror-selectednode.embed-view {
+  outline: 2px solid rgba(9, 105, 218, 0.5);
+  outline-offset: 1px;
+}
+/* A reference no provider claims, editor-side only. The published page degrades it to a plain link
+   (§6); here it says so, because this is the surface where the author can fix it.
+   The box is .embed-view's — both states are one block, and before the border moved there this
+   state was the only one that had an outline, which had it backwards: a block that draws its edges
+   only when it is broken. */
+.prose .embed-note {
+  display: block;
+  font-size: 0.875em;
+  opacity: 0.7;
+  word-break: break-all;
+}
+/* The Figma sharing line (embed-requirements.md §15.6), which sits under a player rather than in
+   place of one — the note above replaces the frame, this one accompanies it. Same voice, and a gap
+   the note does not need, since nothing else separates it from the box above. */
+.prose .embed-hint {
+  margin-top: 0.5em;
+  word-break: normal;
+}
+
 @media (prefers-color-scheme: dark) {
+  /* Dark counterpart of the link card above — the accordion's and the code block card's dark
+     values, for the same reason the light ones are shared. */
+  .prose a.link-card {
+    border-color: #30363d;
+  }
+  .prose a.link-card:hover {
+    background: #161b22;
+  }
+  /* Dark counterpart of the house mark's tint (§17.3) — the card's frame and the search row's. */
+  .prose .link-card-image.link-card-placeholder,
+  .prose .link-card-result-image.link-card-result-placeholder {
+    background: #1c2128;
+  }
+  .prose .link-card-view,
+  .prose .link-card-search,
+  .prose .link-card-head button,
+  .prose .embed-head button,
+  .prose .embed-view,
+  .prose .embed-figma .embed-frame {
+    border-color: #30363d;
+  }
+  /* red-400 / red-300, the pair `ToolbarButton`'s `destructive` uses on a dark surface. */
+  .prose .link-card-head button.link-card-action-danger {
+    color: #f87171;
+  }
+  .prose .link-card-head button.link-card-action-danger:hover {
+    background: rgba(248, 113, 113, 0.12);
+    color: #fca5a5;
+  }
+
   .prose th,
   .prose td {
     border-color: #3f3f46; /* zinc-700 */

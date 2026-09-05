@@ -3,29 +3,28 @@ import { visit } from 'unist-util-visit';
 // Pulls in the Data augmentation (hName/hProperties/hChildren) that
 // mdast-util-to-hast adds, so setting node.data.hName below type-checks.
 import type {} from 'mdast-util-to-hast';
+import {
+  CALLOUT_CLASS,
+  CALLOUT_CONTENT_CLASS,
+  CALLOUT_MARKER_LINE,
+  CALLOUT_TITLE_CLASS,
+  CALLOUT_TITLE_LABEL_CLASS,
+  CALLOUT_TITLES,
+  calloutTypeClass,
+  toCalloutType,
+} from './callout-types';
 
 // GitHub-flavored alerts (a.k.a. admonitions): a blockquote whose first line is
-// `[!NOTE]` / `[!WARNING]` / `[!CAUTION]` renders as a styled callout. We scope to
-// this 3-tier severity set (情報 → 警告 → 注意) to match the Zenn/Qiita convention;
-// GitHub's `[!TIP]` / `[!IMPORTANT]` are intentionally left as plain blockquotes.
+// `[!NOTE]` / `[!WARNING]` / `[!CAUTION]` renders as a styled callout. The tier set, the
+// Japanese labels, the marker pattern and the class names all come from lib/callout-types.ts,
+// which the editor's own callout node reads too — the two surfaces have to recognise and emit
+// exactly the same thing, and the sanitize schema in lib/render.ts has to allow it.
 // remark-gfm does NOT implement this, so this local transform
 // does it on the mdast — no new dependency. It rewrites the blockquote to a
 // `<div class="markdown-alert markdown-alert-<type>">` (GitHub's class names) with
 // a `<p class="markdown-alert-title">` label prepended; the CSS in globals.css
 // paints the border/tint per type. Operating on the parsed tree (not raw source)
 // means it's robust to how the markdown was escaped on the way in.
-type AlertType = 'note' | 'warning' | 'caution';
-
-// Japanese labels shown as the callout title (the site UI is Japanese).
-const TITLES: Record<AlertType, string> = {
-  note: '情報',
-  warning: '警告',
-  caution: '注意',
-};
-
-// Marker must sit alone on the blockquote's first line (GitHub's rule): the type
-// tag, optional trailing spaces, then a newline or the end of the text.
-const MARKER = /^\[!(note|warning|caution)\][^\S\n]*(?:\n|$)/i;
 
 function isParagraph(node: Blockquote['children'][number]): node is Paragraph {
   return node.type === 'paragraph';
@@ -43,9 +42,9 @@ export function remarkGithubAlerts() {
       const firstInline = firstBlock.children[0];
       if (!firstInline || !isText(firstInline)) return;
 
-      const match = firstInline.value.match(MARKER);
+      const match = firstInline.value.match(CALLOUT_MARKER_LINE);
       if (!match) return;
-      const type = match[1].toLowerCase() as AlertType;
+      const type = toCalloutType(match[1].toLowerCase());
 
       // Strip the marker line from the content. If text remains after it (content
       // shared the first line via a soft break), keep it; otherwise drop the now
@@ -71,15 +70,15 @@ export function remarkGithubAlerts() {
       // hProperties override — mdast-util-to-hast emits it as the <span>, not <em>.
       const title: Paragraph = {
         type: 'paragraph',
-        data: { hProperties: { className: ['markdown-alert-title'] } },
+        data: { hProperties: { className: [CALLOUT_TITLE_CLASS] } },
         children: [
           {
             type: 'emphasis',
             data: {
               hName: 'span',
-              hProperties: { className: ['markdown-alert-title-label'] },
+              hProperties: { className: [CALLOUT_TITLE_LABEL_CLASS] },
             },
-            children: [{ type: 'text', value: TITLES[type] }],
+            children: [{ type: 'text', value: CALLOUT_TITLES[type] }],
           },
         ],
       };
@@ -87,14 +86,14 @@ export function remarkGithubAlerts() {
       // carrier for the hName override — emitted as <div class="markdown-alert-content">.
       const content: Blockquote = {
         type: 'blockquote',
-        data: { hName: 'div', hProperties: { className: ['markdown-alert-content'] } },
+        data: { hName: 'div', hProperties: { className: [CALLOUT_CONTENT_CLASS] } },
         children: node.children,
       };
       node.children = [title, content];
       node.data = {
         ...node.data,
         hName: 'div',
-        hProperties: { className: ['markdown-alert', `markdown-alert-${type}`] },
+        hProperties: { className: [CALLOUT_CLASS, calloutTypeClass(type)] },
       };
     });
   };

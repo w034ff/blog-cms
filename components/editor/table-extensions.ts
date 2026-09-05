@@ -440,7 +440,12 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
           // so a table inserted there does not go in — the fitter splits the accordion around it
           // and the document saves as two `<details>`. The body is untouched by this name and
           // still takes a table, which §6.3 of docs/accordion-requirements.md asks for explicitly.
-          if (selectionTouches(props.state, 'table', 'detailsSummary')) return false;
+          //
+          // `linkCard`/`embed`: both are atoms, so selecting one gives a NodeSelection over exactly
+          // that node, and the stock command replaces a NodeSelection outright — the card or embed
+          // was silently swapped for a fresh empty table (reported 2026-09-05).
+          if (selectionTouches(props.state, 'table', 'detailsSummary', 'linkCard', 'embed'))
+            return false;
           return parent?.insertTable?.(options)(props) ?? false;
         },
       setColumnAlign:

@@ -11,10 +11,18 @@ export const BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 
 // Throwaway, seeded copy of data/blog.db. The isolated test server runs against
 // this (via BLOG_DB_PATH) so the real DB is never touched. Kept out of git.
-export const TEST_DB_PATH = path.join(process.cwd(), 'e2e', '.tmp', 'blog.e2e.db');
+export const TEST_DB_PATH = path.join(process.cwd(), 'e2e', '.tmp', `blog.e2e.${E2E_PORT}.db`);
 
 // Saved logged-in session, reused across specs so each doesn't re-login.
-export const STORAGE_STATE = path.join(process.cwd(), 'e2e', '.auth', 'admin.json');
+export const STORAGE_STATE = path.join(process.cwd(), 'e2e', '.auth', `admin.${E2E_PORT}.json`);
+
+// The build dir and the throwaway tsconfig the E2E server runs on. Keyed by the port for the same
+// reason the two paths above are: `npm run test:e2e:shards` starts N of these at once, and each of
+// the four is something two servers cannot share. Two dev servers on one build dir fight over
+// `<distDir>/dev/lock`; two `setup` projects write one auth file; Next rewrites the tsconfig it is
+// pointed at whenever it regenerates types, so a shared one is written by N processes at once.
+export const DIST_DIR = `.next-e2e-${E2E_PORT}`;
+export const TSCONFIG_PATH = `tsconfig.e2e.${E2E_PORT}.json`;
 
 // Test-only admin, seeded into the copy and typed at the /login form. Not a
 // secret: it only unlocks a throwaway local DB on a random test port.

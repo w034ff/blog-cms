@@ -50,10 +50,35 @@ export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
   table: '表のセル',
   codeBlock: 'コードブロック',
   detailsSummary: 'アコーディオンのタイトル',
+  // linkCard/embed fail differently from the three above: they're atoms, not containers an image
+  // could be split around, so a click on one gives a NodeSelection whose range is exactly that
+  // node. setImage's insertContent replaces a selection range wholesale, so the same guard's
+  // absence let an image swap the selected card/embed out entirely (reported 2026-09-05, same
+  // NodeSelection defect as setCallout/insertTable/toggleBlockquote — see callout-extension.ts,
+  // table-extensions.ts, blockquote-extension.ts).
+  linkCard: 'リンクカード',
+  embed: '埋め込み',
 };
 
 function imageBlockedMessage(hosts: string[]): string {
   return `${hosts.map((name) => IMAGE_BLOCKED_HOSTS[name]).join('と')}には画像を挿入できません`;
+}
+
+// Send one file to /api/uploads and report the path it now lives at, or null if
+// the upload was refused (the alert is raised here so no caller has to).
+//
+// Module-level rather than a hook member because it closes over nothing: the
+// thumbnail picker in PostEditor uploads through it too, and that one is not
+// inserting anything into the editor. Keeping one function means both entry
+// points meet the same size and type limits and report failure the same way.
+export async function uploadImageFile(file: File): Promise<string | null> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch('/api/uploads', { method: 'POST', body: formData });
+  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+  if (res.ok && typeof data.url === 'string') return data.url;
+  window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
+  return null;
 }
 
 // The editor's image-upload concern: send files to /api/uploads and insert each
@@ -74,16 +99,6 @@ export function useImageUpload(
   // True while a file is being dragged over the window, so a drop overlay
   // appears on the editor container as a target.
   const [dragging, setDragging] = useState(false);
-
-  const uploadFile = useCallback(async (file: File): Promise<string | null> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-    const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-    if (res.ok && typeof data.url === 'string') return data.url;
-    window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
-    return null;
-  }, []);
 
   // Upload each image and insert it at the cursor as an editor image node. The
   // insertion is a transaction, so onUpdate re-serializes the body and marks the
@@ -124,7 +139,7 @@ export function useImageUpload(
       setUploading(true);
       try {
         for (const file of files) {
-          const url = await uploadFile(file);
+          const url = await uploadImageFile(file);
           if (url === null) continue;
           editor
             .chain()
@@ -136,7 +151,7 @@ export function useImageUpload(
         setUploading(false);
       }
     },
-    [editorRef, uploadFile, showBlocked],
+    [editorRef, showBlocked],
   );
 
   // While a file is dragged anywhere over the window, show a drop overlay and let

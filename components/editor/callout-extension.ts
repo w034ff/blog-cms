@@ -7,42 +7,32 @@ import { findWrapping } from '@tiptap/pm/transform';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
 import { selectionTouches } from './selection-scan';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import {
+  CALLOUT_CLASS,
+  CALLOUT_CONTENT_CLASS,
+  CALLOUT_MARKER_INPUT,
+  CALLOUT_MARKER_LINE,
+  CALLOUT_MARKERS,
+  CALLOUT_TITLE_CLASS,
+  CALLOUT_TITLE_LABEL_CLASS,
+  CALLOUT_TITLES,
+  calloutTypeClass,
+  toCalloutType,
+  type CalloutType,
+} from '@/lib/callout-types';
 
 // GitHub-style alert callouts as a first-class editor node. The three tiers
-// (情報 → 警告 → 注意) mirror the render transform (lib/remark-github-alerts.ts): the
-// marker is NOT stored as editable text — it lives in the node's `type` attribute and
-// shows as a non-editable label chip, so it can't be broken by typing after the `]`.
-// Markdown stays the storage format: the node serializes back to `> [!TYPE]` and is
-// parsed from it, so the public render pipeline and existing posts are unchanged.
-export type CalloutType = 'note' | 'warning' | 'caution';
+// (情報 → 警告 → 注意) come from lib/callout-types.ts, which the render transform
+// (lib/remark-github-alerts.ts) reads too: the marker is NOT stored as editable text — it
+// lives in the node's `type` attribute and shows as a non-editable label chip, so it can't be
+// broken by typing after the `]`. Markdown stays the storage format: the node serializes back
+// to `> [!TYPE]` and is parsed from it, so the public render pipeline and existing posts are
+// unchanged.
 
-// Menu display order (toolbar dropdown + slash menu), 情報 → 注意 → 警告. Distinct from the
-// render/severity ladder below — it's just the order the insert menus list the types in.
-export const CALLOUT_TYPES: readonly CalloutType[] = ['note', 'caution', 'warning'];
-
-// The GitHub-alert tag written to markdown, one per type.
-const CALLOUT_MARKERS: Record<CalloutType, string> = {
-  note: '[!NOTE]',
-  warning: '[!WARNING]',
-  caution: '[!CAUTION]',
-};
-
-// Japanese callout titles (site UI is Japanese). A local copy of the render module's
-// TITLES: this is a client extension and must never import the server-only render code.
-export const CALLOUT_TITLES: Record<CalloutType, string> = {
-  note: '情報',
-  warning: '警告',
-  caution: '注意',
-};
-
-// The marker must sit alone on the blockquote's first line (GitHub's rule), same
-// pattern the render transform uses. Case-insensitive so `[!note]` also matches.
-const MARKER = /^\[!(note|warning|caution)\][^\S\n]*(?:\n|$)/i;
-
-// Narrow a raw attribute / capture group to a CalloutType, defaulting to note.
-export function toCalloutType(value: string | null | undefined): CalloutType {
-  return value === 'warning' || value === 'caution' ? value : 'note';
-}
+// Menu display order (toolbar dropdown + slash menu), 情報 → 注意 → 警告. Deliberately not the
+// severity ladder CALLOUT_TYPES holds, and of no use to the parser or the renderer, so it
+// stays here with the UI rather than in the shared module.
+export const CALLOUT_MENU_ORDER: readonly CalloutType[] = ['note', 'caution', 'warning'];
 
 function calloutTypeOf(node: PMNode): CalloutType {
   return toCalloutType(node.attrs.type);
@@ -74,7 +64,7 @@ function updateCalloutDOM(element: HTMLElement): void {
     const firstNode = firstBlock.firstChild;
     if (!firstNode || firstNode.nodeType !== Node.TEXT_NODE) return;
 
-    const match = (firstNode.nodeValue ?? '').match(MARKER);
+    const match = (firstNode.nodeValue ?? '').match(CALLOUT_MARKER_LINE);
     if (!match) return;
     const type = toCalloutType(match[1].toLowerCase());
 
@@ -94,9 +84,9 @@ function updateCalloutDOM(element: HTMLElement): void {
 
     const callout = element.ownerDocument.createElement('div');
     callout.setAttribute('data-callout', type);
-    callout.setAttribute('class', `markdown-alert markdown-alert-${type}`);
+    callout.setAttribute('class', `${CALLOUT_CLASS} ${calloutTypeClass(type)}`);
     const content = element.ownerDocument.createElement('div');
-    content.setAttribute('class', 'markdown-alert-content');
+    content.setAttribute('class', CALLOUT_CONTENT_CLASS);
     while (blockquote.firstChild) content.appendChild(blockquote.firstChild);
     // A marker-only callout has no body; `block+` needs one node, so seed an empty
     // paragraph rather than let the parser drop the whole callout.
@@ -117,11 +107,9 @@ const DIRECTIVE_TYPES: Record<string, CalloutType> = {
   danger: 'warning',
 };
 
+// Its own vocabulary, deliberately: `:::warning` is `caution` and `:::danger` is `warning`, so
+// this alternation is not the shared CALLOUT_TYPES one and must not be derived from it.
 const DIRECTIVE = /^:::(info|warning|danger)\s$/;
-
-// The GitHub-alert marker on a blockquote's first line, ready to commit. Distinct from
-// MARKER above, which detects an already-stored marker (followed by newline/end) at parse time.
-const MARKER_INPUT = /^\[!(note|warning|caution)\]\s$/i;
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -225,7 +213,7 @@ export const Callout = TiptapNode.create<CalloutOptions>({
       {
         tag: 'div[data-callout]',
         // Only the body lives in the content column; the label chip is chrome.
-        contentElement: '.markdown-alert-content',
+        contentElement: `.${CALLOUT_CONTENT_CLASS}`,
         getAttrs: (element) => ({ type: toCalloutType(element.getAttribute('data-callout')) }),
       },
     ];
@@ -235,13 +223,13 @@ export const Callout = TiptapNode.create<CalloutOptions>({
     const type = calloutTypeOf(node);
     return [
       'div',
-      { 'data-callout': type, class: `markdown-alert markdown-alert-${type}` },
+      { 'data-callout': type, class: `${CALLOUT_CLASS} ${calloutTypeClass(type)}` },
       [
         'p',
-        { class: 'markdown-alert-title', contenteditable: 'false' },
-        ['span', { class: 'markdown-alert-title-label' }, CALLOUT_TITLES[type]],
+        { class: CALLOUT_TITLE_CLASS, contenteditable: 'false' },
+        ['span', { class: CALLOUT_TITLE_LABEL_CLASS }, CALLOUT_TITLES[type]],
       ],
-      ['div', { class: 'markdown-alert-content' }, 0],
+      ['div', { class: CALLOUT_CONTENT_CLASS }, 0],
     ];
   },
 
@@ -252,18 +240,18 @@ export const Callout = TiptapNode.create<CalloutOptions>({
     return ({ node }) => {
       const dom = document.createElement('div');
       const title = document.createElement('p');
-      title.className = 'markdown-alert-title';
+      title.className = CALLOUT_TITLE_CLASS;
       title.setAttribute('contenteditable', 'false');
       const label = document.createElement('span');
-      label.className = 'markdown-alert-title-label';
+      label.className = CALLOUT_TITLE_LABEL_CLASS;
       title.appendChild(label);
       const content = document.createElement('div');
-      content.className = 'markdown-alert-content';
+      content.className = CALLOUT_CONTENT_CLASS;
       dom.appendChild(title);
       dom.appendChild(content);
 
       const applyType = (type: CalloutType) => {
-        dom.className = `markdown-alert markdown-alert-${type}`;
+        dom.className = `${CALLOUT_CLASS} ${calloutTypeClass(type)}`;
         dom.setAttribute('data-callout', type);
         label.textContent = CALLOUT_TITLES[type];
       };
@@ -359,7 +347,13 @@ export const Callout = TiptapNode.create<CalloutOptions>({
           // `<details>`. Measured (docs/accordion-requirements.md §6.5 records the same tear for
           // the footnote). Naming `detailsSummary` and never `details` is deliberate: §6.3 blesses
           // a callout in the accordion's *body*, which is `block+` and takes one cleanly.
-          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary')) return false;
+          //
+          // `linkCard`/`embed` are the fourth: both are atoms, so clicking one gives a NodeSelection
+          // whose range is exactly that node — insertContent then replaces it wholesale rather than
+          // leaving it alone, and the card or embed the author had selected simply vanished
+          // (reported 2026-09-05).
+          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary', 'linkCard', 'embed'))
+            return false;
           return commands.insertContent({
             type: this.name,
             attrs: { type },
@@ -444,7 +438,7 @@ export const Callout = TiptapNode.create<CalloutOptions>({
         },
       }),
       new InputRule({
-        find: MARKER_INPUT,
+        find: CALLOUT_MARKER_INPUT,
         handler: ({ state, range, match }) => {
           const type = toCalloutType(match[1].toLowerCase());
           // The marker must be the first line of a top-level blockquote (doc > blockquote >

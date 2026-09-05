@@ -10,26 +10,48 @@ import rehypePrettyCode from 'rehype-pretty-code';
 import rehypeStringify from 'rehype-stringify';
 import { remarkGithubAlerts } from './remark-github-alerts';
 import { rehypeCodeFilename } from './rehype-code-filename';
+import { rehypeCodeSource } from './rehype-code-source';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
+import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
+import { rehypeEmbed } from './rehype-embed';
+import { rehypeNewTabLinks } from './rehype-new-tab-links';
+import {
+  CALLOUT_DIV_CLASSES,
+  CALLOUT_TITLE_CLASS,
+  CALLOUT_TITLE_LABEL_CLASS,
+} from './callout-types';
 
-export type { TocEntry };
+export type { TocEntry, CardTarget, ResolveCard };
 
-// defaultSchema (GitHub's allowlist) minus className, so the alert transform's
-// container/title/content classes survive sanitization. The nested `['className', …]`
-// form is a value allowlist: only these exact class names pass on div/p/span — no
-// arbitrary classes, no `style`, so the untrusted-author guard is unweakened.
-// The `['className', …values]` value-allowlist form is a tuple, so type it as one.
-const alertClasses: [string, ...string[]] = [
+// defaultSchema (GitHub's allowlist) plus the class names this site's own block constructs
+// round-trip as. The nested `['className', …]` form is a value allowlist: only these exact class
+// names pass on div/p/span — no arbitrary classes, no `style`, so the untrusted-author guard is
+// unweakened. The `['className', …values]` value-allowlist form is a tuple, so type it as one.
+//
+// One tuple per (tag, attribute) — a second `['className', …]` on the same tag would be dead
+// rather than additive (see the <span> note below), so `link-card` joins the alert names here
+// instead of getting a list of its own.
+//   - markdown-alert-*: the GitHub-alert transform's container/title/content. Spread from
+//     lib/callout-types.ts rather than listed, because this is the one place where a missing
+//     name fails *silently* — an unlisted class is stripped from the published HTML, so a new
+//     tier would author, save and reload correctly and simply render with no colour. Deriving
+//     it means adding a tier there is enough.
+//   - link-card: the stored form of a link card (docs/link-card-requirements.md §4.2), an empty
+//     `<div class="link-card" data-href="/posts/…">` that rehypeLinkCard resolves further down
+//     this pipeline. Without this the class is stripped and the card silently becomes an empty div.
+//   - embed: the stored form of an embed (docs/embed-requirements.md §4.1), which fails the same
+//     silent way. One word for every provider, not one each: this tuple is exactly the place a
+//     forgotten name costs nothing at author time and everything at render time, so what a new
+//     provider adds is an entry in lib/embed-provider.ts and nothing here.
+const divClasses: [string, ...string[]] = [
   'className',
-  'markdown-alert',
-  'markdown-alert-note',
-  'markdown-alert-warning',
-  'markdown-alert-caution',
-  'markdown-alert-content',
+  ...CALLOUT_DIV_CLASSES,
+  'link-card',
+  'embed',
 ];
-const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
+const titleClass: [string, ...string[]] = ['className', CALLOUT_TITLE_CLASS];
 // Both allowed <span> classes, merged into one value-allowlist tuple: a schema attribute list
 // holds at most one usable tuple per attribute name — hast-util-sanitize's findDefinition
 // returns on the first entry whose name matches, so appending a second `['className', …]` for
@@ -44,14 +66,18 @@ const titleClass: [string, ...string[]] = ['className', 'markdown-alert-title'];
 // still stripped.
 const spanClasses: [string, ...string[]] = [
   'className',
-  'markdown-alert-title-label',
+  CALLOUT_TITLE_LABEL_CLASS,
   'accent-emphasis',
 ];
 const schema: SanitizeSchema = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
-    div: [...(defaultSchema.attributes?.div ?? []), alertClasses],
+    // `dataHref` is a bare property name, not a value allowlist, so allowing it lets ANY value
+    // through on any div — including one an author hand-wrote. That is deliberate and is why
+    // rehype-link-card validates the reference itself instead of trusting this schema; see
+    // docs/link-card-requirements.md §4.4, and CARD_HREF in lib/rehype-link-card.ts.
+    div: [...(defaultSchema.attributes?.div ?? []), divClasses, 'dataHref'],
     p: [...(defaultSchema.attributes?.p ?? []), titleClass],
     span: [...(defaultSchema.attributes?.span ?? []), spanClasses],
   },
@@ -63,8 +89,10 @@ const schema: SanitizeSchema = {
 // `clobber` renames nothing, and then neither should the links.
 const idClobberPrefix = schema.clobber?.includes('id') ? (schema.clobberPrefix ?? '') : '';
 
-// Shared pipeline used by both the public post page and the editor preview,
-// so what an author previews matches exactly what gets published.
+// The published side's pipeline. `app/posts/[slug]/page.tsx` is its only caller — the editor is a
+// WYSIWYG and draws the author's screen through TipTap, not through here, so "what the author sees
+// is what gets published" is kept by the two sides agreeing on the stored markdown, not by sharing
+// this module.
 // Mirrors the rehype-pretty-code options that used to live in next.config.ts.
 //
 // Now that non-admin users can author posts, raw HTML in MDX (e.g. <script>,
@@ -113,9 +141,43 @@ const processor = unified()
     defaultLang: { block: 'plaintext' },
     transformers: [diffLineHighlight()],
   })
+  // A code block imported from a GitHub file wears a link to it in place of its filename
+  // (docs/embed-requirements.md §19.4). After pretty-code, which builds the caption this rewrites,
+  // and before rehypeNewTabLinks, which is what decides the anchor opens in a new tab.
+  .use(rehypeCodeSource)
+  // Turns each stored `<div class="link-card" data-href>` into a card, a plain link, or nothing
+  // (docs/link-card-requirements.md §6.1). Last, and after sanitize for the same reason
+  // pretty-code is: everything it builds is this pipeline's own markup, so none of it has to be
+  // allow-listed. Nothing above it reads cards — rehypeCollectToc only looks at headings and
+  // rehypeClobberFragmentLinks only at `#…` hrefs — but the position is pinned by a test in
+  // lib/render.test.ts rather than by this argument, since a card does emit an `<a href>`.
+  .use(rehypeLinkCard)
+  // Turns each stored `<div class="embed" data-href>` into an iframe, a plain link, or nothing
+  // (docs/embed-requirements.md §6). After sanitize for a stronger version of rehypeLinkCard's
+  // reason: `<iframe>` is not in the schema and must not be added to it, so the element is built
+  // where sanitize can no longer reach it. Order against rehypeLinkCard does not matter — the two
+  // read disjoint classes and neither produces the other's — but it sits after so that "the two
+  // reference-resolving stages sit together" stays one statement.
+  .use(rehypeEmbed)
+  // Decides which links open in a new tab — the ones leaving this site, and every link card
+  // (docs/link-requirements.md §7.2). Truly last: it is the one stage that reads anchors it did not
+  // build, so it has to see the ones rehypeLinkCard and rehypeEmbed produce as well as the author's
+  // own.
+  .use(rehypeNewTabLinks)
   .use(rehypeStringify);
 
-export async function renderMdxToHtml(source: string): Promise<{ html: string; toc: TocEntry[] }> {
-  const file = await processor.process(source);
+// `resolveCard` is injected rather than imported so this module stays pure and `server-only`
+// without depending on the DB (docs/link-card-requirements.md §6): the post page hands over a
+// closure around getPostBySlug, and a test hands over a literal. It travels as VFile data because
+// `processor` is built once at module load — per-call options must not mean rebuilding it.
+// Omitting it renders every card as a plain link rather than failing.
+export async function renderMdxToHtml(
+  source: string,
+  options: { resolveCard?: ResolveCard } = {},
+): Promise<{ html: string; toc: TocEntry[] }> {
+  const file = await processor.process({
+    value: source,
+    data: { resolveCard: options.resolveCard },
+  });
   return { html: String(file), toc: file.data.toc ?? [] };
 }

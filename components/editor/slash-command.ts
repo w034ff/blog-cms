@@ -3,7 +3,9 @@ import { PluginKey } from '@tiptap/pm/state';
 import { ReactRenderer } from '@tiptap/react';
 import Suggestion, { exitSuggestion, type SuggestionProps } from '@tiptap/suggestion';
 import { SlashList, type SlashItem, type SlashListRef } from './SlashList';
-import { CALLOUT_TITLES, CALLOUT_TYPES, type CalloutType } from './callout-extension';
+import { CALLOUT_MENU_ORDER } from './callout-extension';
+import { CALLOUT_TITLES, type CalloutType } from '@/lib/callout-types';
+import { EMBED_PROVIDERS } from '@/lib/embed-provider';
 
 // Extra search terms per callout type, beyond the visible "囲み枠（…）" label (which already
 // matches `/囲み`) — so `/info`, `/danger`, `/callout`, `/コ` all filter sensibly. Aligned with
@@ -34,7 +36,7 @@ const CALLOUT_KEYWORDS: Record<CalloutType, string[]> = {
 type SlashEntry = SlashItem & { available?: (editor: Editor) => boolean };
 
 const ITEMS: SlashEntry[] = [
-  ...CALLOUT_TYPES.map<SlashEntry>((type) => ({
+  ...CALLOUT_MENU_ORDER.map<SlashEntry>((type) => ({
     id: `callout-${type}`,
     title: `囲み枠（${CALLOUT_TITLES[type]}）`,
     keywords: CALLOUT_KEYWORDS[type],
@@ -66,6 +68,53 @@ const ITEMS: SlashEntry[] = [
     // is legal there — see code-block-extension.ts.
     run: (chain) => chain.insertCodeBlock(),
     available: (editor) => editor.can().insertCodeBlock(),
+  },
+  {
+    // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md
+    // §21): one row for both a link card and an embed, because the URL the author pastes into the
+    // dialog is what decides which lands — never this row. Two rows here, one named after the
+    // card and the other after the embed, was the shape §24 fixed in the first place (a row called
+    // 「リンクカード」 is what an author pressed to embed a video); reintroducing that split with
+    // the rows merged back under either name would restore the same wrong name for the other half.
+    // 「リンク」 commits to neither outcome, matching how `LinkBubble.tsx` already treats card-making
+    // and embed-making as two actions on one thing — a link — rather than as different tools.
+    //
+    // **The keywords carry the discoverability the reference site buys with a permanent 「+」
+    // button.** That button exists because its editor writes markdown and the syntax cannot be
+    // remembered; here the provider is derived from the URL, so what an author needs is to find
+    // this row while thinking 「youtube」, 「スライド」 or 「記事」 — which is a search, not a
+    // button. Every provider name is a keyword, so the list grows with `EMBED_PROVIDERS`.
+    //
+    // `openInsertDialog` inserts nothing; it asks the host for the dialog and reports whether
+    // EITHER outcome could land here at all, so a table cell drops the row rather than opening a
+    // dialog whose insert would then refuse either way.
+    id: 'insert-link',
+    title: 'リンク',
+    keywords: [
+      'link',
+      'card',
+      'linkcard',
+      'link card',
+      'リンク',
+      'カード',
+      // The compound spelling the old, single-purpose row wore (`title` there, 2026-09-02 to
+      // 2026-09-04) — kept as a keyword rather than dropped, so an author's muscle memory still
+      // finds this row.
+      'リンクカード',
+      '記事',
+      'embed',
+      '埋め込み',
+      '動画',
+      'スライド',
+      ...EMBED_PROVIDERS.map((provider) => provider.name),
+      // The spellings a provider's own name does not cover: X's former name, and the two whose
+      // registry name carries a space or a vendor.
+      'twitter',
+      'speakerdeck',
+      'gist',
+    ],
+    run: (chain, range) => chain.openInsertDialog(range.from),
+    available: (editor) => editor.can().openInsertDialog(),
   },
 ];
 
@@ -123,7 +172,7 @@ export const SlashCommand = Extension.create({
         dismissOnOutsideClick: true,
         items: ({ query, editor }) => filterItems(query, editor),
         command: ({ editor, range, props }) => {
-          props.run(editor.chain().focus().deleteRange(range)).run();
+          props.run(editor.chain().focus().deleteRange(range), range).run();
         },
         render: () => {
           let component: ReactRenderer<SlashListRef, SuggestionProps<SlashItem, SlashItem>> | null =

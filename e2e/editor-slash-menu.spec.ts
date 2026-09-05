@@ -26,12 +26,14 @@ test('the slash menu inserts a code block', async ({ page }) => {
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // `code` matches コードブロック only (no callout carries it), so the list narrows to one row.
+  // `code` now matches two rows: コードブロック, and リンク through its provider keywords —
+  // CodeSandbox and CodePen both contain it (embed-requirements.md §24.2). **The order is what
+  // keeps `/code` + Enter usable**, and it is the menu's own declaration order, so this pins the
+  // thing that would actually hurt rather than the count.
   await page.keyboard.type('/code');
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(1);
-  await expect(menu).toContainText('コードブロック');
+  await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンク']);
 
   await page.keyboard.press('Enter');
   // The code block's NodeView wrapper (its language <select>/filename chrome) confirms insertion.
@@ -73,7 +75,8 @@ test('Escape closes the slash menu without inserting', async ({ page }) => {
 // (slash-command.ts asks each row via `editor.can()`). setCallout refuses inside a quote —
 // a blockquote is someone else's words, a callout the author's own aside — so the three
 // 囲み枠 rows drop there while コードブロック stays, since a fenced block nests fine in a
-// quote. Browser-only: the availability check reads the live editor state.
+// quote. リンク stays for the same reason: a quote is `block+`, so a card or an embed is a
+// legal child of it. Browser-only: the availability check reads the live editor state.
 test('the slash menu hides the callout rows inside a quote, keeping the code block', async ({
   page,
 }) => {
@@ -89,8 +92,7 @@ test('the slash menu hides the callout rows inside a quote, keeping the code blo
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(1);
-  await expect(menu.getByRole('button')).toHaveText('コードブロック');
+  await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンク']);
 });
 
 // The same check must not hide the rows where setCallout *does* work. Inside an existing
@@ -110,7 +112,8 @@ test('the slash menu still offers the callout rows inside an existing callout', 
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('button')).toHaveCount(4); // 3 callout types + code block
+  // 3 callout types + code block + the merged link/embed row
+  await expect(menu.getByRole('button')).toHaveCount(5);
 });
 
 // The `/` trigger is gated off inside a code block (slash-command.ts's `allow`): with

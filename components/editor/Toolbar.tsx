@@ -10,6 +10,7 @@ import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
+import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
 
@@ -141,10 +142,12 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         active={editor.isActive('blockquote')}
-        // Refuses in a paragraph-only table cell (table-extensions.ts). Unlike the heading and
-        // list toggles above, no command guard is needed: toggleBlockquote already reports
-        // false there rather than converting anything, so `can()` is the whole fix. It stays
-        // enabled inside a code block on purpose — quoting one wraps it, keeping the block.
+        // Refuses in a paragraph-only table cell (table-extensions.ts) with no command guard
+        // needed there — toggleBlockquote already reports false rather than converting anything,
+        // so `can()` is the whole fix. It stays enabled inside a code block on purpose — quoting
+        // one wraps it, keeping the block. A NodeSelection over a linkCard/embed is a separate
+        // case that does need a guard (blockquote-extension.ts), since wrapIn happily wraps a
+        // selected atom instead of refusing.
         disabled={!editor.can().toggleBlockquote()}
         title='引用'
         shortcut='Mod-Shift-b'
@@ -155,21 +158,47 @@ export function Toolbar({
       {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
           menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
+      {/* Same command and target position as the slash menu's 「リンク」 row (slash-command.ts):
+          the dialog itself decides link card vs. embed from the URL, so one entry point covers
+          both. `can()` mirrors that row's `available` guard — greyed out in a paragraph-only
+          table cell, where neither outcome could land. */}
+      <ToolbarButton
+        onClick={() => editor.chain().focus().openInsertDialog(editor.state.selection.from).run()}
+        disabled={!editor.can().openInsertDialog()}
+        title='リンク'>
+        <span className='flex items-center gap-1'>
+          <LinkIcon />
+          リンク
+        </span>
+      </ToolbarButton>
       {/* Horizontal rule has no toolbar button: h2's red underline already carries the
           section-divider role, so this is left to the `---` + Enter input rule (StarterKit
           default) for the rare case someone wants an in-section break. */}
       {/* Image insert belongs in the toolbar too, but needs a file picker rather
           than an editor command, so it's a <label>-wrapped hidden input styled to
-          match ToolbarButton. Paste and drag-and-drop also insert images. */}
+          match ToolbarButton. Paste and drag-and-drop also insert images.
+
+          It keeps `cursor-pointer` of its own where the buttons beside it no longer
+          need one: app/globals.css's base rule reaches `button`, and a <label> is
+          not one — without this, the label's own text would hand back the I-beam.
+
+          `toolbar-button` for the same reason, one rule further on: the touch-only ring
+          (table-requirements.md §12.2) is written against that class, and being the one control in
+          the row without a `<button>` under it left it as the one control in the row without an
+          outline — on the phone where the outline is what says "press here". */}
       <label
-        className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
+        className={`toolbar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
           imageBlocked
             ? 'pointer-events-none opacity-40'
             : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'
         }`}>
         <ImageIcon />
         {uploading ? 'アップロード中…' : '画像'}
+        {/* The editor page now has two file pickers — this one and the
+            thumbnail field's — so both carry a testid. Without it a spec's
+            `input[type="file"]` matches two elements and fails strict mode. */}
         <input
+          data-testid='image-picker'
           type='file'
           accept={ALLOWED_IMAGE_ACCEPT}
           className='hidden'

@@ -5,8 +5,12 @@ import type { Node as PMNode, NodeType } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { EditorState } from '@tiptap/pm/state';
+import { blobSourceFromFilename } from '@/lib/github-blob';
+import { unsetGithubBlob } from './github-blob-import';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
+import { buildIcon, GITHUB_MARK_SHAPES, UNLINK_SHAPES } from './svg/icon-shapes';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
+import { refuseChromeDrops } from './useDragContainment';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -25,9 +29,16 @@ declare module '@tiptap/core' {
 // legal there but only from the second child on, and converting the first paragraph would leave
 // the item headless. A table cell answers false and must keep doing so — ParagraphTableCell is
 // `paragraph+`, and a code block in a cell has no GFM pipe form (table-extensions.ts).
-function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
+// Exported because the link card asks exactly this question and gets exactly these answers — a
+// cell and an accordion title refuse, a list item accepts from the second child on. Two copies of
+// the walk would be two things to keep in step; see link-card-extension.ts.
+export function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
   const { $from, empty } = state.selection;
   // Only for a caret: with a range, "after the textblock" is not where the author is pointing.
+  // **A paste is the exception, and it collapses before asking rather than widening this** — for a
+  // paste, replacing the selection *is* the gesture (speakerdeck-snippet-paste.ts, which deletes
+  // the range and then asks this question about the caret the deletion left). The rule below stays
+  // what the slash menu, the bubble and the link card get.
   if (!empty || $from.depth < 1) return false;
   const parent = $from.node($from.depth - 1);
   const index = $from.index($from.depth - 1);
@@ -804,6 +815,40 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       // a non-existent id so they have no form owner: immune to the reset, never submitted.
       filenameInput.setAttribute('form', DETACHED_FORM_ID);
 
+      // The same header, when the filename is a GitHub blob URL rather than a name: a link to the
+      // file, wearing GitHub's mark (docs/embed-requirements.md §19.4). It stands *in place of* the
+      // field — the URL is a reference, not something to rename, and showing it raw in a text input
+      // is what made the first shape of this feature noisy.
+      //
+      // The published pipeline draws the same two halves from the same stored string
+      // (lib/rehype-code-source.ts), which is what makes this WYSIWYG rather than a preview.
+      const sourceLink = document.createElement('a');
+      sourceLink.className = 'code-block-source';
+      sourceLink.target = '_blank';
+      sourceLink.rel = 'noopener noreferrer';
+      sourceLink.appendChild(buildIcon(GITHUB_MARK_SHAPES));
+      const sourceRepo = document.createElement('span');
+      sourceRepo.className = 'code-block-source-repo';
+      const sourcePath = document.createElement('span');
+      sourcePath.className = 'code-block-source-path';
+      sourceLink.append(sourceRepo, sourcePath);
+
+      // The way back out of an import (§19.4). Same wording as the embed's and the link card's,
+      // because it is the same door — and shown only for a block that has a reference to return to,
+      // which is exactly the set that shows the source link above.
+      // An icon *and* a label, and **exactly one of them shows** — a width question, answered the
+      // way the link card's control band answers it (app/globals.css). Wide, the words are enough
+      // and the icon is out of the flow; below 30rem the label goes visually-hidden and the icon
+      // carries the button, so the header's width goes back to the file it names. The label stays
+      // in the tree rather than being removed: it is the button's accessible name at both widths.
+      const toLink = document.createElement('button');
+      toLink.type = 'button';
+      toLink.className = 'code-block-to-link';
+      const toLinkLabel = document.createElement('span');
+      toLinkLabel.className = 'code-block-to-link-label';
+      toLinkLabel.textContent = 'リンクに戻す';
+      toLink.append(buildIcon(UNLINK_SHAPES), toLinkLabel);
+
       const select = document.createElement('select');
       select.className = 'code-block-lang';
       select.setAttribute('aria-label', 'コードブロックの言語');
@@ -825,9 +870,10 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         select.appendChild(option);
       };
 
-      // Diff-display toggle: independent of the language <select>, sits at the header's
-      // right edge (after it) as the outermost "control" — matching the header's existing
-      // title-fills-left/controls-cluster-right layout. Icon-only; the tip span below is a
+      // Diff-display toggle: independent of the language <select>, sits after it in the header's
+      // right-hand cluster — matching the existing title-fills-left/controls-cluster-right layout.
+      // It was the outermost control until the import's 「リンクに戻す」 was added past it (§19.4),
+      // which is shown for one kind of block rather than for every one. Icon-only; the tip span is a
       // hover-revealed tooltip built the same way as ToolbarButton's (CSS opacity transition,
       // not the native `title` attribute, which renders with a browser-controlled delay).
       const diffToggle = document.createElement('button');
@@ -851,8 +897,23 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         ensureOption(language);
         if (select.value !== language) select.value = language;
         // Don't clobber the field mid-edit; only mirror the model when it isn't focused.
+        const filename = stringAttr(currentNode.attrs.filename);
         if (document.activeElement !== filenameInput) {
-          filenameInput.value = stringAttr(currentNode.attrs.filename);
+          filenameInput.value = filename;
+        }
+        // One of the two is shown, never both. `hidden` rather than removal so neither element has
+        // to be rebuilt when a block's filename changes from one kind to the other.
+        const source = blobSourceFromFilename(filename);
+        filenameInput.hidden = source !== null;
+        sourceLink.hidden = source === null;
+        toLink.hidden = source === null;
+        if (source) {
+          sourceLink.href = source.href;
+          // The whole reference, for the reader who wants to check the ref before following it —
+          // the visible halves drop it, since a 40-character SHA is most of the header's width.
+          sourceLink.title = source.href;
+          sourceRepo.textContent = source.repo;
+          sourcePath.textContent = source.path;
         }
         diffToggle.setAttribute('aria-checked', String(Boolean(currentNode.attrs.diff)));
       };
@@ -891,6 +952,11 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         setAttr({ diff: !currentNode.attrs.diff });
       });
 
+      toLink.addEventListener('click', () => {
+        const pos = getPos();
+        if (typeof pos === 'number') unsetGithubBlob(editor, pos);
+      });
+
       // Content dragged out of this document must not land in the header's controls. The filename
       // <input> is a natively droppable text control, and `stopEvent` below keeps ProseMirror out
       // of every event over the header — so `eventBelongsToView` stops short of the view and a
@@ -910,18 +976,20 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       // document is being dragged. A file dragged in from the OS (useImageUpload's overlay), text
       // from another application, and a drag within the field itself all leave it null and go on
       // working normally.
-      const refuseEditorDrag = (event: DragEvent) => {
-        if (!editor.view.dragging) return;
-        event.preventDefault();
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-      };
-      header.addEventListener('dragenter', refuseEditorDrag);
-      header.addEventListener('dragover', refuseEditorDrag);
-      header.addEventListener('drop', refuseEditorDrag);
+      // The whole header, matching this NodeView's `stopEvent` below — what the claim takes out of
+      // ProseMirror's reach is exactly what has to be refused (refuseChromeDrops, shared with the
+      // link card and the embed, which claim their own controls the same way).
+      refuseChromeDrops(
+        header,
+        (target) => header.contains(target),
+        () => editor.view,
+      );
 
       header.appendChild(filenameInput);
+      header.appendChild(sourceLink);
       header.appendChild(select);
       header.appendChild(diffToggle);
+      header.appendChild(toLink);
 
       // Turn off the browser's native spellcheck for the code body: variable/function names
       // aren't dictionary words, so it paints most of the code with red squiggles. Prose

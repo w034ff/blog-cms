@@ -2,9 +2,16 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { getPostBySlug } from '@/lib/posts';
-import { renderMdxToHtml } from '@/lib/render';
+import { readLinkPreview } from '@/lib/link-previews';
+import { linkImageSrc } from '@/lib/link-image';
+import { normalizeCardHref } from '@/lib/link-card-href';
+import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
+import { siteOrigin } from '@/lib/site';
+import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import { formatPostDate } from '@/lib/format';
+import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
+import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
 import { sharedOpenGraph } from '@/app/shared-metadata';
@@ -17,10 +24,61 @@ const MIN_HEADINGS_FOR_TOC = 3;
 
 export const dynamic = 'force-dynamic';
 
+// The DB half of a link card. It lives here, not in lib/render.ts, so the render pipeline keeps
+// no dependency on `posts` (docs/link-card-requirements.md §6) — the stage is handed this closure
+// and knows nothing about where a title comes from.
+//
+// The href has already been validated by the stage before it gets here, so it is one of exactly
+// two shapes and `/posts/` tells them apart (§14.2). Which table answers is the only difference:
+// this blog's posts are read live, an external page's title is read from what the editor stored.
+//
+// **Neither branch fetches.** `readLinkPreview` is a SELECT; there is no path from a reader's
+// request to another server (§14.1). A URL the editor has never resolved has no row, which is the
+// same `null` a draft or an unknown slug produces, and the stage renders a plain link for all of
+// them (§6.1).
+async function resolveCard(href: string): Promise<CardTarget | null> {
+  // A reference written by hand can be this blog's own published URL, which no entry point would
+  // produce (§14.5.1) and which has no `link_previews` row to find — the editor's route refuses to
+  // fetch this server. Rewritten to the internal reference here for the same reason it is rewritten
+  // there, so the two surfaces resolve a stored card the same way. The `<a href>` is untouched: it
+  // is what the author wrote, and it goes where it says.
+  const reference = normalizeCardHref(href, siteOrigin.origin) ?? href;
+  if (!reference.startsWith('/posts/')) {
+    const preview = await readLinkPreview(reference);
+    if (!preview) return null;
+    // The target's own picture, but served from here: `linkImageSrc` signs a path into
+    // /api/link-image, so the reader's browser asks this site for it and the target's CDN never
+    // sees the reader (§14.4). Deriving the path here rather than storing it means the signing key
+    // can change without rewriting a single row.
+    return {
+      ...preview,
+      image: externalCardImage(preview.image ? linkImageSrc(preview.image) : null),
+    };
+  }
+  const target = await getPostBySlug(reference.slice('/posts/'.length));
+  if (!target) return null;
+  // resolveThumbnail, not `target.thumbnail`: the card shows the same image the
+  // post list does, including the body-derived fallback. It is also the only
+  // thing standing between a bad stored value and an `<img src>`, since the
+  // rehype stage trusts what this returns.
+  //
+  // `internalCardImage` is what turns its `null` — a post with no picture at all
+  // — into this site's own mark (§17). It is not folded into `resolveThumbnail`
+  // because that answer also becomes `og:image` and is checked against the
+  // uploads sweep; the fallback belongs to the card, and the editor's card
+  // reaches the same function through `/api/posts/search`.
+  return {
+    title: target.title,
+    description: target.description,
+    image: internalCardImage(resolveThumbnail(target)),
+  };
+}
+
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
   const post = await getPostBySlug(slug);
   if (!post) return {};
+  const thumbnail = resolveThumbnail(post);
   return {
     title: post.title,
     description: post.description,
@@ -29,6 +87,15 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       // object wholesale, so siteName and locale have to come along or this one
       // page quietly loses them (see app/shared-metadata.ts).
       ...sharedOpenGraph,
+      // The post's own image when it has one, otherwise the site card the spread
+      // above supplies. Declared without width/height, unlike /og.png: these are
+      // author uploads of unknown dimensions, and a wrong declared size is worse
+      // than none — a consumer laying the card out from it gets a distorted box.
+      //
+      // A relative path, resolved against metadataBase like `url` below. og:image
+      // must be absolute in the emitted tag, and metadataBase is what makes that
+      // one host, from SITE_ORIGIN, rather than something baked in here.
+      ...(thumbnail ? { images: [{ url: thumbnail, alt: post.title }] } : {}),
       type: 'article',
       title: post.title,
       description: post.description,
@@ -47,7 +114,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   const post = await getPostBySlug(slug);
   if (!post) notFound();
 
-  const { html, toc } = await renderMdxToHtml(post.body);
+  const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
   const showToc = toc.length >= MIN_HEADINGS_FOR_TOC;
 
   return (
@@ -117,11 +184,14 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </div>
-        {/* Client enhancers: both attach behaviour to the server-rendered body after mount and
-            render nothing themselves — a copy button on each code block, and a preview of the note
-            behind each footnote reference (which stays a working anchor either way). */}
+        {/* Client enhancers: each attaches behaviour to the server-rendered body after mount and
+            renders nothing itself — a copy button on each code block, a preview of the note behind
+            each footnote reference (which stays a working anchor either way), and the height and
+            missing-post fallback for an X embed, which only its own iframe can report
+            (docs/embed-requirements.md §10.5, §10.6). */}
         <CodeCopyButtons targetId='post-body' />
         <FootnotePopover targetId='post-body' />
+        <EmbedFrames targetId='post-body' />
       </div>
       {showToc && <TocNavDesktop toc={toc} />}
     </article>

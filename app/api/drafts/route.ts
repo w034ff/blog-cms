@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
+import { isUploadPath } from '@/lib/thumbnail';
 import { generateUniqueSlug } from '@/lib/slug';
 
 // Autosave is intentionally lenient: it must persist partial, half-written work
@@ -19,6 +20,14 @@ const autosaveSchema = z.object({
     category: z.string().catch(''),
     tags: z.array(z.string()).catch([]),
     body: z.string().catch(''),
+    // Normalized rather than rejected, so a bad value can never be the reason a
+    // draft fails to save. '' is the column's "author chose none" state and the
+    // reader-facing image falls back to the body (lib/thumbnail.ts), so dropping
+    // an unusable path costs nothing an author would notice.
+    thumbnail: z
+      .string()
+      .transform((value) => (isUploadPath(value) ? value : ''))
+      .catch(''),
   }),
 });
 
@@ -52,13 +61,17 @@ export async function POST(req: NextRequest) {
   if (content.title.trim() === '' && content.body.trim() === '') {
     return NextResponse.json({ skipped: true });
   }
+  // Reported back below, not just written: the editor has to know its own address to refuse a
+  // link card pointing at it (docs/link-card-requirements.md §18), and this is the only moment a
+  // brand-new post learns one — publish is too late, and the row is already searchable from here.
+  const slug = generateUniqueSlug();
   const newId = createPost({
-    slug: generateUniqueSlug(),
+    slug,
     ...content,
     category: content.category || DEFAULT_CATEGORY,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,
   });
-  return NextResponse.json({ id: newId, savedAt: Date.now(), created: true });
+  return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true });
 }

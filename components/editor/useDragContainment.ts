@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import type { RefObject } from 'react';
 import type { Editor } from '@tiptap/core';
+import type { EditorView } from '@tiptap/pm/view';
 
 // Content dragged out of the editor may not be dropped outside it.
 //
@@ -28,9 +29,9 @@ import type { Editor } from '@tiptap/core';
 // Bound once at the document rather than per field. PostEditor puts four text inputs beside the
 // editor (タイトル / カテゴリ / タグ / 説明) and they are all exposed identically — the exposure is
 // "anywhere but the editor", not "these four" — so guarding the boundary is what keeps a field
-// added later from quietly reopening it. The code block header needs its own copy of this refusal
-// even so (refuseEditorDrag in code-block-extension.ts): it sits *inside* view.dom, so it passes
-// the containment test here and is refused there instead.
+// added later from quietly reopening it. Chrome a NodeView claims needs its own copy of this
+// refusal even so (refuseChromeDrops below): it sits *inside* view.dom, so it passes the
+// containment test here and is refused there instead.
 //
 // Gated on `view.dragging`, which prosemirror-view sets only while content from this document is in
 // flight. A file dragged in from the OS (useImageUpload's window handlers and their drop overlay),
@@ -61,4 +62,40 @@ export function useDragContainment(editorRef: RefObject<Editor | null>): void {
       document.removeEventListener('drop', refuse);
     };
   }, [editorRef]);
+}
+
+// The same refusal for chrome that lives *inside* `view.dom`, which the containment guard above
+// deliberately lets through.
+//
+// A NodeView that claims its own controls with `stopEvent` puts them outside ProseMirror's drop
+// path entirely: `eventBelongsToView` walks up from `event.target` and gives up as soon as a
+// `stopEvent` claims it, so no `handleDrop` prop runs and no transaction removes the dragged range.
+// Whatever the browser does with the drop it is left holding is then the whole answer — and for a
+// natively droppable control that answer is a *move*, which deletes the source out of the
+// contenteditable behind ProseMirror's back. Measured on the link card's picker (2026-08-22):
+//
+//   before  doc(paragraph("前の段落です"), linkCard, paragraph("後の段落です"))
+//   after   doc(paragraph("です"),        linkCard, paragraph("後の段落です"))   search box: 前の段落
+//
+// `claims` must mirror the NodeView's own `stopEvent` predicate rather than the whole element: the
+// card's body is an ordinary block position and a drop *beside* it has to keep working, so refusing
+// everything inside `dom` would take away a landing spot the drop cursor is still offering.
+//
+// Gated on `view.dragging` for the containment guard's reason: a file from the OS and a drag inside
+// one of these controls both leave it null and are none of this function's business.
+export function refuseChromeDrops(
+  element: HTMLElement,
+  claims: (target: HTMLElement) => boolean,
+  view: () => EditorView,
+): void {
+  const refuse = (event: DragEvent) => {
+    if (!view().dragging) return;
+    const { target } = event;
+    if (!(target instanceof HTMLElement) || !claims(target)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
+  };
+  element.addEventListener('dragenter', refuse);
+  element.addEventListener('dragover', refuse);
+  element.addEventListener('drop', refuse);
 }

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { docString, markdown } from './editor-probe';
-import { loadMarkdown, selectNode, setRange } from './editor-authoring';
+import { docString, historyState, markdown } from './editor-probe';
+import { closeHistory, loadMarkdown, selectNode, setRange } from './editor-authoring';
 import { cdpNativeDrag, dragSelect } from './native-drag';
 
 // A paste into a table cell used to leave the table intact on screen but no longer representable as
@@ -225,17 +225,22 @@ for (const [name, paste] of [
 test('one undo restores the document the paste started from', async ({ page }) => {
   await openEditor(page, ALIGNED);
   const before = await docString(page);
-  // prosemirror-history groups edits inside newGroupDelay (500ms), and this spec's own setContent is
-  // an edit like any other — without the wait it joins the paste and Ctrl+Z empties the document,
-  // which measures the harness rather than the repair.
-  await page.waitForTimeout(700);
+  // This spec's own setContent is an edit like any other, and a paste that groups with it makes
+  // Ctrl+Z empty the document — measuring the harness rather than the repair. The break is stated
+  // rather than waited out (it was a 700ms pause against a 500ms `newGroupDelay`, and a loaded
+  // machine can close that margin).
+  await closeHistory(page);
+  const depthBefore = (await historyState(page)).undoDepth;
 
   await pasteTwoParagraphsIntoCell(page);
-  await page.keyboard.press('Control+z');
-
   // The repair rides in the paste's own history event, so it costs no second undo: it is an
-  // appendTransaction dispatched in the same tick, which is what keeps this one step.
+  // appendTransaction dispatched in the same tick, which is what keeps this one step. Counting the
+  // events says that directly — the document check below cannot tell one step from two.
+  expect((await historyState(page)).undoDepth).toBe(depthBefore + 1);
+
+  await page.keyboard.press('Control+z');
   expect(await docString(page)).toBe(before);
+  expect((await historyState(page)).undoDepth).toBe(depthBefore);
 });
 
 // The shape the repair produces, pinned independently of the repair: it has to survive a save and a

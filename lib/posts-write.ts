@@ -14,6 +14,7 @@ export type PostInput = {
   tags: string[];
   draft: boolean;
   body: string;
+  thumbnail: string;
 };
 
 // The two ways content reaches the server disagree about line endings: autosave posts JSON and

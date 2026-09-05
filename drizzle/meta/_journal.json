@@ -15,6 +15,34 @@
       "when": 1785652397163,
       "tag": "0001_sour_captain_america",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786779400889,
+      "tag": "0002_thin_starfox",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787052929628,
+      "tag": "0003_lethal_fat_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787057564409,
+      "tag": "0004_superb_nextwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787061206871,
+      "tag": "0005_left_masque",
+      "breakpoints": true
     }
   ]
 }
