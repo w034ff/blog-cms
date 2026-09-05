@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMBED_PROVIDERS, embedRefusal, resolveEmbed } from './embed-provider';
+import { EMBED_PROVIDERS, embedCardFallback, embedRefusal, resolveEmbed } from './embed-provider';
 
 // docs/embed-requirements.md §9. `resolveEmbed` is asked from both sides — the resolve stage decides
 // whether a stored reference becomes an iframe, the editor decides whether a URL can become one —
@@ -1073,12 +1073,14 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     );
     // **A reference nothing can embed keeps the card and gains the reason.** A Docswell video and
     // a devbox have no working URL to reach instead (§17.2, §20.13), so taking the card away
-    // would leave the author with a diagnosis and no move.
+    // would leave the author with a diagnosis and no move. Phrased as what will happen, not as an
+    // instruction to go elsewhere — the shared insert dialog now makes the card itself
+    // (`Provider.cardFallback`, docs/embed-requirements.md §24.2).
     expect(embedRefusal('https://www.docswell.com/s/someone/vLK7J5V-a-video')).toBe(
-      '動画は埋め込めません。リンクカードにしてください。',
+      '動画は埋め込めません。リンクカードとして挿入します。',
     );
     expect(embedRefusal('https://codesandbox.io/p/devbox/eager-proskuriakova-2lcdqm')).toBe(
-      'Devbox は埋め込めません。リンクカードにしてください。',
+      'Devbox は埋め込めません。リンクカードとして挿入します。',
     );
 
     // **The narrow half.** A provider answers per URL, not per host, because its refusal meets
@@ -1099,6 +1101,21 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     expect(embedRefusal('es.slideshare.net/slideshow/x/1')).toBeNull();
     expect(embedRefusal('https://www.you')).toBeNull();
     expect(embedRefusal('')).toBeNull();
+  });
+
+  it('says which refused URLs the shared insert dialog may still offer as a card', () => {
+    // The same two-kind split as SD9, read as a boolean rather than as wording: the fixable class
+    // (Figma, Speaker Deck) stops at the refusal, the other (Docswell's video, CodeSandbox's
+    // devbox) falls through to the card (`lib/insert-target.ts`'s `resolveInsertTarget`).
+    expect(embedCardFallback(`https://www.figma.com/proto/${FIGMA_KEY_SAMPLE}/a-file`)).toBe(false);
+    expect(embedCardFallback('https://speakerdeck.com/soudai/pgcon21j-tutorial')).toBe(false);
+    expect(embedCardFallback('https://www.docswell.com/s/someone/vLK7J5V-a-video')).toBe(true);
+    expect(embedCardFallback('https://codesandbox.io/p/devbox/eager-proskuriakova-2lcdqm')).toBe(
+      true,
+    );
+    // A URL no provider claims, or no URL at all, has no provider to answer for it either way.
+    expect(embedCardFallback('https://example.com/an-article')).toBe(false);
+    expect(embedCardFallback('')).toBe(false);
   });
 
   it('spells each provider the same way the drag ghost does', () => {

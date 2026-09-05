@@ -21,10 +21,14 @@ import { refuseChromeDrops } from './useDragContainment';
 // The one string the extension and its host share. Exported rather than written twice, for the
 // reason `GIST_SOURCE` is (lib/embed-message.ts): a name that has to match in two files is a name
 // that gets misspelled in one of them.
-export const EMBED_INSERT_EVENT = 'editor:open-embed-insert';
+//
+// Named for the dialog, not for this node: the shared insert dialog also produces link cards
+// (docs/embed-requirements.md §24.2), and this event is what opens it regardless of which node the
+// author's URL ends up as.
+export const INSERT_DIALOG_EVENT = 'editor:open-insert-dialog';
 
-// Where the embed goes when the dialog comes back with a URL.
-export type EmbedInsertDetail = { at: number };
+// Where the inserted node goes once the dialog comes back with a URL.
+export type InsertDialogDetail = { at: number };
 
 // The embed (docs/embed-requirements.md): a block that plays or shows an external item in place,
 // rather than naming it with a line of link text.
@@ -230,25 +234,27 @@ export const Embed = Node.create({
             .run();
         },
 
-      // Ask the host to open the insert dialog (docs/embed-requirements.md §24.1). It inserts
-      // nothing: the embed needs a URL, and unlike the link card there is no half-made state to
-      // put in the document while the author finds one — an empty `href` renders 「参照がありません」,
-      // which is an error, not an invitation.
+      // Ask the host to open the shared insert dialog (docs/embed-requirements.md §24.2). It
+      // inserts nothing itself: the dialog decides, once it has a URL, whether an embed or a link
+      // card lands — and an embed has no half-made state to put in the document while the author
+      // finds one, an empty `href` renders 「参照がありません」, which is an error, not an invitation.
       //
-      // **The placement rule is asked, never restated**: `can().setEmbed('')` is the same predicate
-      // the insert itself will meet, with an href that is never used because nothing is dispatched.
-      // Restating it here is how the slash row and the command would drift apart, which is the
-      // thing `slash-command.ts` keeps saying about `available`.
+      // **The placement rule is asked, never restated, and asked of BOTH outcomes**: `can().setEmbed('')`
+      // and `can().setLinkCard('')` are the same predicates the insert itself will meet, with an
+      // href that is never used because nothing is dispatched. Restating either here is how the
+      // slash row and the command would drift apart, which is the thing `slash-command.ts` keeps
+      // saying about `available`. The row must show if EITHER outcome could land — which one is
+      // decided later, by the URL the author types into the dialog.
       //
       // A DOM event rather than storage or a callback option: `editor.storage` does not re-render
       // React, assigning to what `useEditor` returned trips `react-hooks/immutability`, and an
       // extension option is fixed when the extension array is built (the link card's `ownSlug`
       // is the record of both — docs/link-card-requirements.md §18). The host listens on
       // `editor.view.dom`, which it already reaches through `editorRef`.
-      openEmbedInsert:
+      openInsertDialog:
         (at?: number) =>
         ({ can, dispatch, editor }: CommandProps): boolean => {
-          if (!can().setEmbed('')) return false;
+          if (!can().setEmbed('') && !can().setLinkCard('')) return false;
           // Null under `can()`, which is what makes this safe to ask from the menu's `available`.
           if (dispatch) {
             // **The caret rides along.** The author types in a dialog outside the editor, and
@@ -270,7 +276,7 @@ export const Embed = Node.create({
             // anything currently takes.
             const target = at ?? editor.state.selection.from;
             editor.view.dom.dispatchEvent(
-              new CustomEvent<EmbedInsertDetail>(EMBED_INSERT_EVENT, {
+              new CustomEvent<InsertDialogDetail>(INSERT_DIALOG_EVENT, {
                 bubbles: true,
                 detail: { at: target },
               }),
@@ -622,7 +628,7 @@ declare module '@tiptap/core' {
       linkToEmbed: (range: { from: number; to: number }, href: string) => ReturnType;
       nodeToEmbed: (at: number, href: string) => ReturnType;
       setEmbed: (href: string) => ReturnType;
-      openEmbedInsert: (at?: number) => ReturnType;
+      openInsertDialog: (at?: number) => ReturnType;
       unsetEmbed: (at?: number) => ReturnType;
     };
   }

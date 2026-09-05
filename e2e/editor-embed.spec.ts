@@ -73,12 +73,11 @@ test('a URL naming no single video keeps the card (§9.4)', async ({ page }) => 
 });
 
 test('the picker makes an embed out of a pasted video URL (§5-1)', async ({ page }) => {
-  await page.goto('/admin/posts/new');
-  const editor = page.locator('.ProseMirror');
-  await expect(editor).toBeVisible();
-  await editor.click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  // A fresh insert no longer lands on the card's own picker (docs/embed-requirements.md §24.2) —
+  // 「変更」 on an already-resolved card is the surviving door to it (editor-link-card.spec.ts's
+  // `openPickerViaChange` documents why that still measures the same thing).
+  await openWith(page, '<div class="link-card" data-href="/posts/second-post"></div>\n\n本文\n');
+  await page.locator('.ProseMirror .link-card-view').getByRole('button', { name: '変更' }).click();
 
   const search = page.locator('.link-card-search');
   await expect(search).toBeVisible();

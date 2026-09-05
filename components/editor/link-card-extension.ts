@@ -8,7 +8,7 @@ import {
   internalCardImage,
   type CardImage,
 } from '@/lib/link-card-image';
-import { resolveEmbed } from '@/lib/embed-provider';
+import { resolveInsertTarget, SELF_REFERENCE_NOTE } from '@/lib/insert-target';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import {
   BACK_SHAPES,
@@ -128,20 +128,40 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
 
   addCommands() {
     return {
-      // Insert. `href` is optional because the slash menu inserts an unresolved card and the
-      // author picks the post inside it (§5.2-3) — the NodeView shows a search box until then.
+      // Insert a resolved card at the caret (docs/embed-requirements.md §24, docs/link-card-requirements.md
+      // §5.2-2/§5.2-3). Mirrors `setEmbed` exactly: an empty textblock under the caret is replaced
+      // outright (so opening the shared insert dialog on a blank line does not leave that blank line
+      // behind, invisible in the editor but real in the markdown), otherwise the card goes after the
+      // caret's whole textblock so a caret mid-sentence does not split the line.
       //
-      // canPlaceAfterCaret (code-block-extension.ts) is the whole placement rule, and it is what
-      // `available` in the slash menu asks via `can()`. A cell (`paragraph+`) and an accordion
-      // title (`text*`) refuse; a list item accepts from its second child on.
+      // canPlaceAfterCaret (code-block-extension.ts) is the placement rule for the fallback branch,
+      // and it is what `available` in the slash menu asks via `can()`. A cell (`paragraph+`) and an
+      // accordion title (`text*`) refuse; a list item accepts from its second child on.
       setLinkCard:
         (href = '') =>
         ({ chain, state }: CommandProps): boolean => {
+          const { $from, empty } = state.selection;
+          if (
+            empty &&
+            $from.depth >= 1 &&
+            $from.parent.isTextblock &&
+            $from.parent.content.size === 0
+          ) {
+            const parent = $from.node($from.depth - 1);
+            const index = $from.index($from.depth - 1);
+            if (parent.canReplaceWith(index, index + 1, this.type)) {
+              const from = $from.before($from.depth);
+              return chain()
+                .insertContentAt(
+                  { from, to: $from.after($from.depth) },
+                  { type: this.name, attrs: { href } },
+                )
+                .setNodeSelection(from)
+                .run();
+            }
+          }
           if (!canPlaceAfterCaret(state, this.type)) return false;
-          const { $from } = state.selection;
           const at = $from.after($from.depth);
-          // Placed after the caret's whole textblock rather than at the selection, so a caret in
-          // mid-sentence doesn't split the line — the same reasoning insertCodeBlock uses.
           return chain()
             .insertContentAt(at, { type: this.name, attrs: { href } })
             .setNodeSelection(at)
@@ -327,6 +347,16 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           // href, and there is nothing left to cancel back to.
           editing = false;
           editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'href', href));
+          // **`update` is not guaranteed to follow.** ProseMirror skips calling it when the node it
+          // diffs against is `eq()` to the one before the transaction — which a same-value
+          // `setNodeAttribute` produces exactly, the one case this reaches: 「変更」 on a card, then
+          // picking the very post it already pointed to. Nothing about `editing` flipping to false
+          // is visible in that diff, so without this the picker sits on screen forever with a
+          // document that already says the card resolved (measured 2026-09-04, §20f). Calling
+          // `render` directly makes this redraw whether or not that callback also runs — a second,
+          // idempotent draw where it does.
+          const updated = editor.state.doc.nodeAt(pos);
+          if (updated) render(updated);
         });
       };
 
@@ -488,10 +518,6 @@ const cardCache = new Map<string, CardFace>();
 // one refresh — which is what the author asked for, since the row they are refreshing is shared too.
 const forceRefresh = new Set<string>();
 
-// One wording for all four doors (§18). The author is told the same thing whether they are picking
-// a post, pasting their own URL, or looking at a card that already points at this article.
-const SELF_NOTE = 'この記事自身は参照できません';
-
 // The other half of §14.3.2: the failure is remembered, and this is the gesture that forgets it.
 // Both buttons it names are on this card already — 「リンクに戻す」 here, 「カードにする」 in the
 // link bubble the reference falls back into — so it describes what the author can see, not a
@@ -534,7 +560,7 @@ function lookupCard(href: string, ownSlug: string): Promise<Lookup> {
   // looking at. `missing` rather than `found` with a note, because only `found` is written to
   // `cardCache`, and a reference nobody may point at has no business being cached as a face.
   if (isOwnPostHref(reference, ownSlug)) {
-    return Promise.resolve({ status: 'missing', note: SELF_NOTE });
+    return Promise.resolve({ status: 'missing', note: SELF_REFERENCE_NOTE });
   }
   return externalCardHost(reference) === null
     ? fetchPost(reference)
@@ -772,7 +798,8 @@ function renderPicker(
       // nothing else, so 「一致する記事がありません」 would deny an article the author can see the
       // title of. Where other candidates remain, the quiet removal needs no explanation — there is
       // something to pick, and the missing row is the article they are looking at.
-      empty.textContent = offered.length < results.length ? SELF_NOTE : '一致する記事がありません';
+      empty.textContent =
+        offered.length < results.length ? SELF_REFERENCE_NOTE : '一致する記事がありません';
       list.appendChild(empty);
       return;
     }
@@ -822,20 +849,30 @@ function renderPicker(
 
   input.addEventListener('input', () => {
     const value = input.value.trim();
-    // A URL a provider claims is an embed, not a card (docs/embed-requirements.md §5-1), and it is
-    // asked first for the bubble's reason: `normalizeCardHref` accepts every external http(s) URL,
-    // so it would answer for a YouTube link too and offer a card that publishes as a plain link.
-    if (resolveEmbed(value) !== null) {
-      showReference('この URL を埋め込みにする', () => onEmbed(value));
-      return;
+    // Shared with the insert dialog (lib/insert-target.ts) so a URL cannot resolve differently
+    // depending on which of the two surfaces sees it first — §21 of link-card-requirements.md.
+    const target = resolveInsertTarget(value, ownSlug, window.location.origin);
+    switch (target.kind) {
+      case 'embed':
+        showReference('この URL を埋め込みにする', () => onEmbed(target.href));
+        return;
+      case 'embed-refused':
+        showRefusal(target.message);
+        return;
+      case 'card-refused-self':
+        // This blog's own published address for this very post, which §14.5.1 has already
+        // rewritten into the internal reference by the time it gets here (§18). Refused with a
+        // line rather than with an unresponsive row: an offer that does nothing is worse than no
+        // offer.
+        showRefusal(SELF_REFERENCE_NOTE);
+        return;
+      case 'card':
+        showReference('この URL をカードにする', () => onPick(target.href));
+        return;
+      case 'none':
+        void search(value);
+        return;
     }
-    const cardHref = normalizeCardHref(input.value, window.location.origin);
-    // This blog's own published address for this very post, which §14.5.1 has already rewritten
-    // into the internal reference by the time it gets here (§18). Refused with a line rather than
-    // with an unresponsive row: an offer that does nothing is worse than no offer.
-    if (cardHref !== null && isOwnPostHref(cardHref, ownSlug)) showRefusal(SELF_NOTE);
-    else if (cardHref !== null) showReference('この URL をカードにする', () => onPick(cardHref));
-    else void search(input.value);
   });
   // Escape hands focus back to the document. Where there is a card to go back to, `onCancel`
   // already puts both the selection and the focus on it (link-card-extension.ts's

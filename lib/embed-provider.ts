@@ -138,6 +138,12 @@ type Provider = {
   // The URL is already parsed by `resolveEmbed`, and it is passed rather than reparsed so this
   // cannot disagree with the matcher about what the path is.
   refusal?: (url: URL) => string | null;
+  // **Whether the shared insert dialog may offer a link card when this provider refuses** — the
+  // second half of the two-kind split `refusal` documents above. Only meaningful alongside a
+  // `refusal` that actually fires: true for Docswell's video and CodeSandbox's devbox (「残す」),
+  // absent (false) for Figma and Speaker Deck (「勧めない」 — a fixable URL exists, so a card would
+  // be a worse answer than the fix `refusal` already names).
+  cardFallback?: boolean;
   resolve: (url: URL) => EmbedTarget | null;
 };
 
@@ -514,9 +520,10 @@ const docswell: Provider = {
   refusal: (url) => {
     const key = DOCSWELL_PATH.exec(url.pathname)?.[1];
     return key !== undefined && DOCSWELL_VIDEO_KEY.test(key)
-      ? '動画は埋め込めません。リンクカードにしてください。'
+      ? '動画は埋め込めません。リンクカードとして挿入します。'
       : null;
   },
+  cardFallback: true,
   resolve: (url) => {
     const path = DOCSWELL_PATH.exec(url.pathname);
     const key = path?.[1] ?? null;
@@ -728,7 +735,10 @@ const codesandbox: Provider = {
   // rule to route around (§20.13). **So the card stays the answer** and this only supplies the
   // reason; there is no other URL for the same sandbox.
   refusal: (url) =>
-    DEVBOX_PATH.test(url.pathname) ? 'Devbox は埋め込めません。リンクカードにしてください。' : null,
+    DEVBOX_PATH.test(url.pathname)
+      ? 'Devbox は埋め込めません。リンクカードとして挿入します。'
+      : null,
+  cardFallback: true,
   resolve: (url) => {
     const segment = CODESANDBOX_PATH.exec(url.pathname)?.[1] ?? null;
     if (segment === null || !CODESANDBOX_SEGMENT.test(segment)) return null;
@@ -913,6 +923,22 @@ export function embedRefusal(href: string): string | null {
   }
   const provider = PROVIDERS.find((candidate) => candidate.hosts.includes(url.hostname));
   return provider?.refusal?.(url) ?? null;
+}
+
+// Whether a refused reference should still be offered as a link card (§24.1's two-kind split,
+// `cardFallback` above). Asked only where `embedRefusal` already returned non-null — a URL no
+// provider refused takes the ordinary card path and never reaches this.
+export function embedCardFallback(href: string): boolean {
+  const value = href.trim();
+  if (value === '') return false;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const provider = PROVIDERS.find((candidate) => candidate.hosts.includes(url.hostname));
+  return provider?.cardFallback ?? false;
 }
 
 // The embed a stored reference resolves to, or null when there is none — which is the same answer

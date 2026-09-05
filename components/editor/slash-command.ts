@@ -70,37 +70,38 @@ const ITEMS: SlashEntry[] = [
     available: (editor) => editor.can().insertCodeBlock(),
   },
   {
-    // The card is inserted unresolved and its NodeView asks which post — the search is part of the
-    // card, not a second popup on top of this one (docs/link-card-requirements.md §5.2-3).
-    //
-    // `available` carries the whole placement rule here, and it is half of §5.4: setLinkCard asks
-    // canPlaceAfterCaret, so a table cell (`paragraph+`) and an accordion title (`text*`) drop the
-    // row. The other half — a card arriving by paste or drop — is answered by the guards that were
-    // already in place; see the note in link-card-extension.ts.
-    id: 'link-card',
-    title: 'リンクカード',
-    keywords: ['link', 'card', 'linkcard', 'link card', 'リンク', 'カード', '記事'],
-    run: (chain) => chain.setLinkCard(),
-    available: (editor) => editor.can().setLinkCard(),
-  },
-  {
-    // The embed's own door (docs/embed-requirements.md §24.1). Until this row existed, the only
-    // way to reach an embed from this menu was 「リンクカード」 — the row is named after the block
-    // it usually makes, and a URL a provider claims quietly becomes something else. A picker's
-    // explanatory line was carrying that news, which is a symptom being treated.
+    // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md
+    // §21): one row for both a link card and an embed, because the URL the author pastes into the
+    // dialog is what decides which lands — never this row. Two rows here, one named after the
+    // card and the other after the embed, was the shape §24 fixed in the first place (a row called
+    // 「リンクカード」 is what an author pressed to embed a video); reintroducing that split with
+    // the rows merged back under either name would restore the same wrong name for the other half.
+    // 「リンク」 commits to neither outcome, matching how `LinkBubble.tsx` already treats card-making
+    // and embed-making as two actions on one thing — a link — rather than as different tools.
     //
     // **The keywords carry the discoverability the reference site buys with a permanent 「+」
     // button.** That button exists because its editor writes markdown and the syntax cannot be
     // remembered; here the provider is derived from the URL, so what an author needs is to find
-    // this row while thinking 「youtube」 or 「スライド」 — which is a search, not a button. Every
-    // provider name is a keyword, so the list grows with `EMBED_PROVIDERS`.
+    // this row while thinking 「youtube」, 「スライド」 or 「記事」 — which is a search, not a
+    // button. Every provider name is a keyword, so the list grows with `EMBED_PROVIDERS`.
     //
-    // `openEmbedInsert` inserts nothing; it asks the host for the dialog and reports whether an
-    // embed could land here at all, so a table cell drops the row rather than opening a dialog
-    // whose insert would then refuse.
-    id: 'embed',
-    title: '埋め込み',
+    // `openInsertDialog` inserts nothing; it asks the host for the dialog and reports whether
+    // EITHER outcome could land here at all, so a table cell drops the row rather than opening a
+    // dialog whose insert would then refuse either way.
+    id: 'insert-link',
+    title: 'リンク',
     keywords: [
+      'link',
+      'card',
+      'linkcard',
+      'link card',
+      'リンク',
+      'カード',
+      // The compound spelling the old, single-purpose row wore (`title` there, 2026-09-02 to
+      // 2026-09-04) — kept as a keyword rather than dropped, so an author's muscle memory still
+      // finds this row.
+      'リンクカード',
+      '記事',
       'embed',
       '埋め込み',
       '動画',
@@ -112,8 +113,8 @@ const ITEMS: SlashEntry[] = [
       'speakerdeck',
       'gist',
     ],
-    run: (chain, range) => chain.openEmbedInsert(range.from),
-    available: (editor) => editor.can().openEmbedInsert(),
+    run: (chain, range) => chain.openInsertDialog(range.from),
+    available: (editor) => editor.can().openInsertDialog(),
   },
 ];
 

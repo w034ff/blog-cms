@@ -10,8 +10,8 @@ import { isPublishableUri } from './editor/link-protocols';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
-import { EmbedInsertDialog } from './editor/EmbedInsertDialog';
-import { EMBED_INSERT_EVENT, type EmbedInsertDetail } from './editor/embed-extension';
+import { InsertDialog } from './editor/InsertDialog';
+import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
 import { useAutosave } from './editor/useAutosave';
@@ -74,11 +74,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // editor mounted (content intact) and prompt a re-login. Cleared by any
   // successful autosave/publish (proof the session is valid again).
   const [sessionExpired, setSessionExpired] = useState(false);
-  // Whether the embed insert dialog is up. Held here rather than in the extension because it is
+  // Whether the shared insert dialog is up. Held here rather than in the extension because it is
   // React that renders it, and `editor.storage` does not re-render.
-  const [embedInsertAt, setEmbedInsertAt] = useState<number | null>(null);
+  const [insertDialogAt, setInsertDialogAt] = useState<number | null>(null);
   // Stable, so the dialog's Escape listener registers once per open instead of once per render.
-  const closeEmbedInsert = useCallback(() => setEmbedInsertAt(null), []);
+  const closeInsertDialog = useCallback(() => setInsertDialogAt(null), []);
 
   // The post's server identity (row id). Null in create mode until the first
   // autosave (or a publish) materializes the row; from then on edits update it.
@@ -254,20 +254,20 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     if (live) live.storage.linkCard.ownSlug = slug;
   }, [editor, slug]);
 
-  // The embed's insert dialog opens from the slash menu, which reaches React the only way an
+  // The shared insert dialog opens from the slash menu, which reaches React the only way an
   // extension can: a DOM event on the editor's own element (embed-extension.ts's
-  // `openEmbedInsert`, docs/embed-requirements.md §24.1). Listened for through `editorRef` for the
+  // `openInsertDialog`, docs/embed-requirements.md §24.2). Listened for through `editorRef` for the
   // reason the effect above uses it — the handle for work outside React's render flow.
   useEffect(() => {
     const live = editorRef.current;
     if (!live) return;
     const dom = live.view.dom;
     const open = (event: Event) => {
-      const detail = (event as CustomEvent<EmbedInsertDetail>).detail;
-      setEmbedInsertAt(detail.at);
+      const detail = (event as CustomEvent<InsertDialogDetail>).detail;
+      setInsertDialogAt(detail.at);
     };
-    dom.addEventListener(EMBED_INSERT_EVENT, open);
-    return () => dom.removeEventListener(EMBED_INSERT_EVENT, open);
+    dom.addEventListener(INSERT_DIALOG_EVENT, open);
+    return () => dom.removeEventListener(INSERT_DIALOG_EVENT, open);
   }, [editor]);
 
   // Sync the address bar to a newly created post's edit URL without navigating
@@ -394,8 +394,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
         {/* Mounted only while it is open, so closing throws the dialog's state away rather than
             leaving it for the next open to clear. */}
-        {editor && embedInsertAt !== null && (
-          <EmbedInsertDialog editor={editor} at={embedInsertAt} onClose={closeEmbedInsert} />
+        {editor && insertDialogAt !== null && (
+          <InsertDialog
+            editor={editor}
+            at={insertDialogAt}
+            onClose={closeInsertDialog}
+            ownSlug={slug}
+          />
         )}
       </div>
 

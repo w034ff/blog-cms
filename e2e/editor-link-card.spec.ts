@@ -37,24 +37,30 @@ function card(page: Page) {
   return page.locator('.ProseMirror .link-card-view');
 }
 
-test('the slash menu inserts a card, and the card searches for the post (1a)', async ({ page }) => {
+// The slash menu no longer inserts a card directly (docs/embed-requirements.md §24.2,
+// docs/link-card-requirements.md §21) — it opens the shared insert dialog, and picking a post on
+// its 「記事から選ぶ」 tab is what lands the (already-resolved) card in the document.
+test('the slash menu opens the shared dialog, and its 記事から選ぶ tab makes a card (1a)', async ({
+  page,
+}) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
 
   await editor.click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await page.keyboard.type('/リンク');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
 
-  // Inserted unresolved: the card is on the page with its own search box, rather than a popup
-  // having appeared over the document (§5.2-3).
-  await expect(card(page)).toBeVisible();
-  const search = page.locator('.link-card-search');
-  await expect(search).toBeFocused();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('tab', { name: '記事から選ぶ' }).click();
+  await dialog.getByPlaceholder('記事のタイトルで検索…').fill('React');
+  await dialog.getByRole('button', { name: CARD_TITLE }).click();
 
-  await search.fill('React');
-  await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
-
+  // The dialog is gone and the card lands resolved — never an unresolved card with its own picker
+  // on screen, which is the property the embed-only door already established for the block it
+  // makes (§24:2091 hands over the "unfinished card left behind" property this used to have).
+  await expect(dialog).toHaveCount(0);
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
   expect(await docString(page)).toContain('linkCard');
 });
@@ -295,10 +301,8 @@ test('a card with a picture falls back to icons before its labels squeeze (4n)',
   // Hidden by size, not by `display` — same reasoning as 4j, at this narrower width.
   expect(band.labelWidth).toBeLessThan(2);
 
-  await page.goto('/admin/posts/new');
-  await page.locator('.ProseMirror').click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await openWithCard(page);
+  await openPickerViaChange(page);
   const picker = card(page);
   await expect(picker.locator('.link-card-search')).toBeVisible();
   const pickerHeadHeight = await picker
@@ -463,8 +467,11 @@ test('a card is allowed inside a blockquote (3a)', async ({ page }) => {
   await loadMarkdown(page, '> 引用\n');
   await setRange(page, await firstPos(page, 'blockquote'));
 
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await page.keyboard.type('/リンク');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('tab', { name: '記事から選ぶ' }).click();
+  await dialog.getByRole('button', { name: CARD_TITLE }).click();
   expect(await docString(page)).toContain('blockquote(paragraph("引用"), linkCard)');
 });
 
@@ -494,12 +501,8 @@ test('a second click on a result row a moment later leaves the card resolved (4b
   page,
 }) => {
   for (const x of [24, 60, 100, 140, 200]) {
-    await page.goto('/admin/posts/new');
-    await expect(page.locator('.ProseMirror')).toBeVisible();
-    await page.locator('.ProseMirror').click();
-    await page.keyboard.type('/リンクカード');
-    await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
-    await expect(page.locator('.link-card-search')).toBeFocused();
+    await openWithCard(page);
+    await openPickerViaChange(page);
 
     const row = page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE });
     // Scrolled to first, because `boundingBox()` answers for a row the list has clipped just as
@@ -598,17 +601,11 @@ const EXTERNAL_MD = `<div class="link-card" data-href="${EXTERNAL_HREF}"></div>`
 const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに戻してカードにし直すと再取得します）';
 
 test('the picker takes a URL and makes an external card (14a)', async ({ page }) => {
-  await page.goto('/admin/posts/new');
-  const editor = page.locator('.ProseMirror');
-  await expect(editor).toBeVisible();
-
-  await editor.click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
+  await openWithCard(page);
+  const search = await openPickerViaChange(page);
 
   // One field for both kinds: what was typed decides which (§14.6-1). A URL replaces the post
   // results with the single row that makes a reference out of it.
-  const search = page.locator('.link-card-search');
   await search.fill(EXTERNAL_HREF);
   await page
     .locator('.link-card-results')
@@ -840,14 +837,22 @@ async function openOwnPost(page: Page, title: string): Promise<string> {
   return row.slug;
 }
 
+// Reopens the picker on an already-resolved card via 「変更」 — the only surviving door to it, now
+// that a fresh insert lands resolved via the shared dialog (§24.2, §21). The picker itself
+// (`renderPicker`) is unchanged and untested by that move: 「変更」 flips the same NodeView-local
+// `editing` flag a fresh, never-resolved card used to start with, so everything downstream of "the
+// picker is open" still measures exactly what it did before.
+async function openPickerViaChange(page: Page) {
+  await card(page).getByRole('button', { name: '変更' }).click();
+  const search = page.locator('.link-card-search');
+  await expect(search).toBeFocused();
+  return search;
+}
+
 async function openPicker(page: Page) {
   await page.locator('.ProseMirror').click();
-  await page.keyboard.press('End');
-  await page.keyboard.press('Enter');
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
-  await expect(card(page)).toBeVisible();
-  return page.locator('.link-card-search');
+  await loadMarkdown(page, `${CARD_MD}\n\n本文\n`);
+  return openPickerViaChange(page);
 }
 
 test('the picker drops the post being edited, and says why when nothing is left (18a)', async ({
@@ -998,12 +1003,8 @@ test('カードにする asks the page again; an ordinary render does not (14.3.
 //
 // A shared opener, because both of these want the picker and nothing else.
 async function openPickerOnNewPost(page: Page): Promise<void> {
-  await page.goto('/admin/posts/new');
-  await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.locator('.ProseMirror').click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
-  await expect(page.locator('.link-card-search')).toBeFocused();
+  await openWithCard(page);
+  await openPickerViaChange(page);
 }
 
 type RowShape = {
@@ -1192,16 +1193,40 @@ for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
   });
 }
 
+// Found while retargeting other specs at 「変更」 once it became the only door to the picker
+// (§24.2): picking the SAME post a card already pointed at left the picker on screen forever, with
+// a document that already said the card had resolved. `setNodeAttribute` with an unchanged value
+// produces a node ProseMirror's own diff treats as `eq()` to the one before the transaction, so it
+// may never call this NodeView's `update` — and nothing else was redrawing it. Fixed by having
+// `setHref` call `render` itself rather than trust that callback to fire.
+test('「変更」, then picking the post the card already names, still redraws it (4o)', async ({
+  page,
+}) => {
+  await openWithCard(page);
+  await card(page).getByRole('button', { name: '変更' }).click();
+  await expect(page.locator('.link-card-search')).toBeFocused();
+
+  await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
+
+  await expect(page.locator('.link-card-search')).toHaveCount(0);
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  expect(await markdown(page)).toContain(CARD_MD);
+});
+
 // The other half of §7.4.1: a card that has never resolved has no card to cancel back to, and the
-// picker it already shows (§5.2-3) must not grow a button that undoes nothing or, worse, reads as
-// a way to back out of the insertion itself.
+// picker it already shows (§5.2-3, §7.5) must not grow a button that undoes nothing or, worse,
+// reads as a way to back out of the insertion itself.
+//
+// Arrived at via a hand-written empty `data-href`, not the slash menu: a fresh insert now goes
+// through the shared dialog (docs/embed-requirements.md §24.2) and lands with a resolved href
+// already, so the slash menu no longer produces an unresolved card at all — the only remaining
+// door to this state is a body written or pasted before this rule, or by hand (§7.5).
 test('a freshly-inserted card’s picker has no キャンセル (4m)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
-  await page.keyboard.type('/リンクカード');
-  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンクカード' }).click();
-  await expect(page.locator('.link-card-search')).toBeFocused();
+  await loadMarkdown(page, '<div class="link-card" data-href=""></div>\n\n本文\n');
+  await expect(page.locator('.link-card-search')).toBeVisible();
 
   await expect(card(page).getByRole('button', { name: 'キャンセル' })).toHaveCount(0);
   await page.keyboard.press('Escape');
