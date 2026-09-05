@@ -272,6 +272,34 @@ test('a provider refusal either drops the card or keeps it, by its own two-kind 
   expect(await markdown(page)).toContain(`<div class="link-card" data-href="${DOCSWELL_USER}">`);
 });
 
+// A value no provider claims and `normalizeCardHref` also refuses: not a URL at all. Distinct from
+// `UNCLAIMED`, which resolves as a card — this measures the one path that stays `'none'`.
+const UNUSABLE = 'not a url';
+const UNUSABLE_MESSAGE = 'この URL は挿入できません。';
+
+test('a value nothing can use says so, and falls silent once the field is empty again (24c.3)', async ({
+  page,
+}) => {
+  await openMenu(page, 'embed');
+  await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
+  const submit = dialog(page).getByRole('button', { name: '挿入する' });
+  const field = dialog(page).getByLabel('URL または埋め込みコード');
+  const status = dialog(page).locator('[role="alert"], [role="status"]');
+
+  await field.fill(UNUSABLE);
+  await field.blur();
+  await expect(status).toHaveText(UNUSABLE_MESSAGE);
+  await expect(status).toHaveAttribute('role', 'alert');
+  await expect(submit).toBeDisabled();
+
+  // Clearing the field is not a refusal — it is the field the author has not filled in, and the
+  // standing hint (not this sentence) is what answers that (§24.7/§24.8). A keystroke un-attempts
+  // the field first, so a second blur on the now-empty field is what reaches the blank answer.
+  await field.fill('');
+  await field.blur();
+  await expect(status).toHaveText('');
+});
+
 // **The row an author cannot read off its hosts, and the paste that row asks for** (§16.10,
 // §24.1). Speaker Deck is the only provider where the address bar is not the answer: a deck page
 // carries no id, so `/player/<id>` exists nowhere the author can copy it except inside the embed
@@ -356,7 +384,6 @@ test('the dialog lists every provider that can be embedded (24d)', async ({ page
   ]) {
     await expect(dialog(page).getByText(name, { exact: true }), name).toBeVisible();
   }
-  await expect(dialog(page)).toContainText('対応 9 件');
 });
 
 // **Inserted into the middle of a document, not an empty one.** The author types in a dialog

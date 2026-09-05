@@ -174,6 +174,11 @@ export function InsertDialog({
   // embed-only dialog's refusal did: a URL is not whole until the author is done with it, and a
   // card is offered for almost any syntactically valid one — reacting mid-keystroke would
   // announce "this becomes a card" for an unfinished address.
+  //
+  // **`target.kind === 'none'` is silent unless something was typed.** An empty field also
+  // resolves to `'none'` (`resolveInsertTarget` on `''`), and that is not a refusal — it is the
+  // field the author has not touched, or has cleared, and saying nothing is the right answer
+  // there too. `value !== ''` is what tells the two apart.
   const status: { text: string; alert: boolean } = !attempted
     ? { text: '一覧にない URL はリンクカードになります。', alert: false }
     : target.kind === 'embed-refused'
@@ -182,7 +187,9 @@ export function InsertDialog({
         ? { text: SELF_REFERENCE_NOTE, alert: true }
         : target.kind === 'card'
           ? { text: providerNote ?? 'この URL はリンクカードになります。', alert: false }
-          : { text: '', alert: false };
+          : target.kind === 'none' && value !== ''
+            ? { text: 'この URL は挿入できません。', alert: true }
+            : { text: '', alert: false };
 
   // **A card is offered for almost any syntactically valid URL, so its button waits for `attempted`
   // too** — unlike an embed match, which needs a provider's exact shape (an ID of a fixed length,
@@ -427,14 +434,12 @@ export function InsertDialog({
           </ul>
         </div>
 
-        {/* Only the URL tab has anything to say here — the 対応9件 count is about its own
-            provider table, and picking a row on the posts tab already inserts on click, with no
-            separate submit step for this footer to hold a button for. */}
+        {/* Only the URL tab has anything to say here — picking a row on the posts tab already
+            inserts on click, with no separate submit step for this footer to hold a button for.
+            No count of the provider table either: the table sits directly above, fully visible,
+            so a number would only restate rows the author can already count. */}
         {tab === 'url' && (
-          <div className='flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800'>
-            <span className='text-xs text-zinc-500 dark:text-zinc-400'>
-              対応 {EMBED_PROVIDERS.length} 件
-            </span>
+          <div className='flex items-center justify-end gap-3 border-t border-zinc-200 px-4 py-2.5 dark:border-zinc-800'>
             {/* **The label does not change with the URL.** It named the provider for a while
                 (「YouTube として挿入する」), which put text that moves and resizes on the control
                 the author is aiming at, and said a third time what the lit row and the enabled
