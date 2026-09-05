@@ -36,6 +36,14 @@ export const PENCIL_SHAPES: readonly IconShape[] = [
   { kind: 'line', x1: 14.5, y1: 5.5, x2: 18.5, y2: 9.5 },
 ];
 
+// A horizontal chain, unbroken — "insert a link". Same two arcs as UNLINK_SHAPES below, run the
+// full width since there is no slash here to trim short for.
+export const LINK_SHAPES: readonly IconShape[] = [
+  { kind: 'path', d: 'M9 17H7A5 5 0 0 1 7 7h2' },
+  { kind: 'path', d: 'M15 7h2a5 5 0 0 1 0 10h-2' },
+  { kind: 'line', x1: 8, y1: 12, x2: 16, y2: 12 },
+];
+
 // A horizontal chain with a slash across it — "remove the link".
 //
 // The two shapes both carry the message and they have to be drawn so as not to fight each other at

@@ -2,6 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { Blockquote as BaseBlockquote } from '@tiptap/extension-blockquote';
 import type { NodeType } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
+import { selectionTouches } from './selection-scan';
 
 // Custom Backspace join for blockquotes, replacing @tiptap/extension-blockquote's own
 // (upstream src/handleBackspace.ts): upstream only merges when the preceding blockquote's last
@@ -55,6 +56,23 @@ function joinIntoBlockquote(editor: Editor, type: NodeType): boolean {
 }
 
 export const Blockquote = BaseBlockquote.extend({
+  addCommands() {
+    const parent = this.parent?.();
+    return {
+      ...parent,
+      // `linkCard`/`embed` are atoms, so selecting one gives a NodeSelection whose range is
+      // exactly that node. Upstream's toggleBlockquote → wrapIn finds a valid wrapping for it
+      // (both satisfy blockquote's `block+` content) and wraps just that node, producing
+      // `<blockquote><linkCard/></blockquote>` — quoting a card was never a thing an author asked
+      // for, and it stuck the card under the wrong parent instead of leaving it alone (reported
+      // 2026-09-05). Toolbar.tsx's "no command guard is needed" note is about the table-cell
+      // refusal `can()` already reports on its own — it doesn't cover this NodeSelection case.
+      toggleBlockquote: () => (props) => {
+        if (selectionTouches(props.state, 'linkCard', 'embed')) return false;
+        return parent?.toggleBlockquote?.()(props) ?? false;
+      },
+    };
+  },
   addKeyboardShortcuts() {
     return {
       ...this.parent?.(),

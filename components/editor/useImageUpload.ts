@@ -50,6 +50,14 @@ export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
   table: '表のセル',
   codeBlock: 'コードブロック',
   detailsSummary: 'アコーディオンのタイトル',
+  // linkCard/embed fail differently from the three above: they're atoms, not containers an image
+  // could be split around, so a click on one gives a NodeSelection whose range is exactly that
+  // node. setImage's insertContent replaces a selection range wholesale, so the same guard's
+  // absence let an image swap the selected card/embed out entirely (reported 2026-09-05, same
+  // NodeSelection defect as setCallout/insertTable/toggleBlockquote — see callout-extension.ts,
+  // table-extensions.ts, blockquote-extension.ts).
+  linkCard: 'リンクカード',
+  embed: '埋め込み',
 };
 
 function imageBlockedMessage(hosts: string[]): string {

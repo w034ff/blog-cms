@@ -347,7 +347,13 @@ export const Callout = TiptapNode.create<CalloutOptions>({
           // `<details>`. Measured (docs/accordion-requirements.md §6.5 records the same tear for
           // the footnote). Naming `detailsSummary` and never `details` is deliberate: §6.3 blesses
           // a callout in the accordion's *body*, which is `block+` and takes one cleanly.
-          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary')) return false;
+          //
+          // `linkCard`/`embed` are the fourth: both are atoms, so clicking one gives a NodeSelection
+          // whose range is exactly that node — insertContent then replaces it wholesale rather than
+          // leaving it alone, and the card or embed the author had selected simply vanished
+          // (reported 2026-09-05).
+          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary', 'linkCard', 'embed'))
+            return false;
           return commands.insertContent({
             type: this.name,
             attrs: { type },

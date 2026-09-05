@@ -10,6 +10,7 @@ import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
+import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
 
@@ -141,10 +142,12 @@ export function Toolbar({
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
         active={editor.isActive('blockquote')}
-        // Refuses in a paragraph-only table cell (table-extensions.ts). Unlike the heading and
-        // list toggles above, no command guard is needed: toggleBlockquote already reports
-        // false there rather than converting anything, so `can()` is the whole fix. It stays
-        // enabled inside a code block on purpose — quoting one wraps it, keeping the block.
+        // Refuses in a paragraph-only table cell (table-extensions.ts) with no command guard
+        // needed there — toggleBlockquote already reports false rather than converting anything,
+        // so `can()` is the whole fix. It stays enabled inside a code block on purpose — quoting
+        // one wraps it, keeping the block. A NodeSelection over a linkCard/embed is a separate
+        // case that does need a guard (blockquote-extension.ts), since wrapIn happily wraps a
+        // selected atom instead of refusing.
         disabled={!editor.can().toggleBlockquote()}
         title='引用'
         shortcut='Mod-Shift-b'
@@ -155,6 +158,19 @@ export function Toolbar({
       {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
           menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
+      {/* Same command and target position as the slash menu's 「リンク」 row (slash-command.ts):
+          the dialog itself decides link card vs. embed from the URL, so one entry point covers
+          both. `can()` mirrors that row's `available` guard — greyed out in a paragraph-only
+          table cell, where neither outcome could land. */}
+      <ToolbarButton
+        onClick={() => editor.chain().focus().openInsertDialog(editor.state.selection.from).run()}
+        disabled={!editor.can().openInsertDialog()}
+        title='リンク'>
+        <span className='flex items-center gap-1'>
+          <LinkIcon />
+          リンク
+        </span>
+      </ToolbarButton>
       {/* Horizontal rule has no toolbar button: h2's red underline already carries the
           section-divider role, so this is left to the `---` + Enter input rule (StarterKit
           default) for the rare case someone wants an in-section break. */}

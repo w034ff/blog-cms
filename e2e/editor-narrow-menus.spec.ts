@@ -364,14 +364,12 @@ test.describe('on an emulated phone at 360px', () => {
     // that are `<button>`s. 画像 is a `<label>` around a hidden file input, styled by hand to look
     // like the buttons beside it, and it was the one control in the row left without an outline
     // (§12.2). Asserted by tag, so a future control that copies the same shape has to opt in too.
-    const main = await page
-      .locator('.sticky .toolbar-button')
-      .evaluateAll((els) =>
-        els.map((el) => ({
-          tag: el.tagName,
-          ring: getComputedStyle(el).boxShadow.includes('inset'),
-        })),
-      );
+    const main = await page.locator('.sticky .toolbar-button').evaluateAll((els) =>
+      els.map((el) => ({
+        tag: el.tagName,
+        ring: getComputedStyle(el).boxShadow.includes('inset'),
+      })),
+    );
     expect(main.length).toBeGreaterThan(8);
     expect(main.every((c) => c.ring)).toBe(true);
     expect(main.some((c) => c.tag === 'LABEL')).toBe(true);
@@ -426,3 +424,26 @@ test.describe('in the width band where the card grows into the edge', () => {
     expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 });
+
+// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx), not the floating
+// menus above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
+// which assumes room on both sides — true while the toolbar fits one line, but it wraps
+// (`flex-wrap`), and which row a trigger lands in is a function of viewport width. The table picker
+// is the widest panel here (an 8×8 grid), so it is the one that first reaches an edge: measured, the
+// trigger sits mid-row from 300–416px, but past 420px it wraps to a row where it is near the left
+// edge, and the centered panel then ran 14px+ past it (reported 2026-09-05). `pageWidth`'s
+// `scrollWidth` check above does not catch this direction — a negative `left` clips off-screen
+// without widening the document, so this needs its own margin measurement.
+for (const width of [420, 440, 460]) {
+  test(`the table picker's panel stays on a ${width}px screen`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await openEditor(page);
+    await page.getByRole('button', { name: '表', exact: true }).click();
+
+    const panel = page.getByTestId('toolbar-dropdown-panel');
+    await expect(panel).toBeVisible();
+    expect(
+      (await margins(page, '[data-testid="toolbar-dropdown-panel"]')).smallest,
+    ).toBeGreaterThanOrEqual(EDGE);
+  });
+}

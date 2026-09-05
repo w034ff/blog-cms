@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ToolbarButton } from './ToolbarButton';
 import { useDismiss } from './useDismiss';
 import { ChevronIcon } from './svg/ChevronIcon';
+
+// How far the panel is kept from the viewport edge by clampPanelToViewport below.
+const VIEWPORT_MARGIN = 8;
 
 // Shared skeleton of the toolbar's dropdown controls (list, callout, table): a
 // ToolbarButton trigger with a chevron, the open/dismiss wiring, and a panel
@@ -34,6 +37,49 @@ export function ToolbarDropdown({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
+  const panelRef = useRef<HTMLDivElement>(null);
+  // How far to nudge the panel off its natural centered position so it stays on screen. The panel
+  // is centered under the trigger (`left-1/2`, translated below), which assumes there's room on
+  // both sides — true on a wide toolbar, but the main toolbar wraps (`flex-wrap`), and which row a
+  // trigger lands in shifts with viewport width. The table picker is the widest panel here (an 8×8
+  // grid), so it's the one that first lands near an edge after wrapping: measured, the trigger
+  // itself sits comfortably inside 300–460px throughout, but past 420px it wraps to a row where
+  // it's near the *left* edge, and the centered panel then runs 14px+ past the left edge of the
+  // viewport (reported 2026-09-05). Fixed here rather than by reordering the toolbar: the wrap
+  // position is a function of viewport width, not of button order, so any reordering only moves
+  // which width breaks — every ToolbarDropdown (list, callout, table) shares this component and
+  // the same latent risk. Not a touch/hover concern (contrast the tooltip and touch-ring rules in
+  // app/globals.css) — a narrow desktop window or a high zoom level hits the same geometry.
+  const [shiftX, setShiftX] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setShiftX(0);
+      return;
+    }
+    const recompute = () => {
+      const trigger = ref.current;
+      const panel = panelRef.current;
+      if (!trigger || !panel) return;
+      const triggerRect = trigger.getBoundingClientRect();
+      const panelWidth = panel.offsetWidth;
+      const naturalLeft = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+      // clientWidth, not window.innerWidth: a classic (non-overlay) vertical scrollbar is part of
+      // innerWidth but sits outside the content viewport a getBoundingClientRect coordinate can
+      // actually reach, so clamping against innerWidth on a long post would still let the panel's
+      // right edge land under the scrollbar. Same metric editor-narrow-menus.spec.ts's own
+      // margins()/pageWidth() already clamp against, for the same reason.
+      const viewportWidth = document.documentElement.clientWidth;
+      const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - VIEWPORT_MARGIN - panelWidth);
+      const clampedLeft = Math.min(Math.max(naturalLeft, VIEWPORT_MARGIN), maxLeft);
+      setShiftX(clampedLeft - naturalLeft);
+    };
+    recompute();
+    // Rotation while the panel is open moves the trigger without closing the panel first
+    // (useDismiss only reacts to a pointer or Escape), so the clamp has to be redone rather than
+    // left stale until the next open.
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, [open, ref]);
 
   // Gating the panel on `!disabled` below hides it, but `open` outlives the trigger going disabled,
   // so the panel came back — with nobody clicking — as soon as the control was enabled again. The
@@ -68,7 +114,13 @@ export function ToolbarDropdown({
       </ToolbarButton>
       {open && !disabled && (
         <div
-          className={`absolute left-1/2 top-full z-50 mt-1 flex -translate-x-1/2 rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
+          ref={panelRef}
+          data-testid='toolbar-dropdown-panel'
+          // The -50% here is what left-1/2 + -translate-x-1/2 used to do as Tailwind utilities;
+          // it has to move into the inline style once shiftX needs to add to the same transform,
+          // since the utility and an inline `transform` can't both win.
+          style={{ transform: `translateX(calc(-50% + ${shiftX}px))` }}
+          className={`absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
           {children(() => setOpen(false))}
         </div>
       )}
