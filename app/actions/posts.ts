@@ -116,7 +116,9 @@ async function publish(formData: FormData): Promise<PostFormState> {
     }
     // First publish stamps the date; once set it never changes.
     const date = existing.date || new Date().toISOString();
-    commitPost(id, content, false, date);
+    if (!commitPost(id, content, false, date)) {
+      return { error: '記事が見つかりません。' };
+    }
     revalidateBlog();
     return { saved: { id, slug: existing.slug, published: true, at: Date.now() } };
   }
@@ -145,7 +147,9 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
     return { error: '記事が見つかりません。' };
   }
   // Keep the first-publish date so re-publishing later reuses it.
-  commitPost(id, content, true, existing.date);
+  if (!commitPost(id, content, true, existing.date)) {
+    return { error: '記事が見つかりません。' };
+  }
   revalidateBlog();
   return { saved: { id, slug: existing.slug, published: false, at: Date.now() } };
 }

@@ -123,6 +123,15 @@ describe('commitPost', () => {
     commitPost(id, content, true, '2026-01-01');
     expect(row(id)?.draft).toBe(true);
   });
+
+  it('returns false and does not throw when the row does not exist', () => {
+    expect(commitPost(9999, content, false, '2026-01-01')).toBe(false);
+  });
+
+  it('returns true when it updates a row', () => {
+    const id = seed({ slug: 'v', draft: true });
+    expect(commitPost(id, content, false, '2026-01-01')).toBe(true);
+  });
 });
 
 describe('deletePost', () => {

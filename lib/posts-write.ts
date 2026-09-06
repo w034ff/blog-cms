@@ -107,8 +107,17 @@ export function autosavePost(id: number, content: DraftContent): void {
 // at first publish and preserved verbatim thereafter (re-publish, plain update,
 // and unpublish all pass the existing value back), so it reflects when the post
 // first went live rather than the latest edit.
-export function commitPost(id: number, content: DraftContent, draft: boolean, date: string): void {
-  db.update(posts)
+// Returns false if the row was gone by the time this ran (e.g. deleted from
+// another tab between the caller's existence check and this call) instead of
+// silently no-oping the update.
+export function commitPost(
+  id: number,
+  content: DraftContent,
+  draft: boolean,
+  date: string,
+): boolean {
+  const result = db
+    .update(posts)
     .set({
       ...content,
       body: normalizeNewlines(content.body),
@@ -119,4 +128,5 @@ export function commitPost(id: number, content: DraftContent, draft: boolean, da
     })
     .where(eq(posts.id, id))
     .run();
+  return result.changes > 0;
 }
