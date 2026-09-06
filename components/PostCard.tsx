@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Post } from '@/lib/types';
-import { formatPostDate } from '@/lib/format';
+import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 
 type Props = {
@@ -29,6 +29,9 @@ export function PostCard({ post }: Props) {
         </Link>
         <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
           <time dateTime={post.date}>{formatPostDate(post.date)}</time>
+          {hasVisibleUpdate(post.date, post.updatedAt) && (
+            <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
+          )}
           <Link
             href={`/categories/${encodeURIComponent(post.category)}`}
             className='hover:underline'>

@@ -8,7 +8,7 @@ import { normalizeCardHref } from '@/lib/link-card-href';
 import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
 import { siteOrigin } from '@/lib/site';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
-import { formatPostDate } from '@/lib/format';
+import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { EmbedFrames } from '@/components/EmbedFrames';
@@ -151,6 +151,9 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
           <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
           <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
             <time dateTime={post.date}>{formatPostDate(post.date)}</time>
+            {hasVisibleUpdate(post.date, post.updatedAt) && (
+              <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
+            )}
             <Link
               href={`/categories/${encodeURIComponent(post.category)}`}
               className='hover:underline'>

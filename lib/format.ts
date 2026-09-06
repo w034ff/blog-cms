@@ -37,3 +37,12 @@ export function formatPostDate(value: string): string {
 export function formatPostDateTime(value: string): string {
   return format(value, DATE_TIME_OPTIONS);
 }
+
+// Whether a post's update date is worth showing next to its publish date — only
+// when they name a different calendar day (JST). Comparing the formatted strings
+// rather than the raw timestamps reuses the same day boundary `formatPostDate`
+// already draws, instead of a second timezone calculation that could disagree
+// with it.
+export function hasVisibleUpdate(date: string, updatedAt: string): boolean {
+  return formatPostDate(date) !== formatPostDate(updatedAt);
+}
