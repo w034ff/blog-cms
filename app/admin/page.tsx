@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { deletePostAction } from '@/app/actions/posts';
-import { formatPostDateTime } from '@/lib/format';
+import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +45,11 @@ export default async function AdminHome() {
                   )}
                 </div>
                 <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
-                  {post.slug} · {formatPostDateTime(post.date) || '未公開'} · {post.category}
+                  {post.slug} · {formatPostDate(post.date) || '未公開'}
+                  {hasVisibleUpdate(post.date, post.updatedAt) && (
+                    <> (更新: {formatPostDate(post.updatedAt)})</>
+                  )}{' '}
+                  · {post.category}
                 </div>
               </div>
               <form action={deletePostAction}>
