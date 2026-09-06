@@ -35,6 +35,9 @@ export const metadata: Metadata = {
     template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
+  // Rendered as <link rel="alternate" type="application/rss+xml" href="/rss.xml">
+  // — Next's Metadata API owns the tag; app/rss.xml/route.ts serves the feed.
+  alternates: { types: { 'application/rss+xml': '/rss.xml' } },
   openGraph: {
     ...sharedOpenGraph,
     title: SITE_NAME,
