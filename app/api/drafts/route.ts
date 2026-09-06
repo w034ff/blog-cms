@@ -28,6 +28,7 @@ const autosaveSchema = z.object({
       .string()
       .transform((value) => (isUploadPath(value) ? value : ''))
       .catch(''),
+    unlisted: z.boolean().catch(false),
   }),
 });
 

@@ -20,6 +20,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
     tags: post.tags,
     body: post.body,
     thumbnail: post.thumbnail,
+    unlisted: post.unlisted,
   };
   // slug is null while a draft — the editor derives an editable preview from the
   // title and finalizes it at publish.

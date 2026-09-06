@@ -26,6 +26,8 @@ function toPost(row: PostRow): Post {
     draft: row.draft,
     body: row.body,
     thumbnail: row.thumbnail,
+    unlisted: row.unlisted,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -33,7 +35,7 @@ export async function getAllPosts(): Promise<Post[]> {
   const rows = db
     .select()
     .from(posts)
-    .where(eq(posts.draft, false))
+    .where(and(eq(posts.draft, false), eq(posts.unlisted, false)))
     .orderBy(desc(posts.date))
     .all();
   return rows.map(toPost);
@@ -61,7 +63,7 @@ export async function listAllPosts(): Promise<Post[]> {
 // for `tags` (`tagsSchema … .catch([])`). A field added to DraftContent later needs its default
 // added here too.
 function toDraftContent(stored: DraftContent): DraftContent {
-  return { ...stored, thumbnail: stored.thumbnail ?? '' };
+  return { ...stored, thumbnail: stored.thumbnail ?? '', unlisted: stored.unlisted ?? false };
 }
 
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
@@ -82,7 +84,7 @@ export async function getPostsByCategory(category: string): Promise<Post[]> {
   const rows = db
     .select()
     .from(posts)
-    .where(and(eq(posts.draft, false), eq(posts.category, category)))
+    .where(and(eq(posts.draft, false), eq(posts.unlisted, false), eq(posts.category, category)))
     .orderBy(desc(posts.date))
     .all();
   return rows.map(toPost);

@@ -9,6 +9,15 @@ export type PostFrontmatter = {
   // chose none. Not the image a reader sees — that is `resolveThumbnail`
   // (lib/thumbnail.ts), which falls back to the body's first upload.
   thumbnail: string;
+  // Excluded from the home/tag/category listings and the RSS feed; still
+  // reachable at its own `/posts/<slug>` URL. The slug's opacity is the only
+  // access control — there is no separate auth check.
+  unlisted: boolean;
+  // Refreshed on every publish/update/unpublish (`commitPost`), UTC ISO. Shown
+  // publicly (date-only) only when it names a different calendar day than
+  // `date` — a same-day value is noise, not information (docs/cms-features.md,
+  // 更新日表示).
+  updatedAt: string;
 };
 
 export type Post = PostFrontmatter & {
@@ -22,12 +31,12 @@ export type Post = PostFrontmatter & {
 };
 
 // The editable content of a post, minus its identity (slug), visibility (draft)
-// flag, and publish date. `date` is captured automatically at first publish and
-// never hand-edited, so it is not part of the editable content. Stored in
-// posts.draft_content as a private working copy of a *published* post: autosave
-// writes here so the live (public) columns stay untouched until the author
-// explicitly publishes.
-export type DraftContent = Omit<PostFrontmatter, 'draft' | 'date'> & {
+// flag, publish date, and update timestamp. `date`/`updatedAt` are server-managed
+// (stamped by lib/posts-write.ts, never hand-edited), so neither is part of the
+// editable content. Stored in posts.draft_content as a private working copy of a
+// *published* post: autosave writes here so the live (public) columns stay
+// untouched until the author explicitly publishes.
+export type DraftContent = Omit<PostFrontmatter, 'draft' | 'date' | 'updatedAt'> & {
   body: string;
 };
 

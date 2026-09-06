@@ -38,6 +38,11 @@ export default async function AdminHome() {
                       下書き
                     </span>
                   )}
+                  {post.unlisted && (
+                    <span className='rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
+                      限定公開
+                    </span>
+                  )}
                 </div>
                 <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
                   {post.slug} · {formatPostDateTime(post.date) || '未公開'} · {post.category}

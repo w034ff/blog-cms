@@ -30,6 +30,7 @@ export type PostEditorInitial = {
   tags: string[];
   body: string;
   thumbnail: string;
+  unlisted: boolean;
 };
 
 type Props = {
@@ -359,6 +360,18 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           <input name='description' defaultValue={initial.description} className={inputClass} />
         </Field>
         <ThumbnailField value={thumbnail} onChange={setThumbnail} body={body} />
+        <div className='block text-sm'>
+          <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>公開範囲</span>
+          <label className='mt-2 flex items-center gap-2'>
+            <input
+              type='checkbox'
+              name='unlisted'
+              defaultChecked={initial.unlisted}
+              className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
+            />
+            <span>限定公開にする</span>
+          </label>
+        </div>
       </div>
 
       <div className='space-y-2'>

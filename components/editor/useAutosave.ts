@@ -26,6 +26,9 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
     tags: parseTags(get('tags')),
     body: get('body'),
     thumbnail: get('thumbnail'),
+    // A checkbox is absent from FormData entirely when unchecked, so `get()`
+    // returns '' either way; 'on' is the default value for a checked box.
+    unlisted: get('unlisted') === 'on',
   };
 }
 

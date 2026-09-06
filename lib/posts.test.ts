@@ -31,6 +31,7 @@ type SeedOptions = {
   draft?: boolean;
   body?: string;
   draftContent?: DraftContent | null;
+  unlisted?: boolean;
 };
 
 function seed(options: SeedOptions = {}): number {
@@ -46,6 +47,7 @@ function seed(options: SeedOptions = {}): number {
       draft: options.draft ?? false,
       body: options.body ?? '',
       draftContent: options.draftContent ?? null,
+      unlisted: options.unlisted ?? false,
     })
     .returning({ id: posts.id })
     .get().id;
@@ -60,6 +62,13 @@ describe('getAllPosts', () => {
 
     const result = await getAllPosts();
     expect(result.map((p) => p.slug)).toEqual(['new', 'mid', 'old']);
+  });
+
+  it('excludes unlisted posts', async () => {
+    seed({ slug: 'public', date: '2026-01-01' });
+    seed({ slug: 'hidden', date: '2026-02-02', unlisted: true });
+    const result = await getAllPosts();
+    expect(result.map((p) => p.slug)).toEqual(['public']);
   });
 });
 
@@ -77,6 +86,11 @@ describe('getPostBySlug', () => {
   it('returns null for a missing slug', async () => {
     expect(await getPostBySlug('nope')).toBeNull();
   });
+
+  it('returns an unlisted post by its direct slug (excluded from listings only)', async () => {
+    seed({ slug: 'secret', title: 'Secret', unlisted: true });
+    expect((await getPostBySlug('secret'))?.title).toBe('Secret');
+  });
 });
 
 describe('listAllPosts (admin)', () => {
@@ -86,6 +100,13 @@ describe('listAllPosts (admin)', () => {
     const result = await listAllPosts();
     expect(result).toHaveLength(2);
     expect(result[0].date).toBe('2026-02-02');
+  });
+
+  it('includes unlisted posts', async () => {
+    seed({ slug: 'a', unlisted: true });
+    const result = await listAllPosts();
+    expect(result).toHaveLength(1);
+    expect(result[0].unlisted).toBe(true);
   });
 });
 
@@ -97,6 +118,7 @@ describe('getPostForEdit', () => {
       category: 'cat',
       tags: ['x'],
       thumbnail: '',
+      unlisted: false,
       body: 'pending body',
     };
     const id = seed({ slug: 'p', draft: false, draftContent: pending });
@@ -117,6 +139,7 @@ describe('getPostForEdit', () => {
     } as DraftContent;
     const id = seed({ slug: 'p', draft: false, draftContent: legacy });
     expect((await getPostForEdit(id))?.draftContent?.thumbnail).toBe('');
+    expect((await getPostForEdit(id))?.draftContent?.unlisted).toBe(false);
   });
 
   it('returns null draftContent when there are no pending edits', async () => {
@@ -144,6 +167,13 @@ describe('getPostsByTag / getPostsByCategory', () => {
     seed({ slug: 'c', category: 'tech', draft: true });
     const result = await getPostsByCategory('tech');
     expect(result.map((p) => p.slug)).toEqual(['a']);
+  });
+
+  it('excludes unlisted posts from the tag and category listings', async () => {
+    seed({ slug: 'a', category: 'tech', tags: ['ts'] });
+    seed({ slug: 'hidden', category: 'tech', tags: ['ts'], unlisted: true });
+    expect((await getPostsByCategory('tech')).map((p) => p.slug)).toEqual(['a']);
+    expect((await getPostsByTag('ts')).map((p) => p.slug)).toEqual(['a']);
   });
 });
 

@@ -11,6 +11,7 @@ const emptyInitial: PostEditorInitial = {
   tags: [],
   body: '',
   thumbnail: '',
+  unlisted: false,
 };
 
 export default function NewPostPage() {

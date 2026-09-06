@@ -39,6 +39,11 @@ export const posts = sqliteTable('posts', {
   // Also appended at the tail — see the note above; on this table that is the
   // only shape of schema change that reaches a populated DB in place.
   thumbnail: text('thumbnail').notNull().default(''),
+  // A published post excluded from the home/tag/category listings and the RSS
+  // feed, reachable only by its direct URL. The opaque slug (see the note
+  // above) is what makes that safe — there is no separate access check.
+  // Appended at the tail for the same reason as `draftContent`/`thumbnail`.
+  unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 });
 
 // Failed-login bookkeeping, so a public `/login` can't be tried at the speed the
