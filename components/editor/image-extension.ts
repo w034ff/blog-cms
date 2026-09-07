@@ -1,4 +1,5 @@
 import BaseImage from '@tiptap/extension-image';
+import { mergeAttributes } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
@@ -24,7 +25,33 @@ function serializeImage(state: MarkdownSerializerState, node: PMNode): void {
   state.closeBlock(node);
 }
 
+// Two boxes around the picture, EDITOR-ONLY: the public page renders from markdown through
+// remark/rehype and never runs this, so the stored form is untouched — still `![alt](src)`,
+// still a bare <img> on the page.
+//
+// Why two. An `<img>` is a replaced element and takes no ::before/::after (globals.css says
+// this about the link card's picture too), so the thumbnail badge and its outline have to be
+// drawn by a box that hugs the PICTURE — `.image-box`. The outer `.image-block` is the
+// block itself, column-wide, which is what the drag handle aligns to and what gives the
+// gesture a full-width target rather than one that moves with each image's width.
+//
+// **Both rings must be re-scoped, not just restyled.** `Decoration.node` (the thumbnail
+// highlight) and prosemirror-view's `.ProseMirror-selectednode` both land on the node's OUTER
+// dom, which is now `.image-block` — a full-column box. Left alone they would ring the column
+// instead of the picture, so globals.css draws them through `.image-box` instead.
 export const Image = BaseImage.extend({
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'div',
+      { class: 'image-block' },
+      [
+        'div',
+        { class: 'image-box' },
+        ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)],
+      ],
+    ];
+  },
+
   addStorage() {
     return {
       ...this.parent?.(),

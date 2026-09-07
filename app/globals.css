@@ -575,13 +575,39 @@ body.link-menu-open .table-toolbar {
   outline: 2px solid rgba(51, 144, 255, 0.8);
   outline-offset: 2px;
 }
+/* The image is the one node whose DOM is wider than what it draws: `image-extension.ts` wraps
+   the picture in a column-wide `.image-block` so the drag handle and the gesture have a stable
+   box. Ringing that box would ring the column, so the image hands the ring down to the box that
+   hugs the picture. Same reason as the thumbnail ring just below. */
+.prose .image-block.ProseMirror-selectednode {
+  outline: none;
+}
+.prose .image-block.ProseMirror-selectednode .image-box {
+  outline: 2px solid rgba(51, 144, 255, 0.8);
+  outline-offset: 2px;
+}
 
-/* Editor-only chrome: rings the image whose src matches the post's chosen thumbnail
-   (thumbnail-highlight-extension.ts, ImageBubble.tsx). A wider offset than the blue selection
-   ring above so the two stay visually distinct when the marked image is also the one selected —
-   an `<img>` takes no ::before/::after (generated content is not rendered on replaced elements),
-   which is why this is a ring and not a corner label. Never reaches the published page. */
-.prose .thumbnail-image {
+/* The two boxes `image-extension.ts` wraps every editor image in. `.image-block` is the block —
+   column-wide, so the drag handle aligns to one x for every image and the press target does not
+   shrink with the picture. `.image-box` hugs the picture, and is what the rings above and the
+   thumbnail mark below are drawn on. Editor-only: the published page renders from markdown and
+   has a bare <img>. */
+.prose .image-block {
+  display: block;
+}
+.prose .image-box {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Editor-only chrome: marks the image whose src matches the post's chosen thumbnail
+   (thumbnail-highlight-extension.ts, ImageBubble.tsx). `Decoration.node` puts the class on the
+   node's outer DOM — `.image-block`, which is column-wide — so the mark is drawn on the
+   `.image-box` inside it, the box that hugs the picture. A wider offset than the blue selection
+   ring above so the two stay distinct when the marked image is also the one selected.
+   Never reaches the published page. */
+.prose .image-block.thumbnail-image .image-box {
   outline: 2px solid rgba(220, 38, 38, 0.85);
   outline-offset: 4px;
 }
