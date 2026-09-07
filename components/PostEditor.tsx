@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useCallback, useEffect, useRef, useState } from 'react';
+import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -10,6 +10,7 @@ import { isPublishableUri } from './editor/link-protocols';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
+import { ImageBubble } from './editor/ImageBubble';
 import { InsertDialog } from './editor/InsertDialog';
 import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
@@ -18,6 +19,7 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
+import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
 
 export type PostEditorInitial = {
@@ -92,6 +94,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // it doesn't linger while the user fixes the input.
   const [errorVisible, setErrorVisible] = useState(false);
   const [handledState, setHandledState] = useState(state);
+  // The last `body` the thumbnail-staleness check below has already reacted to — see there.
+  const [handledBody, setHandledBody] = useState(body);
 
   const formRef = useRef<HTMLFormElement>(null);
   // Refs mirror state the autosave machinery reads outside React's render flow.
@@ -147,6 +151,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // paste guard. Owned here rather than in either of them so two refusals can't raise two toasts.
   const { notice, showNotice } = useEditorNotice();
 
+  // The thumbnail setter every caller uses (ThumbnailField's 解除, ImageBubble's toggle, the
+  // auto-clear effect below) — plain `setThumbnail` would change the field without arming
+  // autosave, since none of those three is a native form event the `<form onInput>` handler
+  // below can see (that is what used to carry the old upload picker's choice, via the file
+  // input's own native `input` event).
+  const applyThumbnail = useCallback(
+    (next: string) => {
+      setThumbnail(next);
+      markEdited();
+    },
+    [markEdited],
+  );
+
   const { uploading, dragging, uploadImages, handleImageChange } = useImageUpload(
     editorRef,
     showNotice,
@@ -176,6 +193,16 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // published state below) so the field and 表示 link reflect the real URL.
       if (state.saved.slug !== null) setSlug(state.saved.slug);
     }
+  }
+
+  // An explicit thumbnail is now always an image marked in the body (ImageBubble.tsx); once that
+  // image leaves the body — deleted, or replaced by loading different markdown — the choice is
+  // stale rather than a deliberate one, so it drops back to the auto-fallback. Adjusted during
+  // render, the same sanctioned pattern as the block above: the edit that changed `body` already
+  // armed autosave through onUpdate, so this only has state to update, not a side effect to run.
+  if (body !== handledBody) {
+    setHandledBody(body);
+    if (thumbnail !== '' && !bodyContainsImage(body, thumbnail)) setThumbnail('');
   }
 
   useEffect(() => {
@@ -254,6 +281,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     const live = editorRef.current;
     if (live) live.storage.linkCard.ownSlug = slug;
   }, [editor, slug]);
+
+  // Rings whichever image the thumbnail path names (thumbnail-highlight-extension.ts), the same
+  // ownSlug pattern above — storage rather than a dispatched transaction, so ImageBubble's toggle
+  // doesn't run every plugin's appendTransaction at a moment unrelated to an edit. A layout effect
+  // rather than a passive one (ownSlug's is passive and that is fine for it — nothing reads
+  // ownSlug back on this same pass): `useEditor`'s own onRender effect calls `setOptions` →
+  // `view.updateState` on every render unconditionally, asking every plugin for its decorations
+  // again, and React runs all layout effects before any passive one in the same commit — a
+  // passive effect here would leave the ring a render behind the click that set it.
+  useLayoutEffect(() => {
+    const live = editorRef.current;
+    if (live) live.storage.thumbnailHighlight.path = thumbnail;
+  }, [editor, thumbnail]);
 
   // The shared insert dialog opens from the slash menu, which reaches React the only way an
   // extension can: a DOM event on the editor's own element (embed-extension.ts's
@@ -359,7 +399,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         <Field label='説明'>
           <input name='description' defaultValue={initial.description} className={inputClass} />
         </Field>
-        <ThumbnailField value={thumbnail} onChange={setThumbnail} body={body} />
+        <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
         <div className='block text-sm'>
           <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>公開範囲</span>
           <label className='mt-2 flex items-center gap-2'>
@@ -405,6 +445,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
             are BubbleMenus that portal themselves to <body> — neither renders here. */}
         {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
+        {editor && (
+          <ImageBubble editor={editor} thumbnail={thumbnail} onSetThumbnail={applyThumbnail} />
+        )}
         {/* Mounted only while it is open, so closing throws the dialog's state away rather than
             leaving it for the next open to clear. */}
         {editor && insertDialogAt !== null && (

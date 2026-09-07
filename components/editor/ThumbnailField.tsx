@@ -1,10 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
-import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
 import { firstBodyImage } from '@/lib/thumbnail';
-import { uploadImageFile } from './useImageUpload';
 
 type Props = {
   // The author's explicit choice; '' when they have made none. Mirrored into the
@@ -22,29 +18,17 @@ type Props = {
 // picture — the body's first upload (lib/thumbnail.ts) — so a field that showed
 // nothing here would be describing a post that has an image as one that does
 // not. The label under the preview is what separates 「選んだ」 from 「拾われた」.
+//
+// The choice itself is made in the body, not here: an image's bubble menu
+// (ImageBubble.tsx) is the only way to set `value`, so this is read-only display
+// plus 解除 — there is no picker, because the author is never choosing a picture
+// that is not already in the post.
 export function ThumbnailField({ value, onChange, body }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-
   // Only consulted when there is no explicit choice — resolveThumbnail's rule,
   // kept in the same order here so the editor cannot claim one image while the
   // published page shows another.
   const auto = value === '' ? firstBodyImage(body) : null;
   const shown = value || auto;
-
-  async function handleFile(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const file = event.target.files?.[0];
-    // Cleared so picking the same file twice in a row still fires a change.
-    event.target.value = '';
-    if (!file) return;
-    setUploading(true);
-    try {
-      const url = await uploadImageFile(file);
-      if (url !== null) onChange(url);
-    } finally {
-      setUploading(false);
-    }
-  }
 
   return (
     <div className='block text-sm'>
@@ -75,44 +59,23 @@ export function ThumbnailField({ value, onChange, body }: Props) {
           </div>
         )}
         <div className='space-y-1'>
-          <div className='flex gap-2'>
-            {/* type='button' is load-bearing: this sits inside PostEditor's one
-                big <form>, and a button without it defaults to submit — which
-                here means publishing the post. */}
+          {value !== '' && (
             <button
               type='button'
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-              {uploading ? 'アップロード中…' : value ? '変更' : '画像を選ぶ'}
+              onClick={() => onChange('')}
+              className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+              解除
             </button>
-            {value !== '' && (
-              <button
-                type='button'
-                onClick={() => onChange('')}
-                className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-                解除
-              </button>
-            )}
-          </div>
+          )}
           <p className='text-xs text-zinc-500 dark:text-zinc-400'>
             {value !== ''
               ? 'この記事用に指定した画像です。'
               : auto
                 ? '本文の最初の画像を自動で使用中。'
-                : '未設定。本文に画像を入れると自動で使われます。'}
+                : '未設定。本文に画像を入れると指定できます。'}
           </p>
         </div>
       </div>
-      {/* No `name`, so an untouched picker contributes nothing to the form. */}
-      <input
-        data-testid='thumbnail-picker'
-        ref={fileRef}
-        type='file'
-        accept={ALLOWED_IMAGE_MIME_TYPES.join(',')}
-        onChange={handleFile}
-        className='hidden'
-      />
     </div>
   );
 }

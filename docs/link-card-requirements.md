@@ -1233,3 +1233,25 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 | 21b | 「変更」で同じ記事を選び直しても表示が更新される                                                                                            | `e2e/editor-link-card.spec.ts` 4o                                           |
 | 21c | 自己参照の拒否がモーダルの URL 欄でも成立する                                                                                               | `e2e/editor-insert-dialog.spec.ts` 24.7b                                    |
 | 21d | 未解決のカード（空 `data-href`）に「変更」を押しても`キャンセル`が出ない — スラッシュ経由でなく生の HTML 経由でこの状態に達しても性質は同じ | `e2e/editor-link-card.spec.ts` 4m                                           |
+
+## 22. サムネイルは本文中の画像に直接指定する（2026-09-07 実装）
+
+**決定**: §8.2 の「著者が選んだ `/uploads/…` のパス」は、本文に挿入済みの画像を吹き出しメニューで指定したものに限る。別枠でのアップロード（旧 `ThumbnailField` の「画像を選ぶ」ボタン）は廃止した — 本文と別に OGP 専用の画像を持ちたい需要が無いためで、`resolveThumbnail`（`lib/thumbnail.ts`）自体の規則（明示指定 → 本文最初の画像 → 無し）は変わっていない。
+
+**機構**:
+
+- `ImageBubble.tsx` が画像の NodeSelection 上に浮かぶ吹き出しメニューで、「サムネイルに設定」（`isUploadPath` を満たす画像にのみ表示、トグル）と「削除」を持つ。ラベルは選択中かどうかで変えない — 文言を変えるとボタン幅が変わり、押した指の下で `削除` が動く。状態は `active` の背景ハイライトだけで示す。削除はモバイルでの代替手段として追加した — NodeSelection を Backspace で消す操作には専用の UI が無く、`block-drag-handle.ts` の並べ替えドラッグも `mousedown` 起点でタッチには効かない。
+- 配置は `placement: 'top-start'`（`TableToolbar` / `LinkBubble` と同じ）と `updateDelay={0}`。**画像の右端に寄せる `top-end` は使えない** — floating-ui は `-start` を `reference.left` に置くのに対し `-end` は `reference.right - floating.width` で解くので、メニュー自身の幅を測る。ボタンは portal 内の React の子で、`canBeThumbnail` は未選択の間 false なので、プラグインが位置を決める瞬間の中身は `削除` だけ、つまり常に 1 レンダー前の幅になる。`top-end` で実測すると画像の右端より 107.05px 右にずれ（`サムネイルに設定` の 105.05px + `gap-0.5` の 2px）、無関係なリサイズが再配置するまでそのまま残った（2026-09-07）。`updateDelay` の既定値 250ms はこのズレを隠していたが、その 250ms はメニューが出るまでの遅延そのものでもある（`@tiptap/extension-bubble-menu` の `update` は `updateDelay > 0 && hasValidSelection` でデバウンス経路に入り、画像の NodeSelection は leaf atom で `to === from + 1` なので必ず空でない）。幅に依存しない配置にして、遅延は 0 に戻した。
+- 明示指定は本文から消えると自動で外れる。`lib/thumbnail.ts` の `bodyContainsImage(body, path)` が `MARKDOWN_IMAGE`/`HTML_IMAGE` の全一致を見て判定し、`PostEditor.tsx` は `body` が変わるたびにこれを確認する（render 中の "adjust state when a value changes" パターンで、`markEdited` は本文を変えた編集そのものが既に呼んでいるので、ここでは呼び直さない）。
+- 選択中の画像には赤いリングを引く（`thumbnail-highlight-extension.ts`、`.thumbnail-image` — `app/globals.css`）。**当初はディスパッチしたトランザクションでプラグイン状態に持たせていたが、実測でこれが壊れた**: `editor.view.dispatch` は React エフェクトから独立して呼ばれる標準のトランザクションで、全プラグインの `appendTransaction` を編集と無関係なタイミングで走らせる。`trailing-node-extension.ts` の追記フックがこの瞬間に反応し、`onUpdate` が発火して `markEdited` が呼ばれ、公開直後の投稿が「未公開の変更あり」に戻ることがあった（4/4 再現、`e2e/thumbnail.spec.ts` で検出）。今は `link-card-extension.ts` の `ownSlug` と同じ形——`editor.storage.thumbnailHighlight.path` に値を持たせ、`PostEditor.tsx` の layout effect（`useEditor` 自身の `onRender` が毎レンダー無条件に呼ぶ `setOptions`→`view.updateState` より先に走る必要があるため、passive effect ではなく layout effect）が書き込む。ディスパッチもプラグイン状態も無い。
+
+**受け入れ基準**
+
+| ID  | 基準                                                                           | 測り方                                |
+| --- | ------------------------------------------------------------------------------ | ------------------------------------- |
+| 22a | 吹き出しメニューで明示的なサムネイルを設定でき、リロードでも残る               | `e2e/thumbnail.spec.ts`（該当テスト） |
+| 22b | 解除が本文最初の画像へのフォールバックに戻す                                   | 同上                                  |
+| 22c | 明示指定が一覧・カード・`og:image` の3面に届く（フォールバックと取り違えない） | 同上                                  |
+| 22d | 明示指定した画像を本文から削除すると、指定が自動で外れフォールバックに戻る     | 同上                                  |
+| 22e | 画像をクリックしたその場でメニューが出る（デバウンス経路に入らない）           | `e2e/image-bubble-position.spec.ts`   |
+| 22f | メニューの左端が画像の左端に載り、あとから再配置されない                       | 同上                                  |

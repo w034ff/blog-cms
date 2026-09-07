@@ -576,6 +576,16 @@ body.link-menu-open .table-toolbar {
   outline-offset: 2px;
 }
 
+/* Editor-only chrome: rings the image whose src matches the post's chosen thumbnail
+   (thumbnail-highlight-extension.ts, ImageBubble.tsx). A wider offset than the blue selection
+   ring above so the two stay visually distinct when the marked image is also the one selected —
+   an `<img>` takes no ::before/::after (generated content is not rendered on replaced elements),
+   which is why this is a ring and not a corner label. Never reaches the published page. */
+.prose .thumbnail-image {
+  outline: 2px solid rgba(220, 38, 38, 0.85);
+  outline-offset: 4px;
+}
+
 /* Editor-only chrome: the code block NodeView (components/editor/code-block-extension.ts)
    renders a persistent header bar — filename field + language <select> — above the code,
    mirroring the public figcaption, which is likewise always shown. The `.code-block` wrapper

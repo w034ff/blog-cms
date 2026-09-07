@@ -65,3 +65,21 @@ export function resolveThumbnail(post: { thumbnail: string; body: string }): str
   if (isUploadPath(post.thumbnail)) return post.thumbnail;
   return firstBodyImage(post.body);
 }
+
+// Whether the body still references this exact path as an image, in either syntax. The editor
+// uses this to drop an explicit choice once its image leaves the body (components/PostEditor.tsx)
+// — an explicit thumbnail is now always an image the author marked in place, so one that is no
+// longer in the body is stale rather than a deliberate OGP-only pick.
+//
+// Every match is checked rather than just the first, unlike firstBodyImage: the question here is
+// membership, not order.
+export function bodyContainsImage(body: string, path: string): boolean {
+  for (const pattern of [MARKDOWN_IMAGE, HTML_IMAGE]) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(body)) !== null) {
+      if (match[1] === path) return true;
+    }
+  }
+  return false;
+}

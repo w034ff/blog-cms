@@ -1,18 +1,40 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 
-// The post's card image, end to end: the editor's picker, the column it writes, the body-derived
-// fallback, and the three surfaces that show the result (docs/link-card-requirements.md §8.2).
+// The post's card image, end to end: the editor's bubble menu, the column it writes, the
+// body-derived fallback, and the three surfaces that show the result
+// (docs/link-card-requirements.md §8.2).
 //
 // lib/thumbnail.test.ts measures `resolveThumbnail` as a pure function — a string in, a string out.
-// What only exists in a browser is everything around it: whether the picked path survives the trip
-// through the form into the column (useAutosave reads the live form DOM, not React state, so a
-// field that renders correctly can still save nothing), and whether the published pages read the
-// resolver rather than the raw column.
+// What only exists in a browser is everything around it: whether clicking an image selects it as a
+// NodeSelection the bubble menu shows for, whether the chosen path survives the trip through the
+// form into the column (useAutosave reads the live form DOM, not React state, so a field that
+// renders correctly can still save nothing), and whether the published pages read the resolver
+// rather than the raw column.
+
+// The bubble menu's own container class (ImageBubble.tsx), so its buttons are found within it
+// rather than by a bare accessible name that another control could also answer to.
+const imageBubble = (page: Page) => page.locator('.image-bubble');
+
+// setImage replaces the current selection, and inserting an image leaves a NodeSelection on what
+// it just placed (prosemirror-transform's replaceSelectionWith, for a node with no content to step
+// into) — so a second upload right after the first would replace it rather than adding a second
+// image. Clicking well below the image moves the caret into the trailing paragraph TrailingNode
+// always keeps at the document's end, a plain TextSelection the next upload can insert beside.
+async function clickPastLastImage(page: Page): Promise<void> {
+  await page.locator('.ProseMirror').click({ position: { x: 10, y: 400 } });
+}
 
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const PNG_1x1 = Buffer.from(PNG_1x1_BASE64, 'base64');
+
+// A second, differently-coloured 1x1 PNG — /api/uploads names files by the sha256 of their bytes
+// (app/api/uploads/route.ts), so uploading PNG_1x1 twice under two different filenames would still
+// land at the same path. The tests below need two images with two distinct src values.
+const PNG_1x1_RED_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const PNG_1x1_RED = Buffer.from(PNG_1x1_RED_BASE64, 'base64');
 
 const UPLOAD_SRC = /^\/uploads\/[0-9a-f]+\.png$/;
 
@@ -27,24 +49,30 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   return href!;
 }
 
-// The explicit half. The picker uploads through the same /api/uploads the editor's own image
-// button uses, and the chosen path has to reach the column — which it can only do through the
-// hidden input, since that is what `new FormData(form)` sees.
-test('the picker sets an explicit thumbnail that survives a reload', async ({ page }) => {
+// The explicit half. An explicit choice is always an image already in the body — the bubble menu
+// marks one in place (ImageBubble.tsx) rather than uploading a separate picture — and the chosen
+// path has to reach the column through the hidden input, since that is what `new FormData(form)`
+// sees.
+test('the bubble menu sets an explicit thumbnail that survives a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
 
   // Nothing chosen and nothing in the body: the field says so rather than showing a stale box.
-  await expect(page.getByText('未設定。本文に画像を入れると自動で使われます。')).toBeVisible();
+  await expect(page.getByText('未設定。本文に画像を入れると指定できます。')).toBeVisible();
 
-  await page.getByTestId('thumbnail-picker').setInputFiles({
+  await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-thumb.png',
     mimeType: 'image/png',
     buffer: PNG_1x1,
   });
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+
+  await page.locator('.ProseMirror img').click();
+  await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
 
   const preview = page.locator('input[name="thumbnail"]');
-  await expect(preview).toHaveValue(UPLOAD_SRC, { timeout: 20_000 });
+  await expect(preview).toHaveValue(UPLOAD_SRC);
   await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
 
   const chosen = await preview.inputValue();
@@ -59,50 +87,112 @@ test('the picker sets an explicit thumbnail that survives a reload', async ({ pa
 });
 
 // 解除 puts the post back to the fallback rather than to "no image", which is the distinction the
-// field's label carries — and the reason the two states cannot share one message.
+// field's label carries — and the reason the two states cannot share one message. Two images in
+// the body, so the explicit choice (the second) actually differs from the fallback (the first) —
+// with only one image the two states would look identical on screen.
 test('解除 drops back to the body’s first image', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
 
   await page.getByTestId('image-picker').setInputFiles({
-    name: 'e2e-body.png',
+    name: 'e2e-body-1.png',
     mimeType: 'image/png',
     buffer: PNG_1x1,
   });
-  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(1, { timeout: 20_000 });
+  await clickPastLastImage(page);
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-body-2.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1_RED,
+  });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
+  const bodyImages = page.locator('.ProseMirror img');
 
-  // With nothing chosen, the body's image is already what the card would use.
+  // With nothing chosen, the body's first image is already what the card would use.
   await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
 
-  await page.getByTestId('thumbnail-picker').setInputFiles({
-    name: 'e2e-thumb.png',
-    mimeType: 'image/png',
-    buffer: PNG_1x1,
-  });
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible({ timeout: 20_000 });
+  await bodyImages.nth(1).click();
+  await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  const secondSrc = await bodyImages.nth(1).getAttribute('src');
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(secondSrc ?? '');
 
   await page.getByRole('button', { name: '解除' }).click();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
 });
 
-// The published side, all three surfaces from one post. The body carries no image at all, so
-// anything shown here can only have come from the column.
-test('an explicit thumbnail reaches the list, the card and og:image', async ({ page }) => {
+// A marked image is a body reference, not an independent choice — deleting it from the body (via
+// the bubble menu's own 削除, the mobile-friendly path §22's design record argues for) has to drop
+// the stale pointer back to the fallback, not leave the column naming an upload the post no longer
+// shows.
+test('deleting the marked image clears the thumbnail back to the fallback', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.getByTestId('thumbnail-picker').setInputFiles({
-    name: 'e2e-thumb.png',
+  await page.locator('.ProseMirror').click();
+
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-body-1.png',
     mimeType: 'image/png',
     buffer: PNG_1x1,
   });
-  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(UPLOAD_SRC, {
-    timeout: 20_000,
+  await expect(page.locator('.ProseMirror img')).toHaveCount(1, { timeout: 20_000 });
+  await clickPastLastImage(page);
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-body-2.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1_RED,
   });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
+  const bodyImages = page.locator('.ProseMirror img');
+
+  await bodyImages.nth(1).click();
+  await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).not.toHaveValue('');
+
+  await bodyImages.nth(1).click();
+  await imageBubble(page).getByRole('button', { name: '削除' }).click();
+  await expect(page.locator('.ProseMirror img')).toHaveCount(1);
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
+  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+});
+
+// The published side, all three surfaces from one post. Two images in the body, and the second is
+// the explicit choice — so if any surface fell back to the body's first image instead of reading
+// the column, the mismatch would be visible rather than accidentally matching.
+test('an explicit thumbnail reaches the list, the card and og:image', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-first.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1,
+  });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(1, { timeout: 20_000 });
+  await clickPastLastImage(page);
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-second.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1_RED,
+  });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
+  const bodyImages = page.locator('.ProseMirror img');
+  const firstSrc = await bodyImages.nth(0).getAttribute('src');
+
+  await bodyImages.nth(1).click();
+  await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(UPLOAD_SRC);
   const chosen = await page.locator('input[name="thumbnail"]').inputValue();
-  const href = await publish(page, 'サムネイル公開', '本文に画像は無い。\n');
+  expect(chosen).not.toBe(firstSrc);
+  // Let the autosave the thumbnail click armed settle before publish, so publish's own wait for
+  // 保存済み isn't racing a save already in flight (the same separation test 1 above keeps).
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+
+  const href = await publish(page, 'サムネイル公開', '');
   const slug = href.slice('/posts/'.length);
 
   // og:image, resolved to an absolute URL against metadataBase.
