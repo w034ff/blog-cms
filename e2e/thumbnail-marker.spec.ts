@@ -41,10 +41,12 @@ const readMark = (page: Page, n: number) =>
       badgeText: badge.content,
       lineShown: drawn(line),
       lineWidth: line.borderTopWidth,
+      lineColor: line.borderTopColor,
+      badgeColor: badge.backgroundColor,
     };
   }, n);
 
-test('the marked image wears a worded badge and a hairline; the other wears neither', async ({
+test('the marked image wears a worded badge and a coloured ring; the other wears neither', async ({
   page,
 }) => {
   await markFirstImage(page);
@@ -57,8 +59,13 @@ test('the marked image wears a worded badge and a hairline; the other wears neit
   expect(marked.badgeShown).toBe(true);
   expect(marked.badgeText).toContain('サムネイル');
   expect(marked.lineShown).toBe(true);
-  // Subordinate to the badge by weight — at 2px a neutral line reads as a frame instead.
-  expect(marked.lineWidth).toBe('1px');
+  // 2px carries over arbitrary picture content; it does not read as a frame because the colour is
+  // saturated, not neutral (app/globals.css says why). Both halves of the mark wear the one colour,
+  // and it is fuchsia rather than red because red is this editor's destructive-control signal —
+  // asserted, not assumed, since the whole point is that a future neutral would fail silently.
+  expect(marked.lineWidth).toBe('2px');
+  expect(marked.lineColor).toBe('rgb(134, 25, 143)');
+  expect(marked.badgeColor).toBe('rgb(134, 25, 143)');
 
   const other = await readMark(page, 1);
   expect(other.badgeShown).toBe(false);

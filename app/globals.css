@@ -662,27 +662,38 @@ body.link-menu-open .table-toolbar {
    node's outer DOM — `.image-block`, which is column-wide — so the mark is drawn on the
    `.image-box` inside it, the box that hugs the picture. Never reaches the published page.
 
-   **A worded badge, not a colour.** This used to be a red ring, because an `<img>` is a replaced
-   element and takes no ::before/::after — `.image-box` removes that constraint. A label says what
-   it means without a legend, which matters here because red already means something else in this
-   editor: it is the signal for a destructive control sitting among neighbours that do the opposite
-   (TableToolbar's 表を削除, LinkBubble's 解除, the card's リンクに戻す, and this menu's own 削除).
-   A state has no business wearing it.
+   **A worded badge and a 2px ring, both fuchsia-800 (#86198f).** The label is what says which
+   state this is without a legend; the colour is what makes the mark findable over arbitrary
+   picture content. **Not red**, which already means something else here: it is the signal for a
+   destructive control sitting among neighbours that do the opposite (TableToolbar's 表を削除,
+   LinkBubble's 解除, the card's リンクに戻す, and this menu's own 削除). A state has no business
+   wearing it. Purple is the one hue this editor's chrome does not otherwise speak — the nearest
+   use is `violet` for 限定公開 (app/admin/page.tsx's chip, PostEditor's `accent-violet-600`),
+   which is a blue-leaning purple on a 16px control in the sidebar, not a magenta plate on the
+   picture.
 
-   **The colour does NOT follow the theme, and that was measured.** It first took
-   `--foreground`, which is near-white in dark mode — and this mark sits on the PICTURE, not on
-   the page. Captured in dark mode over the 390x220 editor screenshot: the hairline was invisible
-   against its white ground and the badge's plate dissolved into it, leaving the mark unreadable
-   in exactly the case it exists for (two of this blog's four real uploads are white-ground
-   screenshots). A fixed near-black reads on all four. It is not universal — a dark photo would swallow
-   it either way — but it fails on the rare content instead of the common. The bubble menu is
-   unaffected and needs no such rule: it carries its own fill, which inverts, and was legible in
-   the same capture.
+   **The colour does NOT follow the theme.** The mark sits on the PICTURE, not on the page, so
+   `--foreground` inverts against the wrong thing: it was near-white in dark mode and dissolved
+   into the white-ground screenshots that are half of this blog's four real uploads.
 
-   The line is the badge's, not a frame: same colour, subordinate by weight. At 2px and neutral it
-   would read as decoration and be indistinguishable from an actual border. It earns its place on
-   tall images — the badge is one corner, and 350x696 is taller than the viewport in this column,
-   so scrolling past the top would otherwise take the only indicator with it.
+   **Near-black was the answer here until 2026-09-08, and the reason it stopped being one is not
+   visible from the picture.** The ring is drawn on the picture and so is theme-independent — but
+   what sits just OUTSIDE it is not. In light mode the white page supplies the boundary even where
+   the picture's own edge is dark; in dark mode nothing does (#171717 on `--background` #0a0a0a is
+   1.10), and picture, ring and page merge. Measured over the four uploads: 30-31% of the edge
+   pixels of the tall screenshot and the photo fall under 3:1 against a near-black ring. A
+   mid-luminance colour is not the fix either — red-600 measures worse (68.3% on the photo),
+   because these pictures' edges average right at its own luminance. A dark saturated hue keeps
+   near-black's behaviour against light content and adds a hue difference where luminance alone
+   has none.
+
+   The line is the badge's, not a frame. **2px is legible here only because the colour is
+   saturated** — a neutral one at this weight reads as decoration and cannot be told from an
+   actual border. It earns its place on tall images: the badge is one corner, and 350x696 is
+   taller than the viewport in this column, so scrolling past the top would otherwise take the
+   only indicator with it.
+
+   The bubble menu needs none of this: it carries its own fill, which inverts with the theme.
 
    Both step aside while the block is selected, and what carries the state there is the menu's
    「サムネイルを解除」 — not the menu's position. The menu covers the badge's corner when it fits
@@ -698,7 +709,7 @@ body.link-menu-open .table-toolbar {
   top: 0;
   left: 0;
   padding: 0.2rem 0.5rem;
-  background: #171717;
+  background: #86198f;
   color: #ffffff;
   font-size: 0.6875rem;
   font-weight: 600;
@@ -711,7 +722,7 @@ body.link-menu-open .table-toolbar {
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid #171717;
+  border: 2px solid #86198f;
   pointer-events: none;
 }
 .prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::before,
