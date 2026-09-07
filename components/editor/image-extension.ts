@@ -31,9 +31,18 @@ function serializeImage(state: MarkdownSerializerState, node: PMNode): void {
 //
 // Why two. An `<img>` is a replaced element and takes no ::before/::after (globals.css says
 // this about the link card's picture too), so the thumbnail badge and its outline have to be
-// drawn by a box that hugs the PICTURE — `.image-box`. The outer `.image-block` is the
-// block itself, column-wide, which is what the drag handle aligns to and what gives the
-// gesture a full-width target rather than one that moves with each image's width.
+// drawn by a box that hugs the PICTURE — `.image-box`. The outer `.image-block` is the block
+// itself, column-wide, and what it buys is the drag handle's REVEAL AREA: the handle shows
+// through `:has(+ :hover)` on the element right after it, so that element's box is what the
+// pointer has to be inside. A centred 390px picture leaves ~188px of empty column on each
+// side; with the block that space still belongs to the image, with a shrink-wrapped box alone
+// it would not (e2e/image-layout.spec.ts).
+//
+// It is NOT for the handle's x. `.block-drag-handle` is `position: absolute; left: -0.2rem`,
+// a fixed offset, and `alignHandles` sets only its `top` — the handle never tracked the
+// picture's width. A first measurement said otherwise and was an artifact:
+// `document.querySelector` returns the FIRST handle and there is one per block, so reading it
+// for two different blocks read the same element twice.
 //
 // **Both rings must be re-scoped, not just restyled.** `Decoration.node` (the thumbnail
 // highlight) and prosemirror-view's `.ProseMirror-selectednode` both land on the node's OUTER

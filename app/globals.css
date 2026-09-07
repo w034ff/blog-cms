@@ -588,15 +588,17 @@ body.link-menu-open .table-toolbar {
 }
 
 /* The two boxes `image-extension.ts` wraps every editor image in. `.image-block` is the block —
-   column-wide, so the drag handle aligns to one x for every image and the press target does not
-   shrink with the picture. `.image-box` hugs the picture, and is what the rings above and the
-   thumbnail mark below are drawn on. Editor-only: the published page renders from markdown and
-   has a bare <img>. */
+   column-wide, which is what keeps the drag handle reachable from the empty column beside a
+   centred picture (`:has(+ :hover)` above tests the box of the element after the handle, and a
+   shrink-wrapped one would leave that space outside the image). `.image-box` hugs the picture and
+   is what the rings above and the thumbnail mark below are drawn on. Editor-only: the published
+   page renders from markdown and has a bare <img>. */
 .prose .image-block {
   display: block;
 }
 .prose .image-box {
   display: block;
+  position: relative;
   width: fit-content;
   max-width: 100%;
 }
@@ -604,12 +606,50 @@ body.link-menu-open .table-toolbar {
 /* Editor-only chrome: marks the image whose src matches the post's chosen thumbnail
    (thumbnail-highlight-extension.ts, ImageBubble.tsx). `Decoration.node` puts the class on the
    node's outer DOM — `.image-block`, which is column-wide — so the mark is drawn on the
-   `.image-box` inside it, the box that hugs the picture. A wider offset than the blue selection
-   ring above so the two stay distinct when the marked image is also the one selected.
-   Never reaches the published page. */
-.prose .image-block.thumbnail-image .image-box {
-  outline: 2px solid rgba(220, 38, 38, 0.85);
-  outline-offset: 4px;
+   `.image-box` inside it, the box that hugs the picture. Never reaches the published page.
+
+   **A worded badge, not a colour.** This used to be a red ring, because an `<img>` is a replaced
+   element and takes no ::before/::after — `.image-box` removes that constraint. A label says what
+   it means without a legend, which matters here because red already means something else in this
+   editor: it is the signal for a destructive control sitting among neighbours that do the opposite
+   (TableToolbar's 表を削除, LinkBubble's 解除, the card's リンクに戻す, and this menu's own 削除).
+   A state has no business wearing it. `--foreground`/`--background` invert together, so the plate
+   is near-black on white and near-white on black.
+
+   The line is the badge's, not a frame: same colour, subordinate by weight. At 2px and neutral it
+   would read as decoration and be indistinguishable from an actual border. It earns its place on
+   tall images — the badge is one corner, and 350x696 is taller than the viewport in this column,
+   so scrolling past the top would otherwise take the only indicator with it.
+
+   Both step aside while the block is selected: the bubble menu is on the picture at that moment
+   and its 「サムネイルを解除」 carries the state, the blue ring above already frames the picture,
+   and one element can only draw one outline anyway. `Decoration.node`'s class and
+   `.ProseMirror-selectednode` land on the same element, so this needs no JS. */
+.prose .image-block.thumbnail-image .image-box::before {
+  content: 'サムネイル';
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0.2rem 0.5rem;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  user-select: none;
+}
+.prose .image-block.thumbnail-image .image-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--foreground);
+  pointer-events: none;
+}
+.prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::before,
+.prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::after {
+  display: none;
 }
 
 /* Editor-only chrome: the code block NodeView (components/editor/code-block-extension.ts)
@@ -1320,6 +1360,34 @@ body.link-menu-open .table-toolbar {
    surfaces (editor and post both use .prose). */
 .prose :not(pre) {
   overflow-wrap: break-word;
+}
+
+/* Body images sit centred at their own size. Zenn does the same and Qiita does not (measured
+   2026-09-07 from both sites' stylesheets), so this is a house choice rather than a convention —
+   what settles it here is that an image narrower than the column reads as a lopsided gap when it
+   is left-aligned, and half of this blog's uploads are that narrow.
+
+   **`display` is load-bearing.** An `<img>` is inline by default and auto margins do nothing to an
+   inline box; Zenn reaches for `display: table` for the same reason, and block centres identically.
+
+   `background` is insurance, not decoration: a PNG with alpha would otherwise show the page through
+   itself, which in dark mode reads as a hole. It is a constant light plate in both themes because a
+   transparent image was almost always authored against a white page. Measured 2026-09-07: none of
+   the uploads in this blog carries any transparency (alpha 255 on every pixel), so this changes
+   nothing today.
+
+   Applies to both surfaces. In the editor the picture is wrapped (image-extension.ts), so the auto
+   margins there land on `.image-box` below rather than on the `<img>`, which its own box already
+   hugs. */
+.prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  background: #ffffff;
+}
+.prose .image-box {
+  margin-inline: auto;
 }
 
 /* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a

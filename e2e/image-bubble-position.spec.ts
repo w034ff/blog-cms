@@ -50,7 +50,13 @@ test('the menu appears on the click that selects the image, not a debounce later
 // repositions at a moment when React has certainly committed, so a menu that moves there was
 // positioned against a stale width. `top-end` moved 107.06px; a width-independent placement moves
 // nothing.
-test('the menu sits on the image’s left edge and nothing repositions it afterwards', async ({
+//
+// The anchor is whatever `editor.view.nodeDOM(pos)` returns, which is the column-wide
+// `.image-block` since images gained their two boxes — not the picture, which the centring rule
+// now moves 188px in from that edge. Asserting against the block is what the menu's own
+// positioning does; when the menu moves inside the picture's top-right, this becomes
+// `.image-box` instead.
+test('the menu sits on the block’s left edge and nothing repositions it afterwards', async ({
   page,
 }) => {
   await openEditorWithImage(page);
@@ -60,11 +66,11 @@ test('the menu sits on the image’s left edge and nothing repositions it afterw
   const read = () =>
     page.evaluate(() => {
       const bubble = document.querySelector('.image-bubble');
-      const img = document.querySelector('.ProseMirror img');
-      if (!bubble || !img) throw new Error('bubble or image missing');
+      const block = document.querySelector('.ProseMirror .image-block');
+      if (!bubble || !block) throw new Error('bubble or block missing');
       return {
         bubbleLeft: bubble.getBoundingClientRect().left,
-        imgLeft: img.getBoundingClientRect().left,
+        blockLeft: block.getBoundingClientRect().left,
       };
     });
 
@@ -72,7 +78,7 @@ test('the menu sits on the image’s left edge and nothing repositions it afterw
   // that the number does not change over this window, so a short wait would prove less, not more.
   await page.waitForTimeout(400);
   const afterClick = await read();
-  expect(afterClick.bubbleLeft).toBeCloseTo(afterClick.imgLeft, 0);
+  expect(afterClick.bubbleLeft).toBeCloseTo(afterClick.blockLeft, 0);
 
   await page.evaluate(() => window.dispatchEvent(new Event('resize')));
   await page.waitForTimeout(300);
