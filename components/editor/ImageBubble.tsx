@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -41,27 +41,69 @@ export function ImageBubble({
   // closure each render would loop forever.
   const shouldShow = useCallback(() => selectedImage(editor) !== null, [editor]);
   const appendTo = useCallback(() => document.body, []);
-  // `top-start`, the placement TableToolbar and LinkBubble already use, because it is the one
-  // whose x does not depend on this menu's own width: floating-ui puts a `-start` menu at
-  // `reference.left`, where `top-end` computes `reference.right - floating.width`. The buttons are
-  // React children of a portal, so the element the plugin measures is one render behind whenever
-  // the selection changes — `canBeThumbnail` is false while nothing is selected, so at the moment
-  // the plugin positions the menu it still holds 削除 alone. Measured on `top-end`: the menu
-  // landed 107.05px right of the image's right edge, exactly the 105.05px サムネイルに設定 button
-  // plus the 2px `gap-0.5`, and stayed there until an unrelated resize repositioned it (0.02px).
-  // A width-independent placement removes the dependency rather than trying to time around it.
+  // The menu sits in the picture's own top-right corner rather than floating above the block.
+  //
+  // `top-start`, never `top-end`, and the difference is not cosmetic: floating-ui solves a
+  // `-start` menu at `reference.left` and an `-end` one at `reference.right - floating.width`, so
+  // only the latter measures this menu — and its buttons are React children of a portal, one
+  // render behind the transaction that positions it (`canBeThumbnail` is false while nothing is
+  // selected, so the element still holds 削除 alone at that moment). Measured on `top-end`: the
+  // menu landed 107.05px past the picture's right edge, exactly the 105.05px button plus the gap,
+  // and stayed there until an unrelated resize corrected it. The right edge is reached by a CSS
+  // transform instead (globals.css), where `100%` resolves against this menu's own width at paint
+  // time and can never be a render stale.
+  //
+  // The negative `mainAxis` is what brings it inside: `top-start` puts the menu above the
+  // picture, and pulling it back down by its own height lands its top edge on the picture's.
+  // Height is safe to measure where width is not — the menu is always one row.
+  //
+  // **Unless the picture is narrower than the menu**, in which case the menu would cover it
+  // whole and the image could no longer be clicked to select it at all — measured, and it took
+  // three of `e2e/thumbnail.spec.ts`'s cases down with `intercepts pointer events`. There the
+  // menu goes back above the picture, its original place. `outsideRef` rather than deciding
+  // again here: this and the transform below have to agree, and the width the offset callback
+  // sees is the one that can be a render stale, so the decision is made once against the live
+  // element in `getReferencedVirtualElement` and only read here.
+  //
+  // `flip` and `shift` are off. Both exist to keep a menu inside the viewport, and this one is
+  // inside the picture, which is inside the column.
+  const outsideRef = useRef(false);
   const options = useMemo(
-    () => ({ placement: 'top-start' as const, offset: 8, flip: true, shift: { padding: 8 } }),
+    () => ({
+      placement: 'top-start' as const,
+      offset: ({ rects }: { rects: { floating: { height: number } } }) => ({
+        mainAxis: outsideRef.current ? 8 : -rects.floating.height,
+      }),
+      flip: false,
+      shift: false,
+    }),
     [],
   );
-  // Anchored to the selected image's own element, the same way the table toolbar pins to a cell.
+  // The element the plugin's own `ref` hands back — the portal div the menu renders into.
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Anchored to the PICTURE's box, not the block's. `nodeDOM` returns `.image-block`, which is
+  // column-wide (image-extension.ts), so anchoring there would leave the menu floating in the
+  // empty column beside a centred picture rather than on it.
+  //
+  // The anchor's width is published to CSS here because this callback runs inside the plugin's
+  // `updatePosition`, with the live box in hand. It is not React-rendered chrome, so unlike the
+  // menu's own width it is never a render behind.
   const getReferencedVirtualElement = useCallback(() => {
     const image = selectedImage(editor);
     if (!image) return null;
-    const dom = editor.view.nodeDOM(image.from);
-    return dom instanceof Element
-      ? { getBoundingClientRect: () => dom.getBoundingClientRect(), contextElement: dom }
-      : null;
+    const block = editor.view.nodeDOM(image.from);
+    if (!(block instanceof HTMLElement)) return null;
+    const picture = block.querySelector<HTMLElement>('.image-box') ?? block;
+    const width = picture.getBoundingClientRect().width;
+    const menu = menuRef.current;
+    // One decision, read by both the offset above and the transform in globals.css.
+    outsideRef.current = menu !== null && width < menu.offsetWidth;
+    menu?.classList.toggle('is-outside', outsideRef.current);
+    menu?.style.setProperty('--anchor-width', `${width}px`);
+    return {
+      getBoundingClientRect: () => picture.getBoundingClientRect(),
+      contextElement: picture,
+    };
   }, [editor]);
 
   const image = selectedImage(editor);
@@ -83,7 +125,11 @@ export function ImageBubble({
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
-      className='image-bubble z-20 flex items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+      ref={menuRef}
+      // Everything about how this reads — flush into the corner, square, one hard border, a
+      // divider between the items — is in globals.css, because it has to reach inside
+      // ToolbarButton's own utilities and the reasons are worth a paragraph each.
+      className='image-bubble z-20 flex bg-white dark:bg-zinc-900'>
       {canBeThumbnail && image && (
         <ToolbarButton
           active={isCurrentThumbnail}
@@ -97,7 +143,12 @@ export function ImageBubble({
             onSetThumbnail(isCurrentThumbnail ? '' : image.src);
             editor.chain().focus().run();
           }}>
-          サムネイルに設定
+          {/* The label states the action, the way 削除 beside it does, so the button says both
+              what is true now and what pressing it will do. Both strings are eight full-width
+              characters, so the menu's width does not change — and the `active` fill stays as a
+              second, glanceable cue, because the two labels differ in only three of those eight
+              and a menu is read at a glance. */}
+          {isCurrentThumbnail ? 'サムネイルを解除' : 'サムネイルに設定'}
         </ToolbarButton>
       )}
       <ToolbarButton destructive onClick={() => editor.chain().focus().deleteSelection().run()}>

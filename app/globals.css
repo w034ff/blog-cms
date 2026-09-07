@@ -603,6 +603,57 @@ body.link-menu-open .table-toolbar {
   max-width: 100%;
 }
 
+/* Editor-only chrome: the image's bubble menu (ImageBubble.tsx), fitted into the picture's own
+   top-right corner rather than floating above the block.
+
+   **The transform is what pins the right edge**, not the placement. floating-ui's `top-end` would
+   solve x from this menu's own width, which is one React render behind whenever the button set
+   changes; `100%` here resolves against the menu's current width at paint time and cannot be
+   stale. `--anchor-width` is the picture box's width, written by `getReferencedVirtualElement`
+   from the live box. The fallback keeps a menu that somehow has no anchor width at the left edge
+   rather than off-screen.
+
+   Square, and hard-bordered. Two of its corners meet the picture's own edges, so rounding them
+   would open a gap and read as dropped on top rather than fitted in. The border is `--foreground`
+   because the menu now sits ON the picture: over a white screenshot a pale border dissolves
+   exactly where the menu most needs to be found, and a literal black would vanish over a dark
+   photo in dark mode — this pair inverts with the theme.
+
+   The items butt together so their divider can run the full height; ToolbarButton's own radius
+   and padding are overridden here rather than parameterised, since this is the only menu that
+   wants a segmented row. These rules are unlayered and so outrank those utilities. */
+.image-bubble {
+  transform: translateX(calc(var(--anchor-width, 100%) - 100%));
+  border: 1px solid var(--foreground);
+  border-radius: 0;
+  padding: 0;
+  align-items: stretch;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.18);
+}
+/* A picture narrower than the menu cannot host it — the menu would cover the image whole and
+   clicking it would no longer select it (measured: `intercepts pointer events`). There the menu
+   goes back above the picture, so the left edges line up and nothing is covered.
+   ImageBubble.tsx makes the call, against the live element, and sets this class. */
+.image-bubble.is-outside {
+  transform: none;
+}
+.image-bubble .toolbar-button {
+  border-radius: 0;
+  padding: 0.3rem 0.55rem;
+  display: flex;
+  align-items: center;
+}
+/* Between `--rule`-weight and the text: at this size a pale hairline reads as nothing, and the
+   near-black of the outer border would compete with it. */
+.image-bubble .toolbar-button + .toolbar-button {
+  border-left: 1px solid rgba(63, 63, 70, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  .image-bubble .toolbar-button + .toolbar-button {
+    border-left-color: rgba(228, 228, 231, 0.32);
+  }
+}
+
 /* Editor-only chrome: marks the image whose src matches the post's chosen thumbnail
    (thumbnail-highlight-extension.ts, ImageBubble.tsx). `Decoration.node` puts the class on the
    node's outer DOM — `.image-block`, which is column-wide — so the mark is drawn on the

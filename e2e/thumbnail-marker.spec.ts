@@ -86,3 +86,29 @@ test('selecting the marked image puts its badge and line away', async ({ page })
   expect(afterwards.badgeShown).toBe(true);
   expect(afterwards.lineShown).toBe(true);
 });
+
+// The toggle says both what is true now and what pressing it will do, the way 削除 beside it
+// does. It is the only place the state is legible while the block is selected, since the badge
+// and the line step aside there — so a label that did not change would leave the `active` fill
+// carrying that alone.
+test('the toggle’s label states the action, and flips with the state', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `![](${MARKED})\n\n本文\n`);
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+
+  const menu = page.locator('.image-bubble');
+  await page.locator('.ProseMirror img').click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'サムネイルに設定', exact: true })).toBeVisible();
+
+  await menu.getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).not.toHaveValue('');
+  await expect(menu.getByRole('button', { name: 'サムネイルを解除', exact: true })).toBeVisible();
+
+  // And back, so the flip is a toggle rather than a one-way relabel.
+  await menu.getByRole('button', { name: 'サムネイルを解除', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
+  await expect(menu.getByRole('button', { name: 'サムネイルに設定', exact: true })).toBeVisible();
+});

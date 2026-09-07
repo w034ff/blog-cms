@@ -120,7 +120,9 @@ test('解除 drops back to the body’s first image', async ({ page }) => {
   const secondSrc = await bodyImages.nth(1).getAttribute('src');
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(secondSrc ?? '');
 
-  await page.getByRole('button', { name: '解除' }).click();
+  // `exact`, because the bubble menu's own toggle now reads 「サムネイルを解除」 when the image
+  // it is on is the chosen one, and an accessible name matches by substring by default.
+  await page.getByRole('button', { name: '解除', exact: true }).click();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
 });
