@@ -1071,6 +1071,77 @@ test('clicking a footnote reference to select it starts no native drag', async (
   expect(prevented).toBe(true);
 });
 
+// The half of the mechanism no selection test can reach: `image`, `linkCard` and `embed` declare
+// `draggable: true`, so prosemirror-view marks their DOM a native drag source with nothing selected
+// at all. What that leaked was not the freeze but the drop overlay: Chrome builds the drag out of
+// the picture itself (measured 2026-09-08 — `dragstart`'s dataTransfer carries it as a File,
+// `image/png`, which `clearData()` does not remove), and useImageUpload's window listeners read
+// `types.includes('Files')` as a file arriving from outside. Reported 2026-09-08 against an image
+// wearing the サムネイル badge, which is exactly the state "marked, and carrying no NodeSelection" —
+// `.ProseMirror-selectednode` hides the badge (globals.css), so the badge showing IS the unringed
+// case, not a condition of its own.
+//
+// 390x220, already in public/uploads — the same fixture e2e/image-layout.spec.ts measures.
+const UNRINGED_IMAGE =
+  '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
+
+// Both types the guard newly covers, since the refusal is written against the DOM attribute rather
+// than against a node type: the image is the reported one, the card is the one §7.2 measured moving
+// under a native drag back when nothing refused it. `embed` is the third and is left to the ringed
+// test above — reaching it needs the X stub, and it carries the same attribute for the same reason.
+for (const [kind, markdown, block, press] of [
+  ['image', `![](${UNRINGED_IMAGE})\n\n後の段落\n`, '.image-block', '.image-block img'],
+  ['link card', `${CARD_MD}\n\n後の段落\n`, '.link-card', '.link-card-title'],
+] as const) {
+  test(`pressing an unringed ${kind} starts no native drag`, async ({ page }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await loadMarkdown(page, markdown);
+    await expect(editor.locator(press)).toBeVisible({ timeout: 20_000 });
+
+    // Nothing is ringed — the state the guard above says nothing about, and the one the report was
+    // made in.
+    await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(0);
+    // prosemirror-view has marked the block draggable anyway (`dom.draggable = true` for a node
+    // whose spec declares it). That attribute is the drag source Chrome would use.
+    expect(await editor.locator(block).evaluate((el) => el.getAttribute('draggable'))).toBe('true');
+
+    // Dispatched on what a real press targets — the picture, the title — so the refusal has to find
+    // the source by walking up from there. Playwright cannot drive Chrome's OS drag loop
+    // (e2e/native-drag.ts), so this is asserted at the same seam as the tests above.
+    const prevented = await editor
+      .locator(press)
+      .evaluate(
+        (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+      );
+    expect(prevented).toBe(true);
+  });
+}
+
+// The scope control for the test above, and the reason the refusal is written against the
+// `draggable` attribute rather than "the press landed inside a DRAGGABLE_TYPES block": a blockquote
+// IS one of those types, and dragging a text selection out of one is the gesture every drop guard
+// in this editor is built on (useDragContainment.ts, e2e/editor-drag-containment.spec.ts). A guard
+// scoped to the container would take it away, and this test goes red the moment one does.
+test('a drag starting on text inside a blockquote is still allowed', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, '> 引用文です\n\n後の段落\n');
+  await expect(editor.locator('blockquote')).toBeVisible();
+  await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(0);
+
+  const prevented = await editor
+    .locator('blockquote p')
+    .evaluate(
+      (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
+    );
+  expect(prevented).toBe(false);
+});
+
 // Dragging a ringed block by its own body must not paint a text selection behind the pointer.
 //
 // Once that press became this plugin's drag rather than a native one, ProseMirror's own mousedown

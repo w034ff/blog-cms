@@ -11,7 +11,10 @@ import type { EditorView } from '@tiptap/pm/view';
 // no handle of its own — doc.forEach below only sees direct children of the doc, which already
 // excludes it, so no extra filtering is needed. Extend this set to broaden scope later (headings
 // need the section-range question settled first — see the design discussion — so they're not here).
-const DRAGGABLE_TYPES = new Set([
+// Exported for the invariant in draggable-types.test.ts, not for use elsewhere: every node whose
+// spec declares `draggable: true` must be in here, or it becomes a native drag source with no
+// handle and nothing refusing its `dragstart` (§7.7 of docs/link-card-requirements.md).
+export const DRAGGABLE_TYPES = new Set([
   'blockquote',
   'callout',
   'details',
@@ -145,6 +148,31 @@ function selectedHandledBlock(state: EditorState): { node: ProseMirrorNode; from
   if (selection.$from.depth !== 0) return null;
   if (!DRAGGABLE_TYPES.has(selection.node.type.name)) return null;
   return { node: selection.node, from: selection.from };
+}
+
+// Did this drag start from a node prosemirror-view itself made a native drag source? It sets the
+// attribute on the DOM of every node whose spec declares it (dist: `if (node.type.spec.draggable)
+// dom.draggable = true`), and `LeftMouseDown` adds the same one for a press inside an existing
+// NodeSelection.
+//
+// The attribute is the whole test, and it is asked of the DOM rather than resolved through the
+// model. It is the same question Chrome asked when it picked a drag source, so it cannot disagree
+// with what actually started; a `dragstart` also carries no press coordinates worth resolving
+// (`posAtCoords` would have to be fed the drag's origin, which the event does not report reliably),
+// and the seam the specs assert this at dispatches the event on the element itself.
+//
+// Scoped to the attribute rather than to "the press landed inside a DRAGGABLE_TYPES block" on
+// purpose: a TextSelection dragged out of a quote or a code block presses on ordinary text, and
+// that gesture has to keep working. A schema audit finds exactly `image`/`linkCard`/`embed`
+// declaring `draggable: true` (link-card-extension.ts, embed-extension.ts, and
+// @tiptap/extension-image's own node) — all three in DRAGGABLE_TYPES above, all three carrying a
+// handle — and nothing in this editor sets the attribute by hand, so inside `view.dom` it never
+// means anything else.
+function pressedNativeDragSource(view: EditorView, target: EventTarget | null): boolean {
+  const el =
+    target instanceof HTMLElement ? target : target instanceof Node ? target.parentElement : null;
+  const source = el?.closest('[draggable="true"]');
+  return source instanceof HTMLElement && view.dom.contains(source);
 }
 
 // What the plugin (and the handle's mousedown) can ask of a live drag session.
@@ -795,15 +823,45 @@ export const BlockDragHandle = Extension.create({
             // Measured live: Ctrl+click on a plain paragraph leaves `draggable="true"` on it and an
             // undefended `dragstart`. Cancel for every NodeSelection instead.
             //
-            // Costs nothing real: a schema audit found only `image`/`linkCard`/`embed` declare
-            // `draggable: true` of their own, and those are exactly the `DRAGGABLE_TYPES` already
-            // routed through this plugin's own drag (see mousedown below). The footnote reference's
-            // drag (criterion 14, e2e/editor-footnote.spec.ts) moves a TextSelection spanning it, not
-            // a NodeSelection on it, so it never reaches this guard either way. A plain TextSelection
-            // dragged out of a quote or a code block — the gesture every drop guard in this editor is
-            // built on — is likewise untouched, since it is never a NodeSelection.
+            // The footnote reference's drag (criterion 14, e2e/editor-footnote.spec.ts) moves a
+            // TextSelection spanning it, not a NodeSelection on it, so it never reaches this guard
+            // either way.
+            //
+            // **Nor is the selection the whole scope.** An UNRINGED image, link card or embed is a
+            // native drag source in its own right — prosemirror-view sets `draggable` on the DOM of
+            // every node whose spec declares it, no selection involved — so `pressedNativeDragSource`
+            // below refuses those presses too. What that leaks when it is not refused is not the
+            // freeze above but a second bug: Chrome builds the drag out of the PICTURE. Measured
+            // 2026-09-08 in a standalone contenteditable, `dragstart`'s dataTransfer carries the
+            // image as a File (`a.png`, `image/png`), and prosemirror-view's own `clearData()` does
+            // not remove it — `types` reads `["Files"]` immediately after, which is the same fact
+            // dist's `chrome_version > 120` guard is about. useImageUpload's window listeners test
+            // exactly that (`types.includes('Files')`), so the drop overlay
+            // 「ここに画像をドロップして追加」 opened over the page mid-drag; its `drop` then read
+            // the same File through `imageFilesFromList` (`image/png` is allowed), uploaded the
+            // picture again, inserted a second copy of it, and split the paragraph it landed in —
+            // all on top of ProseMirror's own node move, which had already succeeded. Confirmed in
+            // the author's browser and measured in the harness (docs/link-card-requirements.md
+            // §7.7, which also records how to drive a drop that carries a File).
+            // Reported 2026-09-08 against an image wearing the サムネイル
+            // badge — the badge is hidden under `.ProseMirror-selectednode` (globals.css), so "badge
+            // showing" is precisely "this image carries no NodeSelection", which is why the gesture
+            // looked specific to the badge.
+            //
+            // The gesture is not lost, it moves to the affordance built for it: the handle drags an
+            // unringed block, and a press on the body still rings it (prosemirror-view's own
+            // `handleSingleClick`, on mouseup), after which mousedown below picks it up.
+            //
+            // A plain TextSelection dragged out of a quote or a code block — the gesture every drop
+            // guard in this editor is built on — is untouched by either half: it is never a
+            // NodeSelection, and its press lands on ordinary text that carries no `draggable`.
             dragstart(view, event) {
-              if (!(view.state.selection instanceof NodeSelection)) return false;
+              if (
+                !(view.state.selection instanceof NodeSelection) &&
+                !pressedNativeDragSource(view, event.target)
+              ) {
+                return false;
+              }
               event.preventDefault();
               return true;
             },

@@ -162,6 +162,16 @@ export function useImageUpload(
   // depth counter tracks whether the pointer is still somewhere over the window.
   useEffect(() => {
     let depth = 0;
+    // 'Files' means a file from outside the page — but only because nothing inside the editor
+    // sources a native drag any more. Chrome builds an in-page image drag out of the picture
+    // itself (the File survives prosemirror-view's own `clearData()`), so an image, card or embed
+    // dragged by its body would land here as if it came from the OS: the overlay opened mid-drag,
+    // and the drop re-uploaded the picture, inserted a second copy of it, and split the paragraph
+    // it landed in (measured 2026-09-08, on top of ProseMirror's own node move).
+    // `pressedNativeDragSource`
+    // (block-drag-handle.ts, docs/link-card-requirements.md §7.7) is what refuses those drags at
+    // `dragstart`, and this predicate depends on it — a new node type declaring `draggable: true`
+    // has to be covered there, or it reopens this.
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
     const handleDragEnter = (event: DragEvent) => {
       if (!hasFiles(event)) return;

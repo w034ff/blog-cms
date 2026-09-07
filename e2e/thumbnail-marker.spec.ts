@@ -112,3 +112,111 @@ test('the toggle’s label states the action, and flips with the state', async (
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   await expect(menu.getByRole('button', { name: 'サムネイルに設定', exact: true })).toBeVisible();
 });
+
+// Pressing the toggle must not move the page.
+//
+// @tiptap/core's focus command defaults to `scrollIntoView: true`, and a NodeSelection sends it
+// down the `delayedFocus` branch, so the plain `editor.chain().focus()` this button needs for
+// focus restoration also ran `editor.commands.scrollIntoView()` in a rAF. prosemirror-view then
+// scrolls the whole block into view against the *window*, which knows nothing about the sticky
+// toolbar. Reported 2026-09-08.
+//
+// The setup is the measurement: the picture is selected FIRST (Playwright scrolls a big target
+// into view before clicking it, and that auto-scroll would otherwise be what the numbers show),
+// and only then is the page moved so the picture's bottom sits below the fold — the one geometry
+// in which prosemirror-view has anything to scroll. Without it this passes with the bug present.
+test('pressing the thumbnail toggle does not scroll the page', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  const filler = Array.from({ length: 12 }, (_, i) => `段落${i}`).join('\n\n');
+  await loadMarkdown(page, `${filler}\n\n![](${OTHER})\n\n${filler}\n`);
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+
+  const picture = page.locator('.ProseMirror .image-box');
+  const menu = page.locator('.image-bubble');
+  await picture.click();
+  await expect(menu).toBeVisible();
+
+  const below = await picture.evaluate((el) => {
+    window.scrollBy(0, el.getBoundingClientRect().top - 400);
+    const rect = el.getBoundingClientRect();
+    return { hangs: rect.bottom - window.innerHeight, scrollY: window.scrollY };
+  });
+  // The precondition itself, so the test cannot go quiet if the fixture's height ever changes.
+  expect(below.hangs).toBeGreaterThan(50);
+
+  await menu.getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).not.toHaveValue('');
+  expect(await page.evaluate(() => window.scrollY)).toBe(below.scrollY);
+
+  // The other half of the toggle takes the same path, and focus is still where the press left it —
+  // dropping the scroll must not have dropped the refocus this button exists to do.
+  await menu.getByRole('button', { name: 'サムネイルを解除', exact: true }).click();
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
+  expect(await page.evaluate(() => window.scrollY)).toBe(below.scrollY);
+  expect(
+    await page.evaluate(() => {
+      const el = document.querySelector('.ProseMirror') as Element & {
+        editor: { isFocused: boolean };
+      };
+      return el.editor.isFocused;
+    }),
+  ).toBe(true);
+});
+
+// The mark has to survive a reload, and until 2026-09-08 it did not: a post whose thumbnail was
+// already chosen came back with the badge missing, and no later edit brought it back.
+//
+// The write into `editor.storage.thumbnailHighlight` is a layout effect (PostEditor.tsx), and it
+// was reading the editor out of `editorRef` — a ref filled by a *passive* effect. Every layout
+// effect in a commit runs before any passive one, so on the mount commit the ref is still null and
+// nothing was written; the effect's deps (`[editor, thumbnail]`) then never change again on a post
+// that is only opened. Setting one in the session hid it, because that does change `thumbnail`.
+//
+// So this test loads a saved post rather than a fresh one — the same round trip
+// e2e/thumbnail.spec.ts makes for the column, asserted here on the mark. Reading the storage
+// alongside the rendered mark is what separates "the decoration is not drawn" from "the path never
+// arrived": it was the second.
+test('the badge is still on the marked image after a reload', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  // A paragraph BEFORE the image, and that is load-bearing: a document that opens with one puts
+  // `Selection.atStart` on the image itself (a selectable atom is what `findFrom` stops at), and a
+  // node-selected picture is *supposed* to have its badge put away — the test above measures that.
+  // With the image first this reads as "the badge is missing after a reload" for the wrong reason,
+  // which is what it did on the first run.
+  await loadMarkdown(page, `本文\n\n![](${MARKED})\n\n後の段落\n`);
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+
+  await page.locator('.ProseMirror img').click();
+  await page
+    .locator('.image-bubble')
+    .getByRole('button', { name: 'サムネイルに設定', exact: true })
+    .click();
+  await page.getByLabel('タイトル').fill('バッジの再読込');
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+
+  await page.reload();
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(MARKED);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        marked: document.querySelectorAll('.ProseMirror .image-block.thumbnail-image').length,
+        path: (
+          document.querySelector('.ProseMirror') as Element & {
+            editor: { storage: { thumbnailHighlight: { path: string } } };
+          }
+        ).editor.storage.thumbnailHighlight.path,
+      })),
+    )
+    .toEqual({ marked: 1, path: MARKED });
+  // Nothing is selected, so the conditional shape above is not what is being read here.
+  await expect(page.locator('.ProseMirror .ProseMirror-selectednode')).toHaveCount(0);
+  // And it is the drawn mark, not just the class — the same read the tests above make.
+  expect(await readMark(page, 0)).toMatchObject({ badgeShown: true, lineShown: true });
+});

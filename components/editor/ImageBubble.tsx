@@ -154,7 +154,23 @@ export function ImageBubble({
             // else here would put focus back; every other button in this editor's chrome
             // (TableToolbar, LinkBubble, 削除 below) restores it the same way.
             onSetThumbnail(isCurrentThumbnail ? '' : image.src);
-            editor.chain().focus().run();
+            // `scrollIntoView: false`, or pressing this button scrolls the page. A NodeSelection
+            // takes @tiptap/core's focus command down its `delayedFocus` branch (`position === null
+            // && !isTextSelection`), which runs `editor.commands.scrollIntoView()` in a rAF — and
+            // prosemirror-view then scrolls the whole *block* into view against the window, which
+            // knows nothing about the sticky toolbar. Measured 2026-09-08 with the picture's bottom
+            // 82px below the fold: the page jumped 87px on the press, exactly `rect.bottom -
+            // window.bottom + scrollMargin` (dist's `scrollRectIntoView`, the `getSide(scrollMargin,
+            // "bottom")` branch), and a picture taller than the viewport takes the branch above it
+            // and lands its top under the toolbar instead.
+            //
+            // Nothing here asked to be scrolled to: the author is looking at the picture and just
+            // pressed a button drawn on it. Focus still has to be restored — the button lives
+            // outside the editor's DOM (BubbleMenu portals to <body>), so clicking it leaves the
+            // editor blurred with its NodeSelection still standing, and `onSetThumbnail` is a plain
+            // React callback, not a chain that would refocus on its own. `view.focus()` itself uses
+            // `focusPreventScroll`, so dropping the scroll leaves nothing that moves the page.
+            editor.chain().focus(null, { scrollIntoView: false }).run();
           }}>
           {/* The label states the action, the way 削除 beside it does, so the button says both
               what is true now and what pressing it will do. Both strings are eight full-width

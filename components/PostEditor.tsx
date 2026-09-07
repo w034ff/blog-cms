@@ -290,15 +290,25 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // `view.updateState` on every render unconditionally, asking every plugin for its decorations
   // again, and React runs all layout effects before any passive one in the same commit — a
   // passive effect here would leave the ring a render behind the click that set it.
+  //
+  // **`editor`, not `editorRef.current`** — being a layout effect is exactly why. The ref is filled
+  // by the passive effect above, and every layout effect in a commit runs before any passive one,
+  // so on the one commit that matters — the mount, where `editor` first exists — the ref is still
+  // null. The deps then never change again on a post that is merely opened, so the write never
+  // happened at all: a saved thumbnail came back from a reload with no badge on it, and no later
+  // edit brought it back (measured 2026-09-08, `storage.thumbnailHighlight.path` still `''` after
+  // a keystroke). Setting one in the session worked only because that changes `thumbnail`, and by
+  // then the ref is filled. See docs/link-card-requirements.md §22.
   useLayoutEffect(() => {
-    const live = editorRef.current;
-    if (live) live.storage.thumbnailHighlight.path = thumbnail;
+    if (editor) editor.storage.thumbnailHighlight.path = thumbnail;
   }, [editor, thumbnail]);
 
   // The shared insert dialog opens from the slash menu, which reaches React the only way an
   // extension can: a DOM event on the editor's own element (embed-extension.ts's
   // `openInsertDialog`, docs/embed-requirements.md §24.2). Listened for through `editorRef` for the
-  // reason the effect above uses it — the handle for work outside React's render flow.
+  // reason the ownSlug effect uses it — the handle for work outside React's render flow, and a
+  // passive effect like that one, so the ref is filled by the time it runs (which is exactly what
+  // the layout effect above cannot assume).
   useEffect(() => {
     const live = editorRef.current;
     if (!live) return;
