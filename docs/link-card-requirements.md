@@ -1240,10 +1240,10 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 
 **機構**:
 
-- `ImageBubble.tsx` が画像の NodeSelection 上に浮かぶ吹き出しメニューで、「サムネイルに設定」（`isUploadPath` を満たす画像にのみ表示、トグル）と「削除」を持つ。ラベルは選択中かどうかで変えない — 文言を変えるとボタン幅が変わり、押した指の下で `削除` が動く。状態は `active` の背景ハイライトだけで示す。削除はモバイルでの代替手段として追加した — NodeSelection を Backspace で消す操作には専用の UI が無く、`block-drag-handle.ts` の並べ替えドラッグも `mousedown` 起点でタッチには効かない。
-- 配置は `placement: 'top-start'`（`TableToolbar` / `LinkBubble` と同じ）と `updateDelay={0}`。**画像の右端に寄せる `top-end` は使えない** — floating-ui は `-start` を `reference.left` に置くのに対し `-end` は `reference.right - floating.width` で解くので、メニュー自身の幅を測る。ボタンは portal 内の React の子で、`canBeThumbnail` は未選択の間 false なので、プラグインが位置を決める瞬間の中身は `削除` だけ、つまり常に 1 レンダー前の幅になる。`top-end` で実測すると画像の右端より 107.05px 右にずれ（`サムネイルに設定` の 105.05px + `gap-0.5` の 2px）、無関係なリサイズが再配置するまでそのまま残った（2026-09-07）。`updateDelay` の既定値 250ms はこのズレを隠していたが、その 250ms はメニューが出るまでの遅延そのものでもある（`@tiptap/extension-bubble-menu` の `update` は `updateDelay > 0 && hasValidSelection` でデバウンス経路に入り、画像の NodeSelection は leaf atom で `to === from + 1` なので必ず空でない）。幅に依存しない配置にして、遅延は 0 に戻した。
+- `ImageBubble.tsx` が画像の NodeSelection 上に出る吹き出しメニューで、サムネイルのトグル（`isUploadPath` を満たす画像にのみ表示）と「削除」を持つ。**トグルのラベルは動作を述べ、状態で入れ替わる** — 「サムネイルに設定」/「サムネイルを解除」。どちらも全角 8 文字で幅が変わらないため、`削除` は動かない。`active` の背景ハイライトは残す — 二つのラベルは 8 文字中 3 文字しか違わず、一瞥では読み分けにくいため、二次信号として働く。削除はモバイルでの代替手段として追加した — NodeSelection を Backspace で消す操作には専用の UI が無く、`block-drag-handle.ts` の並べ替えドラッグも `mousedown` 起点でタッチには効かない。
+- 配置は `placement: 'top-start'` と `updateDelay={0}`。**`top-end` は使えない** — floating-ui は `-start` を `reference.left` に置くのに対し `-end` は `reference.right - floating.width` で解くので、メニュー自身の幅を測る。ボタンは portal 内の React の子で、`canBeThumbnail` は未選択の間 false なので、プラグインが位置を決める瞬間の中身は `削除` だけ、つまり常に 1 レンダー前の幅になる。`top-end` で実測すると画像の右端より 107.05px 右にずれ（`サムネイルに設定` の 105.05px + `gap-0.5` の 2px）、無関係なリサイズが再配置するまでそのまま残った（2026-09-07）。`updateDelay` の既定値 250ms はこのズレを隠していたが、その 250ms はメニューが出るまでの遅延そのものでもある（`@tiptap/extension-bubble-menu` の `update` は `updateDelay > 0 && hasValidSelection` でデバウンス経路に入り、画像の NodeSelection は leaf atom で `to === from + 1` なので必ず空でない）。幅に依存しない配置にして、遅延は 0 に戻した。右端への固定は §22.1 の CSS が担う。
 - 明示指定は本文から消えると自動で外れる。`lib/thumbnail.ts` の `bodyContainsImage(body, path)` が `MARKDOWN_IMAGE`/`HTML_IMAGE` の全一致を見て判定し、`PostEditor.tsx` は `body` が変わるたびにこれを確認する（render 中の "adjust state when a value changes" パターンで、`markEdited` は本文を変えた編集そのものが既に呼んでいるので、ここでは呼び直さない）。
-- 選択中の画像には赤いリングを引く（`thumbnail-highlight-extension.ts`、`.thumbnail-image` — `app/globals.css`）。**当初はディスパッチしたトランザクションでプラグイン状態に持たせていたが、実測でこれが壊れた**: `editor.view.dispatch` は React エフェクトから独立して呼ばれる標準のトランザクションで、全プラグインの `appendTransaction` を編集と無関係なタイミングで走らせる。`trailing-node-extension.ts` の追記フックがこの瞬間に反応し、`onUpdate` が発火して `markEdited` が呼ばれ、公開直後の投稿が「未公開の変更あり」に戻ることがあった（4/4 再現、`e2e/thumbnail.spec.ts` で検出）。今は `link-card-extension.ts` の `ownSlug` と同じ形——`editor.storage.thumbnailHighlight.path` に値を持たせ、`PostEditor.tsx` の layout effect（`useEditor` 自身の `onRender` が毎レンダー無条件に呼ぶ `setOptions`→`view.updateState` より先に走る必要があるため、passive effect ではなく layout effect）が書き込む。ディスパッチもプラグイン状態も無い。
+- 指定中の画像には印を付ける（`thumbnail-highlight-extension.ts` が `Decoration.node` でクラスを置き、描画は `app/globals.css`。見た目は §22.1）。**当初はディスパッチしたトランザクションでプラグイン状態に持たせていたが、実測でこれが壊れた**: `editor.view.dispatch` は React エフェクトから独立して呼ばれる標準のトランザクションで、全プラグインの `appendTransaction` を編集と無関係なタイミングで走らせる。`trailing-node-extension.ts` の追記フックがこの瞬間に反応し、`onUpdate` が発火して `markEdited` が呼ばれ、公開直後の投稿が「未公開の変更あり」に戻ることがあった（4/4 再現、`e2e/thumbnail.spec.ts` で検出）。今は `link-card-extension.ts` の `ownSlug` と同じ形——`editor.storage.thumbnailHighlight.path` に値を持たせ、`PostEditor.tsx` の layout effect（`useEditor` 自身の `onRender` が毎レンダー無条件に呼ぶ `setOptions`→`view.updateState` より先に走る必要があるため、passive effect ではなく layout effect）が書き込む。ディスパッチもプラグイン状態も無い。
 
 **受け入れ基準**
 
@@ -1254,4 +1254,32 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 | 22c | 明示指定が一覧・カード・`og:image` の3面に届く（フォールバックと取り違えない） | 同上                                  |
 | 22d | 明示指定した画像を本文から削除すると、指定が自動で外れフォールバックに戻る     | 同上                                  |
 | 22e | 画像をクリックしたその場でメニューが出る（デバウンス経路に入らない）           | `e2e/image-bubble-position.spec.ts`   |
-| 22f | メニューの左端が画像の左端に載り、あとから再配置されない                       | 同上                                  |
+| 22f | メニューが後から再配置されない（リサイズで動かない）                           | 同上                                  |
+
+### 22.1 本文画像の見え方とエディタのクロム（2026-09-07 実装）
+
+**決定**: 本文の画像は**両面とも原寸で中央**に置く。エディタ側だけが二重の箱に包まれ、そこにサムネイルの印と吹き出しメニューが載る。**エディタは画像を拡大しない** — 絵の大きさと精細さは公開後と一致する。
+
+**機構**:
+
+- **中央寄せ**は `.prose img:not([class])` の `margin-inline: auto`。`<img>` を block にするのは Tailwind の preflight（"Make replaced elements `display: block` by default"）で、この規則の `display` / `max-width` / `height` はその再掲 — 中央寄せが base レイヤ頼みにならないよう残してあるだけ。列より狭い画像が左に寄ると空きが「余り」に見えるのが理由で、Zenn は中央・Qiita は左寄せと外部の慣習は割れている（両サイトのスタイルシートから実測、2026-09-07）。
+- **セレクタの `:not([class])` は効いている**。この site がクロムとして描く `<img>` は必ずクラスを持ち（`.link-card-image` / `.link-card-result-image`、どちらも `.prose` の内側）、著者の画像は持ち得ない — `rehype-sanitize` の schema が `img` に `className` を通さないため（`defaultSchema.attributes.img` は `src` と aria 3 種のみ、`lib/render.ts` も `img` には何も足さない）。外すと `background` がリンクカードの絵にも届き、カード側は `background` を持たないので、`/api/link-image` が返るまでのあいだ暗いカードの中に白い矩形が出る。`background` 自体は透過 PNG がページの地を透かさないための保険で、実アップロード 4 枚はいずれも完全に不透明（実測。`public/uploads` の残り 2 ファイルは 1×1 のテスト素材）。
+- **箱は二段**（`image-extension.ts` の `renderHTML`、エディタのみ。公開ページは markdown から描画するので保存形式も出力も変わらない）。`.image-box` は絵に縮み込み、印とメニューが載る — `<img>` は replaced element で `::before`/`::after` を持てないため。`.image-block` は列幅で、**ドラッグハンドルの出現範囲**を担う（ハンドルは `:has(+ :hover)` で直後の要素の box に反応するので、中央寄せした絵の脇の空白がその box に入っている必要がある）。ハンドルの x は担っていない — `.block-drag-handle` は固定の `left` で、`alignHandles` は `top` しか触らない。
+- **印は言葉のバッジ＋ 1px の線**で、色は固定の近黒。テーマで反転させない — 印はページの地ではなく画像の内容の上に載るため、`--foreground` にするとダークモードで白地スクショの上から消える（実測、2026-09-07）。赤を使わないのは、この editor で赤が「隣と効果が逆の破壊的操作」の signal だから（`表を削除` / `解除` / `リンクに戻す` / この menu の `削除`）。線は縦長のために残す — バッジは一隅にしかなく、350×696 はこの列で画面高を超えるので、上端が画面外に出るとバッジごと消える。
+- **印は選択中だけ引っ込む**。`Decoration.node` のクラスと `.ProseMirror-selectednode` は同じ要素に乗るのでセレクタ 1 本で済み、JS を要さない。そのあいだ状態を述べるのはメニューの「サムネイルを解除」で、メニューの位置ではない — 密着しているときは印の隅を覆い、上に出ているときは覆わないので、覆いの有無を条件にすると JS が要る。`canBeThumbnail` と `.thumbnail-image` は同じ `isUploadPath` を見ているため、印のある絵には必ずこのラベルがある。青い選択リングは同時に縁を示す。
+- **メニューの位置は 2 軸とも CSS の transform**。floating-ui には `top-start` と `offset: 0`、つまり絵の左上しか解かせない。`translate(calc(var(--anchor-width, 100%) - 100%), 100%)` が右上へ運ぶ — `100%` はペイント時にメニュー自身の box に対して解決されるので、1 レンダー古くなり得ない。アンカーは `nodeDOM` が返す `.image-block` ではなく `.image-box`（前者は列幅なので、中央寄せした絵の脇に浮く）。`flip` と `shift` は無効（どちらもビューポートに収めるための機構で、絵の中にある以上不要）。
+- **絵がメニューより狭いときだけ、メニューは絵の上に戻る**。密着させると左にはみ出して絵の上端を覆い、絵がメニューより低ければ覆い切る（120×24 で実測、2026-09-07）。
+- **この判定は React の commit 後にしか成り立たない**（`ImageBubble.tsx` の `fitMenuToPicture`）。比較の相手はメニュー自身の幅で、それは React の描画結果だから — `dispatchTransaction` は `view.updateState`（＝プラグインの `updatePosition`）を `transaction` の emit より先に走らせるので、位置決めコールバックの中で判定すると 1 つ前の描画、つまり `削除` だけの約 44px を読む。実際のメニューは約 151px で、**この 2 つの幅に挟まれた絵はすべて密着させられ、覆われていた**（実測、2026-09-07）。判定は毎レンダー後の layout effect が持ち、コールバックはその写しを借りるだけ（描画を伴わない唯一の経路 — プラグインの `resizeHandler` — のために残してある）。
+
+**受け入れ基準**
+
+| ID  | 基準                                                          | 測り方                              |
+| --- | ------------------------------------------------------------- | ----------------------------------- |
+| 22g | 列より狭い絵が列の中央に来る（列幅いっぱいの絵を対照に）      | `e2e/image-layout.spec.ts`          |
+| 22h | 中央寄せした絵の脇の空白からドラッグハンドルが出る            | 同上                                |
+| 22i | 指定中の画像だけがバッジと 1px の線を持つ                     | `e2e/thumbnail-marker.spec.ts`      |
+| 22j | 選択するとバッジと線が消え、選択を外すと戻る                  | 同上                                |
+| 22k | トグルのラベルが状態で入れ替わり、往復する                    | 同上                                |
+| 22l | メニューが絵の右上に密着する（列幅の block ではなく絵に載る） | `e2e/image-bubble-position.spec.ts` |
+| 22m | 絵がメニューより狭いときはメニューが上に出て、絵を覆わない    | 同上                                |
+| 22n | メニューの 2 つの幅に挟まれた絵でも 22m が成り立つ            | 同上                                |

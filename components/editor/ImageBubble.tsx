@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
@@ -19,6 +19,32 @@ function selectedImage(editor: Editor): { from: number; src: string } | null {
   return { from: selection.from, src: typeof src === 'string' ? src : '' };
 }
 
+// The two things globals.css needs to place the menu: the anchor's width, and whether the picture
+// can host the menu at all. A picture narrower than the menu cannot — fitted into its corner the
+// menu overhangs to the left and covers the picture's top band, and at 120x24 covers it whole —
+// so there the menu stays above the picture, where `top-start` already puts it.
+//
+// **The comparison is only true after React has committed.** The menu's width is React's:
+// `@tiptap/core`'s `dispatchTransaction` runs `view.updateState` — and with it the plugin's
+// `updatePosition` — before it emits `transaction`, which is what re-renders this component. So a
+// decision taken inside the positioning callback measures the PREVIOUS render's menu: 削除 alone
+// (~44px) on the first show after a deselect, where the committed menu is ~151px. Measured
+// 2026-09-07: every picture between those two widths was given the corner and covered by it.
+//
+// Which is why the layout effect below owns this call, and the positioning callback only borrows
+// it. The callback's copy covers the one path that reaches here with no render at all — the
+// plugin's `resizeHandler`, where a window resize can shrink a `max-width: 100%` picture under a
+// menu whose width is already settled.
+function fitMenuToPicture(menu: HTMLElement, picture: HTMLElement): void {
+  const width = picture.getBoundingClientRect().width;
+  menu.style.setProperty('--anchor-width', `${width}px`);
+  // `@tiptap/react`'s `syncClassName` assigns `element.className` wholesale, so a class written
+  // from the positioning callback would be dropped by the render that follows it. React runs a
+  // child's layout effects before its parent's and the menu is the child, so the effect below
+  // always writes this back within the same commit, before paint.
+  menu.classList.toggle('is-outside', width < menu.offsetWidth);
+}
+
 // The floating menu over a selected image: 削除 always, plus a thumbnail toggle gated on
 // `isUploadPath` — the server coerces anything else back to '' (app/actions/posts.ts), so an
 // ungated button would silently do nothing on save. Sibling of TableToolbar/LinkBubble, not a
@@ -29,9 +55,8 @@ export function ImageBubble({
   onSetThumbnail,
 }: {
   editor: Editor;
-  // The post's chosen thumbnail path ('' = none chosen), so the button reads as a toggle: the
-  // label stays 「サムネイルに設定」 either way, and only `active`'s highlight says whether this
-  // image is the one.
+  // The post's chosen thumbnail path ('' = none chosen). It is what makes the button a toggle:
+  // both its label and its `active` highlight are read off whether this image is the one.
   thumbnail: string;
   onSetThumbnail: (next: string) => void;
 }) {
@@ -41,70 +66,58 @@ export function ImageBubble({
   // closure each render would loop forever.
   const shouldShow = useCallback(() => selectedImage(editor) !== null, [editor]);
   const appendTo = useCallback(() => document.body, []);
-  // The menu sits in the picture's own top-right corner rather than floating above the block.
+  // The menu sits in the picture's own top-right corner rather than floating above the block, and
+  // **floating-ui is never told where that corner is.** It solves `top-start`, which is
+  // `reference.left` and measures nothing about this menu; CSS carries the menu from there into
+  // the corner (globals.css), where `100%` in a transform resolves against the menu's own box at
+  // paint time and so can never be a render behind. `top-end` would have been the direct route
+  // and is unusable for exactly that reason — it solves x as `reference.right - floating.width`,
+  // measuring a menu whose buttons are React children of a portal, one render behind the
+  // transaction that positions it (`canBeThumbnail` is false while nothing is selected, so the
+  // element still holds 削除 alone at that moment). Measured on `top-end`: 107.05px past the
+  // picture's right edge, exactly the 105.05px button plus the gap, and it stayed there until an
+  // unrelated resize corrected it.
   //
-  // `top-start`, never `top-end`, and the difference is not cosmetic: floating-ui solves a
-  // `-start` menu at `reference.left` and an `-end` one at `reference.right - floating.width`, so
-  // only the latter measures this menu — and its buttons are React children of a portal, one
-  // render behind the transaction that positions it (`canBeThumbnail` is false while nothing is
-  // selected, so the element still holds 削除 alone at that moment). Measured on `top-end`: the
-  // menu landed 107.05px past the picture's right edge, exactly the 105.05px button plus the gap,
-  // and stayed there until an unrelated resize corrected it. The right edge is reached by a CSS
-  // transform instead (globals.css), where `100%` resolves against this menu's own width at paint
-  // time and can never be a render stale.
-  //
-  // The negative `mainAxis` is what brings it inside: `top-start` puts the menu above the
-  // picture, and pulling it back down by its own height lands its top edge on the picture's.
-  // Height is safe to measure where width is not — the menu is always one row.
-  //
-  // **Unless the picture is narrower than the menu**, in which case the menu would cover it
-  // whole and the image could no longer be clicked to select it at all — measured, and it took
-  // three of `e2e/thumbnail.spec.ts`'s cases down with `intercepts pointer events`. There the
-  // menu goes back above the picture, its original place. `outsideRef` rather than deciding
-  // again here: this and the transform below have to agree, and the width the offset callback
-  // sees is the one that can be a render stale, so the decision is made once against the live
-  // element in `getReferencedVirtualElement` and only read here.
+  // `offset: 0`, so the placement is the picture's top edge and nothing else. The 8px gap the
+  // menu takes when it cannot fit belongs to that one case, and that case is a CSS class
+  // (`.is-outside`, set by `fitMenuToPicture`) — one number, in one file.
   //
   // `flip` and `shift` are off. Both exist to keep a menu inside the viewport, and this one is
   // inside the picture, which is inside the column.
-  const outsideRef = useRef(false);
   const options = useMemo(
-    () => ({
-      placement: 'top-start' as const,
-      offset: ({ rects }: { rects: { floating: { height: number } } }) => ({
-        mainAxis: outsideRef.current ? 8 : -rects.floating.height,
-      }),
-      flip: false,
-      shift: false,
-    }),
+    () => ({ placement: 'top-start' as const, offset: 0, flip: false, shift: false }),
     [],
   );
   // The element the plugin's own `ref` hands back — the portal div the menu renders into.
   const menuRef = useRef<HTMLDivElement | null>(null);
-  // Anchored to the PICTURE's box, not the block's. `nodeDOM` returns `.image-block`, which is
-  // column-wide (image-extension.ts), so anchoring there would leave the menu floating in the
-  // empty column beside a centred picture rather than on it.
-  //
-  // The anchor's width is published to CSS here because this callback runs inside the plugin's
-  // `updatePosition`, with the live box in hand. It is not React-rendered chrome, so unlike the
-  // menu's own width it is never a render behind.
-  const getReferencedVirtualElement = useCallback(() => {
+  // The PICTURE's box, not the block's. `nodeDOM` returns `.image-block`, which is column-wide
+  // (image-extension.ts), so anchoring there would leave the menu floating in the empty column
+  // beside a centred picture rather than on it.
+  const pictureBox = useCallback((): HTMLElement | null => {
     const image = selectedImage(editor);
     if (!image) return null;
     const block = editor.view.nodeDOM(image.from);
     if (!(block instanceof HTMLElement)) return null;
-    const picture = block.querySelector<HTMLElement>('.image-box') ?? block;
-    const width = picture.getBoundingClientRect().width;
+    return block.querySelector<HTMLElement>('.image-box') ?? block;
+  }, [editor]);
+  const getReferencedVirtualElement = useCallback(() => {
+    const picture = pictureBox();
+    if (!picture) return null;
     const menu = menuRef.current;
-    // One decision, read by both the offset above and the transform in globals.css.
-    outsideRef.current = menu !== null && width < menu.offsetWidth;
-    menu?.classList.toggle('is-outside', outsideRef.current);
-    menu?.style.setProperty('--anchor-width', `${width}px`);
+    if (menu) fitMenuToPicture(menu, picture);
     return {
       getBoundingClientRect: () => picture.getBoundingClientRect(),
       contextElement: picture,
     };
-  }, [editor]);
+  }, [pictureBox]);
+  // No dependency array: what this measures is the render itself — the menu's committed width —
+  // so it has to run after every one of them, and before paint, which is why it is a layout
+  // effect rather than a passive one.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    const picture = pictureBox();
+    if (menu && picture) fitMenuToPicture(menu, picture);
+  });
 
   const image = selectedImage(editor);
   const isCurrentThumbnail = image !== null && thumbnail !== '' && image.src === thumbnail;

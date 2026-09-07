@@ -606,12 +606,14 @@ body.link-menu-open .table-toolbar {
 /* Editor-only chrome: the image's bubble menu (ImageBubble.tsx), fitted into the picture's own
    top-right corner rather than floating above the block.
 
-   **The transform is what pins the right edge**, not the placement. floating-ui's `top-end` would
-   solve x from this menu's own width, which is one React render behind whenever the button set
-   changes; `100%` here resolves against the menu's current width at paint time and cannot be
-   stale. `--anchor-width` is the picture box's width, written by `getReferencedVirtualElement`
-   from the live box. The fallback keeps a menu that somehow has no anchor width at the left edge
-   rather than off-screen.
+   **The transform is what places it**, on both axes; floating-ui only solves the picture's
+   top-left corner (`top-start`, `offset: 0`). Its `top-end` would have solved x from this menu's
+   own width, which is one React render behind whenever the button set changes; `100%` here
+   resolves against the menu's current width at paint time and cannot be stale. `translateY(100%)`
+   is the same trick vertically — the menu is placed above the picture and pushed down by its own
+   height, so its top edge lands on the picture's. `--anchor-width` is the picture box's width,
+   written by `fitMenuToPicture` from the live box; the fallback keeps a menu that somehow has no
+   anchor width at the left edge rather than off-screen.
 
    Square, and hard-bordered. Two of its corners meet the picture's own edges, so rounding them
    would open a gap and read as dropped on top rather than fitted in. The border is `--foreground`
@@ -623,19 +625,20 @@ body.link-menu-open .table-toolbar {
    and padding are overridden here rather than parameterised, since this is the only menu that
    wants a segmented row. These rules are unlayered and so outrank those utilities. */
 .image-bubble {
-  transform: translateX(calc(var(--anchor-width, 100%) - 100%));
+  transform: translate(calc(var(--anchor-width, 100%) - 100%), 100%);
   border: 1px solid var(--foreground);
   border-radius: 0;
   padding: 0;
   align-items: stretch;
   box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.18);
 }
-/* A picture narrower than the menu cannot host it — the menu would cover the image whole and
-   clicking it would no longer select it (measured: `intercepts pointer events`). There the menu
-   goes back above the picture, so the left edges line up and nothing is covered.
-   ImageBubble.tsx makes the call, against the live element, and sets this class. */
+/* A picture narrower than the menu cannot host it: fitted into the corner the menu overhangs to
+   the left and covers the picture's top band — at 120x24 it covers the picture whole (measured
+   2026-09-07). There the menu keeps the place `top-start` gave it, above the picture, and takes
+   the 8px gap that `offset: 0` left out. `fitMenuToPicture` in ImageBubble.tsx sets this class,
+   after React has committed, because the width it compares against is the menu's own. */
 .image-bubble.is-outside {
-  transform: none;
+  transform: translateY(-8px);
 }
 .image-bubble .toolbar-button {
   border-radius: 0;
@@ -664,26 +667,39 @@ body.link-menu-open .table-toolbar {
    it means without a legend, which matters here because red already means something else in this
    editor: it is the signal for a destructive control sitting among neighbours that do the opposite
    (TableToolbar's 表を削除, LinkBubble's 解除, the card's リンクに戻す, and this menu's own 削除).
-   A state has no business wearing it. `--foreground`/`--background` invert together, so the plate
-   is near-black on white and near-white on black.
+   A state has no business wearing it.
+
+   **The colour does NOT follow the theme, and that was measured.** It first took
+   `--foreground`, which is near-white in dark mode — and this mark sits on the PICTURE, not on
+   the page. Captured in dark mode over the 390x220 editor screenshot: the hairline was invisible
+   against its white ground and the badge's plate dissolved into it, leaving the mark unreadable
+   in exactly the case it exists for (two of this blog's four real uploads are white-ground
+   screenshots). A fixed near-black reads on all four. It is not universal — a dark photo would swallow
+   it either way — but it fails on the rare content instead of the common. The bubble menu is
+   unaffected and needs no such rule: it carries its own fill, which inverts, and was legible in
+   the same capture.
 
    The line is the badge's, not a frame: same colour, subordinate by weight. At 2px and neutral it
    would read as decoration and be indistinguishable from an actual border. It earns its place on
    tall images — the badge is one corner, and 350x696 is taller than the viewport in this column,
    so scrolling past the top would otherwise take the only indicator with it.
 
-   Both step aside while the block is selected: the bubble menu is on the picture at that moment
-   and its 「サムネイルを解除」 carries the state, the blue ring above already frames the picture,
-   and one element can only draw one outline anyway. `Decoration.node`'s class and
-   `.ProseMirror-selectednode` land on the same element, so this needs no JS. */
+   Both step aside while the block is selected, and what carries the state there is the menu's
+   「サムネイルを解除」 — not the menu's position. The menu covers the badge's corner when it fits
+   into the picture and sits clear above it when it does not (`.is-outside`), so a rule keyed on
+   coverage would have to know which; the label is present either way, and `canBeThumbnail` and
+   `.thumbnail-image` gate on the same `isUploadPath`, so a marked picture always has it. The blue
+   ring above frames the picture meanwhile, and one element can only draw one outline anyway.
+   `Decoration.node`'s class and `.ProseMirror-selectednode` land on the same element, so this
+   needs no JS. */
 .prose .image-block.thumbnail-image .image-box::before {
   content: 'サムネイル';
   position: absolute;
   top: 0;
   left: 0;
   padding: 0.2rem 0.5rem;
-  background: var(--foreground);
-  color: var(--background);
+  background: #171717;
+  color: #ffffff;
   font-size: 0.6875rem;
   font-weight: 600;
   line-height: 1.2;
@@ -695,7 +711,7 @@ body.link-menu-open .table-toolbar {
   content: '';
   position: absolute;
   inset: 0;
-  border: 1px solid var(--foreground);
+  border: 1px solid #171717;
   pointer-events: none;
 }
 .prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::before,
@@ -1416,21 +1432,32 @@ body.link-menu-open .table-toolbar {
 /* Body images sit centred at their own size. Zenn does the same and Qiita does not (measured
    2026-09-07 from both sites' stylesheets), so this is a house choice rather than a convention —
    what settles it here is that an image narrower than the column reads as a lopsided gap when it
-   is left-aligned, and half of this blog's uploads are that narrow.
+   is left-aligned, and two of this blog's four real uploads are that narrow (390x220 and 350x696
+   against a ~766px column; the other two files in `public/uploads` are 1x1 test artifacts).
 
-   **`display` is load-bearing.** An `<img>` is inline by default and auto margins do nothing to an
-   inline box; Zenn reaches for `display: table` for the same reason, and block centres identically.
+   `margin-inline` is the whole rule. `display`, `max-width` and `height` restate Tailwind's own
+   preflight (`node_modules/tailwindcss/index.css`, "Make replaced elements `display: block` by
+   default"), which is what actually stops an `<img>`'s inline box from ignoring auto margins —
+   they are kept so the centring does not silently depend on a base layer this file does not own.
+
+   **`:not([class])` is the scope, and it is load-bearing.** Every `<img>` this site draws as
+   chrome carries a class — `.link-card-image`, `.link-card-result-image` — and both sit inside
+   `.prose`; an author's cannot, because `rehype-sanitize`'s schema allows no `className` on `img`
+   (`defaultSchema.attributes.img` is `src` and the three aria names, and lib/render.ts adds
+   nothing for the tag). Without the scope `background` reached the cards, which declare none of
+   their own, and painted a white plate in the fixed picture frame for as long as
+   `/api/link-image` took to answer — a lit rectangle inside a dark card.
 
    `background` is insurance, not decoration: a PNG with alpha would otherwise show the page through
    itself, which in dark mode reads as a hole. It is a constant light plate in both themes because a
    transparent image was almost always authored against a white page. Measured 2026-09-07: none of
-   the uploads in this blog carries any transparency (alpha 255 on every pixel), so this changes
-   nothing today.
+   the four uploads carries any transparency (alpha 255 on every pixel), so this changes nothing
+   today.
 
    Applies to both surfaces. In the editor the picture is wrapped (image-extension.ts), so the auto
    margins there land on `.image-box` below rather than on the `<img>`, which its own box already
    hugs. */
-.prose img {
+.prose img:not([class]) {
   display: block;
   max-width: 100%;
   height: auto;
