@@ -58,6 +58,11 @@ export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
   // table-extensions.ts, blockquote-extension.ts).
   linkCard: 'リンクカード',
   embed: '埋め込み',
+  // Same atom shape, named for consistency of the refusal rather than because it fails invisibly —
+  // a picture swapped for another picture is plainly visible (2026-09-08). 「画像ブロック」 rather
+  // than 「画像」 because this label is joined with 「と」 into one sentence: 「表のセルと画像ブロック
+  // には画像を挿入できません」 reads, 「画像には画像を挿入できません」 does not.
+  image: '画像ブロック',
 };
 
 function imageBlockedMessage(hosts: string[]): string {

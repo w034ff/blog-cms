@@ -67,8 +67,17 @@ export const Blockquote = BaseBlockquote.extend({
       // for, and it stuck the card under the wrong parent instead of leaving it alone (reported
       // 2026-09-05). Toolbar.tsx's "no command guard is needed" note is about the table-cell
       // refusal `can()` already reports on its own — it doesn't cover this NodeSelection case.
+      //
+      // `image` joins them for consistency of the refusal (2026-09-08), and it is the one of the
+      // four whose cost is worth stating: wrapIn *wraps*, it does not replace, so quoting a
+      // selected picture was never destructive the way the callout/table/image cases are. It is
+      // named anyway because the four controls refuse over a selected block atom as one rule, and
+      // a rule with one exception in it is not one an author can predict. The cost lands on the
+      // range scan, not the NodeSelection: a text selection running paragraph→picture→paragraph
+      // can no longer be quoted either. That is `selectionTouches`' existing behaviour for
+      // linkCard/embed, applied to a node that appears in body prose far more often.
       toggleBlockquote: () => (props) => {
-        if (selectionTouches(props.state, 'linkCard', 'embed')) return false;
+        if (selectionTouches(props.state, 'linkCard', 'embed', 'image')) return false;
         return parent?.toggleBlockquote?.()(props) ?? false;
       },
     };

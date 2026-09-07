@@ -352,7 +352,23 @@ export const Callout = TiptapNode.create<CalloutOptions>({
           // whose range is exactly that node — insertContent then replaces it wholesale rather than
           // leaving it alone, and the card or embed the author had selected simply vanished
           // (reported 2026-09-05).
-          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary', 'linkCard', 'embed'))
+          //
+          // `image` is the same atom shape and takes the same name for consistency, not because it
+          // fails the same way: swapping a picture for an empty callout is *visible*, where the
+          // card's disappearance was not. The point is that the four controls refuse over a
+          // selected block atom as one rule — a fifth type that refuses in three of them and not
+          // the fourth is the thing an author cannot predict (2026-09-08).
+          if (
+            selectionTouches(
+              state,
+              'table',
+              'blockquote',
+              'detailsSummary',
+              'linkCard',
+              'embed',
+              'image',
+            )
+          )
             return false;
           return commands.insertContent({
             type: this.name,

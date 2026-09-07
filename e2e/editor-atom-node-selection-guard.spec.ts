@@ -13,6 +13,10 @@ const CARD_HREF = '/posts/second-post';
 const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
 const EMBED_MD =
   '<div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo"></div>';
+// A real upload rather than one of the 1x1 fixtures: the paste below inserts a 1x1, so a picture
+// that is also 1x1 would leave the two indistinguishable if the guard ever let the swap through.
+const IMAGE_MD =
+  '![](/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png)';
 
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -30,9 +34,33 @@ async function pasteImage(page: Page): Promise<void> {
   }, PNG_1x1_BASE64);
 }
 
-for (const { label, typeName, markdown, viewClass } of [
-  { label: 'a link card', typeName: 'linkCard', markdown: CARD_MD, viewClass: 'link-card-view' },
-  { label: 'an embed', typeName: 'embed', markdown: EMBED_MD, viewClass: 'embed-view' },
+// `blockedLabel` is the row's own name in IMAGE_BLOCKED_HOSTS — the refusal notice quotes it, and
+// asserting the exact string is what keeps this test from passing on some *other* refusal.
+for (const { label, typeName, markdown, viewClass, blockedLabel } of [
+  {
+    label: 'a link card',
+    typeName: 'linkCard',
+    markdown: CARD_MD,
+    viewClass: 'link-card-view',
+    blockedLabel: 'リンクカード',
+  },
+  {
+    label: 'an embed',
+    typeName: 'embed',
+    markdown: EMBED_MD,
+    viewClass: 'embed-view',
+    blockedLabel: '埋め込み',
+  },
+  // A body image is the same shape — a selectable block atom — and was left out of all four guards
+  // until 2026-09-08. It differs from the two above in that its losses were visible rather than
+  // silent, which is why it was not part of the original report; the refusal is uniform anyway.
+  {
+    label: 'an image',
+    typeName: 'image',
+    markdown: IMAGE_MD,
+    viewClass: 'image-box',
+    blockedLabel: '画像ブロック',
+  },
 ]) {
   test(`selecting ${label} disables 囲み枠/表/引用/画像 and none of them touch it`, async ({
     page,
@@ -69,18 +97,28 @@ for (const { label, typeName, markdown, viewClass } of [
     // inferred from a disabled control (useImageUpload.ts's own reasoning for the table/code-block
     // cases this mirrors).
     //
-    // Baseline rather than an absolute 0: the link card's own resolved view carries a favicon
-    // `<img>` of its own (fetched async off /api/posts/search, so it wasn't there right after
-    // loadMarkdown — the disabled-button assertions above gave it time to resolve), so what a
-    // refused paste must leave unchanged is the *count*, not "none".
-    const imgCountBefore = await page.locator('.ProseMirror img').count();
+    // **The refusal is asserted first, and that is what makes the rest of this a real reading.**
+    // A blocked paste is declined synchronously and never reaches /api/uploads; one that gets
+    // through has to round-trip the upload before it changes anything. So a document assertion
+    // taken straight after the gesture is green either way. Measured 2026-09-08 by deleting
+    // `image` from IMAGE_BLOCKED_HOSTS: every assertion below still passed, including the src
+    // comparison written to catch exactly that. The notice is the synchronous half.
+    //
+    // The srcs and not a count, for the image row: a guard that failed there swaps the selected
+    // picture for the pasted 1x1 and leaves the count at 1.
+    const srcs = () =>
+      page
+        .locator('.ProseMirror img')
+        .evaluateAll((els) => els.map((el) => (el as HTMLImageElement).getAttribute('src')));
+    const srcsBefore = await srcs();
     await selectNode(page, typeName);
     await pasteImage(page);
+    await expect(page.getByRole('status')).toHaveText(`${blockedLabel}には画像を挿入できません`);
 
     await expect(view).toBeVisible();
     await expect(page.locator('.ProseMirror div.markdown-alert')).toHaveCount(0);
     await expect(page.locator('.ProseMirror table')).toHaveCount(0);
     await expect(page.locator(`.ProseMirror blockquote .${viewClass}`)).toHaveCount(0);
-    await expect(page.locator('.ProseMirror img')).toHaveCount(imgCountBefore);
+    expect(await srcs()).toEqual(srcsBefore);
   });
 }

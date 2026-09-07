@@ -443,8 +443,13 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
           //
           // `linkCard`/`embed`: both are atoms, so selecting one gives a NodeSelection over exactly
           // that node, and the stock command replaces a NodeSelection outright — the card or embed
-          // was silently swapped for a fresh empty table (reported 2026-09-05).
-          if (selectionTouches(props.state, 'table', 'detailsSummary', 'linkCard', 'embed'))
+          // was silently swapped for a fresh empty table (reported 2026-09-05). `image` is named
+          // alongside them for consistency of the refusal rather than for invisibility: losing a
+          // picture to a fresh table is visible, but the four controls refuse over a selected block
+          // atom as one rule (2026-09-08 — callout-extension.ts carries the same note).
+          if (
+            selectionTouches(props.state, 'table', 'detailsSummary', 'linkCard', 'embed', 'image')
+          )
             return false;
           return parent?.insertTable?.(options)(props) ?? false;
         },
