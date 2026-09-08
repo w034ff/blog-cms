@@ -1,7 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
-import { caretPoint, cdpNativeDrag, dragSelect, type Point } from './native-drag';
+import {
+  CODE_EDGE_DOC,
+  CODE_EDGE_MD,
+  cdpNativeDrag,
+  dragSelect,
+  selectAcrossCodeEdge,
+} from './native-drag';
 
 // Content dragged out of the editor may not be dropped on the form fields beside it
 // (useDragContainment in components/editor/useDragContainment.ts).
@@ -18,11 +24,9 @@ import { caretPoint, cdpNativeDrag, dragSelect, type Point } from './native-drag
 //
 // All four fields are covered rather than the reported one: they are exposed by *being outside the
 // editor*, not by anything of their own, so a test naming only タイトル would keep passing if the
-// guard were narrowed to it. Same machinery as the other drop guards; see e2e/native-drag.ts.
-
-const MD = '前の段落です\n\n```ts\nconst x = 1;\n```\n\n後の段落です\n';
-const DOC =
-  'doc(paragraph("前の段落です"), codeBlock("const x = 1;\\n"), paragraph("後の段落です"))';
+// guard were narrowed to it. Same machinery as the other drop guards; see e2e/native-drag.ts, which
+// also owns the fixture and the selection this file and codeblock-header-drop-guard.spec.ts both
+// start from.
 
 const FIELDS = ['タイトル', 'カテゴリ', 'タグ（カンマ区切り）', '説明'] as const;
 
@@ -31,28 +35,8 @@ async function openEditor(page: Page): Promise<void> {
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
   await editor.click();
-  await loadMarkdown(page, MD);
-  expect(await docString(page)).toBe(DOC);
-}
-
-// From inside the code body down into the paragraph below it. Both endpoints are caret boundaries
-// measured on the rendered text (caretPoint, e2e/native-drag.ts) rather than pixel offsets into the
-// boxes, so the gesture reaches the same characters every run. Measuring also settles the vertical
-// question: the fence renders a trailing "\n", so the <code> box is two lines tall and its middle
-// lands on the empty second line, where a mousedown selects nothing — which would make every
-// assertion below pass vacuously (no selection, no dragstart, no drag to refuse). A caret measured
-// at the first character is on the first line by construction.
-async function selectAcrossCodeEdge(page: Page): Promise<Point> {
-  const editor = page.locator('.ProseMirror');
-  const from = await dragSelect(
-    page,
-    await caretPoint(editor.locator('.code-block code'), 1),
-    await caretPoint(editor.getByText('後の段落です'), 3),
-  );
-  const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
-  expect(selected).toContain('後の段');
-  expect(selected).toContain('x = 1;');
-  return from;
+  await loadMarkdown(page, CODE_EDGE_MD);
+  expect(await docString(page)).toBe(CODE_EDGE_DOC);
 }
 
 for (const label of FIELDS) {
@@ -70,7 +54,7 @@ for (const label of FIELDS) {
 
     // The document is the assertion that matters: the browser's move destroys the dragged range
     // whether or not anything lands in the field.
-    expect(await docString(page)).toBe(DOC);
+    expect(await docString(page)).toBe(CODE_EDGE_DOC);
     await expect(field).toHaveValue(before);
   });
 }
@@ -86,7 +70,7 @@ test('the fields still take typed input after a refused drop', async ({ page }) 
   // outright would look like a pass.
   await page.getByLabel('タイトル').fill('E2E ドラッグ封じ');
   await expect(page.getByLabel('タイトル')).toHaveValue('E2E ドラッグ封じ');
-  expect(await docString(page)).toBe(DOC);
+  expect(await docString(page)).toBe(CODE_EDGE_DOC);
 });
 
 // The reported symptom, and the one the document assertions above do not catch: after the drag the
@@ -177,5 +161,5 @@ test('a drag that stays inside the editor still moves the text', async ({ page }
   await cdpNativeDrag(page, from, { x: below.x + 40, y: below.y + below.height / 2 });
 
   const after = await docString(page);
-  expect(after, after).not.toBe(DOC);
+  expect(after, after).not.toBe(CODE_EDGE_DOC);
 });

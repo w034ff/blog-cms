@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 // Driving a native HTML5 drag to completion, for the drop guards.
 //
@@ -14,8 +14,8 @@ import type { Locator, Page } from '@playwright/test';
 // Input.dispatchDragEvent — a deterministic native `drop`. The dropped slice still comes from
 // view.dragging, so this stays faithful to a real text move.
 //
-// Shared by the three drop-guard specs (table, callout, code block header) rather than copied into
-// each: they exercise different guards but all need this same one gesture.
+// Shared by every spec that has to reach a native `drop` rather than copied into each: they
+// exercise different guards but all need this same one gesture.
 
 // The narrow subset of Input.DragData we build. The CDPSession command types already carry the
 // full Protocol shape; this is kept explicit to avoid leaning on the internal Protocol namespace.
@@ -123,4 +123,44 @@ export async function dragSelect(page: Page, start: Point, end: Point): Promise<
       y: mid(nearest),
     };
   }, end);
+}
+
+// The one document, and the one selection over it, that the two "a drag out of the editor destroys
+// the source" guards both start from — codeblock-header-drop-guard.spec.ts (refuseEditorDrag, the
+// code block's own header) and editor-drag-containment.spec.ts (useDragContainment, the form fields
+// beside the editor). They refuse different targets, but the exposure they are about is the same
+// one: Chrome runs its own move and deletes the dragged range straight out of the contenteditable,
+// so the selection has to span a boundary ProseMirror would never have authorized crossing.
+//
+// The fixture travels with the helper because the helper names its text. A spec that loaded some
+// other markdown and called this would fail on a locator rather than on the guard.
+export const CODE_EDGE_MD = '前の段落です\n\n```ts\nconst x = 1;\n```\n\n後の段落です\n';
+// The code block's trailing "\n" is what markdown-it's fence renderer emits; it is part of the
+// loaded document, not an artifact of the assertion.
+export const CODE_EDGE_DOC =
+  'doc(paragraph("前の段落です"), codeBlock("const x = 1;\\n"), paragraph("後の段落です"))';
+
+// From inside the code body down into the paragraph below it: the slice carries the code block and
+// the text/plain carries a newline, which is the shape both reports describe.
+//
+// Both endpoints are caret boundaries measured on the rendered text (caretPoint above) rather than
+// pixel offsets into the boxes: the callers' assertions count characters, so the gesture has to
+// reach the same ones every run. Measuring also settles the vertical question the box could not —
+// the fence renders a trailing "\n", so the <code> box is two lines tall and its midpoint lands on
+// the empty second line, where a mousedown selects nothing and the whole test passes vacuously. A
+// caret measured at the first character is on the first line by construction.
+//
+// Returns the drag origin for cdpNativeDrag.
+export async function selectAcrossCodeEdge(page: Page): Promise<Point> {
+  const editor = page.locator('.ProseMirror');
+  const from = await dragSelect(
+    page,
+    await caretPoint(editor.locator('.code-block code'), 1),
+    await caretPoint(editor.getByText('後の段落です'), 3),
+  );
+  // Guard the guard: assert the selection actually spans the boundary before dragging it.
+  const selected = await page.evaluate(() => window.getSelection()?.toString() ?? '');
+  expect(selected).toContain('後の段');
+  expect(selected).toContain('x = 1;');
+  return from;
 }
