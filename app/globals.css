@@ -1560,6 +1560,121 @@ body.link-menu-open .table-toolbar {
   transform: none;
 }
 
+/* Click a body image to see it filling the window (components/ImageZoom.tsx).
+
+   **`#post-body`, not `.prose`.** Both surfaces use `.prose`, and in the editor a click on an
+   image means "select this node" — so a `zoom-in` cursor there would be a lie. `#post-body` is the
+   published article's own container, and the two other client enhancers are already pointed at it.
+
+   The cursor is offered on every author image, the way note does it
+   (`.note-common-styles__textnote-body img.is-slide{cursor:zoom-in}`, measured 2026-09-08) —
+   unconditional, with no test of whether the picture is actually being shrunk by the column. */
+#post-body img:not([class]) {
+  cursor: zoom-in;
+}
+
+/* The overlay is a modal `<dialog>` rather than a `[popover]`: Escape, the backdrop, the focus
+   trap and the rest of the page going inert all come with `showModal()`, where `popover="manual"`
+   would leave every one of them to be written by hand. The UA's own `dialog` box (a centred,
+   bordered, `max-width: calc(100% - 6px - 2em)` card) is undone here — the element IS the viewport,
+   which is also what makes a click on it a click on the backdrop (ImageZoom.tsx). */
+dialog.image-zoom {
+  position: fixed;
+  inset: 0;
+  display: none;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 1.5rem;
+  border: 0;
+  /* **The page's own ground, made translucent — not a black scrim.** Both sites this borrows from
+     do exactly that, and neither uses black or white: measured 2026-09-08 with the colour scheme
+     switched, note paints `.pswp__bg` in its body colour at `opacity: .9` (255,255,255 light /
+     32,42,48 dark) and Zenn washes its container at 80% with `blur(2px)` (255,255,255 / 8,29,53).
+     Zenn's shape is the one taken here, blur included.
+
+     The wash is on the dialog rather than on `::backdrop` on purpose: the dialog already fills the
+     viewport, and whether `::backdrop` inherits custom properties from its originating element
+     depends on the engine's version — `var(--background)` cannot be relied on there. */
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: blur(2px);
+}
+dialog.image-zoom[open] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+/* Stated transparent: the wash lives on the dialog above, and Chrome's own `::backdrop` default
+   would otherwise darken the page under it. */
+dialog.image-zoom::backdrop {
+  background: transparent;
+}
+/* `showModal()` makes the page behind inert to clicks and focus, but **not to the wheel** — the
+   article kept scrolling under the picture. This is the piece the browser does not give. No layout
+   shift comes with it because `html` already reserves the scrollbar's space (`scrollbar-gutter:
+   stable`, top of this file), so hiding the overflow does not widen the page under the overlay. */
+html:has(dialog.image-zoom[open]) {
+  overflow: hidden;
+}
+/* One step: the whole picture, as large as it fits. Panning and pinch-zoom are deliberately not
+   here — the saved markdown has no dimensions to zoom against (`![](src)`), and a gesture layer is
+   a different feature. `min-height: 0` is what lets the flex item shrink far enough for
+   `max-height` to bite on a tall picture. */
+/* **The magnifier is on the picture, not around it.** The picture is the thing that was zoomed
+   in, so it is what offers to zoom back out — and the click does exactly that (ImageZoom.tsx), so
+   the cursor is not a promise the page breaks. The space around it keeps the plain arrow: closing
+   on a backdrop press is a convention that needs no cursor of its own. */
+dialog.image-zoom img {
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: zoom-out;
+}
+/* The close control, in the corner note puts its own (40x40, top right — measured 2026-09-08).
+   Absolutely placed so it never takes space from the picture, and 40px square so it clears the
+   24px touch-target floor with room to spare. Its colours are stated for the backdrop, like the
+   caption below. */
+.image-zoom-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
+  color: var(--foreground);
+  cursor: pointer;
+}
+.image-zoom-close:hover {
+  background: color-mix(in srgb, var(--foreground) 22%, transparent);
+}
+.image-zoom-close:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 2px;
+}
+
+/* The chrome follows the theme because the wash does. It used to be stated light, which was right
+   while the backdrop was a fixed black scrim and became white-on-white the moment the wash became
+   the page's own ground. */
+.image-zoom-caption {
+  margin: 0;
+  max-width: 40rem;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  text-align: center;
+  cursor: default;
+}
+
 /* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
    full mouse-cursor of empty space. Re-assert prose's own first/last-child margin
    reset too — these rules are unlayered, so they outrank the plugin's (layered)

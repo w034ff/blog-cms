@@ -13,6 +13,7 @@ import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
+import { ImageZoom } from '@/components/ImageZoom';
 import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 
@@ -191,10 +192,12 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
             renders nothing itself — a copy button on each code block, a preview of the note behind
             each footnote reference (which stays a working anchor either way), and the height and
             missing-post fallback for an X embed, which only its own iframe can report
-            (docs/embed-requirements.md §10.5, §10.6). */}
+            (docs/embed-requirements.md §10.5, §10.6), and the click that opens a body image
+            full-window. */}
         <CodeCopyButtons targetId='post-body' />
         <FootnotePopover targetId='post-body' />
         <EmbedFrames targetId='post-body' />
+        <ImageZoom targetId='post-body' />
       </div>
       {showToc && <TocNavDesktop toc={toc} />}
     </article>
