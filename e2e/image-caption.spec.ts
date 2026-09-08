@@ -43,7 +43,8 @@ test('the editor marks an italic-only paragraph under an image as the caption', 
 
   // The stored markdown is the two-paragraph form the published rule reads.
   await expect(page.locator('input[name="body"]')).toHaveValue(
-    /!\[caption\]\(\/uploads\/[0-9a-f]+\.png\)\n\n\*キャプション\*$/,
+    // An uploaded image carries no alt — the file name is not one (useImageUpload.ts).
+    /!\[\]\(\/uploads\/[0-9a-f]+\.png\)\n\n\*キャプション\*$/,
   );
 });
 

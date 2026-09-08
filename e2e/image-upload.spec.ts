@@ -151,7 +151,9 @@ test('a block right after an image is not glued onto the image line', async ({ p
   // The image's markdown ends its own block: a blank line separates it from the quote, so the
   // `>` starts a line rather than trailing the image.
   const md = await page.locator('input[name="body"]').inputValue();
-  expect(md).toMatch(/!\[e2e pixel\]\(\/uploads\/[0-9a-f]+\.png\)\n\n> 引用です/);
+  // The alt stays empty: an uploaded image gets none, since the file name is not one
+  // (useImageUpload.ts). What this line is about is the blank line after the image.
+  expect(md).toMatch(/!\[\]\(\/uploads\/[0-9a-f]+\.png\)\n\n> 引用です/);
 
   // And it survives the round-trip through storage as an image plus a quote, not one paragraph.
   await page.getByLabel('タイトル').fill('画像の次のブロック');

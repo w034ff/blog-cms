@@ -15,19 +15,6 @@ export function imageFilesFromList(list: FileList | null | undefined): File[] {
   return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
 }
 
-// Build a starting alt text from a dropped/pasted file name: drop the extension
-// and turn separators into spaces so it reads as words. It seeds the image's alt
-// attribute (which tiptap-markdown serializes to `![alt](url)`); the author can
-// refine it later. Strip characters that would break the markdown image.
-function altTextFromFilename(name: string): string {
-  return name
-    .replace(/\.[^./\\]+$/, '')
-    .replace(/[[\]\r\n]+/g, ' ')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 // Shown when an insert is refused because of where the selection is. Named per host rather than
 // stating the rule both ways, because the case that most needs explaining is the one where the
 // author doesn't know they're near the host at all: a selection reaching out of a paragraph into a
@@ -146,11 +133,14 @@ export function useImageUpload(
         for (const file of files) {
           const url = await uploadImageFile(file);
           if (url === null) continue;
-          editor
-            .chain()
-            .focus()
-            .setImage({ src: url, alt: altTextFromFilename(file.name) })
-            .run();
+          // **No alt.** The file name used to be turned into one, on the theory that the author
+          // would refine it — but there is no control that edits an alt, so nothing ever did, and
+          // the one real body image in this blog carried its upload's sha256 as its alt (measured
+          // 2026-09-08). A hash read aloud is worse than silence, and it is worse than an empty
+          // alt in a second way: a filled one cannot be told apart from a considered one, so
+          // nothing can find it later. Empty is also what most body images on Zenn actually have —
+          // 55 of 89 sampled, and none of the 34 that do carry one shows a trace of a file name.
+          editor.chain().focus().setImage({ src: url }).run();
         }
       } finally {
         setUploading(false);
