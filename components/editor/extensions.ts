@@ -13,6 +13,7 @@ import { DropCursorGuard } from './drop-cursor-guard';
 import { IsolatingBoundary } from './isolating-boundary';
 import { LinkHighlight } from './link-highlight-extension';
 import { ThumbnailHighlight } from './thumbnail-highlight-extension';
+import { ImageCaption } from './image-caption-extension';
 import { LinkInputRule } from './link-input-rule';
 import { Link } from './link-extension';
 import { LinkPasteParagraphGuard } from './link-paste-paragraph-guard';
@@ -168,6 +169,10 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     // A decoration-only store, same shape as LinkHighlight above: rings whichever image node's
     // `src` matches the post's chosen thumbnail. See thumbnail-highlight-extension.ts.
     ThumbnailHighlight,
+    // Decoration-only as well: marks the paragraph after an image when it is nothing but italic
+    // text, which is what the published pipeline turns into a `<figcaption>`. See
+    // image-caption-extension.ts and lib/rehype-image-caption.ts — the two must agree.
+    ImageCaption,
     // `[text](url)` typed in the editor becomes a link. Sits outside the Link configuration above
     // because extension-link has no input rules of its own — see link-input-rule.ts and
     // docs/link-requirements.md §5.4.

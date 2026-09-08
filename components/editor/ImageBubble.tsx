@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { ToolbarButton } from './ToolbarButton';
+import { isCaptionParagraph } from './image-caption-extension';
 import { isUploadPath } from '@/lib/thumbnail';
 
 // The image node the caret is on, as a NodeSelection — clicking an image (or its drag handle)
@@ -43,6 +44,31 @@ function fitMenuToPicture(menu: HTMLElement, picture: HTMLElement): void {
   // child's layout effects before its parent's and the menu is the child, so the effect below
   // always writes this back within the same commit, before paint.
   menu.classList.toggle('is-outside', width < menu.offsetWidth);
+}
+
+// Where the caption goes and whether one is already there. The convention is a whole paragraph of
+// italic text directly after the image (docs/cms-features.md「画像キャプション」), so this button
+// only has to reach that one position — `isCaptionParagraph` is imported rather than restated
+// because the editor's decoration answers the same question and the two must not drift.
+//
+// Three cases, and the middle one is why this is not simply an insert: TrailingNode always keeps a
+// paragraph at the end of the document, so pressing this on the last image in a post almost always
+// finds an empty paragraph already sitting where the caption belongs. Inserting there would leave a
+// stray blank one behind.
+function captionSpot(
+  editor: Editor,
+  from: number,
+): { insertAt: number | null; caretAt: number } | null {
+  const image = editor.state.doc.nodeAt(from);
+  if (!image) return null;
+  const after = from + image.nodeSize;
+  const next = editor.state.doc.nodeAt(after);
+  if (next?.type.name === 'paragraph') {
+    // An existing caption is edited, not replaced: the caret goes to its end.
+    if (isCaptionParagraph(next)) return { insertAt: null, caretAt: after + 1 + next.content.size };
+    if (next.content.size === 0) return { insertAt: null, caretAt: after + 1 };
+  }
+  return { insertAt: after, caretAt: after + 1 };
 }
 
 // The floating menu over a selected image: 削除 always, plus a thumbnail toggle gated on
@@ -143,6 +169,31 @@ export function ImageBubble({
       // divider between the items — is in globals.css, because it has to reach inside
       // ToolbarButton's own utilities and the reasons are worth a paragraph each.
       className='image-bubble z-20 flex bg-white dark:bg-zinc-900'>
+      {image && (
+        <ToolbarButton
+          onClick={() => {
+            const spot = captionSpot(editor, image.from);
+            if (!spot) return;
+            const chain = editor.chain();
+            if (spot.insertAt !== null) chain.insertContentAt(spot.insertAt, { type: 'paragraph' });
+            // `scrollIntoView: false` for the thumbnail toggle's measured reason below. Unlike that
+            // one this focus carries a position, so it never takes the `delayedFocus` branch — but
+            // the caption sits directly under the picture the author is looking at either way, and
+            // nothing here asked the page to move.
+            //
+            // `setItalic`, not `toggleItalic`: the guarded toggle exists for accentEmphasis's
+            // exclusion (guarded-toggle-marks.ts) and the point here is to state the mark, not to
+            // flip it — pressing this twice must leave the caption a caption.
+            chain.focus(spot.caretAt, { scrollIntoView: false }).setItalic().run();
+          }}>
+          {/* Six characters against the thumbnail toggle's eight, so this is not what decides the
+              menu's width. The word is note's own for this field, and the two shorter candidates
+              are both taken by something else in this editor: 注釈 reads as the footnote
+              (footnote-literal-extension.ts) and 説明 is what an alt-text control would have to be
+              called. */}
+          キャプション
+        </ToolbarButton>
+      )}
       {canBeThumbnail && image && (
         <ToolbarButton
           active={isCurrentThumbnail}

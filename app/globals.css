@@ -1479,6 +1479,87 @@ body.link-menu-open .table-toolbar {
   margin-inline: auto;
 }
 
+/* The image caption, on both surfaces: a `<figcaption>` inside the figure this site's own
+   rehype stage builds (lib/rehype-image-caption.ts), and — in the editor, where no such figure
+   exists — the italic-only paragraph after an image that will become one
+   (components/editor/image-caption-extension.ts). Both selectors carry the same declarations
+   because the two surfaces must show the same picture (docs/link-card-requirements.md §22.1).
+
+   **The look is note's, measured 2026-09-08** (docs/cms-features.md「画像キャプション」): centred,
+   ~14px, and the BODY's colour rather than a muted grey — note states `color` at full strength
+   while Zenn drops its caption to a subtle grey. `inherit` rather than a literal is what carries
+   that across both themes, and is why this block has no dark counterpart.
+
+   `.image-figure` is this stage's own class, not prose's: `[data-rehype-pretty-code-figure]` is
+   also a figure with a figcaption (the code block's filename bar, §19.4 of the embed record), so
+   an unscoped `.prose figcaption` would restyle that instead. */
+/* The block keeps the 2em an uncaptioned image already has (typography's `img` margin, which
+   collapses out through the `<p>` that holds one), so a caption does not change how far the
+   picture sits from the text around it. The picture's own margins move onto the figure, and the
+   gap under it becomes the caption's 0.5rem — the number the editor half then has to match. */
+.prose .image-figure {
+  margin-block: 2em;
+}
+.prose .image-figure > img {
+  margin-block: 0;
+}
+.prose .image-figure > figcaption,
+.prose p.image-caption {
+  margin-top: 0.5rem;
+  font-size: 0.875em;
+  text-align: center;
+  color: inherit;
+}
+/* The editor's half of that arithmetic, and it is done from the caption's side on purpose. The
+   picture keeps typography's `img { margin: 2em 0 }`, which collapses out through `.image-box` and
+   `.image-block` (neither carries padding or border) and would otherwise win over the caption's
+   own margin — 32px in the editor against the page's 8px, measured 2026-09-08. A collapsed margin
+   is `max(positives) + min(negatives)`, so asking for `0.5rem - 2rem` here lands the pair on
+   exactly the 8px the figure draws. **`rem`, not `em`** — the picture's 2em resolves against the
+   body's 16px while this paragraph's own font-size is 0.875em, so the subtraction written in `em`
+   comes out 4px short of the picture's margin and leaves too wide a gap (measured 2026-09-08).
+
+   Done from this side so the picture keeps its own margins and needs no second decoration of its
+   own — the caption plugin marks the paragraph and nothing else. The number is tied to
+   typography's 2em; e2e/image-caption.spec.ts compares the gap on the two surfaces, so it goes red
+   rather than silent if that ever changes. */
+.prose p.image-caption {
+  margin-top: calc(0.5rem - 2rem);
+  margin-bottom: 2em;
+}
+/* The caption's placeholder, editor-only: pressing 「キャプション」 otherwise leaves nothing on
+   screen but a caret that moved to the middle, which says neither that the button worked nor what
+   the line is for. The code block's filename field carries the same argument in its own comment —
+   a control drawn as a borderless caption has no other way to announce itself — and note, whose
+   look this borrows, writes 「キャプションを入力」 in the same place.
+
+   **`display: block; height: 0`, not the accordion title's `float: left`.** The float is what keeps
+   a LEFT-aligned caret at offset 0 instead of pushing it past the placeholder; this line is
+   centred, and a left float would paint the copy in the corner while the caret sat in the middle.
+   A zero-height block inherits the centring and shortens no line box, so the caret stays where the
+   empty line puts it.
+
+   The state is narrow on purpose (`isPendingCaption`): the copy shows while the caption is being
+   opened and not on every empty line under a picture. Clicking away and back therefore takes it
+   away — the line is genuinely not a caption then, and the way back is the same button. */
+.prose p.image-caption[data-empty]::before {
+  content: 'キャプションを入力';
+  display: block;
+  height: 0;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Upright, on the surface that still has the markup. The published caption has no `<em>` left —
+   rehype unwraps it — but in the editor the italic mark is the notation and is still there, and
+   `.prose em` below skews it. The mark says "this line is the caption"; it is not a request for
+   italics, so the slant comes off here rather than the author being asked not to use the mark. */
+.prose p.image-caption em,
+.prose p.image-caption i {
+  display: inline;
+  transform: none;
+}
+
 /* Tighten the gap between paragraphs: prose's default 1.25em (~20px) reads as a
    full mouse-cursor of empty space. Re-assert prose's own first/last-child margin
    reset too — these rules are unlayered, so they outrank the plugin's (layered)

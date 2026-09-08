@@ -14,6 +14,7 @@ import { rehypeCodeSource } from './rehype-code-source';
 import { diffLineHighlight } from './shiki-diff-line-transformer';
 import { rehypeCollectToc, type TocEntry } from './rehype-collect-toc';
 import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
+import { rehypeImageCaption } from './rehype-image-caption';
 import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
 import { rehypeEmbed } from './rehype-embed';
 import { rehypeNewTabLinks } from './rehype-new-tab-links';
@@ -145,6 +146,13 @@ const processor = unified()
   // (docs/embed-requirements.md §19.4). After pretty-code, which builds the caption this rewrites,
   // and before rehypeNewTabLinks, which is what decides the anchor opens in a new tab.
   .use(rehypeCodeSource)
+  // An image paragraph plus a following emphasis-only paragraph become one figure with a caption
+  // (docs/cms-features.md「画像キャプション」). After sanitize for the same reason as the two
+  // stages below: `figure`/`figcaption` are not in the schema's `tagNames`, so the element is
+  // built where sanitize can no longer reach it. Before rehypeLinkCard and rehypeEmbed only for
+  // readability — a card and an embed are `<div>`s, never a bare `<p><img></p>`, so neither can
+  // produce or consume what this reads.
+  .use(rehypeImageCaption)
   // Turns each stored `<div class="link-card" data-href>` into a card, a plain link, or nothing
   // (docs/link-card-requirements.md §6.1). Last, and after sanitize for the same reason
   // pretty-code is: everything it builds is this pipeline's own markup, so none of it has to be

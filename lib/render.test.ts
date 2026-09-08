@@ -1134,3 +1134,81 @@ describe('renderMdxToHtml — GitHub blob code block header (§19.4)', () => {
     }
   });
 });
+
+// The image caption (docs/cms-features.md「画像キャプション」). The rule is narrow on purpose —
+// the emphasis has to be the whole paragraph — so most of these pin what does NOT become a
+// caption, which is where a looser rule would take an author's ordinary prose with it.
+describe('renderMdxToHtml — image caption', () => {
+  const image = '![alt](/uploads/a.png)';
+
+  it('builds a figure from an image and the emphasis-only paragraph after it', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\n*キャプション*\n`);
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<figcaption>キャプション</figcaption>');
+    // The emphasis is the notation, not a request for italics — it does not survive into the
+    // caption, which is what keeps `.prose em`'s skew off the published line.
+    expect(html).not.toContain('<em>');
+    // And the paragraph wrappers are gone: the figure replaced both of them.
+    expect(html).not.toContain('<p><img');
+  });
+
+  it('leaves an image alone when the next paragraph is ordinary prose', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\nふつうの本文。\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<p><img src="/uploads/a.png" alt="alt"></p>');
+  });
+
+  it('refuses a paragraph that holds an emphasis plus anything else', async () => {
+    // The shape Zenn's general-sibling rule takes by mistake (measured: 6 of 71 sampled images
+    // sit one `*` away from it). Here the emphasis is not the paragraph's only child, so nothing
+    // happens and the author's sentence stays a sentence.
+    const { html } = await renderMdxToHtml(`${image}\n\nこの図は *重要* です。\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<em>重要</em>');
+  });
+
+  it('refuses two emphases in one paragraph', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\n*a* *b*\n`);
+    expect(html).not.toContain('figure');
+  });
+
+  it('keeps a caption whose emphasis wraps further markup', async () => {
+    // One `<em>` child still, so the rule holds and the inner markup rides along.
+    const { html } = await renderMdxToHtml(`${image}\n\n*a **b***\n`);
+    expect(html).toContain('<figcaption>a <strong>b</strong></figcaption>');
+  });
+
+  it('refuses a paragraph that follows something other than a lone image', async () => {
+    const { html } = await renderMdxToHtml(`本文。\n\n*キャプション*\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<em>キャプション</em>');
+  });
+
+  it('captions each image when two of them are captioned in a row', async () => {
+    const { html } = await renderMdxToHtml(
+      `${image}\n\n*一枚目*\n\n![alt](/uploads/b.png)\n\n*二枚目*\n`,
+    );
+    expect(html).toContain('<figcaption>一枚目</figcaption>');
+    expect(html).toContain('<figcaption>二枚目</figcaption>');
+  });
+
+  it('captions an image inside a container, not just at the top level', async () => {
+    // A blockquote and a callout are both `block+`, so an image and its caption can sit inside
+    // one. The stage walks the whole tree, which is why the editor's own rule descends into
+    // containers too instead of skipping straight past them.
+    const { html } = await renderMdxToHtml(`> ${image}\n>\n> *キャプション*\n`);
+    expect(html).toContain('<blockquote>');
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<figcaption>キャプション</figcaption>');
+  });
+
+  it('does not let a hand-written figure through sanitize', async () => {
+    // The stage runs after sanitize, so the only figure that can reach the page is the one this
+    // pipeline builds. An author's own is still stripped.
+    const { html } = await renderMdxToHtml(
+      '<figure><img src="/uploads/a.png"><figcaption>手書き</figcaption></figure>\n',
+    );
+    expect(html).not.toContain('<figure');
+    expect(html).not.toContain('figcaption');
+  });
+});
