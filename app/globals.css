@@ -244,6 +244,105 @@ body {
   }
 }
 
+/* Editor chrome, touch only: 40px of height per button. Measured 2026-09-09 on an emulated phone
+   (393px, `hover: none`): every button in the main toolbar and the table toolbar was 24.0px tall
+   and the image bubble's 25.6px — 24 CSS px is about 4.2mm against a finger's 7-9mm, and the gap
+   to the next button is 2px, so a miss does not fail, it presses the neighbour (斜体 for 太字).
+
+   **This is comfort, not conformance.** WCAG 2.2 SC 2.5.8 (AA) asks 24x24 and the smallest buttons
+   — B/I/S/A at 24.0x24.0 — sat exactly on it, with nothing left for a padding change to spend.
+   44px is SC 2.5.5 (AAA) and Apple's HIG, and `docs/link-card-requirements.md` §22.2 notes the
+   image bubble's icons fall short of it; 40px is where the finger is already served, and the last
+   4px are not worth what they cost below.
+
+   **Height for every button, width only where it is free.** Width is the dimension that has run
+   out: the toolbar already wraps, and a row it gains is 42px off a phone screen whose visible area
+   is 319px once the software keyboard is up (docs/embed-requirements.md, 2026-09-02), while the
+   height costs 16px per row once. Measured 2026-09-09: widening the 24px marks (B/I/S/A/引用) to
+   32px takes 390px and 393px from two rows to three, and 28px does it at 375px — so they keep
+   their width and take the height alone. The undo/redo pair is the exception, in its own rule
+   below.
+
+   `min-height`, so nothing has to be re-centred: a `<button>` centres its own content, and the
+   `inline-flex items-center` ones (the image label in Toolbar.tsx) centre theirs. Anything that is
+   a square gets the same figure as a `min-width`, or it would come out a sliver: the round variant
+   here, and the card head's icons in their own rule further down — that one has to sit after the
+   `min-width: 0` those buttons carry, so it is written beside it.
+
+   **The list is the editor's whole pressable chrome, not just the toolbar**, because the same
+   measurement found worse targets beside it: the link bubble's href line, which opens a tab, was
+   84.5x20, and the card head's icons 23x23 — the one place in the editor actually under the AA
+   floor. Raising the toolbar alone would have left them as the obvious next miss. All of them are
+   in rows that already stand 40px tall or in overlays that are free to grow, so this is height
+   nobody else pays for.
+
+   **The embed's band is out**, and it is the one place where 40px cost something: its button is
+   alone in the row, keeps its label at every width, and is 110.8x26.6 — five times an icon's area
+   and already over the AA floor, so the height was buying reach that the width had. What it cost
+   was the 4.3px between the button and the player below it: the band is `min-height: 2.2em`, so a
+   40px button fills it exactly and the ring comes to rest on the video (reported 2026-09-09, and
+   measured at 0px). The card head takes the height because its three icons are the opposite case. */
+@media (hover: none) {
+  .toolbar-button,
+  .dropdown-item,
+  .link-bubble-open,
+  .prose .link-card-head button {
+    min-height: 40px;
+  }
+  /* Undo and redo, and only those two, at the full 40px in both directions. Measured 2026-09-09
+     with the pair in place: the toolbar is two rows at 375px and above and three at 360px and
+     320px, and 40px wide is what those numbers are measured at — the pair's own width is not what
+     decides the row. It is not free for their neighbours: with the pair present, B/I/S/A/引用 can
+     go to 30px at 390px and above but 32px takes a row there, and at 375px even 28px does. 40
+     rather than more, so they square against the height rule above. */
+  /* And a gap after the pair, so the two histories and the format controls read as two groups
+     rather than one run of twelve. The row's own gap is 2px, which is what put 「やり直す」 hard
+     against 「大見出し」 — a press aimed at the heading and missed left lands on redo. 6px (8px
+     with the row gap) costs no row at any width: measured 2026-09-09, 4, 6, 8 and 12px all leave
+     the toolbar at its two rows from 375px up and its three at 360px and 320px.
+
+     Inside this block on purpose. The pair is `display: none` on a pointer but still in the DOM,
+     so the sibling selector matches there too — outside, this would open a 6px hole at the left
+     edge of a desktop toolbar whose first button is 「大見出し」. */
+  .toolbar-button-history + :not(.toolbar-button-history) {
+    margin-left: 6px;
+  }
+  .toolbar-button-history {
+    min-width: 40px;
+    /* Centred by hand for the reason the round variant is: the icon is a block-level `<svg>`, so
+       the width a `min-width` adds all lands to its right unless flex places it. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .toolbar-button-round {
+    min-width: 40px;
+    /* The centring is not automatic in this direction. A button centres its content vertically on
+       its own — measured 12px above and below the 16px icon in a 40px box — but the icon is a
+       block-level `<svg>`, so `text-align` does not reach it and the 12px the `min-width` adds all
+       went to the right of it (6px left, 18px right, measured 2026-09-09). Flex is what makes a
+       circle's icon sit at its centre; the tooltip span beside it is `position: absolute`, so it
+       is not a flex item and nothing about it moves. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Undo and redo are a touch control and nothing else, so they are drawn only where the pointer
+   has no `Mod-z` behind it (§12.4). Stated as "hide where there is hover" rather than "show where
+   there is not", so the buttons are in the markup at every width and one query decides whether
+   they are painted — a `matchMedia` in React would have to render one way first and correct
+   itself, which is the hydration mismatch §12.1 avoided for the table toolbar's labels.
+
+   `hover: hover` is the same test as the ring and the height above: a laptop with a touchscreen
+   and a mouse reports it, keeps its keyboard, and keeps the toolbar it already had. */
+@media (hover: hover) {
+  .toolbar-button-history {
+    display: none;
+  }
+}
+
 /* Editor-only chrome: `.ProseMirror` is the positioning context for the drag handles below —
    each is `position: absolute`, anchored here so it never displaces the block it belongs to. */
 .ProseMirror {
@@ -2507,7 +2606,13 @@ dialog.image-zoom img {
    by a few px, and that is all it takes. `e2e/editor-link-card.spec.ts` goes red if it is dropped. */
 .prose .link-card-head {
   display: flex;
-  align-items: center;
+  /* Top, for the reason written at `.prose .embed-head`: the band's slack was splitting above and
+     below the controls, and the half above joined the card's own padding — 17.3px from the box's
+     edge against 8.3px to the title (measured 2026-09-09). Top-aligned it is 13 against 12.6, and
+     the band's height does not move, which is what `editor-link-card.spec.ts` holds it to. Both
+     states take it: the picker's search box is the other thing this band holds, and the two states
+     agreeing about where their contents sit is the whole point of the fixed height above. */
+  align-items: flex-start;
   gap: 0.5em;
   min-height: 2.2em;
 }
@@ -2546,6 +2651,22 @@ dialog.image-zoom img {
   align-items: center;
   gap: 0.35em;
   min-width: 0;
+}
+/* The width half of the touch rule near the top of this file, and it lives here because it has to
+   overrule the `min-width: 0` directly above — same specificity, so the later one wins. Below 30rem
+   these three lose their labels and stand 23px wide; the height rule alone would leave them 23x40
+   slivers, and 23 is also the one width in the editor under WCAG 2.2 SC 2.5.8's 24px floor.
+
+   It does not reopen what the `min-width: 0` guards. That is there so a label too long for the band
+   ellipsizes instead of wrapping the row and growing a band whose height is fixed (§7.1); the
+   ellipsis is `.link-card-action-label`'s and keeps working, and a floor of 40px per button is
+   three of them in 136px including the gaps — measured against a 220px band at a 320px viewport,
+   which is the narrowest this chrome is drawn in. */
+@media (hover: none) {
+  .prose .link-card-head button {
+    min-width: 40px;
+    justify-content: center;
+  }
 }
 .prose .link-card-head button svg {
   display: block;
@@ -3089,7 +3210,14 @@ dialog.image-zoom img {
 }
 .prose .embed-head {
   display: flex;
-  align-items: center;
+  /* Top, not centre, and the band's own height is why. It is `min-height: 2.2em` (35.2px) around a
+     26.6px button, and centring split the 8.6px left over into 4.3px above and below — but above
+     the band there is also .embed-view's padding and border (9px), so the button sat 13.3px from
+     the box's edge and 4.3px from the player, reading as a control belonging to the video rather
+     than to the band (reported 2026-09-09). Top-aligned, the whole 8.6px falls below it: 9 above
+     against 8.6 below, with the band and the block exactly the heights they already were. The card
+     band takes the same line for the same reason. */
+  align-items: flex-start;
   justify-content: flex-end;
   gap: 0.5em;
   min-height: 2.2em;

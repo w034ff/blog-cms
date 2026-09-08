@@ -53,6 +53,7 @@ export function ToolbarButton({
   compact,
   accent,
   round,
+  historyControl,
   children,
 }: {
   onClick: () => void;
@@ -89,6 +90,11 @@ export function ToolbarButton({
   // sit in a floating card rather than in a row of the toolbar (LinkBubble). The square
   // hover fill reads as a segmented control when only three buttons share a card.
   round?: boolean;
+  // Marks the undo/redo pair, which takes a wider touch target than the rest of the row
+  // (app/globals.css's `hover: none` block). Only these two, and only because their presence
+  // has already cost the toolbar a row at every phone width — so the width is free where it
+  // is not free for their neighbours (measured 2026-09-09).
+  historyControl?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
@@ -111,11 +117,16 @@ export function ToolbarButton({
       disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      // `toolbar-button` carries no styling of its own here: it is the hook for the touch-only ring
-      // in globals.css (`@media (hover: none)`), which is where that rule can be written once for
-      // every menu that uses this button.
+      // `toolbar-button` carries no styling of its own here: it is the hook for the touch-only
+      // rules in globals.css (`@media (hover: none)`) — the ring and the 40px height — which is
+      // where they can be written once for every menu that uses this button. `-round` is the
+      // second hook the height needs: a circle has to grow in both dimensions.
       className={`toolbar-button group/tt relative text-xs ${
-        round ? 'rounded-full p-1.5' : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
+        historyControl ? 'toolbar-button-history ' : ''
+      }${
+        round
+          ? 'toolbar-button-round rounded-full p-1.5'
+          : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
       } ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>

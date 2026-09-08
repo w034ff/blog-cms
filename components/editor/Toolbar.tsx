@@ -13,6 +13,8 @@ import { ImageIcon } from './svg/ImageIcon';
 import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { QuoteIcon } from './svg/QuoteIcon';
+import { UndoIcon } from './svg/UndoIcon';
+import { RedoIcon } from './svg/RedoIcon';
 
 // A single toolbar entry that folds the two list types into one control. It
 // highlights whenever the cursor is in any list, and the open menu marks which
@@ -79,6 +81,31 @@ export function Toolbar({
 
   return (
     <div className='flex flex-wrap items-center gap-0.5'>
+      {/* Undo and redo, first in the row because that is where every editor puts them — and drawn
+          only under `hover: none` (app/globals.css), since a pointer has the keyboard route.
+          They exist for touch: `Mod-z` is the only other route and a phone keyboard has no
+          Ctrl — Android offers no undo gesture at all, and the iOS one (shake, three-finger
+          swipe) reaches the editor as a `beforeinput` of `inputType: historyUndo`, which
+          prosemirror-view handles. Measured 2026-09-09: dispatching that event does undo, so
+          iOS has a route and Android has none. The pair is `toolbar-button-history`, which
+          is what widens them on touch (app/globals.css) — the row they cost there is already
+          paid by their being present, so the width is free. */}
+      <ToolbarButton
+        onClick={() => editor.chain().focus().undo().run()}
+        disabled={!editor.can().undo()}
+        title='元に戻す'
+        shortcut='Mod-z'
+        historyControl>
+        <UndoIcon />
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => editor.chain().focus().redo().run()}
+        disabled={!editor.can().redo()}
+        title='やり直す'
+        shortcut='Mod-Shift-z'
+        historyControl>
+        <RedoIcon />
+      </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
         active={editor.isActive('heading', { level: 2 })}

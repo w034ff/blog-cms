@@ -377,6 +377,111 @@ test.describe('on an emulated phone at 360px', () => {
     expect(await toolbarRows(page)).toBeLessThan(1.5);
     expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
+
+  test('every pressable box in the editor chrome is 40px tall (12k)', async ({ page }) => {
+    // §12.3. A number that rots silently: nothing about the markup states it, and the buttons that
+    // fell short were the ones whose padding is written per-component — so this measures the boxes
+    // rather than looking for the rule. Four hooks carry it (`.toolbar-button`, `.dropdown-item`,
+    // `.link-bubble-open`, and the card head's own rule) and each is represented below, because a
+    // class dropped from one component is exactly the regression this catches.
+    const FLOOR = 40;
+    const shortest = (page: Page, selector: string) =>
+      page.locator(selector).evaluateAll((els) =>
+        els.map((el) => {
+          const box = el.getBoundingClientRect();
+          return { h: box.height, w: box.width };
+        }),
+      );
+
+    await openEditor(page);
+    const main = await shortest(page, '.sticky .toolbar-button');
+    expect(main.length).toBeGreaterThan(8);
+    expect(Math.min(...main.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+
+    // Undo and redo take the floor in both directions (§12.4): they are the one pair whose width
+    // costs no row, and squares are what they are drawn as. Asserted here rather than in
+    // editor-history-buttons.spec.ts because it is this file that runs under `hover: none`.
+    const history = await shortest(page, '.sticky .toolbar-button-history');
+    expect(history).toHaveLength(2);
+    expect(Math.min(...history.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
+
+    // A dropdown's rows are not `.toolbar-button` — they take the height from their own class, and
+    // §12.2 deliberately leaves them out of the ring, so the two rules have to be checked apart.
+    await page.getByRole('button', { name: 'リスト' }).click();
+    const items = await shortest(page, '.dropdown-item');
+    expect(items.length).toBeGreaterThan(1);
+    expect(Math.min(...items.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+    await page.keyboard.press('Escape');
+
+    await loadMarkdown(page, TABLE_MD);
+    await page.locator('.ProseMirror td').first().click();
+    await expect(page.locator('.table-toolbar')).toBeVisible();
+    const table = await shortest(page, '.table-toolbar button');
+    expect(Math.min(...table.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+
+    // The link bubble's first line opens a tab and is a bare `<button>`, which is why it was the
+    // shortest box in the editor at 20px (§12.3). Its round neighbours are squares and take the
+    // floor in both dimensions or they come out pills.
+    await openEditor(page);
+    await loadMarkdown(page, MD);
+    await setRange(page, 3, 3);
+    await expect(page.locator('.link-bubble')).toBeVisible();
+    const href = await shortest(page, '.link-bubble-open');
+    expect(href).toHaveLength(1);
+    expect(href[0].h).toBeGreaterThanOrEqual(FLOOR);
+    const round = await shortest(page, '.link-bubble .toolbar-button-round');
+    expect(round.length).toBeGreaterThan(1);
+    expect(Math.min(...round.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
+
+    // And the icon sits at the circle's centre. Growing a box is not the same as centring what is
+    // in it: the icon is a block-level `<svg>`, so widening the button pushed all 12px to its
+    // right (6px left, 18px right) until the rule added flex — reported the day it shipped, and
+    // invisible to a size assertion. Measured per side rather than against the centre, so a
+    // one-sided padding change is what fails.
+    const offsets = await page.locator('.link-bubble .toolbar-button-round').evaluateAll((els) =>
+      els.map((el) => {
+        const box = el.getBoundingClientRect();
+        const icon = el.querySelector('svg')!.getBoundingClientRect();
+        return {
+          x: icon.left - box.left - (box.right - icon.right),
+          y: icon.top - box.top - (box.bottom - icon.bottom),
+        };
+      }),
+    );
+    for (const o of offsets) {
+      expect(Math.abs(o.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(o.y)).toBeLessThanOrEqual(1);
+    }
+
+    // The card's band, which loses its labels at this width and is icons alone — 23x23 before
+    // §12.3, the one box in the editor under WCAG 2.2 SC 2.5.8's 24px floor.
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      '<div class="link-card" data-href="/posts/second-post"></div>\n\n本文\n',
+    );
+    await expect(page.locator('.link-card-head button').first()).toBeVisible();
+    const head = await shortest(page, '.link-card-head button');
+    expect(head).toHaveLength(3);
+    expect(Math.min(...head.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
+
+    // And the embed's band, which is exempt — the opposite assertion, because the exemption is a
+    // decision and not an oversight (§12.3). Its one button carries a label and is wide enough
+    // without the floor; taking the floor filled the 2.2em band exactly and left the ring sitting
+    // on the player. Measured as the gap, since that is the thing that was reported.
+    await openEditor(page);
+    await loadMarkdown(
+      page,
+      '<div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo"></div>\n\n本文\n',
+    );
+    await expect(page.locator('.embed-view iframe')).toBeVisible();
+    const gap = await page.locator('.embed-view').evaluate((view) => {
+      const button = view.querySelector('.embed-head button')!.getBoundingClientRect();
+      const frame = view.querySelector('.embed-frame')!.getBoundingClientRect();
+      return frame.top - button.bottom;
+    });
+    expect(gap).toBeGreaterThan(2);
+  });
 });
 
 // The width band where the card's *change* of width is what overflows (2026-08-22, reported from a

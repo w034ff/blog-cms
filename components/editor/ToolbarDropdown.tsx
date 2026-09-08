@@ -144,7 +144,7 @@ export function DropdownItem({
     <button
       type='button'
       onClick={onClick}
-      className={`px-3 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+      className={`dropdown-item px-3 py-1.5 text-left text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       }`}>
       {children}

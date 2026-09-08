@@ -1441,7 +1441,7 @@ export function LinkBubble({
                 onClick={
                   isFragment ? jump : () => window.open(href, '_blank', 'noopener,noreferrer')
                 }
-                className='block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
+                className='link-bubble-open block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
                 {title ?? displayHref(href)}
               </button>
               <EditorTooltip label={title ?? href} />
