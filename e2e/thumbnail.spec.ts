@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
-// body-derived fallback, and the three surfaces that show the result
+// body-derived fallback, and the four surfaces that show the result
 // (docs/link-card-requirements.md §8.2).
 //
 // lib/thumbnail.test.ts measures `resolveThumbnail` as a pure function — a string in, a string out.
@@ -214,10 +214,12 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(chosen);
 });
 
-// The published side, all three surfaces from one post. Two images in the body, and the second is
+// The published side, all four surfaces from one post. Two images in the body, and the second is
 // the explicit choice — so if any surface fell back to the body's first image instead of reading
 // the column, the mismatch would be visible rather than accidentally matching.
-test('an explicit thumbnail reaches the list, the card and og:image', async ({ page }) => {
+test('an explicit thumbnail reaches the list, the admin list, the card and og:image', async ({
+  page,
+}) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -262,6 +264,12 @@ test('an explicit thumbnail reaches the list, the card and og:image', async ({ p
   await expect(page.locator(`article:has-text("サムネイル公開") img[src="${chosen}"]`)).toHaveCount(
     1,
   );
+
+  // The admin post list, which reads the same resolver — so the row shows the picture the reader
+  // gets. Located by src for the same reason as the row above: the image is decoration and carries
+  // no accessible name.
+  await page.goto('/admin');
+  await expect(page.locator(`li:has-text("サムネイル公開") img[src="${chosen}"]`)).toHaveCount(1);
 
   // The link card on another post's page (criterion 5f).
   await page.goto('/admin/posts/new');

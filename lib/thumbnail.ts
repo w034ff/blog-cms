@@ -5,9 +5,9 @@
 // value a reader sees comes from `resolveThumbnail`, which falls back to the
 // first upload the body already references — so the archive gained card images
 // without anyone editing it. That fallback is the reason this is a function and
-// not a column read at each call site: three surfaces show the image (the post
-// list, the public link card, and `og:image`) and they must not disagree about
-// which one it is.
+// not a column read at each call site: four surfaces show the image (the post
+// list, the admin post list, the public link card, and `og:image`) and they must
+// not disagree about which one it is.
 
 // The shape a thumbnail may take: a site-relative path into the uploads
 // directory. The character class matches scripts/gc-uploads.mts's `UPLOAD_REF`,

@@ -62,10 +62,10 @@ export function ThumbnailField({ value, onChange, body }: Props) {
       <div className='flex items-start gap-3'>
         {shown ? (
           // A plain <img>, and `@next/next/no-img-element` is silenced rather
-          // than obeyed. The same image appears on three surfaces, and one of
+          // than obeyed. The same image appears on four surfaces, and one of
           // them — the public link card — is assembled by rehype as a hast tree
           // (lib/rehype-link-card.ts), where a React component cannot go. Using
-          // next/image on the other two would leave the three disagreeing about
+          // next/image on the other three would leave the four disagreeing about
           // how a thumbnail is drawn to buy optimization on a listing of three
           // posts. Revisit if the archive grows enough for it to matter.
           // eslint-disable-next-line @next/next/no-img-element
