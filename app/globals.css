@@ -695,14 +695,22 @@ body.link-menu-open .table-toolbar {
 
    The bubble menu needs none of this: it carries its own fill, which inverts with the theme.
 
-   Both step aside while the block is selected, and what carries the state there is the menu's
-   「サムネイルを解除」 — not the menu's position. The menu covers the badge's corner when it fits
-   into the picture and sits clear above it when it does not (`.is-outside`), so a rule keyed on
-   coverage would have to know which; the label is present either way, and `canBeThumbnail` and
-   `.thumbnail-image` gate on the same `isUploadPath`, so a marked picture always has it. The blue
-   ring above frames the picture meanwhile, and one element can only draw one outline anyway.
-   `Decoration.node`'s class and `.ProseMirror-selectednode` land on the same element, so this
-   needs no JS. */
+   **While the block is selected the badge steps aside and the line stays.** The badge is what the
+   menu would collide with — it sits in the same top corner, and whether the menu reaches it depends
+   on the picture's width (badge 71px + menu 142.9px, so they clear each other only above 214px;
+   measured 2026-09-08), which is a condition no CSS selector can see. The line runs along the
+   picture's own edge, where the menu never is, so it needs no such condition — and it is what says
+   「this picture is the thumbnail」 at the moment the author is acting on it. Until 2026-09-08 both
+   hid, and the state was carried by the menu's 「サムネイルを解除」; that wording is now the
+   toggle's tooltip (§22.2), and tooltips do not exist under `hover: none`, which left touch with
+   nothing but the toggle's own `active` fill.
+
+   The blue selection outline sits 2px outside this line meanwhile, so a selected thumbnail wears
+   two rings. They are legible as two (measured in both schemes): this one hugs the picture, the
+   blue one is offset and a different hue.
+
+   `Decoration.node`'s class and `.ProseMirror-selectednode` land on the same element, so this needs
+   no JS. */
 .prose .image-block.thumbnail-image .image-box::before {
   content: 'サムネイル';
   position: absolute;
@@ -725,8 +733,7 @@ body.link-menu-open .table-toolbar {
   border: 2px solid #86198f;
   pointer-events: none;
 }
-.prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::before,
-.prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::after {
+.prose .image-block.thumbnail-image.ProseMirror-selectednode .image-box::before {
   display: none;
 }
 

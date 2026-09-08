@@ -5,6 +5,8 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { ToolbarButton } from './ToolbarButton';
+import { CaptionIcon } from './svg/CaptionIcon';
+import { TrashIcon } from './svg/TrashIcon';
 import { isCaptionParagraph } from './image-caption-extension';
 import { isUploadPath } from '@/lib/thumbnail';
 
@@ -28,9 +30,10 @@ function selectedImage(editor: Editor): { from: number; src: string } | null {
 // **The comparison is only true after React has committed.** The menu's width is React's:
 // `@tiptap/core`'s `dispatchTransaction` runs `view.updateState` — and with it the plugin's
 // `updatePosition` — before it emits `transaction`, which is what re-renders this component. So a
-// decision taken inside the positioning callback measures the PREVIOUS render's menu: 削除 alone
-// (~44px) on the first show after a deselect, where the committed menu is ~151px. Measured
-// 2026-09-07: every picture between those two widths was given the corner and covered by it.
+// decision taken inside the positioning callback measures the PREVIOUS render's menu: the delete
+// button alone (35.6px) on the first show after a deselect, where the committed menu is 142.9px
+// (measured 2026-09-08; 44px and 151px before the labels became icons). Measured 2026-09-07: every
+// picture between those two widths was given the corner and covered by it.
 //
 // Which is why the layout effect below owns this call, and the positioning callback only borrows
 // it. The callback's copy covers the one path that reaches here with no render at all — the
@@ -171,6 +174,7 @@ export function ImageBubble({
       className='image-bubble z-20 flex bg-white dark:bg-zinc-900'>
       {image && (
         <ToolbarButton
+          title='キャプション'
           onClick={() => {
             const spot = captionSpot(editor, image.from);
             if (!spot) return;
@@ -186,17 +190,18 @@ export function ImageBubble({
             // flip it — pressing this twice must leave the caption a caption.
             chain.focus(spot.caretAt, { scrollIntoView: false }).setItalic().run();
           }}>
-          {/* Six characters against the thumbnail toggle's eight, so this is not what decides the
-              menu's width. The word is note's own for this field, and the two shorter candidates
-              are both taken by something else in this editor: 注釈 reads as the footnote
-              (footnote-literal-extension.ts) and 説明 is what an alt-text control would have to be
-              called. */}
-          キャプション
+          {/* The word itself is on the button's `title`, which is both the tooltip and the
+              accessible name — 「キャプション」 is note's own for this field, and the two shorter
+              candidates are taken by something else in this editor: 注釈 reads as the footnote
+              (footnote-literal-extension.ts) and 説明 is both the post form's own field and what an
+              alt-text control would have to be called. */}
+          <CaptionIcon />
         </ToolbarButton>
       )}
       {canBeThumbnail && image && (
         <ToolbarButton
           active={isCurrentThumbnail}
+          title={isCurrentThumbnail ? 'サムネイルを解除' : 'サムネイルに設定'}
           onClick={() => {
             // The button lives outside the editor's own DOM (BubbleMenu portals to <body>), so
             // clicking it leaves the editor blurred with its NodeSelection still standing —
@@ -223,16 +228,23 @@ export function ImageBubble({
             // `focusPreventScroll`, so dropping the scroll leaves nothing that moves the page.
             editor.chain().focus(null, { scrollIntoView: false }).run();
           }}>
-          {/* The label states the action, the way 削除 beside it does, so the button says both
-              what is true now and what pressing it will do. Both strings are eight full-width
-              characters, so the menu's width does not change — and the `active` fill stays as a
-              second, glanceable cue, because the two labels differ in only three of those eight
-              and a menu is read at a glance. */}
-          {isCurrentThumbnail ? 'サムネイルを解除' : 'サムネイルに設定'}
+          {/* **The one word this menu keeps.** Its two neighbours say what they do with a picture,
+              which a glyph can carry; this one says which of two states the picture is in, and a
+              glyph would have to be learnt before it could be read. So the noun stays visible and
+              the action moves to `title` — 「サムネイルに設定」/「サムネイルを解除」, the tooltip
+              and the accessible name, which is where the state is stated in words. The `active`
+              fill is the glanceable half of the same answer.
+
+              The visible word is a substring of both, which is what WCAG SC 2.5.3 asks of a
+              control whose accessible name is longer than its label. */}
+          サムネイル
         </ToolbarButton>
       )}
-      <ToolbarButton destructive onClick={() => editor.chain().focus().deleteSelection().run()}>
-        削除
+      <ToolbarButton
+        destructive
+        title='削除'
+        onClick={() => editor.chain().focus().deleteSelection().run()}>
+        <TrashIcon />
       </ToolbarButton>
     </BubbleMenu>
   );

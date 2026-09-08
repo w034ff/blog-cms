@@ -139,16 +139,18 @@ test('a picture narrower than the menu keeps the menu above it, uncovered', asyn
 
 // 22n: the band between the menu's two widths, which is where the fallback used to misfire and where
 // nothing measured it. `fitMenuToPicture` compares the picture against the menu's own width, and
-// the menu has two: 削除 alone (~44px) while nothing is selected, and ~151px once React has
-// committed the thumbnail toggle beside it. Deciding inside the positioning callback read the
-// first, because `dispatchTransaction` runs the plugin's `updatePosition` before the emit that
-// re-renders React — so every picture between those widths was fitted into a corner it could not
-// hold. 120x24 is inside the band and shorter than the menu, so a wrong answer covers it whole.
+// the menu has two: the delete button alone (35.6px) while nothing is selected, and 142.9px once
+// React has committed the caption button and the thumbnail toggle beside it (measured 2026-09-08 —
+// 44px and 151px until the two outer labels became icons; 120 sits inside the band either way).
+// Deciding inside the positioning callback read the first, because `dispatchTransaction` runs the
+// plugin's `updatePosition` before the emit that re-renders React — so every picture between those
+// widths was fitted into a corner it could not hold. 120x24 is inside the band and shorter than the
+// menu, so a wrong answer covers it whole.
 //
-// Built and uploaded here rather than referenced by hash: `public/uploads` is git-ignored, so a
-// fixture only this spec needs has to arrive the way a screenshot does.
-const MID_WIDTH_PNG = (() => {
-  const [w, h] = [120, 24];
+// Built and pasted here rather than referenced by hash: `public/uploads` is git-ignored, so a
+// fixture only this spec needs has to arrive the way a screenshot does. Shared with 22s below,
+// which needs the same thing at a different size.
+function solidPng(w: number, h: number): Buffer {
   const raw = Buffer.concat(
     Array.from({ length: h }, () => Buffer.concat([Buffer.of(0), Buffer.alloc(w * 3, 0xc8)])),
   );
@@ -170,7 +172,21 @@ const MID_WIDTH_PNG = (() => {
     chunk('IDAT', zlib.deflateSync(raw)),
     chunk('IEND', Buffer.alloc(0)),
   ]);
-})();
+}
+
+// Paste one in, the way a screenshot arrives.
+async function pasteImage(page: Page, png: Buffer): Promise<void> {
+  await page.evaluate((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([Uint8Array.from(bytes)], 'fixture.png', { type: 'image/png' }));
+    document
+      .querySelector('.ProseMirror')
+      ?.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
+      );
+  }, Array.from(png));
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+}
 
 test('a picture between the menu’s two widths is not fitted into a corner it cannot hold', async ({
   page,
@@ -178,16 +194,7 @@ test('a picture between the menu’s two widths is not fitted into a corner it c
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
-  await page.evaluate((bytes) => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([Uint8Array.from(bytes)], 'mid.png', { type: 'image/png' }));
-    document
-      .querySelector('.ProseMirror')
-      ?.dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
-      );
-  }, Array.from(MID_WIDTH_PNG));
-  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+  await pasteImage(page, solidPng(120, 24));
 
   // Deselect first, so the menu empties down to 削除 alone and the next show is the case that
   // used to read the stale width. Selecting one image straight after another never empties it.
@@ -209,4 +216,30 @@ test('a picture between the menu’s two widths is not fitted into a corner it c
   // Above the picture, and neither overhanging it nor covering it.
   expect(seen.bubbleBottom).toBeLessThanOrEqual(seen.pictureTop);
   expect(seen.bubbleLeft).toBeCloseTo(seen.pictureLeft, 0);
+});
+
+// 22s: what the icons bought (§22.2). The menu is 142.9px, so a picture this size holds it in its
+// corner; with the two outer labels worded it was 229.6px and this same picture pushed it out and
+// above (both measured 2026-09-08). 220 is chosen to sit between the two widths — restore either
+// label and the corner assertions below go red rather than the width itself, which is what makes
+// this a placement test and not a screenshot of a number.
+test('a picture wider than the menu, but narrower than the worded one, keeps it in the corner', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await pasteImage(page, solidPng(220, 120));
+
+  await page.locator('.ProseMirror img').click();
+  await expect(page.locator('.image-bubble')).toBeVisible();
+  await page.waitForTimeout(400);
+  const seen = await readBoxes(page);
+
+  // The premises: the picture really is 220 wide, and the menu really does fit inside it.
+  expect(seen.pictureWidth).toBeCloseTo(220, 0);
+  expect(seen.bubbleWidth).toBeLessThan(seen.pictureWidth);
+
+  expect(seen.bubbleRight).toBeCloseTo(seen.pictureRight, 0);
+  expect(seen.bubbleTop).toBeCloseTo(seen.pictureTop, 0);
 });

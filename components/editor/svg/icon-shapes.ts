@@ -58,6 +58,34 @@ export const UNLINK_SHAPES: readonly IconShape[] = [
   { kind: 'line', x1: 2, y1: 2, x2: 22, y2: 22 },
 ];
 
+// A picture with one line under it — "caption this image" (ImageBubble.tsx). The line sits outside
+// the frame because that is what the button does: the caption is the paragraph *after* the image
+// (docs/cms-features.md「画像キャプション」), not something written inside it.
+//
+// Three other glyphs were drawn and rejected on how they read at 16px (measured 2026-09-08, in the
+// menu itself rather than enlarged): a CC-style subtitle box lost its inner lines and became a
+// plain rectangle; a picture over *two* lines closed up into what looked like a monitor stand; and
+// three bare text lines read as the toolbar's own list icon. The one line survives because it is
+// the only stroke below the frame and has the full width to itself.
+//
+// It is close to `ImageIcon`, which is the insert button in the toolbar — the same subject, drawn
+// once as a frame with content and once as a frame with a line under it. They never appear
+// together: one is in the toolbar, the other on the picture.
+export const CAPTION_SHAPES: readonly IconShape[] = [
+  { kind: 'rect', x: 3, y: 3, width: 18, height: 12, rx: 2 },
+  { kind: 'path', d: 'M3 11l4-4 3.5 3.5L14 7l7 6' },
+  { kind: 'line', x1: 4, y1: 19, x2: 16, y2: 19 },
+];
+
+// A waste basket — "delete this". Drawn as lid, handle and body: the body's taper is what keeps it
+// from reading as a plain box at 16px, and the lid is a full-width line so the shape has a level
+// top to be recognised by. No inner ribs — at this size they fill the body in.
+export const TRASH_SHAPES: readonly IconShape[] = [
+  { kind: 'line', x1: 3, y1: 6, x2: 21, y2: 6 },
+  { kind: 'path', d: 'M9 6V4h6v2' },
+  { kind: 'path', d: 'M6 6l1 14h10l1-14' },
+];
+
 // A leftward arrow — "back to what this replaced". The link card's picker uses it for 「キャンセル」
 // (link-card-extension.ts): not the X monogram above (a brand mark, not a close glyph) and not a
 // bare ✕, which would sit one control away from 「変更」/「リンクに戻す」 and risk the confusion an

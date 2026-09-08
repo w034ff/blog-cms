@@ -5,8 +5,9 @@ import { loadMarkdown } from './editor-authoring';
 //
 // The mark is two pseudo-elements on `.image-box`, so nothing about it exists in the document,
 // the transaction or the saved markdown — only a rendered read can see it at all. It is also
-// the one piece of this chrome with a *conditional* shape (it hides while the block is
-// selected), and a condition nobody measures is a condition that quietly stops holding.
+// the one piece of this chrome with a *conditional* shape (the badge hides while the block is
+// selected; the line does not), and a condition nobody measures is a condition that quietly
+// stops holding.
 
 const MARKED = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 const OTHER = '/uploads/531f1bd7bc8be82b6f3aa910ff3c6ec45d3572033db26d10bec768eae58a6652.webp';
@@ -72,11 +73,14 @@ test('the marked image wears a worded badge and a coloured ring; the other wears
   expect(other.lineShown).toBe(false);
 });
 
-// The condition, and the reason it is safe to hide: the menu is on the picture at that moment
-// and says the state itself, and the blue selection ring frames the picture. Both classes land
-// on the same element (`Decoration.node`'s and prosemirror-view's), which is why this is one
-// selector and no JS.
-test('selecting the marked image puts its badge and line away', async ({ page }) => {
+// The halves part company here, and the asymmetry is the whole test (§22.1): the badge is in the
+// corner the menu is fitted into and would be covered there — for pictures narrower than 214px,
+// which no selector can test for — while the line runs along the picture's edge, where the menu
+// never is. So the badge hides and the line stays, and the line is what states the thumbnail while
+// the author is acting on the picture (the toggle's wording is a tooltip now, and there are no
+// tooltips under `hover: none`). Both classes land on the same element (`Decoration.node`'s and
+// prosemirror-view's), which is why this is one selector and no JS.
+test('selecting the marked image puts its badge away and keeps its line', async ({ page }) => {
   await markFirstImage(page);
 
   await page.locator('.ProseMirror img').first().click();
@@ -84,9 +88,13 @@ test('selecting the marked image puts its badge and line away', async ({ page })
 
   const whileSelected = await readMark(page, 0);
   expect(whileSelected.badgeShown).toBe(false);
-  expect(whileSelected.lineShown).toBe(false);
+  expect(whileSelected.lineShown).toBe(true);
+  // Still the mark's own colour, not a ring inherited from the selection: hiding the badge must not
+  // take the line's identity with it.
+  expect(whileSelected.lineColor).toBe('rgb(134, 25, 143)');
+  expect(whileSelected.lineWidth).toBe('2px');
 
-  // And comes back once the selection leaves.
+  // And the badge comes back once the selection leaves.
   await page.locator('.ProseMirror').click({ position: { x: 10, y: 400 } });
   await expect(page.locator('.image-bubble')).toBeHidden();
   const afterwards = await readMark(page, 0);
@@ -94,11 +102,14 @@ test('selecting the marked image puts its badge and line away', async ({ page })
   expect(afterwards.lineShown).toBe(true);
 });
 
-// The toggle says both what is true now and what pressing it will do, the way 削除 beside it
-// does. It is the only place the state is legible while the block is selected, since the badge
-// and the line step aside there — so a label that did not change would leave the `active` fill
-// carrying that alone.
-test('the toggle’s label states the action, and flips with the state', async ({ page }) => {
+// The toggle says both what is true now and what pressing it will do. Its visible word is the bare
+// 「サムネイル」 (§22.2), so the sentence lives on `title` — the tooltip, and the accessible name
+// `getByRole` matches below. It is the only place the state is legible in *words* while the block
+// is selected, since the badge steps aside there (the line stays, but a colour has to be learnt);
+// a name that did not change would leave the `active` fill carrying the state alone.
+test('the toggle’s accessible name states the action, and flips with the state', async ({
+  page,
+}) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
