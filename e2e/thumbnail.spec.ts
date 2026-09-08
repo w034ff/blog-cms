@@ -49,17 +49,17 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   return href!;
 }
 
-// The explicit half. An explicit choice is always an image already in the body — the bubble menu
-// marks one in place (ImageBubble.tsx) rather than uploading a separate picture — and the chosen
-// path has to reach the column through the hidden input, since that is what `new FormData(form)`
-// sees.
+// The explicit half. There are two routes to a choice — the bubble menu marks an image already in
+// the body (ImageBubble.tsx), ThumbnailField's picker uploads one the body need not contain — and
+// either way the chosen path has to reach the column through the hidden input, since that is what
+// `new FormData(form)` sees.
 test('the bubble menu sets an explicit thumbnail that survives a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
 
   // Nothing chosen and nothing in the body: the field says so rather than showing a stale box.
-  await expect(page.getByText('未設定。本文に画像を入れると指定できます。')).toBeVisible();
+  await expect(page.getByText('未設定。本文に画像を入れると自動で使われます。')).toBeVisible();
 
   await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-thumb.png',
@@ -160,6 +160,58 @@ test('deleting the marked image clears the thumbnail back to the fallback', asyn
   await expect(page.locator('.ProseMirror img')).toHaveCount(1);
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+});
+
+// The other route, and the one thing that can quietly undo it. A picture chosen through
+// ThumbnailField's picker is not in the body at all, so the rule that drops a stale marked image
+// (§22) must not read its absence as staleness — the test is that the image DISAPPEARED from the
+// body, not that it is missing from it.
+//
+// Two moments make this red under a bare absence check: the first body edit after the pick, and
+// the first edit after a reload (where nothing records which route the stored path came from).
+// The body carries a different image throughout, so a cleared column would show as the fallback
+// rather than as an empty field that could be read either way.
+test('a picked thumbnail outside the body survives body edits and a reload', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-body-1.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1_RED,
+  });
+  await expect(page.locator('.ProseMirror img')).toHaveCount(1, { timeout: 20_000 });
+  const bodySrc = await page.locator('.ProseMirror img').getAttribute('src');
+
+  await page.getByTestId('thumbnail-picker').setInputFiles({
+    name: 'e2e-card.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1,
+  });
+  const chosenField = page.locator('input[name="thumbnail"]');
+  await expect(chosenField).toHaveValue(UPLOAD_SRC, { timeout: 20_000 });
+  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  const chosen = await chosenField.inputValue();
+  expect(chosen).not.toBe(bodySrc);
+
+  // The body changes and the choice does not.
+  await clickPastLastImage(page);
+  await page.keyboard.type('本文を足す');
+  await expect(page.locator('.ProseMirror')).toContainText('本文を足す');
+  await expect(chosenField).toHaveValue(chosen);
+
+  await page.getByLabel('タイトル').fill('別枠のサムネイル');
+  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await page.reload();
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(chosen);
+
+  // The reload is where provenance is gone: the reopened post knows only the path.
+  await clickPastLastImage(page);
+  await page.keyboard.type('もう一行');
+  await expect(page.locator('.ProseMirror')).toContainText('もう一行');
+  await expect(page.locator('input[name="thumbnail"]')).toHaveValue(chosen);
 });
 
 // The published side, all three surfaces from one post. Two images in the body, and the second is

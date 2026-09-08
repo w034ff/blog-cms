@@ -67,9 +67,10 @@ export function resolveThumbnail(post: { thumbnail: string; body: string }): str
 }
 
 // Whether the body still references this exact path as an image, in either syntax. The editor
-// uses this to drop an explicit choice once its image leaves the body (components/PostEditor.tsx)
-// — an explicit thumbnail is now always an image the author marked in place, so one that is no
-// longer in the body is stale rather than a deliberate OGP-only pick.
+// asks it twice, of the old body and the new one, to drop a choice whose image has just left the
+// body (components/PostEditor.tsx) — an image the author marked in place is a body reference, so
+// once it goes the choice is stale. A single absence proves nothing: the field's own picker
+// uploads a card image the body need never contain.
 //
 // Every match is checked rather than just the first, unlike firstBodyImage: the question here is
 // membership, not order.

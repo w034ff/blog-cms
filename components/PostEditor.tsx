@@ -151,11 +151,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // paste guard. Owned here rather than in either of them so two refusals can't raise two toasts.
   const { notice, showNotice } = useEditorNotice();
 
-  // The thumbnail setter every caller uses (ThumbnailField's 解除, ImageBubble's toggle, the
-  // auto-clear effect below) — plain `setThumbnail` would change the field without arming
-  // autosave, since none of those three is a native form event the `<form onInput>` handler
-  // below can see (that is what used to carry the old upload picker's choice, via the file
-  // input's own native `input` event).
+  // The thumbnail setter every caller uses (ThumbnailField's picker and 解除, ImageBubble's
+  // toggle) — plain `setThumbnail` would change the field without arming autosave, since none of
+  // them is a native form event the `<form onInput>` handler below can see. The picker's own
+  // `input` event does not carry it either: the file input has no `name`, and what reaches the
+  // form is the uploaded path, written a fetch later.
   const applyThumbnail = useCallback(
     (next: string) => {
       setThumbnail(next);
@@ -195,14 +195,29 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     }
   }
 
-  // An explicit thumbnail is now always an image marked in the body (ImageBubble.tsx); once that
-  // image leaves the body — deleted, or replaced by loading different markdown — the choice is
-  // stale rather than a deliberate one, so it drops back to the auto-fallback. Adjusted during
-  // render, the same sanctioned pattern as the block above: the edit that changed `body` already
-  // armed autosave through onUpdate, so this only has state to update, not a side effect to run.
+  // A thumbnail marked in the body (ImageBubble.tsx) drops back to the auto-fallback once its
+  // image leaves the body: the choice is then stale rather than a deliberate one.
+  //
+  // **The test is that the image DISAPPEARED, not that it is absent.** ThumbnailField's picker
+  // uploads a card image the body need not contain at all, and a bare absence check would wipe
+  // that choice on the next keystroke — and again after every reload, where provenance is not
+  // stored. Comparing against `handledBody` needs no provenance: only an image that this session
+  // saw in the body can be seen to leave it. Ordered so the absence test (usually false, and the
+  // only one that runs per keystroke) comes first — the second scan is otherwise paid for by
+  // every edit.
+  //
+  // Adjusted during render, the same sanctioned pattern as the block above: the edit that changed
+  // `body` already armed autosave through onUpdate, so this only has state to update, not a side
+  // effect to run.
   if (body !== handledBody) {
     setHandledBody(body);
-    if (thumbnail !== '' && !bodyContainsImage(body, thumbnail)) setThumbnail('');
+    if (
+      thumbnail !== '' &&
+      !bodyContainsImage(body, thumbnail) &&
+      bodyContainsImage(handledBody, thumbnail)
+    ) {
+      setThumbnail('');
+    }
   }
 
   useEffect(() => {
