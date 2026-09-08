@@ -880,10 +880,40 @@ function dragSnapshot(page: Page): Promise<DragSnapshot> {
   });
 }
 
-test('a natively dragged embed never gives its own frame the pointer (§8.1)', async ({ page }) => {
+// What the dragstart guard did with the press, read from a listener that runs after
+// prosemirror-view's own (both bubble on the way to the document, and the guard's is on `view.dom`).
+type DragStartProbe = { fired: boolean; prevented: boolean };
+type ProbeWindow = Window & { __dragStartProbe?: DragStartProbe };
+
+function armDragStartProbe(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    const probe: DragStartProbe = { fired: false, prevented: false };
+    (window as ProbeWindow).__dragStartProbe = probe;
+    document.addEventListener('dragstart', (event) => {
+      probe.fired = true;
+      probe.prevented = event.defaultPrevented;
+    });
+  });
+}
+
+function readDragStartProbe(page: Page): Promise<DragStartProbe | null> {
+  return page.evaluate(() => (window as ProbeWindow).__dragStartProbe ?? null);
+}
+
+test('a native drag on the embed’s body is refused, ringed or not (§7.7)', async ({ page }) => {
+  // The third of the three types the 2026-09-08 guard covers. `editor-block-drag-handle.spec.ts`
+  // measures the image and the card and leaves this one here on purpose — reaching an embed needs
+  // this file's X stub.
+  //
+  // Until then this path was open and the block moved: the frame stayed inert throughout because
+  // grabbing did not select the block, which is what §8.1 concluded on 2026-08-31. That reason is
+  // no longer what closes it. The press itself is refused now (docs/link-card-requirements.md
+  // §7.7), so nothing is picked up at all.
   await openWith(page, NATIVE_DRAG_MD);
+  const before = await page.locator('input[name="body"]').inputValue();
   const box = (await embed(page).boundingBox())!;
   const last = (await page.locator('.ProseMirror p').last().boundingBox())!;
+  await armDragStartProbe(page);
 
   let during: DragSnapshot | null = null;
   await cdpNativeDrag(
@@ -896,12 +926,19 @@ test('a natively dragged embed never gives its own frame the pointer (§8.1)', a
   );
   const seen = during as DragSnapshot | null;
 
-  // **The gate.** Without this the assertions below are the resting state, which §7 already pins:
-  // the press has to have started a real drag that picked the embed up.
-  expect(seen?.carried).toEqual(['embed']);
-  // **Grabbing does not select on this path** — the selection stays where the caret was, so the
-  // rule that hands a selected block's frame the pointer never applies. This is the whole
-  // difference from the handle path, and it is why nothing had to be added here.
+  // **The gate, and it has to be the gesture rather than the drag.** A drag that never starts and
+  // a press CDP never delivered look identical from every assertion below, so what is pinned is
+  // that `dragstart` reached the document AND came out already cancelled.
+  const probe = await readDragStartProbe(page);
+  expect(probe?.fired).toBe(true);
+  expect(probe?.prevented).toBe(true);
+
+  // Nothing was picked up, and — the part `carried` does not say — nothing moved either.
+  expect(seen?.carried).toBeNull();
+  expect(await page.locator('input[name="body"]').inputValue()).toBe(before);
+
+  // Unringed, so the frame is inert. This is what still separates the two states below: the same
+  // refusal, reached from `pointer-events: none` here and from `auto` there.
   expect(seen?.selected).toBe(false);
   expect(seen?.pointerEvents).toBe('none');
   // And it is not §8.1's fix doing it: that class belongs to the handle's controller.
