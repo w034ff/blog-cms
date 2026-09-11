@@ -340,6 +340,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // a keystroke). Setting one in the session worked only because that changes `thumbnail`, and by
   // then the ref is filled. See docs/link-card-requirements.md §22.
   useLayoutEffect(() => {
+    // `react-hooks/immutability` reads this as mutating a value a hook returned. `editor` is a
+    // TipTap Editor, not React state, and `editor.storage` is the extension-owned box TipTap
+    // provides for exactly this — writing to it is the mechanism, not a way around one. It is also
+    // the whole point of §22's shape: the alternative, `editor.view.dispatch`, put a transaction in
+    // here that ran TrailingNode's appendTransaction at publish time and flipped 未公開の変更あり
+    // back on. Scoped to the line so the rule keeps working everywhere else.
+    // eslint-disable-next-line react-hooks/immutability
     if (editor) editor.storage.thumbnailHighlight.path = thumbnail;
   }, [editor, thumbnail]);
 

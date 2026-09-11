@@ -52,10 +52,7 @@ export function ToolbarDropdown({
   // app/globals.css) — a narrow desktop window or a high zoom level hits the same geometry.
   const [shiftX, setShiftX] = useState(0);
   useLayoutEffect(() => {
-    if (!open) {
-      setShiftX(0);
-      return;
-    }
+    if (!open) return;
     const recompute = () => {
       const trigger = ref.current;
       const panel = panelRef.current;
@@ -97,6 +94,17 @@ export function ToolbarDropdown({
   if (disabled !== prevDisabled) {
     setPrevDisabled(disabled);
     if (disabled) setOpen(false);
+  }
+
+  // The clamp is dropped when the panel closes, for the same reason and in the same place: a
+  // measurement of where the trigger sat last time says nothing about where it will sit next time.
+  // The layout effect above recomputes before the reopened panel is painted, so this is belt and
+  // braces rather than the thing that positions it — but left in that effect it was a setState in
+  // an effect body, which is the anti-pattern the paragraph above is about.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setShiftX(0);
   }
 
   return (
