@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
-import { docString, selectionClassName, settle } from './editor-probe';
+import { caretAtLineStart, docString, selectionClassName, settle } from './editor-probe';
 
 // The position of a code block's first character — the caret spot every test below acts on. Named
 // by walking the document rather than by arithmetic, so a fixture that nests the block one level
@@ -23,12 +23,8 @@ function codeContentStart(page: Page): Promise<number> {
 // A keyboard `Home` moves the caret natively; ProseMirror syncs its internal selection from the
 // `selectionchange` event on a 20ms debounce (DOMObserver.flushSoon). A Backspace inside that
 // window bypasses every keymap and the browser's native edit corrupts the document (see the
-// callout boundary spec for the full story). Wait for the DOM caret, then let a page-side 50ms
-// timer outlast the pending flush — same event loop, so it fires after the 20ms flush timer.
-async function caretAtLineStart(page: Page): Promise<void> {
-  await expect.poll(() => page.evaluate(() => window.getSelection()?.anchorOffset ?? -1)).toBe(0);
-  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
-}
+// callout boundary spec for the full story). The wait is `caretAtLineStart` in editor-probe.ts,
+// which asks the editor rather than the DOM — see there for why the DOM's offset cannot answer it.
 
 // The same 20ms selectionchange debounce (DOMObserver.flushSoon) that caretAtLineStart guards, but
 // after a native ArrowUp/End move whose settled offset is line-dependent — there's no fixed value
