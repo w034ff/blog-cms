@@ -34,6 +34,22 @@ export const EMBED_SILENCE_MS = 8000;
 // Barely more than zero: the question is "could the reader have seen it", not "how much of it".
 export const EMBED_VISIBLE_THRESHOLD = 0.01;
 
+// How long a box has to STAY on screen before it counts as seen. **A reader landing on `#heading`
+// is carried past everything above the anchor**, and the box above the landing point is
+// intersecting for only ~156ms while that scroll runs (measured 2026-09-11) — enough to arm a clock
+// that then replaced, eight seconds later, a post the reader never looked at. Whether it armed at
+// all was a race between that scroll and the observer's first callback, so the outcome was luck
+// rather than a rule; this is what makes it a rule.
+//
+// Three times the measured pass-through, and nothing against an 8s clock — a box actually being
+// read dwells for as long as the reader stays there.
+//
+// **Only `components/EmbedFrames.tsx` uses it.** The editor's NodeView arms on the same threshold,
+// but nothing there carries the author past a block the way an anchor landing does, and its
+// `visible` flag feeds an `arm()` gated on four other conditions. It is left as it is until
+// something measures a miss there.
+export const EMBED_DWELL_MS = 500;
+
 type XParams = { height?: number };
 
 export type XCall = {

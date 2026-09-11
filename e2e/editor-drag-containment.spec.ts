@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
-import { loadMarkdown } from './editor-authoring';
+import { loadMarkdown, openPostSettings } from './editor-authoring';
 import {
   CODE_EDGE_DOC,
   CODE_EDGE_MD,
@@ -32,6 +32,10 @@ const FIELDS = ['タイトル', 'カテゴリ', 'タグ（カンマ区切り）'
 
 async function openEditor(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');
+  // Three of the four live inside the 記事の設定 disclosure, which starts closed. Folded, their
+  // boxes collapse to (0,0) rather than disappearing, so the drag would land at the top-left of
+  // the viewport and two of these tests would pass without ever reaching the field.
+  await openPostSettings(page);
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
   await editor.click();

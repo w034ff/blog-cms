@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
@@ -19,7 +19,7 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
-import { bodyContainsImage } from '@/lib/thumbnail';
+import { bodyContainsImage, firstBodyImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
 
 export type PostEditorInitial = {
@@ -51,6 +51,20 @@ const emptyState: PostFormState = {};
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
 
+// The title is the one metadata field that is always on screen, and the only one whose
+// value the reader sees, so it carries the weight the rest of the fields don't.
+const titleClass =
+  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-lg font-bold tracking-tight focus:outline-none focus:ring-2 focus:ring-zinc-400';
+
+// Enter in a text field submits the form by activating its first submit button, which here
+// is 投稿/更新. That was survivable while the publish row sat below a screenful of post;
+// with the row pinned in the header, a stray Enter in タイトル publishes. Bound to the
+// metadata wrapper, not the <form>, so Enter inside the editor is untouched.
+function blockImplicitSubmit(event: KeyboardEvent<HTMLDivElement>): void {
+  if (event.key !== 'Enter') return;
+  if (event.target instanceof HTMLInputElement) event.preventDefault();
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className='block text-sm'>
@@ -66,6 +80,17 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
+  // Controlled only because the collapsed 記事の設定 summary reports them; the form still
+  // reads the DOM (useAutosave snapshots it with `new FormData`), so these stay plain
+  // inputs with a `name`. 説明 is not in the summary and stays uncontrolled.
+  const [category, setCategory] = useState(initial.category);
+  const [tags, setTags] = useState(initial.tags.join(', '));
+  const [unlisted, setUnlisted] = useState(initial.unlisted);
+  // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
+  // down, below the fold on a 600px-tall window, which is the opposite of what folding these
+  // fields away is for. A new post is not left guessing — the summary line below reports
+  // 「タグなし」 and the category arrives pre-filled (DEFAULT_CATEGORY).
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // The author's explicit card image ('' = none chosen). Held in React rather
   // than left uncontrolled like the text fields, because the picker writes it
   // and the preview reads it back.
@@ -345,6 +370,15 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
   }, [committedId]);
 
+  // Both feed the collapsed 記事の設定 summary. The thumbnail question is the one
+  // ThumbnailField answers on screen — an explicit choice, or the body's first image
+  // standing in for one (lib/thumbnail.ts's order, kept the same here).
+  const tagCount = tags
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter((tag) => tag !== '').length;
+  const hasThumbnail = thumbnail !== '' || firstBodyImage(body) !== null;
+
   const publishLabel = pending
     ? isPublished
       ? '更新中…'
@@ -405,61 +439,160 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           してください。編集内容は保持されています。
         </div>
       )}
-      <div className='grid gap-4 sm:grid-cols-2'>
+      <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
         <Field label='タイトル'>
           <input
             name='title'
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             required
-            className={inputClass}
+            className={titleClass}
           />
         </Field>
-        <Field label='カテゴリ'>
-          <input name='category' defaultValue={initial.category} className={inputClass} />
-        </Field>
-        <Field label='タグ（カンマ区切り）'>
-          <input name='tags' defaultValue={initial.tags.join(', ')} className={inputClass} />
-        </Field>
-        <Field label='説明'>
-          <input name='description' defaultValue={initial.description} className={inputClass} />
-        </Field>
-        <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
-        <div className='block text-sm'>
-          <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>公開範囲</span>
-          <label className='mt-2 flex items-center gap-2'>
-            <input
-              type='checkbox'
-              name='unlisted'
-              defaultChecked={initial.unlisted}
-              className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-            />
-            <span>限定公開にする</span>
-          </label>
-        </div>
+        {/* A <details>, not `{settingsOpen && …}`: collapsing must not unmount these fields.
+            useAutosave reads the live form with `new FormData(form)`, and publish reads the
+            same DOM, so a field that leaves the document leaves the payload — 限定公開 would
+            silently clear itself and the thumbnail would come off. `hidden` children stay in
+            both. */}
+        <details
+          open={settingsOpen}
+          onToggle={(event) => setSettingsOpen(event.currentTarget.open)}
+          className='rounded border border-zinc-300 dark:border-zinc-700'>
+          <summary className='flex cursor-pointer list-none items-center gap-3 px-3 py-2 text-sm hover:bg-zinc-50 [&::-webkit-details-marker]:hidden dark:hover:bg-zinc-900'>
+            <span className='font-medium'>記事の設定</span>
+            {/* The summary is the whole reason カテゴリ・タグ・限定公開 are controlled: closed,
+                this line is the only report of what they hold. */}
+            <span className='flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400'>
+              <span className='rounded bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800'>
+                {category.trim() === '' ? 'カテゴリなし' : category.trim()}
+              </span>
+              <span>{tagCount === 0 ? 'タグなし' : `タグ ${tagCount}`}</span>
+              <span>{hasThumbnail ? 'サムネイルあり' : 'サムネイルなし'}</span>
+              {unlisted && (
+                <span className='rounded bg-violet-100 px-2 py-0.5 text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
+                  限定公開
+                </span>
+              )}
+            </span>
+            <span className='ml-auto text-xs text-zinc-400 dark:text-zinc-500'>
+              {settingsOpen ? '閉じる' : '開く'}
+            </span>
+          </summary>
+          <div className='space-y-4 border-t border-zinc-200 px-3 py-4 dark:border-zinc-800'>
+            <div className='grid gap-4 sm:grid-cols-2'>
+              <Field label='カテゴリ'>
+                <input
+                  name='category'
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label='タグ（カンマ区切り）'>
+                <input
+                  name='tags'
+                  value={tags}
+                  onChange={(event) => setTags(event.target.value)}
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            <Field label='説明'>
+              <input name='description' defaultValue={initial.description} className={inputClass} />
+            </Field>
+            {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
+                the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
+            <div className='flex flex-wrap items-end justify-between gap-6'>
+              <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
+              <label className='flex items-center gap-2 pb-1 text-sm'>
+                <input
+                  type='checkbox'
+                  name='unlisted'
+                  checked={unlisted}
+                  onChange={(event) => setUnlisted(event.target.checked)}
+                  className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
+                />
+                <span>限定公開にする</span>
+              </label>
+            </div>
+          </div>
+        </details>
       </div>
 
       <div className='space-y-2'>
-        {/* The frame must NOT be overflow-hidden: that would make the sticky toolbar
+        {/* The frame must NOT be overflow-hidden: that would make the sticky header
             below pin to the frame instead of the viewport. Its rounded corners are
-            preserved by rounding the toolbar's top and the editor content sits within
+            preserved by rounding the header's top and the editor content sits within
             px padding, so nothing squares off the border. */}
         <div className='rounded border border-zinc-300 dark:border-zinc-700'>
-          {editor && (
-            // Toolbar as the frame's sticky header: top-0 pins it to the viewport top
-            // (SiteHeader scrolls away, so no offset) so the controls stay reachable
-            // when editing far down a long post. The opaque bg hides content scrolling
-            // beneath; rounded-t matches the frame's corners and border-b (same weight
-            // as the frame) divides the header from the content. z-30 sits above the
-            // editor but below the drop overlay (z-50); its own dropdowns (z-50) still
-            // open over the content.
-            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
-              <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
-              {/* Refusal notices hang off the sticky header (which is a containing block for them),
-                  so they stay in view over the content — see EditorToast. */}
-              {notice && <EditorToast message={notice} />}
+          {/* The frame's sticky header, in two rows: the publish controls above the format
+              toolbar. top-0 pins it to the viewport top (SiteHeader scrolls away, so no
+              offset) so both stay reachable when editing far down a long post — reaching
+              publish used to mean scrolling past the whole post. The opaque bg hides content
+              scrolling beneath; rounded-t matches the frame's corners, and each row carries
+              its own border-b (same weight as the frame) so the loading state, which has no
+              toolbar row, still divides cleanly from the content. z-30 sits above the editor
+              but below the drop overlay (z-50); the toolbar's own dropdowns (z-50) still open
+              over the content. */}
+          <div className='sticky top-0 z-30 rounded-t bg-white dark:bg-zinc-950'>
+            {/* Outside the `editor &&` guard below: these are the form's only submit buttons,
+                and a mounted editor is not a precondition for publishing — the body travels in
+                a hidden input. An editor that fails to mount must not take publish with it. */}
+            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-300 px-2 py-1 dark:border-zinc-700'>
+              <span className={`text-xs ${publishStatus.className}`} aria-live='polite'>
+                {publishStatus.text}
+              </span>
+              {autosaveStatus && (
+                <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+                  {autosaveStatus.text}
+                </span>
+              )}
+              {isPublished && slug && (
+                <a
+                  href={`/posts/${slug}`}
+                  className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
+                  表示
+                </a>
+              )}
+              <div className='ml-auto flex items-center gap-2'>
+                {/* Kept ahead of 下書きに戻す: it is the form's first submit button, which is
+                    what an Enter pressed in a metadata field activates. */}
+                <button
+                  type='submit'
+                  name='intent'
+                  value='publish'
+                  disabled={publishDisabled}
+                  className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+                  {publishLabel}
+                </button>
+                {isPublished && (
+                  <button
+                    type='submit'
+                    name='intent'
+                    value='unpublish'
+                    disabled={pending}
+                    className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                    下書きに戻す
+                  </button>
+                )}
+              </div>
             </div>
-          )}
+            {/* Rides with the publish button rather than sitting where the row used to be, so a
+                refused publish is readable from wherever the author clicked it. */}
+            {state.error && errorVisible && (
+              <p className='border-b border-zinc-300 px-2 py-1 text-sm text-red-600 dark:border-zinc-700'>
+                {state.error}
+              </p>
+            )}
+            {editor && (
+              <div className='border-b border-zinc-300 px-2 py-0.5 dark:border-zinc-700'>
+                <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
+                {/* Refusal notices hang off the sticky header (which is a containing block for them),
+                    so they stay in view over the content — see EditorToast. */}
+                {notice && <EditorToast message={notice} />}
+              </div>
+            )}
+          </div>
           {editor ? (
             <EditorContent editor={editor} />
           ) : (
@@ -489,44 +622,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       {/* The row identity once it exists (blank for a brand-new post, so publish
           takes the create-and-publish path). */}
       <input type='hidden' name='id' value={committedId ?? ''} />
-
-      {state.error && errorVisible && <p className='text-sm text-red-600'>{state.error}</p>}
-
-      <div className='flex items-center gap-3'>
-        <button
-          type='submit'
-          name='intent'
-          value='publish'
-          disabled={publishDisabled}
-          className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-          {publishLabel}
-        </button>
-        {isPublished && (
-          <button
-            type='submit'
-            name='intent'
-            value='unpublish'
-            disabled={pending}
-            className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            下書きに戻す
-          </button>
-        )}
-        {isPublished && slug && (
-          <a
-            href={`/posts/${slug}`}
-            className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
-            表示
-          </a>
-        )}
-        <span className={`text-xs ${publishStatus.className}`} aria-live='polite'>
-          {publishStatus.text}
-        </span>
-        {autosaveStatus && (
-          <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
-            {autosaveStatus.text}
-          </span>
-        )}
-      </div>
 
       {dragging && <DropOverlay />}
     </form>

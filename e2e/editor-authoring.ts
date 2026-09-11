@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { historyState } from './editor-probe';
 
 // Write-side companions to editor-probe.ts: they *change* the live editor rather than read it, and
@@ -251,4 +251,14 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
     },
     { needle: text, name: typeName },
   );
+}
+
+// 記事の設定 (PostEditor's metadata <details>) starts closed, so a spec that touches カテゴリ,
+// タグ, 説明, サムネイル or 限定公開 has to open it first. Idempotent: a panel already open is
+// left alone rather than toggled shut.
+export async function openPostSettings(page: Page): Promise<void> {
+  const settings = page.locator('details').filter({ hasText: '記事の設定' });
+  if (await settings.evaluate((el: HTMLDetailsElement) => el.open)) return;
+  await settings.getByText('記事の設定').click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
 }

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { loadMarkdown, openPostSettings } from './editor-authoring';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
 // body-derived fallback, and the four surfaces that show the result
@@ -56,6 +56,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
 test('the bubble menu sets an explicit thumbnail that survives a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await openPostSettings(page);
   await page.locator('.ProseMirror').click();
 
   // Nothing chosen and nothing in the body: the field says so rather than showing a stale box.
@@ -93,6 +94,7 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
 test('解除 drops back to the body’s first image', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await openPostSettings(page);
   await page.locator('.ProseMirror').click();
 
   await page.getByTestId('image-picker').setInputFiles({
@@ -134,6 +136,7 @@ test('解除 drops back to the body’s first image', async ({ page }) => {
 test('deleting the marked image clears the thumbnail back to the fallback', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await openPostSettings(page);
   await page.locator('.ProseMirror').click();
 
   await page.getByTestId('image-picker').setInputFiles({
@@ -174,6 +177,7 @@ test('deleting the marked image clears the thumbnail back to the fallback', asyn
 test('a picked thumbnail outside the body survives body edits and a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await openPostSettings(page);
   await page.locator('.ProseMirror').click();
 
   await page.getByTestId('image-picker').setInputFiles({
