@@ -84,24 +84,6 @@ describe('resolveEmbed / YouTube', () => {
       expect(resolveEmbed(`https://youtu.be/${encodeURIComponent(bad)}`), bad).toBeNull();
   });
 
-  it('refuses every other scheme, and anything that is not a URL (E2)', () => {
-    // This resolves after rehype-sanitize, so nothing downstream checks what it returns.
-    for (const href of [
-      'javascript:alert(1)',
-      'data:text/html,x',
-      `//www.youtube.com/watch?v=${ID}`,
-      `www.youtube.com/watch?v=${ID}`,
-      '',
-      '   ',
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
-  });
-
-  it('refuses a URL carrying credentials', () => {
-    // 「リンクに戻す」 puts this exact string back into an `<a href>`, where it is published.
-    expect(resolveEmbed(`https://user:pass@www.youtube.com/watch?v=${ID}`)).toBeNull();
-  });
-
   it('does not throw on a broken percent-escape (E3)', () => {
     // An exception here reaches rehypeEmbed and takes the whole page down rather than one node
     // (link-card-requirements.md §14.2.1 ①). Not a video is the same answer as any other miss.
@@ -183,11 +165,6 @@ describe('resolveEmbed / X', () => {
     expect(resolveEmbed('https://t.co/abc123')).toBeNull();
   });
 
-  it('refuses credentials and every other scheme, as YouTube does (E2)', () => {
-    expect(resolveEmbed(`https://user:pass@x.com/a/status/${X_ID}`)).toBeNull();
-    expect(resolveEmbed(`//x.com/a/status/${X_ID}`)).toBeNull();
-  });
-
   it('does not throw on a broken percent-escape (E3)', () => {
     expect(() => resolveEmbed('https://x.com/a/status/%zz')).not.toThrow();
     expect(resolveEmbed('https://x.com/a/status/%zz')).toBeNull();
@@ -244,15 +221,6 @@ describe('resolveEmbed / SlideShare', () => {
   it('refuses an id that is not an id (S3)', () => {
     for (const id of ['abc', '', '12a', '-1', '1'.repeat(20), '%zz'])
       expect(resolveEmbed(`https://www.slideshare.net/slideshow/deck/${id}`), id).toBeNull();
-  });
-
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@www.slideshare.net/slideshow/deck/${SS_ID}`,
-      `javascript:alert(1)//www.slideshare.net/slideshow/deck/${SS_ID}`,
-      `ftp://www.slideshare.net/slideshow/deck/${SS_ID}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
   });
 
   it('does not throw on a broken percent-escape (E3)', () => {
@@ -354,15 +322,6 @@ describe('resolveEmbed / Figma', () => {
       expect(resolveEmbed(`https://www.figma.com/design/${key}/s`), key).toBeNull();
   });
 
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
-      `javascript:alert(1)//www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
-      `ftp://www.figma.com/design/${FIGMA_KEY_SAMPLE}/s`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
-  });
-
   it('does not throw on a broken percent-escape (E3)', () => {
     const href = `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/%zz?node-id=%zz`;
     expect(() => resolveEmbed(href)).not.toThrow();
@@ -443,15 +402,6 @@ describe('resolveEmbed / Speaker Deck', () => {
       '%zz',
     ])
       expect(resolveEmbed(`https://speakerdeck.com/player/${id}`), id).toBeNull();
-  });
-
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@speakerdeck.com/player/${SD_ID}`,
-      `javascript:alert(1)//speakerdeck.com/player/${SD_ID}`,
-      `ftp://speakerdeck.com/player/${SD_ID}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
   });
 
   it('does not throw on a broken percent-escape (E3)', () => {
@@ -551,15 +501,6 @@ describe('resolveEmbed / Docswell', () => {
       expect(resolveEmbed(`https://www.docswell.com/s/ku-suke/${key}-slug`), key).toBeNull();
   });
 
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@www.docswell.com/s/ku-suke/${DW_KEY}-hello-docswell`,
-      `javascript:alert(1)//www.docswell.com/s/ku-suke/${DW_KEY}`,
-      `ftp://www.docswell.com/s/ku-suke/${DW_KEY}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
-  });
-
   it('names the provider, an accessible name, and a mark-able label (D5, §8-②)', () => {
     const target = resolveEmbed(DW_PAGE);
     expect(target?.provider).toBe('docswell');
@@ -656,15 +597,6 @@ describe('resolveEmbed / GitHub Gist', () => {
     // verified like an id (§18.2).
     for (const owner of ['a'.repeat(40), 'own er', 'own/er'])
       expect(resolveEmbed(`https://gist.github.com/${owner}/${GIST_ID}`), owner).toBeNull();
-  });
-
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@gist.github.com/${GIST_OWNER}/${GIST_ID}`,
-      `javascript:alert(1)//gist.github.com/${GIST_OWNER}/${GIST_ID}`,
-      `ftp://gist.github.com/${GIST_OWNER}/${GIST_ID}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
   });
 
   it('does not throw on a broken percent-escape (E3)', () => {
@@ -820,15 +752,6 @@ describe('resolveEmbed / CodeSandbox', () => {
       expect(resolveEmbed(`https://codesandbox.io/p/sandbox/${segment}`), segment).toBeNull();
   });
 
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@codesandbox.io/p/sandbox/${CSB_SEG}`,
-      `javascript:alert(1)//codesandbox.io/p/sandbox/${CSB_SEG}`,
-      `ftp://codesandbox.io/p/sandbox/${CSB_SEG}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
-  });
-
   it('names the provider, an accessible name, and asks for no device (C5)', () => {
     const target = resolveEmbed(CSB_PAGE);
     expect(target?.provider).toBe('codesandbox');
@@ -971,16 +894,6 @@ describe('resolveEmbed / CodePen', () => {
       expect(resolveEmbed(href)?.src(ANY), href).toBe(src);
   });
 
-  it('refuses credentials and every other scheme, as the others do (E2)', () => {
-    for (const href of [
-      `https://user:pass@codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
-      'https://user:pass@codepen.io/team/codepen/pen/PoqWOwZ',
-      `javascript:alert(1)//codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
-      `ftp://codepen.io/${PEN_USER}/pen/${PEN_SLUG}`,
-    ])
-      expect(resolveEmbed(href), href).toBeNull();
-  });
-
   it('names the provider, an accessible name, and asks for no device (P5)', () => {
     const target = resolveEmbed(PEN_PAGE);
     expect(target?.provider).toBe('codepen');
@@ -1001,6 +914,26 @@ describe('resolveEmbed / CodePen', () => {
     expect(target?.sandbox).not.toContain('allow-top-navigation');
   });
 });
+
+// One URL per provider that really resolves, taken from the fixtures each section above already
+// measured rather than invented here — a URL that quietly stopped resolving would turn any test
+// over this table into a test of the table. Two of them read it: the lead-spelling check below, and
+// the shared-guard check beside it, which needs URLs that resolve so that its refusals measure the
+// guard instead of a typo.
+const LEADS: Record<string, string> = {
+  YouTube: `https://www.youtube.com/watch?v=${ID}`,
+  // The `/i/status/` form, which is the branch that leads with the provider (§10.4).
+  X: `https://x.com/i/status/${X_ID}`,
+  SlideShare: `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
+  Figma: `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample`,
+  // The player URL, not the deck page — the page carries no id and is left to the card (SD2).
+  'Speaker Deck': `https://speakerdeck.com/player/${SD_ID}`,
+  Docswell: DW_PAGE,
+  // The owner-less form, for X's reason one provider over (§18).
+  'GitHub Gist': `https://gist.github.com/${GIST_ID}`,
+  CodeSandbox: CSB_PAGE,
+  CodePen: PEN_PAGE,
+};
 
 // §24.1. The insert dialog's table is derived from the registry rather than written beside it, and
 // these are the two properties that make deriving it worth anything.
@@ -1123,28 +1056,45 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     // usually lead with an account — those are the leads that must not become a second spelling.
     // X's account form and the gist's owner form are deliberately not here: their lead is the
     // account, not the provider (§10.4, §18).
-    // The fixtures each provider's own section above already measured, not new ones: a URL invented
-    // here that quietly stops resolving would turn this into a test of the fixture.
-    const leads: Record<string, string> = {
-      YouTube: `https://www.youtube.com/watch?v=${ID}`,
-      // The `/i/status/` form, which is the branch that leads with the provider (§10.4).
-      X: `https://x.com/i/status/${X_ID}`,
-      SlideShare: `https://www.slideshare.net/slideshow/slidesharesample-${SS_ID}/${SS_ID}`,
-      Figma: `https://www.figma.com/design/${FIGMA_KEY_SAMPLE}/Figma-sample`,
-      // The player URL, not the deck page — the page carries no id and is left to the card (SD2).
-      'Speaker Deck': `https://speakerdeck.com/player/${SD_ID}`,
-      Docswell: DW_PAGE,
-      // The owner-less form, for X's reason one provider over (§18).
-      'GitHub Gist': `https://gist.github.com/${GIST_ID}`,
-      CodeSandbox: CSB_PAGE,
-      CodePen: PEN_PAGE,
-    };
     for (const provider of EMBED_PROVIDERS) {
-      const href = leads[provider.name];
+      const href = LEADS[provider.name];
       expect(href, `no fixture for ${provider.name}`).toBeDefined();
       const target = resolveEmbed(href);
       expect(target, href).not.toBeNull();
       expect(target?.label.lead, provider.name).toBe(provider.name);
     }
+  });
+
+  // **One guard, not nine.** `resolveEmbed` rejects a non-http(s) scheme and a URL carrying
+  // credentials *before* `PROVIDERS.find` ever runs, so no provider can answer differently — which
+  // is why each section used to repeat this and no longer does (consolidated 2026-09-11). Kept as a
+  // loop over every provider anyway: if the check is ever pushed down into the per-provider
+  // matchers, only a loop notices.
+  //
+  // 「リンクに戻す」 is why credentials matter at all — it puts this exact string back into an
+  // `<a href>`, where it is published for every reader to see.
+  it('refuses credentials and every other scheme before a provider is chosen (E2)', () => {
+    for (const [name, href] of Object.entries(LEADS)) {
+      // The control. Without it a fixture that stopped resolving would make both refusals below
+      // pass while measuring nothing.
+      expect(resolveEmbed(href), name).not.toBeNull();
+      const url = new URL(href);
+      expect(
+        resolveEmbed(`https://user:pass@${url.host}${url.pathname}${url.search}`),
+        name,
+      ).toBeNull();
+      expect(resolveEmbed(href.replace(/^https:/, 'ftp:')), name).toBeNull();
+    }
+    // The shapes that name no provider because they are not a URL at all. This resolves after
+    // rehype-sanitize, so nothing downstream checks what it returns.
+    for (const href of [
+      'javascript:alert(1)',
+      'data:text/html,x',
+      `//www.youtube.com/watch?v=${ID}`,
+      `www.youtube.com/watch?v=${ID}`,
+      '',
+      '   ',
+    ])
+      expect(resolveEmbed(href), href).toBeNull();
   });
 });
