@@ -1470,12 +1470,23 @@ test('the source block shows as cut only while the drop would move it', async ({
   if (!handleBox || !quoteBox) throw new Error('missing bounding box');
   // The mark is a `position: fixed` box on <body>, not a class on the block (block-drag-handle.ts
   // says why), so it is read as geometry: shown, and covering the block it speaks for.
+  // Read against the block it speaks for, in the same frame. The page autoscrolls during this drag,
+  // so `quoteBox` above — taken before the drag — is a different coordinate frame by the time the
+  // veil exists, and comparing the two was this spec failing on a loaded machine while the veil was
+  // correct (a 3-shard run, 2026-09-11). Live on both sides it also states the inflation exactly
+  // instead of "covers it somewhere".
   const cut = () =>
     page.evaluate(() => {
       const el = document.querySelector('.block-drag-cut') as HTMLElement | null;
       if (!el || el.style.display === 'none') return null;
-      const r = el.getBoundingClientRect();
-      return { top: r.top, left: r.left, bottom: r.bottom, right: r.right };
+      const v = el.getBoundingClientRect();
+      const q = document.querySelector('.ProseMirror blockquote')!.getBoundingClientRect();
+      return {
+        top: q.top - v.top,
+        bottom: v.bottom - q.bottom,
+        left: q.left - v.left,
+        right: v.right - q.right,
+      };
     });
   const lineShown = () =>
     page.evaluate(() => {
@@ -1496,13 +1507,12 @@ test('the source block shows as cut only while the drop would move it', async ({
   expect(await lineShown()).toBe(true);
   const veil = await cut();
   expect(veil).not.toBeNull();
-  // It speaks for the dragged block, so it covers that block's box and no other — the ring included
-  // (it is drawn a few px outside, which is what the box's inflation is for).
+  // It speaks for the dragged block, so it covers that block's box and no other — the ring included,
+  // which is what `CUT_INFLATE` (block-drag-handle.ts) is for. Exact on every side, and the same at
+  // any frame rate: the veil is drawn in document coordinates, so a mid-drag autoscroll carries it
+  // with the block rather than sliding it off by a frame's worth of scroll.
   if (!veil) throw new Error('unreachable');
-  expect(veil.top).toBeLessThan(quoteBox.y);
-  expect(veil.left).toBeLessThan(quoteBox.x);
-  expect(veil.bottom).toBeGreaterThan(quoteBox.y + quoteBox.height);
-  expect(veil.right).toBeGreaterThan(quoteBox.x + quoteBox.width);
+  expect([veil.top, veil.bottom, veil.left, veil.right]).toEqual([4, 4, 4, 4]);
 
   // End the session while it is showing — the mark must not survive the drag.
   await page.keyboard.press('Escape');

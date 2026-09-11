@@ -467,7 +467,12 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
    the outline back in by exactly the inflation markCut adds (CUT_INFLATE), landing it on the
    block's real edge while the box itself covers the selection ring outside it. */
 .block-drag-cut {
-  position: fixed;
+  /* `absolute`, where the indicator and the ghost are `fixed`: those two answer to the pointer and
+     the viewport, while this one speaks for one block and has to stay on it. Drawn in document
+     coordinates it moves with the page for free, so a mid-drag autoscroll cannot slide it off the
+     block it marks — which is what `fixed` did, by one frame's worth of scroll each time (measured
+     2026-09-11: 5px at full speed, 20px at 8x CPU throttling, against a 4px inflation). */
+  position: absolute;
   z-index: 39;
   display: none;
   pointer-events: none;
