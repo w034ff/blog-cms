@@ -389,10 +389,20 @@ test('the card is not seen collapsing on the way out', async ({ page }) => {
   //
   // Sampled per frame from inside the page, because that is the only place the intermediate state
   // exists: it is gone long before any assertion could be evaluated over the protocol.
+  //
+  // **Throttled, because at full speed this cannot fail.** The show/hide pair a departure produces
+  // is identical either way — measured 2026-09-11, `shouldShow` is asked and answers `true` about
+  // the link the caret has not left yet on every departure — and what a slow frame changes is only
+  // whether that answer reaches a paint. Unthrottled, this spec passed for three weeks while the
+  // display card was being repainted over the link every time, and what finally exposed it was a
+  // 3-shard run putting three Chromes on one machine. 8x is where it became reliable; the rate is
+  // restored before the assertions so nothing after it is slow.
   await openEditor(page);
   await setRange(page, IN_LINK);
   await card(page).getByRole('button', { name: '編集' }).click();
   await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 8 });
   const samples = page.evaluate(async () => {
     const seen: string[] = [];
     for (let i = 0; i < 30; i++) {
@@ -408,6 +418,7 @@ test('the card is not seen collapsing on the way out', async ({ page }) => {
     .first()
     .click({ position: { x: 300, y: 8 } });
   const seen = await samples;
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
   expect(seen).not.toContain('display');
   // The window has to contain the departure itself, or the assertion above is about nothing: a
   // sampler that ran out before `click()` dispatched its mousedown would see the open field for
