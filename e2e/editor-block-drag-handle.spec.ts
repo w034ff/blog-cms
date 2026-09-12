@@ -1280,9 +1280,22 @@ test('a plain re-press on a ringed link card or embed keeps it selected', async 
     const x = box.x + box.width / 2;
     const y = box.y + box.height - 8;
 
-    await page.mouse.click(x, y);
-    await expect(target).toHaveClass(/ProseMirror-selectednode/);
+    // The first press is setup — it is the second one that this test is about. A just-loaded
+    // embed swallows a first click without making the NodeSelection: measured 2026-09-12 in
+    // `e2e/editor-embed.spec.ts`'s openSandbox (red at 0/50/100/200ms after load, green from
+    // 500ms, the node never replaced and the class never set), and reproduced here 2026-09-13 at
+    // 1 run in 4 with this spec run alone. Waiting on the frame's own box — which is all the
+    // setup above does — is far too early for it. So press until the ring is on, rather than
+    // waiting a measured-once number of milliseconds and hoping the next machine is no slower.
+    // On the ordinary path this clicks exactly once: poll checks after the first call.
+    await expect
+      .poll(async () => {
+        await page.mouse.click(x, y);
+        return target.getAttribute('class');
+      })
+      .toMatch(/ProseMirror-selectednode/);
 
+    // And the claim: a plain re-press on the ring keeps it, rather than dropping to a TextSelection.
     await page.mouse.click(x, y);
     await expect(target).toHaveClass(/ProseMirror-selectednode/);
     expect(await selectionType()).toBe('NodeSelection');

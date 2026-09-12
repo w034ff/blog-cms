@@ -103,7 +103,11 @@ test('Backspace on an empty line after a callout deletes that line', async ({ pa
   await page.keyboard.press('Enter');
   await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
   await page.keyboard.press('ArrowLeft'); // into the empty line above
-  await caretAtLineStart(page); // same native-selection-sync race as Home, above
+  // The same native-selection-sync race as Home, above — but `caretAtLineStart` cannot be the
+  // wait here: the caret was already at a `@0` (the start of '次の段落') before the arrow, so its
+  // predicate is true before the move and the wait passes without anything having happened. The
+  // empty line is the one landing place whose block is empty, so the whole caret names it.
+  await expect.poll(() => caret(page)).toBe('@0');
 
   const callout = editor.locator('div.markdown-alert.markdown-alert-note');
   // `p:not(.markdown-alert-title)` excludes the callout's own non-editable title chip (also a
@@ -424,10 +428,16 @@ test('Enter on an empty line at the head of a callout splits in place, not exits
     .poll(() => docString(page))
     .toBe('doc(callout(paragraph, paragraph("本文")), paragraph)');
 
-  // Land the caret inside that leading blank (ArrowLeft crosses the boundary). `@0` on an empty
-  // line confirms the state the guard governs.
-  await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
-  await page.keyboard.press('ArrowLeft');
+  // Land the caret inside that leading blank. **Placed through the editor**, for the reason the
+  // Home above it was: `caretSettled`'s 70ms was measured on an idle machine (3/3 green there),
+  // and a full serial run outlasts it — the ArrowLeft is swallowed by the window that follows the
+  // Enter and the caret never leaves '本文'. Measured 2026-09-13: red in both full runs, at this
+  // line, while the case is green run alone (4/4) and run as a file (11/11). The arrow is setup
+  // here; the subject is what Enter does from an empty line at the callout's head.
+  //
+  // After the Enter above, the callout's inner start *is* that blank line. `@0` on an empty block
+  // still confirms the state the guard governs.
+  await caretAtStartOf(page, 'callout');
   await expect.poll(() => caret(page)).toBe('@0');
 
   // Enter on that *leading* (non-trailing) empty line must NOT exit: split in place, callout stays
