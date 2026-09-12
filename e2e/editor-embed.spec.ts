@@ -658,6 +658,24 @@ async function openSandbox(page: Page): Promise<void> {
     route.fulfill({ contentType: 'text/html', body: CS_STUB }),
   );
   await openWith(page, `<div class="embed" data-href="${CODESANDBOX}"></div>\n\n本文\n`);
+  // **The wait is setup, and it is measured** (2026-09-12). A click on a just-loaded embed does not
+  // make the NodeSelection; the same click half a second later does. Measured at 0/50/100/200ms —
+  // all fail — and at 500/1500/3000ms — all pass. Two clicks in a row also work, which is what says
+  // the first one is being swallowed rather than mis-aimed.
+  //
+  // What it is NOT: the node is not being replaced (same element handle, still connected, through
+  // 1s), the class is never set at all (a MutationObserver on it records nothing), the editor holds
+  // focus throughout, the click lands on DIV.embed-frame by elementFromPoint, and the geometry after
+  // Playwright's scroll is identical to the arrangement where it passes. Waiting for the iframe's
+  // own document (`#t` visible) is far too early, and waiting for autosave is not reliably late
+  // enough. The mechanism is unnamed after eight probes; the dependency is stated rather than
+  // hidden, so the next reader starts from here instead of repeating them.
+  //
+  // This is not a defect an author meets: the insert flow selects the block it inserts, so nobody
+  // reaches a freshly loaded embed by clicking it inside half a second. Until 2026-09-12 this file
+  // passed on slack — the metadata box above the editor made Playwright scroll ~38px further, and
+  // moving 記事の設定 onto the top line took that slack away.
+  await page.waitForTimeout(600);
   // The click the §7 test already pins: it lands on the frame, which is inert, so ProseMirror makes
   // the NodeSelection instead.
   await embed(page).locator('.embed-frame').click();

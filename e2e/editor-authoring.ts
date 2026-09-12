@@ -253,12 +253,16 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
   );
 }
 
-// 記事の設定 (PostEditor's metadata <details>) starts closed, so a spec that touches カテゴリ,
-// タグ, 説明, サムネイル or 限定公開 has to open it first. Idempotent: a panel already open is
-// left alone rather than toggled shut.
+// 記事の設定 starts closed, so a spec that touches カテゴリ, タグ, 説明, サムネイル or 限定公開
+// has to open it first. Idempotent: a panel already open is left alone rather than toggled shut.
+//
+// The toggle is a <button> on the editor's pinned bar and the panel is a `hidden` div below it —
+// they are no longer one <details>, because the panel has to render outside the sticky block or
+// an open panel would pin its whole height to the top of the viewport. `aria-expanded` is what
+// ties them together, and it is what this reads.
 export async function openPostSettings(page: Page): Promise<void> {
-  const settings = page.locator('details').filter({ hasText: '記事の設定' });
-  if (await settings.evaluate((el: HTMLDetailsElement) => el.open)) return;
-  await settings.getByText('記事の設定').click();
+  const toggle = page.getByRole('button', { name: '記事の設定' });
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') return;
+  await toggle.click();
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
 }

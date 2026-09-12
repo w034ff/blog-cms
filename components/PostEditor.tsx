@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
@@ -19,7 +20,7 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
-import { bodyContainsImage, firstBodyImage } from '@/lib/thumbnail';
+import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
 
 export type PostEditorInitial = {
@@ -47,6 +48,10 @@ type Props = {
 };
 
 const emptyState: PostFormState = {};
+
+// The button is on the sticky bar and the panel is below it, so aria-controls has to name a
+// fixed id rather than rely on the two being nested.
+const SETTINGS_PANEL_ID = 'post-settings-panel';
 
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
@@ -88,16 +93,17 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
-  // Controlled only because the collapsed 記事の設定 summary reports them; the form still
-  // reads the DOM (useAutosave snapshots it with `new FormData`), so these stay plain
-  // inputs with a `name`. 説明 is not in the summary and stays uncontrolled.
+  // Controlled, though nothing outside the panel reads them any more — the summary that used to
+  // report カテゴリ and タグ is gone. Kept as-is rather than returned to `defaultValue` because
+  // the form reads the DOM either way (useAutosave snapshots it with `new FormData`), so the
+  // change would buy nothing and 説明 already shows the uncontrolled shape works.
   const [category, setCategory] = useState(initial.category);
   const [tags, setTags] = useState(initial.tags.join(', '));
   const [unlisted, setUnlisted] = useState(initial.unlisted);
   // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
   // down, below the fold on a 600px-tall window, which is the opposite of what folding these
-  // fields away is for. A new post is not left guessing — the summary line below reports
-  // 「タグなし」 and the category arrives pre-filled (DEFAULT_CATEGORY).
+  // fields away is for. A new post is not left guessing: the category arrives pre-filled
+  // (DEFAULT_CATEGORY) and nothing else above is required to publish.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The author's explicit card image ('' = none chosen). Held in React rather
   // than left uncontrolled like the text fields, because the picker writes it
@@ -386,15 +392,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
   }, [committedId]);
 
-  // Both feed the collapsed 記事の設定 summary. The thumbnail question is the one
-  // ThumbnailField answers on screen — an explicit choice, or the body's first image
-  // standing in for one (lib/thumbnail.ts's order, kept the same here).
-  const tagCount = tags
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter((tag) => tag !== '').length;
-  const hasThumbnail = thumbnail !== '' || firstBodyImage(body) !== null;
-
   const publishLabel = pending
     ? isPublished
       ? '更新中…'
@@ -456,6 +453,52 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         </div>
       )}
       <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
+        {/* The way out of the editor, inside the <form> rather than in the layout around it
+            (app/admin/posts/layout.tsx used to own it). The form is the boundary that matters
+            here: useAutosave reads it with `new FormData(form)`, so anything that has to sit on
+            one bar with the post's own fields — 記事の設定 next — has to be on this side of it,
+            and a layout wrapping the form cannot reach the state the row reports either. The
+            link itself needs none of that; it moves now so the bar can be assembled at all.
+            Harmless under blockImplicitSubmit: that guard only cancels Enter on an <input>. */}
+        <div className='flex flex-wrap items-center gap-x-3 gap-y-1'>
+          {/* Hover is a background, not an underline, so this reads as the same kind of control as
+              記事の設定 at the other end of the line rather than as prose. `-mx-1` cancels the
+              padding the background needs, which keeps the text itself flush with the title's left
+              edge below it — the button carries `-mr-1` for the same reason on the right. */}
+          <Link
+            href='/admin'
+            className='-mx-1 rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+            記事一覧
+          </Link>
+          {/* 記事の設定 rides the same line as the way out rather than the pinned bar below it.
+              On that bar its summary sat beside 未公開 and 未保存… in the same small grey, and
+              the two read as one run of status — the failure the back link was measured into
+              and out of (2026-09-12). Here the line has one job on each end.
+
+              It gives up being pinned, which is the right thing to give up: metadata is touched
+              at the start and the end of writing, and what has to stay reachable from the middle
+              of a long post is 投稿. That is still on the bar. */}
+          <span className='ml-auto flex flex-wrap items-center gap-2'>
+            {/* Only 限定公開 is reported. カテゴリ・タグ・サムネイル always hold a value — a
+                category is pre-filled, and 「タグなし」「サムネイルなし」 are the ordinary case —
+                so their chips said something on every post and therefore marked nothing. This one
+                is absent unless the post is unlisted, which is the state an author can otherwise
+                forget they set. */}
+            {unlisted && (
+              <span className='rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
+                限定公開
+              </span>
+            )}
+            <button
+              type='button'
+              aria-expanded={settingsOpen}
+              aria-controls={SETTINGS_PANEL_ID}
+              onClick={() => setSettingsOpen((open) => !open)}
+              className='-mr-1 rounded px-1 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800'>
+              記事の設定
+            </button>
+          </span>
+        </div>
         {/* No <Field>: the label is the placeholder (titleClass says why). aria-label is not
             optional decoration — a placeholder is not an accessible name (it is inconsistently
             exposed, and gone the moment there is a value). It repeats the placeholder verbatim
@@ -472,74 +515,61 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           aria-label='記事タイトル'
           className={titleClass}
         />
-        {/* A <details>, not `{settingsOpen && …}`: collapsing must not unmount these fields.
-            useAutosave reads the live form with `new FormData(form)`, and publish reads the
-            same DOM, so a field that leaves the document leaves the payload — 限定公開 would
-            silently clear itself and the thumbnail would come off. `hidden` children stay in
-            both. */}
-        <details
-          open={settingsOpen}
-          onToggle={(event) => setSettingsOpen(event.currentTarget.open)}
-          className='rounded border border-zinc-300 dark:border-zinc-700'>
-          <summary className='flex cursor-pointer list-none items-center gap-3 px-3 py-2 text-sm hover:bg-zinc-50 [&::-webkit-details-marker]:hidden dark:hover:bg-zinc-900'>
-            <span className='font-medium'>記事の設定</span>
-            {/* The summary is the whole reason カテゴリ・タグ・限定公開 are controlled: closed,
-                this line is the only report of what they hold. */}
-            <span className='flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400'>
-              <span className='rounded bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800'>
-                {category.trim() === '' ? 'カテゴリなし' : category.trim()}
-              </span>
-              <span>{tagCount === 0 ? 'タグなし' : `タグ ${tagCount}`}</span>
-              <span>{hasThumbnail ? 'サムネイルあり' : 'サムネイルなし'}</span>
-              {unlisted && (
-                <span className='rounded bg-violet-100 px-2 py-0.5 text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
-                  限定公開
-                </span>
-              )}
-            </span>
-            <span className='ml-auto text-xs text-zinc-400 dark:text-zinc-500'>
-              {settingsOpen ? '閉じる' : '開く'}
-            </span>
-          </summary>
-          <div className='space-y-4 border-t border-zinc-200 px-3 py-4 dark:border-zinc-800'>
-            <div className='grid gap-4 sm:grid-cols-2'>
-              <Field label='カテゴリ'>
-                <input
-                  name='category'
-                  value={category}
-                  onChange={(event) => setCategory(event.target.value)}
-                  className={inputClass}
-                />
-              </Field>
-              <Field label='タグ（カンマ区切り）'>
-                <input
-                  name='tags'
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  className={inputClass}
-                />
-              </Field>
-            </div>
-            <Field label='説明'>
-              <input name='description' defaultValue={initial.description} className={inputClass} />
+        {/* Below the title, not above it. The toggle is up on the top line and this opens here,
+            which separates them — `aria-controls` is what ties them back together. The reason is
+            measured: opened above, the panel pushed the title ~280px down and took the post off
+            the screen, so the author could not see which post they were setting up.
+
+            `hidden`, never `{settingsOpen && …}`: useAutosave reads the live form with
+            `new FormData(form)` and publish reads the same DOM, so a field that leaves the
+            document leaves the payload — 限定公開 would silently clear itself and the thumbnail
+            would come off. A hidden child is still in both.
+
+            It keeps its own blockImplicitSubmit even though the wrapper around it has one. The
+            guard belongs to these fields, not to a position: without it Enter in カテゴリ reaches
+            the form's first submit button, which is 投稿, and this panel has already moved twice. */}
+        <div
+          id={SETTINGS_PANEL_ID}
+          hidden={!settingsOpen}
+          onKeyDown={blockImplicitSubmit}
+          className='space-y-4 rounded border border-zinc-300 px-3 py-4 dark:border-zinc-700'>
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <Field label='カテゴリ'>
+              <input
+                name='category'
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                className={inputClass}
+              />
             </Field>
-            {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
-                the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
-            <div className='flex flex-wrap items-end justify-between gap-6'>
-              <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
-              <label className='flex items-center gap-2 pb-1 text-sm'>
-                <input
-                  type='checkbox'
-                  name='unlisted'
-                  checked={unlisted}
-                  onChange={(event) => setUnlisted(event.target.checked)}
-                  className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-                />
-                <span>限定公開にする</span>
-              </label>
-            </div>
+            <Field label='タグ（カンマ区切り）'>
+              <input
+                name='tags'
+                value={tags}
+                onChange={(event) => setTags(event.target.value)}
+                className={inputClass}
+              />
+            </Field>
           </div>
-        </details>
+          <Field label='説明'>
+            <input name='description' defaultValue={initial.description} className={inputClass} />
+          </Field>
+          {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
+            the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
+          <div className='flex flex-wrap items-end justify-between gap-6'>
+            <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
+            <label className='flex items-center gap-2 pb-1 text-sm'>
+              <input
+                type='checkbox'
+                name='unlisted'
+                checked={unlisted}
+                onChange={(event) => setUnlisted(event.target.checked)}
+                className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
+              />
+              <span>限定公開にする</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <div className='space-y-2'>
