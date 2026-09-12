@@ -710,14 +710,20 @@ body.link-menu-open .table-toolbar {
 /* Editor-only chrome: the image's bubble menu (ImageBubble.tsx), fitted into the picture's own
    top-right corner rather than floating above the block.
 
-   **The transform is what places it**, on both axes; floating-ui only solves the picture's
-   top-left corner (`top-start`, `offset: 0`). Its `top-end` would have solved x from this menu's
-   own width, which is one React render behind whenever the button set changes; `100%` here
-   resolves against the menu's current width at paint time and cannot be stale. `translateY(100%)`
-   is the same trick vertically — the menu is placed above the picture and pushed down by its own
-   height, so its top edge lands on the picture's. `--anchor-width` is the picture box's width,
-   written by `fitMenuToPicture` from the live box; the fallback keeps a menu that somehow has no
-   anchor width at the left edge rather than off-screen.
+   **The transform is what places it**, on both axes; floating-ui only solves the BLOCK's top-left
+   corner (`top-start`, `offset: 0`). Its `top-end` would have solved x from this menu's own width,
+   which is one React render behind whenever the button set changes; `100%` here resolves against
+   the menu's current width at paint time and cannot be stale. `translateY(100%)` is the same trick
+   vertically — the menu is pushed down by its own height so its top edge lands on the anchor's.
+
+   Three properties, all written by `fitMenuToPicture` from the live boxes: `--anchor-width` is the
+   picture's width, and `--anchor-left`/`--anchor-top` are its offset inside the block. They carry
+   the whole journey from the block's corner to the picture's, and they are on this side of the
+   line deliberately — the plugin captures its reference ONCE, when the paste selects the image and
+   the bitmap has not loaded, so anything measured from the picture there is a `0x0` box at the
+   middle of the column (ImageBubble.tsx says what that cost). These resolve at paint instead, on
+   every render. The fallbacks keep a menu that somehow has no anchor at the block's own corner
+   rather than off-screen.
 
    Square, and hard-bordered. Two of its corners meet the picture's own edges, so rounding them
    would open a gap and read as dropped on top rather than fitted in. The border is `--foreground`
@@ -729,7 +735,10 @@ body.link-menu-open .table-toolbar {
    and padding are overridden here rather than parameterised, since this is the only menu that
    wants a segmented row. These rules are unlayered and so outrank those utilities. */
 .image-bubble {
-  transform: translate(calc(var(--anchor-width, 100%) - 100%), 100%);
+  transform: translate(
+    calc(var(--anchor-left, 0px) + var(--anchor-width, 100%) - 100%),
+    calc(var(--anchor-top, 0px) + 100%)
+  );
   border: 1px solid var(--foreground);
   border-radius: 0;
   padding: 0;
@@ -742,7 +751,11 @@ body.link-menu-open .table-toolbar {
    the 8px gap that `offset: 0` left out. `fitMenuToPicture` in ImageBubble.tsx sets this class,
    after React has committed, because the width it compares against is the menu's own. */
 .image-bubble.is-outside {
-  transform: translateY(-8px);
+  /* Above the picture rather than in it, so the y-trick of the base rule is dropped and an 8px gap
+     takes its place. The x and y offsets stay: the anchor is the column-wide block, so without
+     `--anchor-left` the menu would sit out in the empty column beside a narrow picture instead of
+     over it. */
+  transform: translate(var(--anchor-left, 0px), calc(var(--anchor-top, 0px) - 8px));
 }
 .image-bubble .toolbar-button {
   border-radius: 0;
