@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { gotoPublished } from './published-post';
 
 // ```diff fences get a per-line class from lib/shiki-diff-line-transformer.ts (Shiki's diff
 // grammar only sets a token *foreground* color, not the row background a real diff view needs).
@@ -23,8 +24,7 @@ test('a public ```diff code block paints +/- rows, but not +++/--- header rows',
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await gotoPublished(page);
 
   const lines = page.locator('[data-rehype-pretty-code-figure] [data-line]');
   await expect(lines).toHaveCount(4);
@@ -63,8 +63,7 @@ test('a public ```diff_ts code block highlights TypeScript tokens alongside the 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await gotoPublished(page);
 
   const lines = page.locator('[data-rehype-pretty-code-figure] [data-line]');
   await expect(lines).toHaveCount(2);

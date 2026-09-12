@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, openPostSettings } from './editor-authoring';
+import { publishedPath } from './published-post';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
 // body-derived fallback, and the four surfaces that show the result
@@ -44,9 +45,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  return publishedPath(page);
 }
 
 // The explicit half. There are two routes to a choice — the bubble menu marks an image already in

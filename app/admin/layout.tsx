@@ -1,32 +1,15 @@
-import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
-import { logout } from '@/app/actions/auth';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await verifySession();
+  // There is no middleware: this call is the admin routes' auth gate. `cache`d in
+  // lib/dal.ts, so a page that needs the session again pays nothing.
+  await verifySession();
 
-  return (
-    <div className='mx-auto w-full max-w-site'>
-      <div className='mb-8 flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800'>
-        <nav className='flex items-center gap-4'>
-          <Link href='/admin' className='font-bold tracking-tight'>
-            管理
-          </Link>
-          <Link href='/admin/posts/new' className='text-sm hover:underline'>
-            新規記事
-          </Link>
-          <Link href='/' className='text-sm hover:underline'>
-            サイトを見る
-          </Link>
-        </nav>
-        <form action={logout} className='flex items-center gap-3 text-sm'>
-          <span className='text-zinc-500 dark:text-zinc-400'>{session.username}</span>
-          <button type='submit' className='hover:underline'>
-            ログアウト
-          </button>
-        </form>
-      </div>
-      {children}
-    </div>
-  );
+  // No nav of its own. 管理 and サイトを見る duplicated SiteHeader's links, and on the
+  // editor screens the row was a third band of chrome above a screen whose point is the
+  // post — 新規記事 and ログアウト moved onto the 記事一覧 page, the only screen that
+  // needs them. What stays here is the column width: app/layout.tsx's <main> sets none
+  // ("moved into each page's own root element") and the admin pages render a bare
+  // <section>, so without this wrapper the editor goes full-bleed.
+  return <div className='mx-auto w-full max-w-site'>{children}</div>;
 }

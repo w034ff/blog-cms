@@ -51,10 +51,18 @@ const emptyState: PostFormState = {};
 const inputClass =
   'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
 
-// The title is the one metadata field that is always on screen, and the only one whose
-// value the reader sees, so it carries the weight the rest of the fields don't.
+// The title is the one metadata field that is always on screen, and the only one whose value
+// the reader sees, so it carries the weight the rest of the fields don't — and it is the only
+// one that can lose its label. A placeholder only works where the typed value names its own
+// field, which is true of a lone 24px bold line and false of カテゴリ「開発」 or タグ; those
+// keep their <Field> labels. note and Zenn are both shaped this way (measured 2026-09-11).
+//
+// No `focus:ring`, so the underline carries visible keyboard focus alone: it is 2px and
+// transparent from the start, so focus changes only its colour and never the field's height.
+// zinc-500 both ways is a contrast floor, not a shade preference — placeholder text at this
+// size is WCAG large text (3:1), and zinc-400 reaches only 2.6:1 on either ground.
 const titleClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-lg font-bold tracking-tight focus:outline-none focus:ring-2 focus:ring-zinc-400';
+  'w-full border-b-2 border-transparent bg-transparent px-0 py-2 text-2xl font-bold tracking-tight placeholder:text-zinc-500 hover:border-zinc-200 focus:border-zinc-500 focus:outline-none dark:hover:border-zinc-800 dark:focus:border-zinc-500';
 
 // Enter in a text field submits the form by activating its first submit button, which here
 // is 投稿/更新. That was survivable while the publish row sat below a screenful of post;
@@ -95,8 +103,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // than left uncontrolled like the text fields, because the picker writes it
   // and the preview reads it back.
   const [thumbnail, setThumbnail] = useState(initial.thumbnail);
-  // The opaque public slug, only needed to build the 表示 link. Empty in create
-  // mode until publish reports the server-assigned slug; otherwise the row's slug.
+  // The opaque public slug. Nothing on screen shows it — it feeds the link card's
+  // self-reference guard (`editor.storage.linkCard.ownSlug`) and nothing else. Empty in
+  // create mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
   // The session cookie lapsed mid-edit: autosave/publish return 401. We keep the
   // editor mounted (content intact) and prompt a re-login. Cleared by any
@@ -447,15 +456,22 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         </div>
       )}
       <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
-        <Field label='タイトル'>
-          <input
-            name='title'
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            required
-            className={titleClass}
-          />
-        </Field>
+        {/* No <Field>: the label is the placeholder (titleClass says why). aria-label is not
+            optional decoration — a placeholder is not an accessible name (it is inconsistently
+            exposed, and gone the moment there is a value). It repeats the placeholder verbatim
+            rather than shortening to タイトル so that the name a voice-control user speaks is the
+            text they can see (WCAG 2.5.3). The 49 `getByLabel('タイトル')` calls across 26 specs
+            still resolve against it: Playwright's getByLabel reads aria-label, and matches a
+            substring unless given `exact`. */}
+        <input
+          name='title'
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          required
+          placeholder='記事タイトル'
+          aria-label='記事タイトル'
+          className={titleClass}
+        />
         {/* A <details>, not `{settingsOpen && …}`: collapsing must not unmount these fields.
             useAutosave reads the live form with `new FormData(form)`, and publish reads the
             same DOM, so a field that leaves the document leaves the payload — 限定公開 would
@@ -554,13 +570,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                   {autosaveStatus.text}
                 </span>
               )}
-              {isPublished && slug && (
-                <a
-                  href={`/posts/${slug}`}
-                  className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
-                  表示
-                </a>
-              )}
+              {/* No 表示 link here any more. It navigated out of a mounted editor in the same
+                  tab, from a row that is pinned to the top of the screen the whole time the post
+                  is being written. It lives on the 記事一覧 row instead (app/admin/page.tsx),
+                  which is where a published post is already being handled rather than written. */}
               <div className='ml-auto flex items-center gap-2'>
                 {/* Kept ahead of 下書きに戻す: it is the form's first submit button, which is
                     what an Enter pressed in a metadata field activates. */}

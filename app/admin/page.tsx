@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { deletePostAction } from '@/app/actions/posts';
+import { logout } from '@/app/actions/auth';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 
@@ -35,7 +36,23 @@ export default async function AdminHome() {
 
   return (
     <section>
-      <h1 className='mb-6 text-2xl font-bold tracking-tight'>記事一覧</h1>
+      {/* 新規記事 and ログアウト live on this row rather than in a nav band over every admin
+          screen (app/admin/layout.tsx says why). The list is the hub both belong to — and it
+          keeps the empty-state sentence below, which names 「新規記事」, pointing at something
+          on the same screen. */}
+      <div className='mb-6 flex items-center justify-between gap-4'>
+        <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
+        <div className='flex items-center gap-4 text-sm'>
+          <Link href='/admin/posts/new' className='font-medium hover:underline'>
+            新規記事
+          </Link>
+          <form action={logout}>
+            <button type='submit' className='text-zinc-500 hover:underline dark:text-zinc-400'>
+              ログアウト
+            </button>
+          </form>
+        </div>
+      </div>
       {posts.length === 0 ? (
         <p className='text-zinc-500 dark:text-zinc-400'>
           記事がありません。「新規記事」から作成できます。
@@ -77,8 +94,12 @@ export default async function AdminHome() {
                       </span>
                     )}
                   </div>
+                  {/* No slug. It is a 20-hex random string (lib/slug.ts) that names nothing a
+                      reader of this list is looking for, and it was the widest thing on the
+                      line — the title it sits under is what identifies the row. Reaching the
+                      public URL is the 表示 link's job now. */}
                   <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
-                    {post.slug} · {formatPostDate(post.date) || '未公開'}
+                    {formatPostDate(post.date) || '未公開'}
                     {hasVisibleUpdate(post.date, post.updatedAt) && (
                       <> (更新: {formatPostDate(post.updatedAt)})</>
                     )}{' '}
@@ -86,12 +107,27 @@ export default async function AdminHome() {
                   </div>
                 </div>
               </div>
-              <form action={deletePostAction}>
-                <input type='hidden' name='id' value={post.id} />
-                <button type='submit' className='text-sm text-red-600 hover:underline'>
-                  削除
-                </button>
-              </form>
+              <div className='flex shrink-0 items-center gap-4'>
+                {/* Moved off the editor's pinned publish row, where it was a same-tab navigation
+                    out of a mounted editor. `draft` is the half of the gate that decides: every
+                    row has a slug from the moment autosave created it (lib/db/schema.ts), drafts
+                    included, while `getPostBySlug` returns null for a draft — so slug alone would
+                    put a link here that 404s. This row is also the only click-path to a 限定公開
+                    post, which lib/posts.ts keeps out of every public listing. */}
+                {!post.draft && post.slug && (
+                  <a
+                    href={`/posts/${post.slug}`}
+                    className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+                    表示
+                  </a>
+                )}
+                <form action={deletePostAction}>
+                  <input type='hidden' name='id' value={post.id} />
+                  <button type='submit' className='text-sm text-red-600 hover:underline'>
+                    削除
+                  </button>
+                </form>
+              </div>
             </li>
           ))}
         </ul>

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 import { shot } from './editor-probe';
+import { publishedPath } from './published-post';
 
 // The YouTube embed on the *published* page (docs/embed-requirements.md §6, §9.5).
 //
@@ -29,9 +30,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
 
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  return publishedPath(page);
 }
 
 test('a published reference becomes an iframe in a 16:9 box (§9.5)', async ({ page }) => {
@@ -374,7 +373,9 @@ test('a frame answering under another box’s id is ignored (G12)', async ({ pag
   // listener that had stopped accepting anything at all.
   await report(page, 'emb-0', 612, 1);
   await expect
-    .poll(async () => (await page.locator('#post-body .embed-gist .embed-frame').boundingBox())!.height)
+    .poll(
+      async () => (await page.locator('#post-body .embed-gist .embed-frame').boundingBox())!.height,
+    )
     .toBeGreaterThan(600);
 });
 
@@ -451,7 +452,9 @@ test('a CodeSandbox reference is published in a fixed 500px box (C7)', async ({ 
 // that loaded real pens would be measuring how many CodePen has served this IP lately.
 const CODEPEN_PAGE = 'https://codepen.io/flatsato/pen/VwqprLp';
 
-test('a CodePen reference is published in a 450px box that keeps 300px on a narrow column (P7)', async ({ page }) => {
+test('a CodePen reference is published in a 450px box that keeps 300px on a narrow column (P7)', async ({
+  page,
+}) => {
   await page.route('https://codepen.io/*/embed/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>stub</title>' }),
   );

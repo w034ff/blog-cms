@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { publishedPath } from './published-post';
 
 // The full publish lifecycle over the isolated DB: create → autosave materializes
 // the row (URL sync) → 投稿 → edit the live post (pending changes) → 更新.
@@ -31,15 +32,18 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await expect(page.getByText('未公開', { exact: true })).toBeVisible();
 
   // Publish. The editor adopts the action result in place: status flips to
-  // 公開済み（最新）, the button relabels to 更新, and the 表示 link carries the
-  // server-assigned opaque slug.
+  // 公開済み（最新）and the button relabels to 更新.
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '表示' })).toHaveAttribute(
-    'href',
-    /^\/posts\/[0-9a-f]+$/,
-  );
+
+  // The post's public address. Read from the row rather than from the screen: the editor never
+  // showed the slug, and the 表示 link that used to carry it here has moved to the 記事一覧 row
+  // (checked at the end of this test, once the post is in its final state). The slug itself came
+  // from the autosave above — app/api/drafts/route.ts assigns one at row creation — so what
+  // publishing changes is that the address now serves.
+  const published = await publishedPath(page);
+  expect(published).toMatch(/^\/posts\/[0-9a-f]+$/);
 
   // Editing the live post flags it as ahead of the public version and dirty.
   await editor.click();
@@ -53,6 +57,16 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await page.getByRole('button', { name: '更新' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+
+  // Where 表示 lives now. Its two gates are a slug (assigned above) and the post not being a
+  // draft, so this row — a post that has been through publish and 更新 — is the state it is for.
+  await page.goto('/admin');
+  // Pinned by the row's own title link rather than by hasText: every spec in the run publishes
+  // into this list, and a substring match would go ambiguous the moment two titles overlap.
+  const row = page.locator('li', {
+    has: page.getByRole('link', { name: 'E2E publish flow', exact: true }),
+  });
+  await expect(row.getByRole('link', { name: '表示' })).toHaveAttribute('href', published);
 
   expect(pageErrors).toEqual([]);
 });

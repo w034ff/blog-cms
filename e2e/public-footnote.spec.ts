@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
+import { gotoPublished } from './published-post';
 
 // Neither of the two footnote links carries a resting underline any more, so hover and keyboard
 // focus are the entire affordance and both have to be measured — a resting underline is what would
@@ -56,9 +57,7 @@ test('a published footnote reference is the editor’s `[n]`, and its definition
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
 
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  await page.goto(href!);
+  await gotoPublished(page);
 
   // remark-gfm puts the attribute on the <a>, inside a bare <sup> — the shape the CSS selectors
   // depend on, and the thing rehype-sanitize could have taken away.

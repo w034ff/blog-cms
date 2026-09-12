@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import Database from 'better-sqlite3';
 import { BASE_URL, TEST_DB_PATH } from './constants';
+import { postSlug } from './published-post';
 import {
   closeHistory,
   collapseToEnd,
@@ -829,12 +830,7 @@ async function openOwnPost(page: Page, title: string): Promise<string> {
   // what says the editor has adopted the identity.
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
-  const id = Number(/\/admin\/posts\/(\d+)\/edit/.exec(page.url())?.[1]);
-  const db = new Database(TEST_DB_PATH, { readonly: true });
-  const row = db.prepare('SELECT slug FROM posts WHERE id = ?').get(id) as { slug: string };
-  db.close();
-  expect(row.slug).toBeTruthy();
-  return row.slug;
+  return postSlug(page);
 }
 
 // Reopens the picker on an already-resolved card via 「変更」 — the only surviving door to it, now

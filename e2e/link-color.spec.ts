@@ -1,5 +1,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
+import { gotoPublished, publishedPath } from './published-post';
 
 // `.prose a` got a colour of its own (docs/link-requirements.md §7.1). Until now prose-zinc left
 // links at body hue — zinc-900 on a zinc-700 body, white on zinc-300 — and the permanent underline
@@ -59,9 +60,7 @@ async function publish(page: Page, title: string): Promise<string> {
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
 
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  return publishedPath(page);
 }
 
 test('an ordinary link is blue on both surfaces, and keeps the underline it had', async ({
@@ -160,8 +159,7 @@ test('a link carrying the 強調 mark is one colour, text and underline', async 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
   await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await gotoPublished(page);
 
   // The published side rebuilds the nesting from markdown (`[<span …>…</span>](…)`) rather than
   // copying the editor's DOM, so it is a second measurement, not the same one twice.
