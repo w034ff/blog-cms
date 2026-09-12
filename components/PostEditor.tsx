@@ -572,7 +572,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               )}
               {/* No 表示 link here any more. It navigated out of a mounted editor in the same
                   tab, from a row that is pinned to the top of the screen the whole time the post
-                  is being written. It lives on the 記事一覧 row instead (app/admin/page.tsx),
+                  is being written. It lives on the 記事一覧 row instead (app/admin/(list)/page.tsx),
                   which is where a published post is already being handled rather than written. */}
               <div className='ml-auto flex items-center gap-2'>
                 {/* Kept ahead of 下書きに戻す: it is the form's first submit button, which is

@@ -36,10 +36,11 @@ export default async function AdminHome() {
 
   return (
     <section>
-      {/* 新規記事 and ログアウト live on this row rather than in a nav band over every admin
-          screen (app/admin/layout.tsx says why). The list is the hub both belong to — and it
-          keeps the empty-state sentence below, which names 「新規記事」, pointing at something
-          on the same screen. */}
+      {/* Both live on this row rather than in a nav band over every admin screen
+          (app/admin/layout.tsx says why). The list is the hub both belong to — and it keeps
+          the empty-state sentence below, which names 「新規記事」, pointing at something on the
+          same screen. No サイトを見る: SiteHeader's own 「Tech Blog」 is above this row and goes
+          to the same place (app/admin/(list)/layout.tsx). */}
       <div className='mb-6 flex items-center justify-between gap-4'>
         <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
         <div className='flex items-center gap-4 text-sm'>
