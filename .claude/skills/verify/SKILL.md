@@ -15,18 +15,37 @@ each; AGENTS.md holds the question to ask before writing either.
 
 ## Run it
 
+**Run the files your change touches, not the suite.** The whole suite is 762 cases
+and about 31 minutes serially; one file is 20-90 seconds. A full run belongs before
+a merge, not before a commit.
+
 ```bash
-npm run test:e2e              # one server, the whole suite
-npm run test:e2e:shards       # N processes, one server each (default 3)
+npx playwright test e2e/editor-embed.spec.ts          # one file — the default
+npx playwright test e2e/a.spec.ts e2e/b.spec.ts       # several: one command, one boot (~14s each)
+npx playwright test e2e/editor-embed.spec.ts:658      # one test, by line
+npx playwright test e2e/editor-embed.spec.ts --repeat-each=5   # is it flaky?
+npm run test:e2e                                      # the whole suite, serial (~31m)
+npm run test:e2e:shards                               # the whole suite, 3 processes
 ```
 
-Sharding is the faster path — measured 2026-09-11, the same suite ran in 14.9m
-across 3 shards against 34.7m in one. Each shard boots its own `next dev` and
-Chrome, so it is memory-bound; drop to 2 if the machine is loaded, and **never
-delete a `.next-e2e-*` directory while a run holds it** (the servers panic and
-every remaining test fails for no reason).
+**A change with no files of its own needs the suite.** The rule above assumes the
+change belongs to a spec: an extension, a NodeView, one screen. Shared chrome —
+`components/PostEditor.tsx`, a layout under `app/`, `app/globals.css` — has no
+"its files", and running two of them green proves nothing. `20a3f24` (記事の設定
+moved onto the top line) landed in 17 specs at once, through geometry and a
+locator that no longer matched. For those, run the suite, or at least every
+editor spec.
 
-It **coexists with `npm run dev`** (port 3001) — no need to stop your dev server.
+**The dev server and the full suite.** A serial `npm run test:e2e` coexists with
+`npm run dev` (port 3001) — measured 2026-09-13, twice, 31.0m and 33.6m. **Sharding
+does not**: with `npm run dev` up, a 3-shard run put 61 of 764 red and took 2,070s,
+and the next one was killed by the OS for low memory (measured 2026-09-12, 19GB).
+Stopped, the same suite is green in 925s. So: shards are the fast path (925s against
+~1,900s serial) and they want the machine to themselves; leave dev up only for a
+serial run. Each shard boots its own `next dev` and Chrome, which is what makes it
+memory-bound — drop to 2 if the machine is loaded, and **never delete a
+`.next-e2e-*` directory while a run holds it** (the servers panic and every
+remaining test fails for no reason).
 
 Under the hood (`playwright.config.ts`, `e2e/constants.ts`): every per-server path
 is keyed by `E2E_PORT` (default 3100), which is what lets the shards coexist.
@@ -67,6 +86,33 @@ the gesture by hand:
 
 Drag endpoints are measured, never hard-coded: a fixed `+40px` once took 13 specs
 red at once because Chrome's drag-select does not snap to the nearest boundary.
+
+## When something goes red
+
+Measured 2026-09-13: three full runs produced three reds and **zero product
+defects** — every one was the harness's own input timing. So triage before
+debugging, in this order, changing only the set of tests while the commit and the
+build stay the same:
+
+1. **The one test alone** (`--repeat-each=5`). Green here and red in a full run
+   means the suite, not the code.
+2. **Its file.** Green per-file and red in a full run is the shape
+   `docs/cms-features.md` records twice (the image-bubble 22s case, and this one).
+3. **A full run**, only once 1 and 2 have said something.
+
+Then read the failure as one of two kinds:
+
+- **The setup did not land** — a caret that never moved, a click that made no
+  NodeSelection, a row that is still the previous query's. Fix the wait, not the
+  product. A wait must be a predicate that is **false before the thing it waits for
+  and true after**: a count that is already right, a regex that already matches, and
+  a fixed `waitForTimeout` are all reached without anything having happened.
+- **The product changed.** Only then open the app code.
+
+Native keys are for when the key *is* the subject. When a keystroke is only setup,
+place the caret through the editor (`caretAtStartOf`, `setRange`) — a `Home` or an
+arrow sent inside ProseMirror's 20ms selection-sync window is discarded, and no
+amount of waiting produces it.
 
 ## Notes / constraints
 
