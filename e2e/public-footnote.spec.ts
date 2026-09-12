@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { loadMarkdown, expectPublished } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // Neither of the two footnote links carries a resting underline any more, so hover and keyboard
@@ -55,7 +55,7 @@ test('a published footnote reference is the editor’s `[n]`, and its definition
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
   await gotoPublished(page);
 

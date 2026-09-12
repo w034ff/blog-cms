@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, openPostSettings } from './editor-authoring';
+import { loadMarkdown, openPostSettings, expectPublished } from './editor-authoring';
 import { publishedPath } from './published-post';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
@@ -44,7 +44,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   if (source !== '') await loadMarkdown(page, source);
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   return publishedPath(page);
 }
 

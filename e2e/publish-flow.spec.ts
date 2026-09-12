@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectPublished } from './editor-authoring';
 import { publishedPath } from './published-post';
 
 // The full publish lifecycle over the isolated DB: create → autosave materializes
@@ -31,10 +32,10 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/edit$/);
   await expect(page.getByText('未公開', { exact: true })).toBeVisible();
 
-  // Publish. The editor adopts the action result in place: status flips to
-  // 公開済み（最新）and the button relabels to 更新.
+  // Publish. The editor adopts the action result in place: the row's publish state flips to
+  // published-current and the button relabels to 更新.
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
 
   // The post's public address. Read from the row rather than from the screen: the editor never
@@ -55,7 +56,7 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   // and the publish result itself must settle the dirty state (acceptSaved) —
   // the indicator flips to 保存済み ✓ without an autosave round-trip.
   await page.getByRole('button', { name: '更新' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
 
   // Where 表示 lives now. Its two gates are a slug (assigned above) and the post not being a

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { closeHistory, loadMarkdown } from './editor-authoring';
+import { closeHistory, loadMarkdown, expectPublished } from './editor-authoring';
 import { markdown, shot } from './editor-probe';
 import { BLOB_NOTICES } from '../components/editor/github-blob-import';
 import { gotoPublished } from './published-post';
@@ -255,7 +255,7 @@ test('the published block wears the same header (§19.4)', async ({ page }) => {
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await gotoPublished(page);
 
   const source = page.locator('.code-source-link');

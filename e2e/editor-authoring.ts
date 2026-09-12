@@ -266,3 +266,17 @@ export async function openPostSettings(page: Page): Promise<void> {
   await toggle.click();
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
 }
+
+// The suite's publish barrier: 投稿/更新 has landed and the post is live with nothing pending.
+//
+// Reads `data-publish-state`, not the status text. The row writes out only the two states that
+// need acting on (PostEditor.tsx says why), so 公開済み（最新） is no longer on screen — and it
+// was this barrier in 26 places, which coupled the suite to one piece of Japanese UI copy. The
+// span is empty in this state and therefore has no box, so this asserts attachment, not
+// visibility. The publish button cannot stand in for it: publishDisabled is true both while the
+// request is in flight and after it lands, so it never distinguishes the two.
+export async function expectPublished(page: Page): Promise<void> {
+  await expect(page.locator('[data-publish-state="published-current"]')).toBeAttached({
+    timeout: 20_000,
+  });
+}

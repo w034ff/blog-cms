@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectPublished } from './editor-authoring';
 
 // The code block NodeView (components/editor/code-block-extension.ts) surfaces the block's
 // `language` (a <select>) and `filename` (a text field) in the editor. Browser-only — the
@@ -241,7 +242,7 @@ test('the header controls keep their values across a form-action save (投稿/�
   // node's attrs stayed intact (no ProseMirror transaction fired to re-sync the NodeView).
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
   await expect(block.locator('.code-block-filename')).toHaveValue('index.ts');
   await expect(block.locator('.code-block-lang')).toHaveValue('ts');

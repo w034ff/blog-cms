@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectPublished } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // The copy button is injected client-side (components/CodeCopyButtons.tsx) into each code block
@@ -21,7 +22,7 @@ test('the public code block copy button copies the code with newlines', async ({
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await gotoPublished(page);
 
   const button = page.locator('.code-copy-btn');
@@ -53,7 +54,7 @@ test('a click just outside the visible copy button still copies (enlarged hit ar
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await gotoPublished(page);
 
   const button = page.locator('.code-copy-btn');
@@ -80,7 +81,7 @@ async function publishCodeBlock(page: Page, withFilename: boolean) {
   }
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
   await gotoPublished(page);
   await expect(page.locator('.code-copy-btn')).toBeVisible();
 }

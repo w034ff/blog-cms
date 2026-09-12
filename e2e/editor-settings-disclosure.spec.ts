@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openPostSettings } from './editor-authoring';
+import { openPostSettings, expectPublished } from './editor-authoring';
 
 // 記事の設定 collapses the metadata fields behind a toggle on the editor's pinned bar. Two
 // things have to hold for that to be safe, and neither is visible from the markup: the fields
@@ -30,7 +30,7 @@ test('values set inside 記事の設定 survive a publish made while it is close
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
   // Round-trip through the server: reload the edit page and read the fields back. A payload
   // that dropped them would come back with an empty category and the post listed publicly.

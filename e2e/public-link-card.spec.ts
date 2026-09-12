@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { loadMarkdown, expectPublished } from './editor-authoring';
 import { publishedPath } from './published-post';
 
 // The link card on the *published* page (docs/link-card-requirements.md §6, criteria 1c/2a–2e).
@@ -32,7 +32,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
 
   await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
   return publishedPath(page);
 }

@@ -404,11 +404,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const publishDisabled =
     pending || (isPublished && !pendingPublish) || (!hasIdentity && autosaveState === 'saving');
 
-  const publishStatus = isPublished
+  // Three states, and only the two that need acting on are written out. 公開済み（最新） used to
+  // be the third; it said "nothing to do" on every published post that was already current, which
+  // is the ordinary case, so it marked nothing while sitting in the same small text as 保存済み
+  // and reading as one run of status with it (2026-09-13).
+  const publishState = isPublished
     ? pendingPublish
+      ? 'published-pending'
+      : 'published-current'
+    : 'draft';
+  const publishStatus =
+    publishState === 'published-pending'
       ? { text: '未公開の変更あり', className: 'text-amber-600' }
-      : { text: '公開済み（最新）', className: 'text-green-600' }
-    : { text: '未公開', className: 'text-zinc-400' };
+      : publishState === 'draft'
+        ? { text: '未公開', className: 'text-zinc-400' }
+        : null;
 
   // No 'saving' row: on a local CMS the save round-trip is a blink, so it would
   // flash imperceptibly and says no more than '未保存…' (both mean "not yet
@@ -592,8 +602,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 and a mounted editor is not a precondition for publishing — the body travels in
                 a hidden input. An editor that fails to mount must not take publish with it. */}
             <div className='flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-300 px-2 py-1 dark:border-zinc-700'>
-              <span className={`text-xs ${publishStatus.className}`} aria-live='polite'>
-                {publishStatus.text}
+              {/* Always rendered, even when it has nothing to say, because `data-publish-state`
+                  is what the E2E suite waits on after 投稿 — 26 sites across 19 specs used to
+                  wait for the string 公開済み（最新） instead, which coupled the whole suite to
+                  one piece of Japanese UI copy. The attribute reports all three states, so the
+                  barrier holds on both publish paths (a draft's first 投稿 and a re-publish),
+                  neither of which the button's own state can distinguish: publishDisabled is true
+                  both while the request is in flight and after it lands. Being empty here, the
+                  span has no box — specs assert toBeAttached, not toBeVisible. */}
+              <span
+                data-publish-state={publishState}
+                className={`text-xs ${publishStatus?.className ?? ''}`}
+                aria-live='polite'>
+                {publishStatus?.text ?? ''}
               </span>
               {autosaveStatus && (
                 <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
