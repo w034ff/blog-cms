@@ -1085,6 +1085,15 @@ test('a draft row wears a badge and drops the empty category, and its name is un
   // And the other half: a published post in a real category draws it, so the rule above is a rule
   // about `uncategorized` rather than about the line never appearing.
   await page.locator('.link-card-search').fill(CARD_TITLE);
+  // **Waiting for one row does not say it is the NEW one.** Both queries return exactly one, the
+  // search is asynchronous, and a count that is already right is reached without anything having
+  // changed — so `toHaveCount(1)` alone let the draft above be read back as the published post,
+  // and `badge` came out 未公開. Intermittent by construction: it depends on whether the second
+  // query has landed, which is why it survived every full run until 2026-09-12 and then failed
+  // one. The draft leaving is the event that actually separates the two.
+  await expect(
+    page.locator('.link-card-results').getByRole('button', { name: `${draftTitle}（未公開）` }),
+  ).toHaveCount(0);
   await expect(page.locator('.link-card-result')).toHaveCount(1);
   const [publishedRow] = await rowShapes(page);
   expect(publishedRow.badge).toBeNull();
