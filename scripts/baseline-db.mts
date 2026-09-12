@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
+import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 import { readMigrations, type Migration } from './migrations.mts';
 
@@ -73,7 +74,7 @@ function main(): void {
   }
 
   const migrations = readMigrations();
-  const db = new Database(DB_PATH);
+  const db = openDb(DB_PATH);
   try {
     const alreadyLedgered = db
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='__drizzle_migrations'`)
@@ -121,9 +122,13 @@ function main(): void {
     const insert = db.prepare(
       'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
     );
+    // `.immediate` for the same reason as the DDL above needing to land first:
+    // this transaction reads nothing, but a deferred BEGIN still upgrades to a
+    // write, and SQLite refuses that with SQLITE_BUSY_SNAPSHOT (which
+    // busy_timeout does not retry) when another connection committed meanwhile.
     const write = db.transaction((rows: Migration[]) => {
       for (const row of rows) insert.run(row.hash, row.when);
-    });
+    }).immediate;
     write(migrations);
 
     console.log(

@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 
 // One-off repair for markdown written before components/editor/image-extension.ts existed.
@@ -67,7 +67,7 @@ type Row = { id: number; title: string; body: string; draft_content: string | nu
 
 function main(): void {
   const dryRun = process.argv.includes('--dry-run');
-  const db = new Database(DB_PATH);
+  const db = openDb(DB_PATH);
   const rows = db.prepare('SELECT id, title, body, draft_content FROM posts').all() as Row[];
   const updateBody = db.prepare('UPDATE posts SET body = @body WHERE id = @id');
   const updateDraft = db.prepare('UPDATE posts SET draft_content = @draft WHERE id = @id');
@@ -78,10 +78,14 @@ function main(): void {
   // over the fix. Per row rather than one for the whole table so an interrupted run still leaves
   // every post it touched coherent; re-running is safe either way, since repaired text no longer
   // matches GLUED_IMAGE. A null column means "this one needed no change".
+  // `.immediate` so the write lock is taken as the transaction opens. A deferred
+  // BEGIN would read first and upgrade, and SQLite refuses that upgrade with
+  // SQLITE_BUSY_SNAPSHOT — which busy_timeout does not retry — if a live app
+  // committed in between.
   const repairRow = db.transaction((id: number, body: string | null, draft: string | null) => {
     if (body !== null) updateBody.run({ id, body });
     if (draft !== null) updateDraft.run({ id, draft });
-  });
+  }).immediate;
 
   let changed = 0;
   for (const row of rows) {
