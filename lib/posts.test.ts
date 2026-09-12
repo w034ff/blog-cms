@@ -53,6 +53,18 @@ function seed(options: SeedOptions = {}): number {
     .get().id;
 }
 
+// The live columns of the rows seeded below, in the shape the working copy is stored in. A copy of
+// this is a published post's own content parked in draft_content, which is what the race produces.
+const LIVE_CONTENT: DraftContent = {
+  title: 'Live',
+  description: '',
+  category: 'cat',
+  tags: ['x'],
+  thumbnail: '',
+  unlisted: false,
+  body: 'live body',
+};
+
 describe('getAllPosts', () => {
   it('returns only published posts, newest first', async () => {
     seed({ slug: 'old', date: '2026-01-01' });
@@ -127,6 +139,76 @@ describe('listAllPosts (admin)', () => {
     expect(pending.hasPendingEdits).toBe(true);
     expect(current.hasPendingEdits).toBe(false);
   });
+
+  // The publish/autosave race: `commitPost` clears draft_content, and an autosave already in
+  // flight writes it straight back. Both carry the same form content, so the row that lands holds
+  // a working copy identical to what was just published — a badge with nothing behind it, which
+  // the author could only clear by publishing again.
+  it('does not flag a working copy identical to the live columns', async () => {
+    seed({
+      slug: 'raced',
+      title: 'Live',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      draftContent: { ...LIVE_CONTENT },
+    });
+    const [raced] = await listAllPosts();
+    expect(raced.draft).toBe(false);
+    expect(raced.hasPendingEdits).toBe(false);
+  });
+
+  // One row per DraftContent field: the badge has to answer for all of them, and a field left out
+  // of the comparison would make the post silently publishable-looking while carrying an edit.
+  const fieldEdits: [string, Partial<DraftContent>][] = [
+    ['title', { title: 'Renamed' }],
+    ['description', { description: 'new desc' }],
+    ['category', { category: 'other' }],
+    ['body', { body: 'new body' }],
+    ['thumbnail', { thumbnail: '/uploads/a.png' }],
+    ['unlisted', { unlisted: true }],
+    ['tags (changed)', { tags: ['y'] }],
+    ['tags (added)', { tags: ['x', 'y'] }],
+    ['tags (removed)', { tags: [] }],
+    ['tags (reordered)', { tags: ['y', 'x'] }],
+  ];
+  for (const [field, edit] of fieldEdits) {
+    it(`flags a working copy that differs in ${field}`, async () => {
+      seed({
+        slug: 'edited',
+        title: 'Live',
+        category: 'cat',
+        tags: ['x'],
+        body: 'live body',
+        draftContent: { ...LIVE_CONTENT, ...edit },
+      });
+      const [edited] = await listAllPosts();
+      expect(edited.hasPendingEdits).toBe(true);
+    });
+  }
+
+  // A working copy stashed before a field existed reads back undefined (see getPostForEdit below).
+  // Normalized before the comparison, it matches the live columns — unnormalized, `undefined !== ''`
+  // would have badged every such row as carrying edits it does not have.
+  it('does not flag a working copy that merely predates a field', async () => {
+    const legacy = {
+      title: 'Live',
+      description: '',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+    } as DraftContent;
+    seed({
+      slug: 'legacy',
+      title: 'Live',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      draftContent: legacy,
+    });
+    const [row] = await listAllPosts();
+    expect(row.hasPendingEdits).toBe(false);
+  });
 });
 
 describe('getPostForEdit', () => {
@@ -164,6 +246,29 @@ describe('getPostForEdit', () => {
   it('returns null draftContent when there are no pending edits', async () => {
     const id = seed({ slug: 'p' });
     expect((await getPostForEdit(id))?.draftContent).toBeNull();
+  });
+
+  // The editor reads the same derived flag the admin list does, rather than deriving its own from
+  // draftContent — the two screens disagreeing about one post is the failure this closes.
+  it('reports hasPendingEdits from the content, not from the column', async () => {
+    const raced = seed({
+      slug: 'r',
+      title: 'Live',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      draftContent: { ...LIVE_CONTENT },
+    });
+    const edited = seed({
+      slug: 'e',
+      title: 'Live',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      draftContent: { ...LIVE_CONTENT, body: 'new body' },
+    });
+    expect((await getPostForEdit(raced))?.hasPendingEdits).toBe(false);
+    expect((await getPostForEdit(edited))?.hasPendingEdits).toBe(true);
   });
 
   it('returns null for a missing id', async () => {
