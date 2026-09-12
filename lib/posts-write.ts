@@ -74,7 +74,7 @@ export function deletePost(id: number): void {
 // No-op if the post no longer exists (e.g. deleted in another tab).
 export function autosavePost(id: number, content: DraftContent): void {
   const row = db
-    .select({ draft: posts.draft, title: posts.title })
+    .select({ draft: posts.draft, title: posts.title, draftContent: posts.draftContent })
     .from(posts)
     .where(eq(posts.id, id))
     .get();
@@ -85,7 +85,16 @@ export function autosavePost(id: number, content: DraftContent): void {
   // that window (or the in-progress retype is then lost to navigation), the
   // blank would overwrite a real title and surface as an empty title in the
   // admin list. Keep the stored title when the incoming one is blank.
-  const safe = normalized.title.trim() === '' ? { ...normalized, title: row.title } : normalized;
+  //
+  // The title to keep is the one this save's own destination already holds. For a published post
+  // that is the working copy's, not the live column's: the author may have retitled the post in an
+  // earlier session and not published it yet, and restoring the live title there would silently
+  // undo that edit — the guard against losing a title would be the thing losing one. `draft_content`
+  // is JSON whose shape is only asserted (see lib/posts.ts), so a row written before a field
+  // existed can hand back undefined; a missing or blank title there falls back to the live column.
+  const pendingTitle = row.draft ? '' : (row.draftContent?.title ?? '');
+  const keptTitle = pendingTitle.trim() === '' ? row.title : pendingTitle;
+  const safe = normalized.title.trim() === '' ? { ...normalized, title: keptTitle } : normalized;
   if (row.draft) {
     db.update(posts)
       .set({ ...safe, updatedAt: new Date().toISOString() })
