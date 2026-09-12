@@ -5,6 +5,7 @@ import { postSlug } from './published-post';
 import {
   closeHistory,
   collapseToEnd,
+  expectAutosaved,
   loadMarkdown,
   selectInside,
   setRange,
@@ -151,7 +152,7 @@ test('a card to an unpublished post says so (4h)', async ({ page }) => {
   await expect(page.locator('.ProseMirror')).toBeVisible();
   const draftTitle = `未公開の参照先 ${Date.now()}`;
   await page.getByLabel('タイトル').fill(draftTitle);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   const slug = await page.evaluate(async (query: string) => {
     const res = await fetch(`/api/posts/search?q=${encodeURIComponent(query)}`);
@@ -828,7 +829,7 @@ async function openOwnPost(page: Page, title: string): Promise<string> {
   await page.keyboard.type('本文');
   // Autosave creates the row — and with it the slug this whole section is about. The URL swap is
   // what says the editor has adopted the identity.
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
   return postSlug(page);
 }
@@ -1066,7 +1067,7 @@ test('a draft row wears a badge and drops the empty category, and its name is un
   await expect(page.locator('.ProseMirror')).toBeVisible();
   const draftTitle = `未分類の下書き ${Date.now()}`;
   await page.getByLabel('タイトル').fill(draftTitle);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   await openPickerOnNewPost(page);
   await page.locator('.link-card-search').fill(draftTitle);

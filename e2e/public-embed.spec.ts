@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { shot } from './editor-probe';
 import { publishedPath } from './published-post';
 
@@ -26,7 +26,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await page.getByLabel('タイトル').fill(title);
   await loadMarkdown(page, source);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

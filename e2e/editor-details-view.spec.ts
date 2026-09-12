@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { markdown, docString } from './editor-probe';
 import { gotoPublished } from './published-post';
 
@@ -155,7 +155,7 @@ test('an untitled accordion keeps its title row in both DOM shapes', async ({ pa
   expect(inEditor[0].rowHeight).toBe(inEditor[1].rowHeight);
   expect(inEditor[0].markerBelowRow).toBeLessThanOrEqual(0);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);
@@ -183,7 +183,7 @@ test('the published page folds and unfolds', async ({ page }) => {
 
   await page.getByLabel('タイトル').fill('accordion-public');
   await loadMarkdown(page, '<details>\n<summary>詳細</summary>\n\n畳まれた本文\n\n</details>\n');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

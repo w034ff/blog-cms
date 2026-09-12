@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { loadMarkdown, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { gotoPublished, publishedPath } from './published-post';
 
 // `.prose a` got a colour of its own (docs/link-requirements.md §7.1). Until now prose-zinc left
@@ -56,7 +56,7 @@ async function publish(page: Page, title: string): Promise<string> {
   await loadMarkdown(page, SOURCE);
   await expect(page.locator('.ProseMirror a')).toHaveCount(1);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
@@ -156,7 +156,7 @@ test('a link carrying the 強調 mark is one colour, text and underline', async 
   // would leave 強調 doing nothing at all on a link, and that is a different (unintended) change.
   await expect(inEditor).toHaveCSS('font-weight', '700');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);

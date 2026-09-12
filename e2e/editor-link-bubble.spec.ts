@@ -1,6 +1,6 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
-import { loadMarkdown, selectInside, setRange } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, selectInside, setRange } from './editor-authoring';
 
 // The link card (components/editor/LinkBubble.tsx, docs/link-requirements.md §5.5): the editor's
 // only link UI. It answers two measured holes — there was no way to make an internal link at all
@@ -863,7 +863,7 @@ test('the URL field survives an autosave', async ({ page }) => {
   await card(page).getByRole('button', { name: '編集' }).click();
   const field = card(page).getByRole('textbox', { name: 'リンク先' });
   await field.fill('https://slowly-typed.example');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await expect(field).toHaveValue('https://slowly-typed.example');
 });
 

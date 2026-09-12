@@ -94,6 +94,17 @@ export default async function AdminHome() {
                         限定公開
                       </span>
                     )}
+                    {/* Only ever on a published row — a draft's autosave writes the live columns,
+                        so draft_content stays null (lib/posts.ts listAllPosts). It is here rather
+                        than only in the editor because forgetting happens days later: inside the
+                        editor the same state is the publish button being pressable, which you
+                        have to be in the editor to see. Sky, so it reads apart from 下書き's amber
+                        and 限定公開's violet. */}
+                    {post.hasPendingEdits && (
+                      <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                        未公開の変更
+                      </span>
+                    )}
                   </div>
                   {/* No slug. It is a 20-hex random string (lib/slug.ts) that names nothing a
                       reader of this list is looking for, and it was the widest thing on the

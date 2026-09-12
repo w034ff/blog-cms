@@ -1,5 +1,10 @@
-import { test, expect } from '@playwright/test';
-import { openPostSettings, expectPublished } from './editor-authoring';
+import { test, expect, type Page } from '@playwright/test';
+import {
+  expectAutosaved,
+  expectDraft,
+  expectPublished,
+  openPostSettings,
+} from './editor-authoring';
 
 // 記事の設定 collapses the metadata fields behind a toggle on the editor's pinned bar. Two
 // things have to hold for that to be safe, and neither is visible from the markup: the fields
@@ -28,7 +33,7 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await expect(page.getByLabel('カテゴリ')).toBeHidden();
   await expect(bar.getByText('限定公開', { exact: true })).toBeVisible();
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
@@ -58,5 +63,44 @@ test('Enter in a metadata field does not publish', async ({ page }) => {
 
   // Still a draft: the button would have relabelled to 更新 had the form gone through.
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
-  await expect(page.getByText('未公開', { exact: true })).toBeVisible();
+  await expectDraft(page);
 });
+
+// React 19 resets the form once a server action settles, and a reset restores each control to its
+// default — which for a controlled checkbox is false however it is rendered. 限定公開 came back
+// unchecked after 更新 while the state behind it still said true, so `new FormData(form)` (what
+// autosave and publish both read) reported no `unlisted` at all until the next render touched it.
+// Ctrl/⌘+S in that window wrote the working copy back as public.
+//
+// Only a browser answers this: the DOM property and the React prop disagree, so it is invisible
+// to anything that reads the markup. The form payload is asserted, not just the box, because the
+// box is the symptom and the payload is the damage.
+test('更新 does not clear 限定公開', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+
+  await page.getByLabel('タイトル').fill('E2E unlisted survives 更新');
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('Body.');
+  await expectAutosaved(page);
+  await page.getByRole('button', { name: '投稿' }).click();
+  await expectPublished(page);
+
+  // Turn it on after the post is already live — the order the reset shows up in.
+  await openPostSettings(page);
+  await page.getByText('限定公開にする').click();
+  await expectAutosaved(page);
+
+  await page.getByRole('button', { name: '更新' }).click();
+  await expectPublished(page);
+  await expect(page.locator('input[name="unlisted"]')).toBeChecked();
+  expect(await unlistedInPayload(page)).toBe('on');
+});
+
+// What a save would send right now, read from the live form the way useAutosave reads it.
+async function unlistedInPayload(page: Page): Promise<FormDataEntryValue | null> {
+  return page.evaluate(() => {
+    const form = document.querySelector('form');
+    return form ? new FormData(form).get('unlisted') : null;
+  });
+}

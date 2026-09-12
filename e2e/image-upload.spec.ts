@@ -1,6 +1,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
-import { loadMarkdown, selectAcross, selectInside } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, selectAcross, selectInside } from './editor-authoring';
 
 // A minimal valid 1×1 PNG. Uploads are content-addressed (sha256), so re-runs
 // dedup to a single file in public/uploads and the GC sweep reclaims it.
@@ -157,7 +157,7 @@ test('a block right after an image is not glued onto the image line', async ({ p
 
   // And it survives the round-trip through storage as an image plus a quote, not one paragraph.
   await page.getByLabel('タイトル').fill('画像の次のブロック');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
   await expect(editor).toBeVisible();
   await expect(editor.locator('img')).toBeVisible();

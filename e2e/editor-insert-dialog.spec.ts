@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { BASE_URL } from './constants';
 import { postSlug } from './published-post';
-import { loadMarkdown, setRange } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, setRange } from './editor-authoring';
 import type { Editor } from '@tiptap/react';
 import { markdown, settle } from './editor-probe';
 
@@ -526,7 +526,7 @@ test('the URL field refuses this post’s own address (24.7b)', async ({ page })
   await page.getByLabel('タイトル').fill(title);
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('本文');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
   const slug = await postSlug(page);
 

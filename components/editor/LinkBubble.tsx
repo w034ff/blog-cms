@@ -1397,8 +1397,9 @@ export function LinkBubble({
             {/* One button, and it is 適用 rather than 保存 (2026-08-17). Nothing here is saved: it
                 writes the edit into the document, and the post reaches the database on its own a
                 moment later. This UI already spends the word 保存 on that — `PostEditor`'s
-                indicator reads 保存済み ✓ / 未保存… / 保存に失敗 — so a card button reading 保存
-                named the wrong layer, and named it while the indicator beside it still said 未保存….
+                indicator reads 保存済み ✓ / 保存中… / 保存に失敗 — so a card button reading 保存
+                named the wrong layer, and named it while the indicator beside it was still saying
+                the save had not happened.
 
                 The cancel button is gone. It was 取り消し with a ✕ for a few hours, and the ✕ could
                 not be told from the display card's 解除, which removes the link — the one misread

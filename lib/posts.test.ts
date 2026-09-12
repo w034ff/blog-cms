@@ -108,6 +108,25 @@ describe('listAllPosts (admin)', () => {
     expect(result).toHaveLength(1);
     expect(result[0].unlisted).toBe(true);
   });
+
+  // The badge's source. A published row with a working copy is carrying edits readers cannot see;
+  // one without is current. Nothing else distinguishes the two rows.
+  it('flags a published post that is carrying unpublished edits', async () => {
+    const working: DraftContent = {
+      title: 'Newer',
+      description: '',
+      category: 'cat',
+      tags: [],
+      thumbnail: '',
+      unlisted: false,
+      body: 'newer body',
+    };
+    seed({ slug: 'pending', date: '2026-02-02', draftContent: working });
+    seed({ slug: 'current', date: '2026-01-01' });
+    const [pending, current] = await listAllPosts();
+    expect(pending.hasPendingEdits).toBe(true);
+    expect(current.hasPendingEdits).toBe(false);
+  });
 });
 
 describe('getPostForEdit', () => {

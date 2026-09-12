@@ -6,6 +6,7 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
+import { isTrailingNodeOnlyUpdate } from './editor/trailing-node-extension';
 import { ThumbnailField } from './editor/ThumbnailField';
 import { isPublishableUri } from './editor/link-protocols';
 import { Toolbar } from './editor/Toolbar';
@@ -69,6 +70,10 @@ const inputClass =
 const titleClass =
   'w-full border-b-2 border-transparent bg-transparent px-0 py-2 text-2xl font-bold tracking-tight placeholder:text-zinc-500 hover:border-zinc-200 focus:border-zinc-500 focus:outline-none dark:hover:border-zinc-800 dark:focus:border-zinc-500';
 
+// How long 保存済み ✓ stays up after a save. Long enough to be read as an answer to the edit
+// just made, short enough that the row is quiet again by the next one.
+const SAVED_NOTICE_MS = 3000;
+
 // Enter in a text field submits the form by activating its first submit button, which here
 // is 投稿/更新. That was survivable while the publish row sat below a screenful of post;
 // with the row pinned in the header, a stray Enter in タイトル publishes. Bound to the
@@ -129,6 +134,27 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Live visibility, and whether the editor holds edits not yet pushed public.
   const [isPublished, setIsPublished] = useState(published);
   const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
+  // Bumped on every action result, and used as a `key` to remount the 限定公開 checkbox.
+  //
+  // React 19 resets the form once a server action settles, and a reset restores each control to
+  // its default. A controlled text input is unaffected: React keeps its default in step with the
+  // value it renders. A controlled checkbox is not — `defaultChecked` stays false however the box
+  // is rendered, so the reset turns it off. React state still says true, and because the rendered
+  // `checked` prop did not change between those two renders React never writes the DOM property
+  // back, so the box sits unchecked until some later render happens to touch it.
+  //
+  // Measured 2026-09-13, after 更新 on a post just marked 限定公開: checked=false with
+  // defaultChecked=false while the state behind it was still true, and `new FormData(form)` —
+  // what autosave and publish both read — reported no `unlisted` at all. Ctrl/⌘+S in that window
+  // would have written the working copy back as public. Remounting re-runs the initial DOM write,
+  // which is the one path that sets `checked` from the prop unconditionally.
+  //
+  // Only this field needs it; title, カテゴリ, タグ, 説明, サムネイル and the body all came
+  // through the same 更新 intact.
+  const [formResetNonce, setFormResetNonce] = useState(0);
+  // Whether 保存済み ✓ is still within its moment on screen, and the save it is answering for.
+  const [savedNoticeShown, setSavedNoticeShown] = useState(false);
+  const [noticedSavedAt, setNoticedSavedAt] = useState<number | null>(null);
 
   // A returned server error (e.g. duplicate slug) shows until the next edit, so
   // it doesn't linger while the user fixes the input.
@@ -213,6 +239,25 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // the browser's own move deletes the dragged range out of the document).
   useDragContainment(editorRef);
 
+  // Raise 保存済み ✓ when a save lands. `savedAt` is set afresh by the hook on every successful
+  // save (and on a publish, via acceptSaved), so this also re-raises a notice that had already
+  // faded. Adjusted during render rather than in an effect, the same way the action result below
+  // is — an effect here would be a second render just to show it, and the lint rule that forbids
+  // setState in an effect is pointing at exactly that.
+  if (savedAt !== noticedSavedAt) {
+    setNoticedSavedAt(savedAt);
+    setSavedNoticeShown(savedAt !== null);
+  }
+
+  // ...and drop it a moment later. `noticedSavedAt` is a dependency, not just the flag: a save
+  // landing while the notice is still up leaves the flag already true, so keying on the flag
+  // alone would leave the first save's timer running and cut the second notice short.
+  useEffect(() => {
+    if (!savedNoticeShown) return;
+    const timer = setTimeout(() => setSavedNoticeShown(false), SAVED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [savedNoticeShown, noticedSavedAt]);
+
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.
   if (state !== handledState) {
@@ -233,6 +278,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // published state below) so the field and 表示 link reflect the real URL.
       if (state.saved.slug !== null) setSlug(state.saved.slug);
     }
+    // Every result, not just a saved one: the reset follows the action settling, not its outcome.
+    setFormResetNonce((nonce) => nonce + 1);
   }
 
   // A thumbnail marked in the body (ImageBubble.tsx) drops back to the auto-fallback once its
@@ -314,8 +361,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         return false;
       },
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction, appendedTransactions }) => {
+      // The body is synced either way: the document really did change, and this keeps the hidden
+      // input equal to it. Only the "an edit happened" signal is withheld — see the helper.
       setBody(editor.storage.markdown.getMarkdown());
+      if (isTrailingNodeOnlyUpdate(transaction, appendedTransactions)) return;
       markEditedRef.current();
     },
   });
@@ -359,8 +409,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     // TipTap Editor, not React state, and `editor.storage` is the extension-owned box TipTap
     // provides for exactly this — writing to it is the mechanism, not a way around one. It is also
     // the whole point of §22's shape: the alternative, `editor.view.dispatch`, put a transaction in
-    // here that ran TrailingNode's appendTransaction at publish time and flipped 未公開の変更あり
-    // back on. Scoped to the line so the rule keeps working everywhere else.
+    // here that ran TrailingNode's appendTransaction at publish time and flipped a freshly
+    // published post back to published-pending. Scoped to the line so the rule keeps working everywhere else.
     // eslint-disable-next-line react-hooks/immutability
     if (editor) editor.storage.thumbnailHighlight.path = thumbnail;
   }, [editor, thumbnail]);
@@ -404,33 +454,56 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const publishDisabled =
     pending || (isPublished && !pendingPublish) || (!hasIdentity && autosaveState === 'saving');
 
-  // Three states, and only the two that need acting on are written out. 公開済み（最新） used to
-  // be the third; it said "nothing to do" on every published post that was already current, which
-  // is the ordinary case, so it marked nothing while sitting in the same small text as 保存済み
-  // and reading as one run of status with it (2026-09-13).
+  // Publish state is not written out in words any more (2026-09-13). The publish button already
+  // encodes all three, and it is the control the author is looking at: solid and pressable means
+  // there is something unpublished, dim (disabled:opacity-50) means the live post is current, and
+  // 更新中… means the request is in flight. 未公開の変更あり / 公開済み（最新） / 未公開 each
+  // restated one of those in small text beside 保存済み, where the two read as one run of status.
+  // `disabled` is a real attribute rather than a colour, so assistive tech still gets the state.
+  //
+  // It survives as data-publish-state on the row below, which is what the E2E suite waits on.
   const publishState = isPublished
     ? pendingPublish
       ? 'published-pending'
       : 'published-current'
     : 'draft';
-  const publishStatus =
-    publishState === 'published-pending'
-      ? { text: '未公開の変更あり', className: 'text-amber-600' }
-      : publishState === 'draft'
-        ? { text: '未公開', className: 'text-zinc-400' }
-        : null;
 
-  // No 'saving' row: on a local CMS the save round-trip is a blink, so it would
-  // flash imperceptibly and says no more than '未保存…' (both mean "not yet
-  // persisted"). The 'saving' state still exists internally to gate publish and
-  // serialize saves — it just isn't surfaced. A save in flight reads as '未保存…'
-  // because `unsaved` stays true until the save succeeds.
+  // The autosave state as the row reports it, which is not the hook's own: a save in flight is
+  // 'unsaved' here because `unsaved` stays true until it succeeds, and 'idle' means nothing has
+  // been saved yet this session. It does NOT follow the notice below out of sight — the fade is
+  // presentation, and this is what the E2E suite waits on (e2e/editor-authoring.ts).
+  const autosaveDisplayState =
+    autosaveState === 'failed'
+      ? 'failed'
+      : unsaved
+        ? 'unsaved'
+        : savedAt !== null
+          ? 'saved'
+          : 'idle';
+
+  // One row for "not persisted yet", covering both the debounce and the request: on a local CMS
+  // the round-trip is a blink, so a separate 保存中 row would flash imperceptibly and say no more
+  // than this one. The hook's 'saving' state still exists to gate publish and serialize saves; it
+  // just isn't surfaced, and `unsaved` stays true until the save succeeds.
+  //
+  // Worded 保存中…, not 未保存…, though for most of its life (the 800ms debounce) nothing is being
+  // saved yet. The author cannot tell queued from in-flight and has no use for the difference,
+  // and in a system with no save button 未保存 reads as a fault to be fixed rather than as work
+  // being looked after. It also matches 更新中… / 公開中… beside it. The state's own name stays
+  // `unsaved` — that one is read by tests and by the beforeunload guard, where "not persisted" is
+  // exactly the claim being made.
+  //
+  // 保存済み ✓ is the one that goes away. It is a confirmation — "that landed" — and `savedAt`
+  // never returns to null, so left alone it became the row's permanent furniture after the first
+  // save of the session and stopped marking anything. 保存中… reappears on every edit, so the
+  // evidence that autosave is alive is still on screen whenever it is the question. 保存に失敗
+  // does not fade: absence has to keep meaning "nothing is wrong".
   let autosaveStatus: { text: string; className: string } | null = null;
   if (autosaveState === 'failed') {
     autosaveStatus = { text: '保存に失敗', className: 'text-red-600' };
   } else if (unsaved) {
-    autosaveStatus = { text: '未保存…', className: 'text-zinc-500' };
-  } else if (savedAt !== null) {
+    autosaveStatus = { text: '保存中…', className: 'text-zinc-500' };
+  } else if (savedAt !== null && savedNoticeShown) {
     autosaveStatus = { text: '保存済み ✓', className: 'text-green-600' };
   }
 
@@ -481,7 +554,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             記事一覧
           </Link>
           {/* 記事の設定 rides the same line as the way out rather than the pinned bar below it.
-              On that bar its summary sat beside 未公開 and 未保存… in the same small grey, and
+              On that bar its summary sat beside the publish status and 保存中… in the same grey, and
               the two read as one run of status — the failure the back link was measured into
               and out of (2026-09-12). Here the line has one job on each end.
 
@@ -570,6 +643,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
             <label className='flex items-center gap-2 pb-1 text-sm'>
               <input
+                key={formResetNonce}
                 type='checkbox'
                 name='unlisted'
                 checked={unlisted}
@@ -601,21 +675,16 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             {/* Outside the `editor &&` guard below: these are the form's only submit buttons,
                 and a mounted editor is not a precondition for publishing — the body travels in
                 a hidden input. An editor that fails to mount must not take publish with it. */}
-            <div className='flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-300 px-2 py-1 dark:border-zinc-700'>
-              {/* Always rendered, even when it has nothing to say, because `data-publish-state`
-                  is what the E2E suite waits on after 投稿 — 26 sites across 19 specs used to
-                  wait for the string 公開済み（最新） instead, which coupled the whole suite to
-                  one piece of Japanese UI copy. The attribute reports all three states, so the
-                  barrier holds on both publish paths (a draft's first 投稿 and a re-publish),
-                  neither of which the button's own state can distinguish: publishDisabled is true
-                  both while the request is in flight and after it lands. Being empty here, the
-                  span has no box — specs assert toBeAttached, not toBeVisible. */}
-              <span
-                data-publish-state={publishState}
-                className={`text-xs ${publishStatus?.className ?? ''}`}
-                aria-live='polite'>
-                {publishStatus?.text ?? ''}
-              </span>
+            {/* data-publish-state rides this row rather than an element of its own: with the
+                wording gone there is nothing left to put in a status element, and an empty span
+                existing only to be queried is a test hook pretending to be UI. The suite waits on
+                this after 投稿 (e2e/editor-authoring.ts). It has to be read from the DOM because
+                the publish button cannot stand in for it — publishDisabled is true both while the
+                request is in flight and after it lands, so the button never separates the two. */}
+            <div
+              data-publish-state={publishState}
+              data-autosave-state={autosaveDisplayState}
+              className='flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-300 px-2 py-1 dark:border-zinc-700'>
               {autosaveStatus && (
                 <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
                   {autosaveStatus.text}

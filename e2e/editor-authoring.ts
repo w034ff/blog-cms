@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { historyState } from './editor-probe';
 
 // Write-side companions to editor-probe.ts: they *change* the live editor rather than read it, and
@@ -267,16 +267,38 @@ export async function openPostSettings(page: Page): Promise<void> {
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
 }
 
-// The suite's publish barrier: 投稿/更新 has landed and the post is live with nothing pending.
+// The editor's publish state, read from the pinned row's `data-publish-state`.
 //
-// Reads `data-publish-state`, not the status text. The row writes out only the two states that
-// need acting on (PostEditor.tsx says why), so 公開済み（最新） is no longer on screen — and it
-// was this barrier in 26 places, which coupled the suite to one piece of Japanese UI copy. The
-// span is empty in this state and therefore has no box, so this asserts attachment, not
-// visibility. The publish button cannot stand in for it: publishDisabled is true both while the
-// request is in flight and after it lands, so it never distinguishes the two.
+// The row used to say 未公開 / 未公開の変更あり / 公開済み（最新） in words and the suite waited
+// on those strings — 公開済み（最新） alone in 23 places. The wording is gone (PostEditor.tsx says
+// why: the publish button already encodes all three), so this is the readout. The attribute is on
+// a layout row and carries no text, hence attachment rather than visibility. The button cannot
+// stand in for it either: publishDisabled is true both while the request is in flight and after
+// it lands, so it never separates the two.
+function publishState(page: Page, state: string): Locator {
+  return page.locator(`[data-publish-state="${state}"]`);
+}
+
+// 投稿/更新 has landed and the live post is current. The suite's publish barrier — 20s because
+// this is the longest wait in the suite (docs/cms-features.md records what a 61-failure run of
+// exactly this timeout turned out to mean).
 export async function expectPublished(page: Page): Promise<void> {
-  await expect(page.locator('[data-publish-state="published-current"]')).toBeAttached({
-    timeout: 20_000,
-  });
+  await expect(publishState(page, 'published-current')).toBeAttached({ timeout: 20_000 });
+}
+
+// The last edit is persisted. Replaces waiting on 保存済み ✓, which is now a notice that fades
+// after a few seconds (components/PostEditor.tsx says why) — 46 sites waited on that string, and
+// a disappearing one makes every one of them a race. The attribute does not fade.
+export async function expectAutosaved(page: Page): Promise<void> {
+  await expect(page.locator('[data-autosave-state="saved"]')).toBeAttached({ timeout: 20_000 });
+}
+
+// Never published.
+export async function expectDraft(page: Page): Promise<void> {
+  await expect(publishState(page, 'draft')).toBeAttached();
+}
+
+// Published, with edits that have not been pushed public.
+export async function expectPublishPending(page: Page): Promise<void> {
+  await expect(publishState(page, 'published-pending')).toBeAttached();
 }

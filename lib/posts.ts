@@ -14,6 +14,11 @@ type PostRow = typeof posts.$inferSelect;
 // published post with unpublished changes.
 export type PostForEdit = Post & { draftContent: DraftContent | null };
 
+// What the admin list needs beyond a Post: whether a published post is carrying edits readers
+// cannot see yet. Narrowed the same way PostForEdit is, and for the same reason — the public
+// surfaces have no use for it, and Post reaches every one of them.
+export type AdminPost = Post & { hasPendingEdits: boolean };
+
 function toPost(row: PostRow): Post {
   return {
     id: row.id,
@@ -47,9 +52,16 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
   return toPost(row);
 }
 
-export async function listAllPosts(): Promise<Post[]> {
+// `draft_content` is non-null exactly when autosave has parked edits the public version does not
+// have: autosavePost writes there only for a published post (a draft's edits go straight to the
+// live columns), and commitPost clears it on both publish and unpublish. So the flag is derived,
+// not stored — and it can never be true on a row the list is badging 下書き.
+//
+// This list is the only place that state can be noticed after the fact. In the editor it is the
+// publish button's own enabled state, which you have to already be in the editor to read.
+export async function listAllPosts(): Promise<AdminPost[]> {
   const rows = db.select().from(posts).orderBy(desc(posts.date)).all();
-  return rows.map(toPost);
+  return rows.map((row) => ({ ...toPost(row), hasPendingEdits: row.draftContent !== null }));
 }
 
 // `draft_content` is JSON, and `$type<DraftContent>()` only asserts its shape — nothing validates

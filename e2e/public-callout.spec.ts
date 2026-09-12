@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // End-to-end over the *public* render path (which no other spec touches): author a
@@ -22,7 +22,7 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
   await page.keyboard.press('Enter');
   await page.keyboard.type('破壊的操作の前に確認してください。');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

@@ -1,5 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown, openPostSettings, expectPublished } from './editor-authoring';
+import {
+  expectAutosaved,
+  expectPublished,
+  loadMarkdown,
+  openPostSettings,
+} from './editor-authoring';
 import { publishedPath } from './published-post';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
@@ -42,7 +47,7 @@ const UPLOAD_SRC = /^\/uploads\/[0-9a-f]+\.png$/;
 async function publish(page: Page, title: string, source: string): Promise<string> {
   await page.getByLabel('タイトル').fill(title);
   if (source !== '') await loadMarkdown(page, source);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   return publishedPath(page);
@@ -77,7 +82,7 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
 
   const chosen = await preview.inputValue();
   await page.getByLabel('タイトル').fill('サムネイル指定');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   // The round trip is the claim: autosave snapshots the form, so a field that displays correctly
   // but is not in the FormData saves an empty column and only a reload reveals it.
@@ -205,7 +210,7 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   await expect(chosenField).toHaveValue(chosen);
 
   await page.getByLabel('タイトル').fill('別枠のサムネイル');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(chosen);
@@ -249,7 +254,7 @@ test('an explicit thumbnail reaches the list, the admin list, the card and og:im
   expect(chosen).not.toBe(firstSrc);
   // Let the autosave the thumbnail click armed settle before publish, so publish's own wait for
   // 保存済み isn't racing a save already in flight (the same separation test 1 above keeps).
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   const href = await publish(page, 'サムネイル公開', '');
   const slug = href.slice('/posts/'.length);
