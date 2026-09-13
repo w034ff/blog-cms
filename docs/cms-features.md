@@ -187,6 +187,16 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 - discoverability: `app/layout.tsx` は生の `<head>` JSX ではなく `export const metadata: Metadata = {...}`（`:19`）を使っているので、そこに `alternates: { types: { 'application/rss+xml': '/rss.xml' } }` を足す。Next.js の Metadata API（`generate-metadata.md` "alternates" 節）がこれを `<link rel="alternate" type="application/rss+xml" href="/rss.xml">` として自動的に出力する——`<link>` タグを手書きしない。
 
+### 7.1 `revalidateBlog()` はこのサイトでは何も無効化しない（実測 2026-09-14）
+
+§7 は `revalidatePath` が `fetch()` の Data Cache にしか効かないことを示した。残る候補はブラウザのクライアントキャッシュ（`node_modules/next/dist/docs/01-app/04-glossary.md` の "Client Cache" 節、"stores RSC Payload for visited and prefetched routes"）だが、**こちらも保持していない。**
+
+**機構**: `staleTimes` の `dynamic` は既定 0 秒（`staleTimes.md` の Version History、"The `dynamic` `staleTimes` default changed from 30s to 0s"）で、公開・管理ルートは10箇所すべて `force-dynamic`。保持されるものが無いので、無効化する対象も無い。
+
+**測り方**: `e2e/revalidate-client-cache.spec.ts` を**本番ビルド**（`next build` + `next start`、`E2E_EXTERNAL_SERVER=1`）に対して走らせる。自動プリフェッチは本番でしか動かない（`prefetching.md`、"Automatic prefetching runs only in production"）ため `next dev` では答えが出ない。`revalidateBlog()` の中身を消したビルドと消さないビルドで A/B したが、`/admin`・`/`・`/posts/[slug]` を `<Link>` だけで巡る経路の結果は同一だった。対照として Server Action を介さない直接 UPDATE を DB に書いても、3面とも新しい値が見えた——クライアントキャッシュに古い payload が残っていないことの確認である。
+
+**決定**: 呼び出しは4箇所とも残す。位置づけは `force-dynamic` と同じ一貫性の印で、§7 が書いたモジュールスコープの自前キャッシュを将来足すなら、その無効化フックはここになる。
+
 ## 8. 非公開限定URL投稿との関係
 
 本ファイル後述の「非公開限定URL投稿」は2026-09-06に実装済み（同機能 §10）——`posts` テーブルに `unlisted` 列が増え、`getAllPosts()` がそれを除外している（同機能 §4）。このフィードは `getAllPosts()` をそのまま呼ぶ設計にしてあるため、**このフィード側で `unlisted` を意識した追加コードは不要**——フィルタは `getAllPosts` 一箇所に閉じており、RSSはそれを何も知らずに継承する。

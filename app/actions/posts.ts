@@ -76,6 +76,13 @@ function parseContent(formData: FormData): DraftContent | null {
   return parsed.success ? parsed.data : null;
 }
 
+// Measured inert on this site, and kept for the same reason `force-dynamic` is (docs/cms-features.md
+// §7.1): `revalidatePath` reaches `fetch()`'s Data Cache, which nothing here uses, and the browser's
+// Client Cache, which holds nothing because `staleTimes.dynamic` defaults to 0 and every route is
+// dynamic. A/B'd 2026-09-14 against a production build — with this body and without it, a just-
+// published edit is visible on /admin, / and /posts/[slug] reached by <Link> alone
+// (e2e/revalidate-client-cache.spec.ts). It is the invalidation hook a module-scope cache would
+// need, so it stays where the four call sites already are.
 function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }
