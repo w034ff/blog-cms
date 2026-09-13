@@ -61,6 +61,13 @@ html {
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* The post editor's sticky header height, which the format toolbar below it pins against
+     (`top-(--editor-header-h)` in components/PostEditor.tsx). The real value is measured at
+     runtime by components/editor/useStickyHeaderOffset.ts and set on the <form>, because the
+     bar wraps at narrow widths; this is only what the first paint uses, before the measurement
+     lands. Too small and the toolbar starts one frame too high — never too low, which would
+     leave a gap. */
+  --editor-header-h: 2.75rem;
 }
 
 @theme inline {

@@ -21,6 +21,8 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
+import { useStickyHeaderOffset } from './editor/useStickyHeaderOffset';
+import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
 
@@ -164,6 +166,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const [handledBody, setHandledBody] = useState(body);
 
   const formRef = useRef<HTMLFormElement>(null);
+  // Publishes the header's measured height on the form, for the toolbar to pin against.
+  const headerRef = useStickyHeaderOffset<HTMLDivElement>(formRef);
   // Refs mirror state the autosave machinery reads outside React's render flow.
   const committedIdRef = useRef<number | null>(committedId);
   // Edit-mode posts already sit at their final URL; only create-mode posts need
@@ -461,14 +465,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // restated one of those in small text beside 保存済み, where the two read as one run of status.
   // `disabled` is a real attribute rather than a colour, so assistive tech still gets the state.
   //
-  // It survives as data-publish-state on the row below, which is what the E2E suite waits on.
+  // It survives as data-publish-state on the header bar, which is what the E2E suite waits on.
   const publishState = isPublished
     ? pendingPublish
       ? 'published-pending'
       : 'published-current'
     : 'draft';
 
-  // The autosave state as the row reports it, which is not the hook's own: a save in flight is
+  // The autosave state as the header reports it, which is not the hook's own: a save in flight is
   // 'unsaved' here because `unsaved` stays true until it succeeds, and 'idle' means nothing has
   // been saved yet this session. It does NOT follow the notice below out of sight — the fade is
   // presentation, and this is what the E2E suite waits on (e2e/editor-authoring.ts).
@@ -520,58 +524,76 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         cancelPendingAutosave();
       }}
       className='space-y-5'>
-      {sessionExpired && (
-        <div
-          role='alert'
-          className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
-          セッションが切れました。
-          <a
-            href='/login'
-            target='_blank'
-            rel='noopener noreferrer'
-            className='mx-1 font-medium underline underline-offset-2'>
-            別タブで再ログイン
-          </a>
-          してください。編集内容は保持されています。
-        </div>
-      )}
-      <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
-        {/* The way out of the editor, inside the <form> rather than in the layout around it
-            (app/admin/posts/layout.tsx used to own it). The form is the boundary that matters
-            here: useAutosave reads it with `new FormData(form)`, so anything that has to sit on
-            one bar with the post's own fields — 記事の設定 next — has to be on this side of it,
-            and a layout wrapping the form cannot reach the state the row reports either. The
-            link itself needs none of that; it moves now so the bar can be assembled at all.
-            Harmless under blockImplicitSubmit: that guard only cancels Enter on an <input>. */}
-        <div className='flex flex-wrap items-center gap-x-3 gap-y-1'>
+      {/* The editor's own header bar: the way out, the autosave state, the post's settings and
+          publish. It is a direct child of the <form>, and both facts are load-bearing.
+
+          The form, because useAutosave reads the live DOM with `new FormData(form)` and these
+          are the form's submit buttons — a layout wrapping the form could host neither them nor
+          the state this row reports.
+
+          A *direct* child, because `position: sticky` pins only while the parent's box is on
+          screen. The row used to sit in the metadata wrapper below, whose box ends at the
+          settings panel; pinned there it would come unstuck the moment the panel scrolled past,
+          which is the exact scroll position where 更新 has to still be reachable. The form's box
+          spans the whole editor, so here it holds to the end of the post.
+
+          It is above the toolbar (z-40 over z-30) and below the drop overlay and the toolbar's
+          own dropdowns (z-50). The background is opaque for the same reason the toolbar's is:
+          the post scrolls underneath it.
+
+          The bar spans the window while its contents stay in the column — `-mx-4` cancels
+          PageMain's padding and `px-4` puts it back inside, with `mx-auto max-w-site` on the row
+          within. `-mt-8` cancels the other half of that padding: PageMain's `py-8` is spacing for
+          a page that starts with content, and this one starts with chrome, which belongs against
+          the top of the screen. The bottom half of the `py-8` is left alone. That is SiteHeader's shape, and it is why app/admin/posts/layout.tsx hands this
+          screen a bare PageMain: the column is applied below, around everything else.
+
+          data-publish-state / data-autosave-state ride this element, and only this one — the
+          suite queries them unqualified (`page.locator('[data-autosave-state]')`), so a second
+          copy anywhere in the tree fails on strict mode rather than on the claim. */}
+      <div
+        ref={headerRef}
+        data-publish-state={publishState}
+        data-autosave-state={autosaveDisplayState}
+        className='sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
+        <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
           {/* Hover is a background, not an underline, so this reads as the same kind of control as
-              記事の設定 at the other end of the line rather than as prose. `-mx-1` cancels the
-              padding the background needs, which keeps the text itself flush with the title's left
-              edge below it — the button carries `-mr-1` for the same reason on the right. */}
+              記事の設定 further along the line rather than as prose. `-mx-1` cancels the padding
+              the background needs, which keeps the text itself flush with the title's left edge
+              below it — 記事の設定 carries `-mr-1` for the same reason on its side. */}
           <Link
             href='/admin'
             className='-mx-1 rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
             記事一覧
           </Link>
-          {/* 記事の設定 rides the same line as the way out rather than the pinned bar below it.
-              On that bar its summary sat beside the publish status and 保存中… in the same grey, and
-              the two read as one run of status — the failure the back link was measured into
-              and out of (2026-09-12). Here the line has one job on each end.
+          {/* On the left, with the autosave state, because it is the same kind of thing: this end
+              of the bar says what is true about the post, the other end says what can be done to
+              it. A chip is a state, not a control. Ahead of the autosave state rather than after
+              it — see there.
 
-              It gives up being pinned, which is the right thing to give up: metadata is touched
-              at the start and the end of writing, and what has to stay reachable from the middle
-              of a long post is 投稿. That is still on the bar. */}
+              Only 限定公開 is reported. カテゴリ・タグ・サムネイル always hold a value — a
+              category is pre-filled, and 「タグなし」「サムネイルなし」 are the ordinary case —
+              so their chips said something on every post and therefore marked nothing. This one
+              is absent unless the post is unlisted, which is the state an author can otherwise
+              forget they set — and it is the one setting that changes who can read the post, on a
+              bar whose other end publishes. */}
+          {unlisted && (
+            <span className='rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
+              限定公開
+            </span>
+          )}
+          {/* Last in this group, so nothing sits to its right but empty space. It is the only
+              item on the bar whose width changes — 保存中… / 保存済み ✓ / 保存に失敗 differ, and
+              it leaves entirely when it goes quiet — and it changes on every edit. Anything after
+              it would be nudged sideways each time. Reserving a width instead would mean picking
+              the widest of the three strings as a constant, which stops being right the moment
+              the font does. */}
+          {autosaveStatus && (
+            <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+              {autosaveStatus.text}
+            </span>
+          )}
           <span className='ml-auto flex flex-wrap items-center gap-2'>
-            {/* Only 限定公開 is reported. カテゴリ・タグ・サムネイル always hold a value — a
-                category is pre-filled, and 「タグなし」「サムネイルなし」 are the ordinary case —
-                so their chips said something on every post and therefore marked nothing. This one
-                is absent unless the post is unlisted, which is the state an author can otherwise
-                forget they set. */}
-            {unlisted && (
-              <span className='rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
-                限定公開
-              </span>
-            )}
             <button
               type='button'
               aria-expanded={settingsOpen}
@@ -580,25 +602,74 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               className='-mr-1 rounded px-1 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800'>
               記事の設定
             </button>
+            {/* A rule, not a gap: 記事の設定 is a toggle sitting next to the one button that
+                publishes. Zenn separates the same two the same way. `aria-hidden` because it divides nothing a screen reader needs —
+                the button's own name and state already say what it is. */}
+            <span aria-hidden='true' className='h-5 w-px bg-zinc-300 dark:bg-zinc-700' />
+            {/* The form's first submit button, which is what an Enter pressed in a metadata field
+                would activate — hence blockImplicitSubmit on the wrapper those fields live in.
+                下書きに戻す is no longer its neighbour (it sits in the settings panel now), so
+                "first" is a property of this bar being the form's first child, not of the order
+                of two buttons. */}
+            <button
+              type='submit'
+              name='intent'
+              value='publish'
+              disabled={publishDisabled}
+              className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              {publishLabel}
+            </button>
           </span>
         </div>
-        {/* No <Field>: the label is the placeholder (titleClass says why). aria-label is not
+        {/* Inside the pinned bar rather than below it, so a refused publish is readable from
+            wherever the author clicked 投稿. It grows the bar, and the toolbar's offset is
+            measured rather than written down precisely so that it follows. */}
+        {state.error && errorVisible && (
+          <p className='mx-auto max-w-site px-1 pt-1 text-sm text-red-600'>{state.error}</p>
+        )}
+      </div>
+      <SiteColumn>
+        <div className='space-y-5'>
+          {/* Below the header, not above it: the bar is the chrome and belongs at the top of the
+          screen. This notice therefore scrolls away with the post — acceptable because it is not
+          the only thing saying so (a save under an expired session fails, and 保存に失敗 stays
+          up in the bar that does not scroll). */}
+          {sessionExpired && (
+            <div
+              role='alert'
+              className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
+              セッションが切れました。
+              <a
+                href='/login'
+                target='_blank'
+                rel='noopener noreferrer'
+                className='mx-1 font-medium underline underline-offset-2'>
+                別タブで再ログイン
+              </a>
+              してください。編集内容は保持されています。
+            </div>
+          )}
+          {/* The title and the post's settings. Keeps blockImplicitSubmit: the guard belongs to the
+          fields, and the buttons moving up to the header changed nothing about it — it cancels
+          Enter on an <input>, and every input is still in here. */}
+          <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
+            {/* No <Field>: the label is the placeholder (titleClass says why). aria-label is not
             optional decoration — a placeholder is not an accessible name (it is inconsistently
             exposed, and gone the moment there is a value). It repeats the placeholder verbatim
             rather than shortening to タイトル so that the name a voice-control user speaks is the
             text they can see (WCAG 2.5.3). The 49 `getByLabel('タイトル')` calls across 26 specs
             still resolve against it: Playwright's getByLabel reads aria-label, and matches a
             substring unless given `exact`. */}
-        <input
-          name='title'
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          required
-          placeholder='記事タイトル'
-          aria-label='記事タイトル'
-          className={titleClass}
-        />
-        {/* Below the title, not above it. The toggle is up on the top line and this opens here,
+            <input
+              name='title'
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              required
+              placeholder='記事タイトル'
+              aria-label='記事タイトル'
+              className={titleClass}
+            />
+            {/* Below the title, not above it. The toggle is up on the top line and this opens here,
             which separates them — `aria-controls` is what ties them back together. The reason is
             measured: opened above, the panel pushed the title ~280px down and took the post off
             the screen, so the author could not see which post they were setting up.
@@ -611,101 +682,63 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             It keeps its own blockImplicitSubmit even though the wrapper around it has one. The
             guard belongs to these fields, not to a position: without it Enter in カテゴリ reaches
             the form's first submit button, which is 投稿, and this panel has already moved twice. */}
-        <div
-          id={SETTINGS_PANEL_ID}
-          hidden={!settingsOpen}
-          onKeyDown={blockImplicitSubmit}
-          className='space-y-4 rounded border border-zinc-300 px-3 py-4 dark:border-zinc-700'>
-          <div className='grid gap-4 sm:grid-cols-2'>
-            <Field label='カテゴリ'>
-              <input
-                name='category'
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-                className={inputClass}
-              />
-            </Field>
-            <Field label='タグ（カンマ区切り）'>
-              <input
-                name='tags'
-                value={tags}
-                onChange={(event) => setTags(event.target.value)}
-                className={inputClass}
-              />
-            </Field>
-          </div>
-          <Field label='説明'>
-            <input name='description' defaultValue={initial.description} className={inputClass} />
-          </Field>
-          {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
-            the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
-          <div className='flex flex-wrap items-end justify-between gap-6'>
-            <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
-            <label className='flex items-center gap-2 pb-1 text-sm'>
-              <input
-                key={formResetNonce}
-                type='checkbox'
-                name='unlisted'
-                checked={unlisted}
-                onChange={(event) => setUnlisted(event.target.checked)}
-                className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-              />
-              <span>限定公開にする</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <div className='space-y-2'>
-        {/* The frame must NOT be overflow-hidden: that would make the sticky header
-            below pin to the frame instead of the viewport. Its rounded corners are
-            preserved by rounding the header's top and the editor content sits within
-            px padding, so nothing squares off the border. */}
-        <div className='rounded border border-zinc-300 dark:border-zinc-700'>
-          {/* The frame's sticky header, in two rows: the publish controls above the format
-              toolbar. top-0 pins it to the viewport top (SiteHeader scrolls away, so no
-              offset) so both stay reachable when editing far down a long post — reaching
-              publish used to mean scrolling past the whole post. The opaque bg hides content
-              scrolling beneath; rounded-t matches the frame's corners, and each row carries
-              its own border-b (same weight as the frame) so the loading state, which has no
-              toolbar row, still divides cleanly from the content. z-30 sits above the editor
-              but below the drop overlay (z-50); the toolbar's own dropdowns (z-50) still open
-              over the content. */}
-          <div className='sticky top-0 z-30 rounded-t bg-white dark:bg-zinc-950'>
-            {/* Outside the `editor &&` guard below: these are the form's only submit buttons,
-                and a mounted editor is not a precondition for publishing — the body travels in
-                a hidden input. An editor that fails to mount must not take publish with it. */}
-            {/* data-publish-state rides this row rather than an element of its own: with the
-                wording gone there is nothing left to put in a status element, and an empty span
-                existing only to be queried is a test hook pretending to be UI. The suite waits on
-                this after 投稿 (e2e/editor-authoring.ts). It has to be read from the DOM because
-                the publish button cannot stand in for it — publishDisabled is true both while the
-                request is in flight and after it lands, so the button never separates the two. */}
             <div
-              data-publish-state={publishState}
-              data-autosave-state={autosaveDisplayState}
-              className='flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-300 px-2 py-1 dark:border-zinc-700'>
-              {autosaveStatus && (
-                <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
-                  {autosaveStatus.text}
-                </span>
-              )}
-              {/* No 表示 link here any more. It navigated out of a mounted editor in the same
-                  tab, from a row that is pinned to the top of the screen the whole time the post
-                  is being written. It lives on the 記事一覧 row instead (app/admin/(list)/page.tsx),
-                  which is where a published post is already being handled rather than written. */}
-              <div className='ml-auto flex items-center gap-2'>
-                {/* Kept ahead of 下書きに戻す: it is the form's first submit button, which is
-                    what an Enter pressed in a metadata field activates. */}
-                <button
-                  type='submit'
-                  name='intent'
-                  value='publish'
-                  disabled={publishDisabled}
-                  className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-                  {publishLabel}
-                </button>
-                {isPublished && (
+              id={SETTINGS_PANEL_ID}
+              hidden={!settingsOpen}
+              onKeyDown={blockImplicitSubmit}
+              className='space-y-4 rounded border border-zinc-300 px-3 py-4 dark:border-zinc-700'>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <Field label='カテゴリ'>
+                  <input
+                    name='category'
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label='タグ（カンマ区切り）'>
+                  <input
+                    name='tags'
+                    value={tags}
+                    onChange={(event) => setTags(event.target.value)}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
+              <Field label='説明'>
+                <input
+                  name='description'
+                  defaultValue={initial.description}
+                  className={inputClass}
+                />
+              </Field>
+              {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
+            the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
+              <div className='flex flex-wrap items-end justify-between gap-6'>
+                <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
+                <label className='flex items-center gap-2 pb-1 text-sm'>
+                  <input
+                    key={formResetNonce}
+                    type='checkbox'
+                    name='unlisted'
+                    checked={unlisted}
+                    onChange={(event) => setUnlisted(event.target.checked)}
+                    className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
+                  />
+                  <span>限定公開にする</span>
+                </label>
+              </div>
+              {/* 下書きに戻す lives here rather than beside 更新 in the header. It is never wanted
+              from the middle of writing, and a pinned bar would keep an unpublish one click away
+              for the whole session; the panel is opened deliberately, which is the right gate for
+              it. Zenn shapes the same pair this way — its header publishes, and taking a post
+              back down is in the settings. Rendered only for a published post, so the panel has
+              no dead control on a draft. */}
+              {isPublished && (
+                <div className='flex flex-wrap items-center justify-between gap-3 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
+                  <span className='text-sm text-zinc-600 dark:text-zinc-400'>
+                    この記事は公開されています。
+                  </span>
                   <button
                     type='submit'
                     name='intent'
@@ -714,49 +747,69 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                     className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
                     下書きに戻す
                   </button>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-            {/* Rides with the publish button rather than sitting where the row used to be, so a
-                refused publish is readable from wherever the author clicked it. */}
-            {state.error && errorVisible && (
-              <p className='border-b border-zinc-300 px-2 py-1 text-sm text-red-600 dark:border-zinc-700'>
-                {state.error}
-              </p>
-            )}
+          </div>
+
+          <div className='space-y-2'>
+            {/* The frame must NOT be overflow-hidden: that would make the toolbar below pin to the
+            frame instead of the viewport. Its rounded corners are preserved by rounding the
+            toolbar's top and the editor content sits within px padding, so nothing squares off
+            the border. */}
+            <div className='rounded border border-zinc-300 dark:border-zinc-700'>
+              {/* The frame's sticky header: the format toolbar, and nothing else now that publish
+              lives in the page header above. `top-(--editor-header-h)` pins it under that bar
+              instead of at the viewport top — the height is measured, not written down, because
+              the bar wraps at narrow widths (components/editor/useStickyHeaderOffset.ts; the
+              first-paint fallback is in app/globals.css). The opaque bg hides content scrolling
+              beneath; rounded-t matches the frame's corners, and border-b (same weight as the
+              frame) divides it from the content. z-30 sits above the editor and below the page
+              header (z-40) and the drop overlay (z-50); the toolbar's own dropdowns (z-50) still
+              open over the content.
+
+              The whole thing is inside `editor &&`, which publish never was and must never be —
+              the body travels in a hidden input, so an editor that fails to mount must not take
+              publishing with it. That is why those buttons are in the page header, outside this
+              frame entirely. */}
+              {editor && (
+                <div className='sticky top-(--editor-header-h) z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
+                  <Toolbar
+                    editor={editor}
+                    uploading={uploading}
+                    onImageChange={handleImageChange}
+                  />
+                  {/* Refusal notices hang off the sticky header (which is a containing block for them),
+                  so they stay in view over the content — see EditorToast. */}
+                  {notice && <EditorToast message={notice} />}
+                </div>
+              )}
+              {editor ? (
+                <EditorContent editor={editor} />
+              ) : (
+                <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
+              )}
+            </div>
+            {editor && <TableToolbar editor={editor} />}
+            {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
+            are BubbleMenus that portal themselves to <body> — neither renders here. */}
+            {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
             {editor && (
-              <div className='border-b border-zinc-300 px-2 py-0.5 dark:border-zinc-700'>
-                <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
-                {/* Refusal notices hang off the sticky header (which is a containing block for them),
-                    so they stay in view over the content — see EditorToast. */}
-                {notice && <EditorToast message={notice} />}
-              </div>
+              <ImageBubble editor={editor} thumbnail={thumbnail} onSetThumbnail={applyThumbnail} />
+            )}
+            {/* Mounted only while it is open, so closing throws the dialog's state away rather than
+            leaving it for the next open to clear. */}
+            {editor && insertDialogAt !== null && (
+              <InsertDialog
+                editor={editor}
+                at={insertDialogAt}
+                onClose={closeInsertDialog}
+                ownSlug={slug}
+              />
             )}
           </div>
-          {editor ? (
-            <EditorContent editor={editor} />
-          ) : (
-            <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
-          )}
         </div>
-        {editor && <TableToolbar editor={editor} />}
-        {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
-            are BubbleMenus that portal themselves to <body> — neither renders here. */}
-        {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
-        {editor && (
-          <ImageBubble editor={editor} thumbnail={thumbnail} onSetThumbnail={applyThumbnail} />
-        )}
-        {/* Mounted only while it is open, so closing throws the dialog's state away rather than
-            leaving it for the next open to clear. */}
-        {editor && insertDialogAt !== null && (
-          <InsertDialog
-            editor={editor}
-            at={insertDialogAt}
-            onClose={closeInsertDialog}
-            ownSlug={slug}
-          />
-        )}
-      </div>
+      </SiteColumn>
 
       <input type='hidden' name='body' value={body} />
       {/* The row identity once it exists (blank for a brand-new post, so publish
