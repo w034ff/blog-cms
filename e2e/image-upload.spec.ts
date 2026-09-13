@@ -3,7 +3,7 @@ import { docString } from './editor-probe';
 import { expectAutosaved, loadMarkdown, selectAcross, selectInside } from './editor-authoring';
 
 // A minimal valid 1×1 PNG. Uploads are content-addressed (sha256), so re-runs
-// dedup to a single file in public/uploads and the GC sweep reclaims it.
+// dedup to a single file in data/uploads and the GC sweep reclaims it.
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const PNG_1x1 = Buffer.from(PNG_1x1_BASE64, 'base64');

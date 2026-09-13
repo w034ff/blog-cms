@@ -5,7 +5,7 @@ import { loadMarkdown } from './editor-authoring';
 // Both facts are geometry: the DOM, the transaction and the saved markdown are identical whether
 // the picture is centred or not, so only a rendered measurement can hold them.
 
-// 390x220 and 768x403, both already in public/uploads. The pair is the point — one is clearly
+// 390x220 and 768x403, both already in data/uploads. The pair is the point — one is clearly
 // narrower than the 50rem column and the other nearly fills it, and every claim below is about
 // the difference between them. A single image measures nothing here.
 const NARROW = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';

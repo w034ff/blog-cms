@@ -1081,7 +1081,7 @@ test('clicking a footnote reference to select it starts no native drag', async (
 // `.ProseMirror-selectednode` hides the badge (globals.css), so the badge showing IS the unringed
 // case, not a condition of its own.
 //
-// 390x220, already in public/uploads — the same fixture e2e/image-layout.spec.ts measures.
+// 390x220, already in data/uploads — the same fixture e2e/image-layout.spec.ts measures.
 const UNRINGED_IMAGE =
   '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 
