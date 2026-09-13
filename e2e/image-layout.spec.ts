@@ -17,6 +17,19 @@ async function openWithBothImages(page: Page): Promise<void> {
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `![](${NARROW})\n\n本文\n\n![](${WIDE})\n\n後の段落\n`);
   await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
+  // Present is not loaded, and every claim here is a measured box: an `<img>` that has not
+  // decoded yet is 0 wide, so the wide one reads as narrow and "fills the column" fails. Waited
+  // on `naturalWidth` for the same reason e2e/editor-link-card.spec.ts's rowShapes does — the src
+  // attribute is exactly as asserted either way.
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.ProseMirror img')
+          .evaluateAll((imgs) => imgs.every((img) => (img as HTMLImageElement).naturalWidth > 0)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
 }
 
 // An `<img>` is inline by default, so `margin-inline: auto` alone does nothing — the `display`
