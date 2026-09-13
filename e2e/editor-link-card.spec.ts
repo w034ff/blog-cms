@@ -862,7 +862,10 @@ test('the picker drops the post being edited, and says why when nothing is left 
 
   // The default list is every post: this one is not in it, and the others are one click away —
   // which is what keeps the absence below from passing on a picker that lists nothing at all.
-  await expect(results.getByRole('button', { name: CARD_TITLE })).toBeVisible();
+  // Counted rather than named: the list is `LIMIT = 20` over every post newest-first
+  // (app/api/posts/search/route.ts), so which posts are in it depends on how many other specs
+  // have published by the time this one runs, and under `workers > 1` that is not knowable.
+  await expect(results.locator('.link-card-result')).not.toHaveCount(0);
   await expect(results.getByText(title)).toHaveCount(0);
 
   // The one case where dropping the row would say something untrue: this post is the only match.
@@ -1033,11 +1036,38 @@ function rowShapes(page: Page): Promise<RowShape[]> {
   );
 }
 
+// A body image is all a row needs to have a picture of its own: `resolveThumbnail` falls back to
+// the body's first one, and the row draws whatever that function returns. So a post can be given
+// either kind of row without an upload — this one is already in data/uploads, the same 390x220
+// file e2e/image-layout.spec.ts measures.
+const BODY_IMAGE = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
+
+// A titled post with a body, left as a draft: the picker lists drafts too (§5.2-4), so autosave
+// is the whole of what a row needs and there is no publish to wait for.
+async function draftPost(page: Page, title: string, body: string): Promise<void> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByLabel('タイトル').fill(title);
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, body);
+  await expectAutosaved(page);
+}
+
 test('every insert-search row carries a picture, and they are all one height (20a, 20d)', async ({
   page,
 }) => {
+  // Two posts of this test's own, one of each kind. The seeded pair used to arrive through the
+  // picker's default list, but that list is `LIMIT = 20` newest-first over every post, so the
+  // seeds drop off it as soon as enough specs have published — which under `workers > 1` is not
+  // something this spec can know. A stamp shared by both titles is a query that returns exactly
+  // these two, and the search filters before the cap.
+  const stamp = `行そろえ ${Date.now()}`;
+  await draftPost(page, `${stamp} 絵あり`, `![](${BODY_IMAGE})\n\n本文\n`);
+  await draftPost(page, `${stamp} 絵なし`, '本文\n');
+
   await openPickerOnNewPost(page);
-  await expect(page.locator('.link-card-result').first()).toBeVisible();
+  await page.locator('.link-card-search').fill(stamp);
+  await expect(page.locator('.link-card-result')).toHaveCount(2);
   const rows = await rowShapes(page);
   expect(rows.length).toBeGreaterThan(1);
 
@@ -1045,8 +1075,8 @@ test('every insert-search row carries a picture, and they are all one height (20
     expect(row.hasImage, row.label ?? '').toBe(true);
     expect(row.loaded, row.label ?? '').toBe(true);
   }
-  // Both kinds have to be on screen, or the loop above says nothing about the fallback: the seeded
-  // posts include one with a picture of its own and ones with none (§17's house mark).
+  // Both kinds have to be on screen, or the loop above says nothing about the fallback — which is
+  // why the pair above is one post with a picture of its own and one with none (§17's house mark).
   expect(rows.some((row) => row.placeholder)).toBe(true);
   expect(rows.some((row) => !row.placeholder)).toBe(true);
 
@@ -1129,6 +1159,9 @@ test('the picker fills the card’s width, and the resolved card still reserves 
   // held 272px of a 766px card empty (measured 2026-09-02).
   expect(await rowWidth()).toBe(await bodyWidth());
 
+  // Searched, not picked off the default list: that list is capped at 20 newest-first, so a
+  // seeded post falls off it once enough specs have published. The query filters before the cap.
+  await page.locator('.link-card-search').fill(CARD_TITLE);
   await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
   await expect(page.locator('.link-card-view .link-card-title')).toHaveText(CARD_TITLE);
   // And the other half: a resolved card keeps the room, or its title runs under its own picture.
@@ -1212,6 +1245,8 @@ test('「変更」, then picking the post the card already names, still redraws 
   await card(page).getByRole('button', { name: '変更' }).click();
   await expect(page.locator('.link-card-search')).toBeFocused();
 
+  // Searched for the same reason as 20f above: the default list is capped at 20 newest-first.
+  await page.locator('.link-card-search').fill(CARD_TITLE);
   await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
 
   await expect(page.locator('.link-card-search')).toHaveCount(0);
