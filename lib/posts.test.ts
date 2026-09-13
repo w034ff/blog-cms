@@ -6,6 +6,7 @@ import {
   getAllPosts,
   getAllTags,
   getPostBySlug,
+  getDraftBySlug,
   getPostForEdit,
   getPostsByCategory,
   getPostsByTag,
@@ -102,6 +103,29 @@ describe('getPostBySlug', () => {
   it('returns an unlisted post by its direct slug (excluded from listings only)', async () => {
     seed({ slug: 'secret', title: 'Secret', unlisted: true });
     expect((await getPostBySlug('secret'))?.title).toBe('Secret');
+  });
+});
+
+describe('getDraftBySlug', () => {
+  it('returns a draft', async () => {
+    seed({ slug: 'wip', title: 'WIP', draft: true });
+    expect((await getDraftBySlug('wip'))?.title).toBe('WIP');
+  });
+
+  // The pair is what makes the preview gate expressible: one function answers for published
+  // posts, the other only for drafts, and neither can stand in for the other.
+  it('returns null for a published post', async () => {
+    seed({ slug: 'live', draft: false });
+    expect(await getDraftBySlug('live')).toBeNull();
+  });
+
+  it('returns null for an unlisted post (published, not a draft)', async () => {
+    seed({ slug: 'secret', unlisted: true });
+    expect(await getDraftBySlug('secret')).toBeNull();
+  });
+
+  it('returns null for a missing slug', async () => {
+    expect(await getDraftBySlug('nope')).toBeNull();
   });
 });
 

@@ -10,8 +10,11 @@ export type PostFrontmatter = {
   // (lib/thumbnail.ts), which falls back to the body's first upload.
   thumbnail: string;
   // Excluded from the home/tag/category listings and the RSS feed; still
-  // reachable at its own `/posts/<slug>` URL. The slug's opacity is the only
-  // access control — there is no separate auth check.
+  // reachable at its own `/posts/<slug>` URL by anyone who has it. The slug's
+  // opacity is the only access control on *this* flag — there is no auth check
+  // behind it. Do not generalize that to the route: the same URL for a `draft`
+  // post is session-gated (app/(site)/posts/[slug]/page.tsx), and there the
+  // address is not enough.
   unlisted: boolean;
   // Refreshed on every publish/update/unpublish (`commitPost`), UTC ISO. Shown
   // publicly (date-only) only when it names a different calendar day than

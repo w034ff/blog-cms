@@ -56,6 +56,25 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
   return toPost(row);
 }
 
+// The complement of the above, and deliberately a second function rather than a flag on it.
+// `getPostBySlug` is what a link card (app/(site)/posts/[slug]/page.tsx's resolveCard) and
+// /api/link-title ask, and both are required to report a draft and an unknown slug identically —
+// docs/link-requirements.md §6.1. Widening that one would leak draft titles into cards; this one
+// can only ever answer for a draft, so no caller of it can be surprised.
+//
+// **It carries no authorization of its own.** The only caller gates on a session first
+// (getOptionalSession in the post page); this just narrows the row set. Naming it for the draft
+// rather than for the viewer is what keeps that honest: a function called "forAuthor" invites the
+// belief that it checks who is asking.
+//
+// A draft's current content is in the live columns — `draft_content` is written only for a
+// *published* post, so there is no working copy to prefer here.
+export async function getDraftBySlug(slug: string): Promise<Post | null> {
+  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  if (!row || !row.draft) return null;
+  return toPost(row);
+}
+
 // `draft_content` is written only for a published post (a draft's edits go straight to the live
 // columns) and cleared by commitPost on both publish and unpublish, so the flag is derived, not
 // stored — and it can never be true on a row the list is badging 下書き. It asks whether the

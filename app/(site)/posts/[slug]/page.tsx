@@ -1,13 +1,15 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getPostBySlug } from '@/lib/posts';
+import { getDraftBySlug, getPostBySlug } from '@/lib/posts';
+import { getOptionalSession } from '@/lib/dal';
 import { readLinkPreview } from '@/lib/link-previews';
 import { linkImageSrc } from '@/lib/link-image';
 import { normalizeCardHref } from '@/lib/link-card-href';
 import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
 import { siteOrigin } from '@/lib/site';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
+import type { Post } from '@/lib/types';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
@@ -75,10 +77,38 @@ async function resolveCard(href: string): Promise<CardTarget | null> {
   };
 }
 
+// What this URL serves, and to whom. A published post (unlisted included — its slug is its only
+// gate) answers everyone. A draft answers nobody, unless the request carries an admin session, and
+// then it is a preview: same URL, same rendering path, so what the author checks is literally what
+// will ship rather than a second implementation of it.
+//
+// The session is the credential, not the URL. That is the difference from 限定公開, where knowing
+// the address is enough — a leaked draft address still 404s.
+//
+// `getOptionalSession` and not `verifySession`: this route must refuse, not redirect to /login. A
+// stranger who guesses a draft's slug learns nothing, including that it exists.
+//
+// Asked only when the published lookup misses, so an ordinary read of an ordinary post pays one
+// query and no cookie parse.
+async function readablePost(slug: string): Promise<{ post: Post; preview: boolean } | null> {
+  const published = await getPostBySlug(slug);
+  if (published) return { post: published, preview: false };
+  if (!(await getOptionalSession())) return null;
+  const draft = await getDraftBySlug(slug);
+  return draft ? { post: draft, preview: true } : null;
+}
+
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
-  if (!post) return {};
+  const readable = await readablePost(slug);
+  if (!readable) return {};
+  const { post, preview } = readable;
+  // A preview says so in the tab, because the page it is previewing will look identical there.
+  if (preview) {
+    // Explicit, not inherited. The site is noindex-wide today; that flag goes when it opens up,
+    // and an unpublished post must not become indexable on the day it does.
+    return { title: `[下書き] ${post.title}`, robots: { index: false, follow: false } };
+  }
   const thumbnail = resolveThumbnail(post);
   return {
     title: post.title,
@@ -112,94 +142,122 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
 
 export default async function PostPage({ params }: { params: Promise<Params> }) {
   const { slug } = await params;
-  const post = await getPostBySlug(slug);
-  if (!post) notFound();
+  const readable = await readablePost(slug);
+  if (!readable) notFound();
+  const { post, preview } = readable;
 
+  // resolveCard is handed over unchanged, so a link card inside a draft still resolves through
+  // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
+  // would for a reader. The preview shows what will ship, and that includes what will not resolve.
   const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
   const showToc = toc.length >= MIN_HEADINGS_FOR_TOC;
 
   return (
-    <article
-      className={
-        showToc
-          ? // Below `toc:` (app/globals.css --breakpoint-toc): identical to the plain
-            // max-w-site case — the mobile TOC (TocNavMobile) handles it there.
-            //
-            // At `toc:` and up: a 3-track grid — calc((100% - column) / 2) | column | 1fr, where
-            // `column` is --container-site (app/globals.css), the same variable max-w-site
-            // caps at. Track 1 and the content track together always reduce to exactly the same
-            // left edge a lone `mx-auto max-w-site` box would have at the same width (both
-            // are `(container − column) / 2`), so the rail track only ever eats into space to the
-            // *right* of the content column — it can never shift the column itself, and because
-            // it's `1fr` (not a fixed size) rather than sharing a flexible remainder with a
-            // matching left-side `1fr`, the three tracks always sum to exactly 100% — no
-            // horizontal overflow is possible at any width.
-            //
-            // What this replaces: `mx-auto max-w-[65.5rem]` symmetrically centers the *whole*
-            // wider box, which shifts every showToc article ~124px left of SiteHeader and of
-            // non-TOC pages. A since-abandoned 4-track version (minmax(1rem,1fr) gutters on both
-            // sides + a fixed-width rail track) has the identical bug for the identical reason:
-            // two matched flexible gutters always split any added rail width between themselves,
-            // moving the left one. Only a gutter defined independently of the rail's size (this
-            // calc()) avoids it.
-            'mx-auto w-full max-w-site toc:mx-0 toc:max-w-none toc:grid toc:grid-cols-[calc((100%_-_var(--container-site))/2)_var(--container-site)_1fr] toc:items-start'
-          : 'mx-auto w-full max-w-site'
-      }>
-      {/* min-w-0: without it, a grid item's default min-width:auto can force this column wider
+    <>
+      {/* A preview is otherwise indistinguishable from the live post — same URL, same markup —
+          and mistaking one for the other is the whole failure mode of previewing in place. So the
+          banner is the feature, not decoration around it: it carries the one piece of information
+          the same-URL design throws away.
+
+          Which is also why it says only that. It used to spell out that the post is unpublished
+          and that the URL answers nobody else — true, but read once and noise thereafter, to an
+          author who already knows how their own editor works. 下書きのプレビュー is the whole
+          claim; the link is the next thing an author wants. Outside the <article>, because it is
+          not part of the post. */}
+      {preview && (
+        <div
+          role='status'
+          className='mx-auto mb-6 flex max-w-site flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100'>
+          <b className='font-semibold'>下書きのプレビュー</b>
+          <Link
+            href={`/admin/posts/${post.id}/edit`}
+            className='shrink-0 font-medium underline underline-offset-2'>
+            編集に戻る
+          </Link>
+        </div>
+      )}
+      <article
+        className={
+          showToc
+            ? // Below `toc:` (app/globals.css --breakpoint-toc): identical to the plain
+              // max-w-site case — the mobile TOC (TocNavMobile) handles it there.
+              //
+              // At `toc:` and up: a 3-track grid — calc((100% - column) / 2) | column | 1fr, where
+              // `column` is --container-site (app/globals.css), the same variable max-w-site
+              // caps at. Track 1 and the content track together always reduce to exactly the same
+              // left edge a lone `mx-auto max-w-site` box would have at the same width (both
+              // are `(container − column) / 2`), so the rail track only ever eats into space to the
+              // *right* of the content column — it can never shift the column itself, and because
+              // it's `1fr` (not a fixed size) rather than sharing a flexible remainder with a
+              // matching left-side `1fr`, the three tracks always sum to exactly 100% — no
+              // horizontal overflow is possible at any width.
+              //
+              // What this replaces: `mx-auto max-w-[65.5rem]` symmetrically centers the *whole*
+              // wider box, which shifts every showToc article ~124px left of SiteHeader and of
+              // non-TOC pages. A since-abandoned 4-track version (minmax(1rem,1fr) gutters on both
+              // sides + a fixed-width rail track) has the identical bug for the identical reason:
+              // two matched flexible gutters always split any added rail width between themselves,
+              // moving the left one. Only a gutter defined independently of the rail's size (this
+              // calc()) avoids it.
+              'mx-auto w-full max-w-site toc:mx-0 toc:max-w-none toc:grid toc:grid-cols-[calc((100%_-_var(--container-site))/2)_var(--container-site)_1fr] toc:items-start'
+            : 'mx-auto w-full max-w-site'
+        }>
+        {/* min-w-0: without it, a grid item's default min-width:auto can force this column wider
           than its fixed track the moment a wide <pre> code block sits inside it. */}
-      <div className={showToc ? 'toc:col-start-2 min-w-0' : undefined}>
-        <header className='mb-8'>
-          <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
-          <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
-            <time dateTime={post.date}>{formatPostDate(post.date)}</time>
-            {hasVisibleUpdate(post.date, post.updatedAt) && (
-              <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
+        <div className={showToc ? 'toc:col-start-2 min-w-0' : undefined}>
+          <header className='mb-8'>
+            <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
+            <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
+              <time dateTime={post.date}>{formatPostDate(post.date)}</time>
+              {hasVisibleUpdate(post.date, post.updatedAt) && (
+                <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
+              )}
+              <Link
+                href={`/categories/${encodeURIComponent(post.category)}`}
+                className='hover:underline'>
+                {post.category}
+              </Link>
+            </div>
+            {post.tags.length > 0 && (
+              <ul className='mt-3 flex flex-wrap gap-2'>
+                {post.tags.map((tag) => (
+                  <li key={tag}>
+                    <Link
+                      href={`/tags/${encodeURIComponent(tag)}`}
+                      className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
+                      #{tag}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             )}
-            <Link
-              href={`/categories/${encodeURIComponent(post.category)}`}
-              className='hover:underline'>
-              {post.category}
-            </Link>
-          </div>
-          {post.tags.length > 0 && (
-            <ul className='mt-3 flex flex-wrap gap-2'>
-              {post.tags.map((tag) => (
-                <li key={tag}>
-                  <Link
-                    href={`/tags/${encodeURIComponent(tag)}`}
-                    className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
-                    #{tag}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </header>
-        {/* Card: separates the body from the page background (Zenn-style) — the header above
+          </header>
+          {/* Card: separates the body from the page background (Zenn-style) — the header above
             stays on the plain page background, matching Zenn's own layout.
             `sm:px-6` rather than a roomier `sm:px-8`: the card's padding comes out of the content
             column, so it — not the column — sets the body's reading width (--container-site
             − 2×padding − 2×border). At 6 that lands on ~750px; at 8 it would drop to ~734px. */}
-        <div className='rounded-lg border border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6 sm:py-8'>
-          {showToc && <TocNavMobile toc={toc} />}
-          <div
-            id='post-body'
-            className='prose prose-zinc dark:prose-invert max-w-none'
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        </div>
-        {/* Client enhancers: each attaches behaviour to the server-rendered body after mount and
+          <div className='rounded-lg border border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6 sm:py-8'>
+            {showToc && <TocNavMobile toc={toc} />}
+            <div
+              id='post-body'
+              className='prose prose-zinc dark:prose-invert max-w-none'
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          </div>
+          {/* Client enhancers: each attaches behaviour to the server-rendered body after mount and
             renders nothing itself — a copy button on each code block, a preview of the note behind
             each footnote reference (which stays a working anchor either way), and the height and
             missing-post fallback for an X embed, which only its own iframe can report
             (docs/embed-requirements.md §10.5, §10.6), and the click that opens a body image
             full-window. */}
-        <CodeCopyButtons targetId='post-body' />
-        <FootnotePopover targetId='post-body' />
-        <EmbedFrames targetId='post-body' />
-        <ImageZoom targetId='post-body' />
-      </div>
-      {showToc && <TocNavDesktop toc={toc} />}
-    </article>
+          <CodeCopyButtons targetId='post-body' />
+          <FootnotePopover targetId='post-body' />
+          <EmbedFrames targetId='post-body' />
+          <ImageZoom targetId='post-body' />
+        </div>
+        {showToc && <TocNavDesktop toc={toc} />}
+      </article>
+    </>
   );
 }

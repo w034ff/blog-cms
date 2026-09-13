@@ -121,12 +121,22 @@ export default async function AdminHome() {
               </div>
               <div className='flex shrink-0 items-center gap-4'>
                 {/* Moved off the editor's pinned publish row, where it was a same-tab navigation
-                    out of a mounted editor. `draft` is the half of the gate that decides: every
-                    row has a slug from the moment autosave created it (lib/db/schema.ts), drafts
-                    included, while `getPostBySlug` returns null for a draft — so slug alone would
-                    put a link here that 404s. This row is also the only click-path to a 限定公開
-                    post, which lib/posts.ts keeps out of every public listing. */}
-                {!post.draft && post.slug && (
+                    out of a mounted editor. Every row has a slug from the moment autosave created
+                    it (lib/db/schema.ts), drafts included, and the address now answers the author
+                    for a draft too — app/(site)/posts/[slug]/page.tsx serves one to a request
+                    carrying this session. So one word covers both: the action is the same, and it
+                    can no longer land on a 404.
+
+                    Not 表示 / プレビュー. That split was worth having only while a draft's link
+                    was a trap; with the preview in place the two labels would differ just to say
+                    ahead of time what the destination says on arrival (its 下書きのプレビュー
+                    banner), and the row already carries the state — the 下書き badge above. (Not
+                    the date column: `date` is stamped at first publish and never cleared, so a
+                    post taken back to a draft still shows one.)
+
+                    This row is also the only click-path to a 限定公開 post, which lib/posts.ts
+                    keeps out of every public listing. */}
+                {post.slug && (
                   <a
                     href={`/posts/${post.slug}`}
                     className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
