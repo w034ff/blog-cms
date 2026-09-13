@@ -28,13 +28,16 @@ npm run test:e2e                                      # the whole suite, serial 
 npm run test:e2e:shards                               # the whole suite, 3 processes
 ```
 
-**A change with no files of its own needs the suite.** The rule above assumes the
-change belongs to a spec: an extension, a NodeView, one screen. Shared chrome —
-`components/PostEditor.tsx`, a layout under `app/`, `app/globals.css` — has no
-"its files", and running two of them green proves nothing. `20a3f24` (記事の設定
-moved onto the top line) landed in 17 specs at once, through geometry and a
-locator that no longer matched. For those, run the suite, or at least every
-editor spec.
+**A change with no files of its own gets a new spec, not the suite.** The rule
+above assumes the change belongs to a spec: an extension, a NodeView, one screen.
+Shared chrome — `components/PostEditor.tsx`, a layout under `app/`,
+`app/globals.css` — has no "its files", and its blast radius is real: `20a3f24`
+(記事の設定 moved onto the top line) landed in 17 specs at once, through geometry
+and a locator that no longer matched. That hazard is why the claim needs a spec —
+it is not a licence to run the suite. **Write the spec that covers the new claim,
+run that file, and stop.** The merge-only rule above is not suspended here; it
+wins. If the blast radius still worries you, say so and ask — 15 minutes of the
+user's machine is not yours to spend.
 
 **The dev server and the full suite.** A serial `npm run test:e2e` coexists with
 `npm run dev` (port 3001) — measured 2026-09-13, twice, 31.0m and 33.6m. **Sharding
