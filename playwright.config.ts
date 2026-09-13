@@ -38,24 +38,28 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chrome', storageState: STORAGE_STATE },
     },
   ],
-  webServer: {
-    // Prepare the isolated seeded DB copy BEFORE the app boots, then start a dev
-    // server in its own build dir (DIST_DIR) so it coexists with `npm run dev` —
-    // and, since every path here is keyed by E2E_PORT, with the other shards.
-    command: `node e2e/prepare-db.mts && node_modules/.bin/next dev -p ${E2E_PORT} -H 127.0.0.1`,
-    port: E2E_PORT,
-    reuseExistingServer: false,
-    timeout: 180_000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: {
-      NEXT_DIST_DIR: DIST_DIR,
-      NEXT_TSCONFIG_PATH: TSCONFIG_PATH,
-      BLOG_DB_PATH: TEST_DB_PATH,
-      E2E_ADMIN_USERNAME: TEST_ADMIN.username,
-      E2E_ADMIN_PASSWORD: TEST_ADMIN.password,
-      SESSION_SECRET: TEST_SESSION_SECRET,
-      SESSION_COOKIE_SECURE: 'false',
-    },
-  },
+  // `E2E_EXTERNAL_SERVER=1` points the run at a server started outside Playwright (the harness
+  // normally owns it). Used to A/B one build of the app against another on the same specs.
+  webServer: process.env.E2E_EXTERNAL_SERVER
+    ? undefined
+    : {
+        // Prepare the isolated seeded DB copy BEFORE the app boots, then start a dev
+        // server in its own build dir (DIST_DIR) so it coexists with `npm run dev` —
+        // and, since every path here is keyed by E2E_PORT, with the other shards.
+        command: `node e2e/prepare-db.mts && node_modules/.bin/next dev -p ${E2E_PORT} -H 127.0.0.1`,
+        port: E2E_PORT,
+        reuseExistingServer: false,
+        timeout: 180_000,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        env: {
+          NEXT_DIST_DIR: DIST_DIR,
+          NEXT_TSCONFIG_PATH: TSCONFIG_PATH,
+          BLOG_DB_PATH: TEST_DB_PATH,
+          E2E_ADMIN_USERNAME: TEST_ADMIN.username,
+          E2E_ADMIN_PASSWORD: TEST_ADMIN.password,
+          SESSION_SECRET: TEST_SESSION_SECRET,
+          SESSION_COOKIE_SECURE: 'false',
+        },
+      },
 });
