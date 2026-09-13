@@ -15,9 +15,19 @@ import {
 // and logs in once (the setup project) to reuse the admin session across specs.
 export default defineConfig({
   testDir: './e2e',
-  // Editor interactions (drag-select, autosave) are timing-sensitive: run serially.
+  // `fullyParallel: false` keeps every test in a file on one worker, in order — which is what the
+  // editor's timing-sensitive gestures (drag-select, autosave) actually depend on. What they do
+  // not depend on is being the only test in the process: a worker gets its own browser and its own
+  // page, so another worker's typing cannot reach this one's editor. So the unit of parallelism is
+  // the file, and four of them run at once.
+  //
+  // Four on one server, rather than more servers: a `next dev` is 1.6GB resident against roughly
+  // 0.3GB for another browser context (measured 2026-09-13), which is what made three shards
+  // memory-bound on this machine. The shared DB is safe because each test makes its own post —
+  // the one assertion that read global state was the link card picker's unfiltered list, capped
+  // at 20 newest-first, and it now searches instead (e2e/editor-link-card.spec.ts).
   fullyParallel: false,
-  workers: 1,
+  workers: 4,
   retries: 0,
   reporter: 'list',
   timeout: 90_000, // room for a cold Turbopack build of the .next-e2e dir
