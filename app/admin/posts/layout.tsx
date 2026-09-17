@@ -1,4 +1,21 @@
+import type { Viewport } from 'next';
 import { PageMain } from '@/components/PageShell';
+
+// `resizes-content` is what puts the editor's bottom toolbar above the software keyboard on
+// Android rather than underneath it: the layout viewport itself shrinks when the keyboard opens,
+// so the bar's `bottom: 0` follows it with no measurement at all (docs/table-requirements.md
+// §12.5). iOS Safari ignores this key and is handled by components/editor/useKeyboardInset.ts,
+// whose formula comes out at ~0 here — the two do not stack.
+//
+// Declared on the editor's shell and not on the root layout on purpose: it changes how every
+// fixed element on a page behaves while a keyboard is open, and the public site has no reason to
+// take that. `width` and `initialScale` are restated because a viewport export replaces Next's
+// default rather than merging with it.
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  interactiveWidget: 'resizes-content',
+};
 
 // The editor screens' shell. No SiteHeader and no SiteFooter: note and Zenn both replace the
 // site's header with the document's own on the writing screen (measured 2026-09-11), and what a

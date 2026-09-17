@@ -91,7 +91,7 @@ test('a pointer does not get the pair, nor the gap that follows it', async ({ pa
   await open(page);
   await expect(undo(page)).toBeHidden();
   await expect(redo(page)).toBeHidden();
-  await expect(page.locator('.sticky .toolbar-button-history')).toHaveCount(2);
+  await expect(page.locator('.editor-toolbar-bar .toolbar-button-history')).toHaveCount(2);
 
   // The separator after the pair is a sibling margin, and `display: none` does not stop a sibling
   // selector from matching — written outside the `hover: none` block it would open a hole at the

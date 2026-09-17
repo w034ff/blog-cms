@@ -21,7 +21,10 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
-import { useStickyHeaderOffset } from './editor/useStickyHeaderOffset';
+import { useMeasuredHeight } from './editor/useMeasuredHeight';
+import { useKeyboardInset } from './editor/useKeyboardInset';
+import { InsertMenu } from './editor/InsertMenu';
+import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
@@ -167,7 +170,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
 
   const formRef = useRef<HTMLFormElement>(null);
   // Publishes the header's measured height on the form, for the toolbar to pin against.
-  const headerRef = useStickyHeaderOffset<HTMLDivElement>(formRef);
+  const headerRef = useMeasuredHeight<HTMLDivElement>(formRef, '--editor-header-h');
+  // The toolbar's own height, for the padding the post takes under it once the bar is fixed to the
+  // bottom of the screen (app/globals.css, `hover: none`).
+  const toolbarRef = useMeasuredHeight<HTMLDivElement>(formRef, '--editor-toolbar-h');
+  useKeyboardInset(formRef);
   // Refs mirror state the autosave machinery reads outside React's render flow.
   const committedIdRef = useRef<number | null>(committedId);
   // Edit-mode posts already sit at their final URL; only create-mode posts need
@@ -560,11 +567,31 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
           {/* Hover is a background, not an underline, so this reads as the same kind of control as
               記事の設定 further along the line rather than as prose. `-mx-1` cancels the padding
               the background needs, which keeps the text itself flush with the title's left edge
-              below it — 記事の設定 carries `-mr-1` for the same reason on its side. */}
+              below it — 記事の設定 carries `-mr-1` for the same reason on its side.
+
+              On a phone it is the arrow alone (docs/table-requirements.md §12.6). Both are in the
+              markup at every width and one media query decides which is painted — §12.4's idiom,
+              not a `matchMedia` read. `toolbar-button` is the hook that gives the icon-only form
+              its touch height and its ring: the class carries no styling of its own, and the 画像
+              picker is the existing precedent for a non-<button> wearing it.
+
+              `aria-label` rather than letting the text span name it, because that span is
+              `display: none` on the side where the name is most needed. It repeats the visible
+              words verbatim, so the desktop label is contained in the accessible name
+              (WCAG 2.5.3). */}
           <Link
             href='/admin'
-            className='-mx-1 rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
-            記事一覧
+            aria-label='記事一覧'
+            // `<a>` is natively draggable in Chrome; a touch-drag that starts here otherwise fires
+            // `dragstart` and the browser cancels the pointer sequence (`pointercancel`) before
+            // `pointerup`/`click` — the same class of hijack useImageUpload's drag guard exists
+            // for, just on a link instead of an image.
+            onDragStart={(event) => event.preventDefault()}
+            className='toolbar-button editor-back-link -mx-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+            <span className='editor-back-icon'>
+              <ArrowLeftIcon />
+            </span>
+            <span className='editor-back-label'>記事一覧</span>
           </Link>
           {/* On the left, with the autosave state, because it is the same kind of thing: this end
               of the bar says what is true about the post, the other end says what can be done to
@@ -594,6 +621,14 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             </span>
           )}
           <span className='ml-auto flex flex-wrap items-center gap-2'>
+            {/* 囲み枠・表・リンク・画像 on a phone; hidden entirely on a pointer, where they stay
+                in the toolbar (docs/table-requirements.md §12.5). `editor &&` is the one condition
+                in this bar, and it is required: the bar itself is deliberately outside that gate
+                so that publish survives an editor that fails to mount (see the comment above),
+                while these controls are commands on the editor and cannot. */}
+            {editor && (
+              <InsertMenu editor={editor} uploading={uploading} onImageChange={handleImageChange} />
+            )}
             <button
               type='button'
               aria-expanded={settingsOpen}
@@ -761,7 +796,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               {/* The frame's sticky header: the format toolbar, and nothing else now that publish
               lives in the page header above. `top-(--editor-header-h)` pins it under that bar
               instead of at the viewport top — the height is measured, not written down, because
-              the bar wraps at narrow widths (components/editor/useStickyHeaderOffset.ts; the
+              the bar wraps at narrow widths (components/editor/useMeasuredHeight.ts; the
               first-paint fallback is in app/globals.css). The opaque bg hides content scrolling
               beneath; rounded-t matches the frame's corners, and border-b (same weight as the
               frame) divides it from the content. z-30 sits above the editor and below the page
@@ -773,14 +808,17 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               publishing with it. That is why those buttons are in the page header, outside this
               frame entirely. */}
               {editor && (
-                <div className='sticky top-(--editor-header-h) z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
+                <div
+                  ref={toolbarRef}
+                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
                   <Toolbar
                     editor={editor}
                     uploading={uploading}
                     onImageChange={handleImageChange}
                   />
                   {/* Refusal notices hang off the sticky header (which is a containing block for them),
-                  so they stay in view over the content — see EditorToast. */}
+                  so they stay in view over the content — see EditorToast. On a phone this box is at
+                  the bottom of the screen, so the toast flips to sit above it; app/globals.css. */}
                   {notice && <EditorToast message={notice} />}
                 </div>
               )}

@@ -9,7 +9,7 @@ import {
 
 // The editor's chrome is two stacked sticky layers: the page header (記事一覧 / the autosave
 // state / 記事の設定 / 更新) and the format toolbar inside the editor frame. The toolbar pins
-// against the header's *measured* height (components/editor/useStickyHeaderOffset.ts), because
+// against the header's *measured* height (components/editor/useMeasuredHeight.ts), because
 // the header wraps at narrow widths and no written-down constant survives that.
 //
 // Everything here is geometry, an Enter that must not reach a submit button, and a control that

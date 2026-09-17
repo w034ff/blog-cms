@@ -33,7 +33,11 @@ function ListMenu({ editor }: { editor: Editor }) {
       trigger={<ListIcon />}
       title='リスト'
       active={bullet || ordered}
-      disabled={!canList}>
+      disabled={!canList}
+      // The only dropdown left in the format group, so the only one that has to open upward on a
+      // phone — 囲み枠 and 表 moved to the header's ＋, which opens downward from the top of the
+      // screen (§12.5).
+      direction='up'>
       {(close) => {
         const select = (toggle: () => void) => {
           toggle();
@@ -69,16 +73,6 @@ export function Toolbar({
   uploading: boolean;
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
-  // An image is a block node, and none of the three hosts below can hold one: a table cell is
-  // paragraph-only, a code block is a `code` textblock, and an accordion's title is `text*`.
-  // Inserting splits the host in two around it and the saved markdown comes out corrupt every time
-  // (see useImageUpload, which refuses for all three). Grey the picker out to match — using
-  // ToolbarButton's own disabled treatment, since this control is a <label> + hidden <input>, not
-  // a button. Paste and drag-and-drop hit the same refusal but have no affordance to grey out.
-  // The host list is the refusal's own, so the two cannot drift on a selection that only reaches
-  // into one of them (see selection-scan.ts).
-  const imageBlocked = selectionTouches(editor.state, ...Object.keys(IMAGE_BLOCKED_HOSTS));
-
   return (
     <div className='flex flex-wrap items-center gap-0.5'>
       {/* Undo and redo, first in the row because that is where every editor puts them — and drawn
@@ -181,7 +175,65 @@ export function Toolbar({
         compact>
         <QuoteIcon />
       </ToolbarButton>
-      <CalloutMenu editor={editor} />
+      {/* The insert group, rendered here for a pointer and inside the header's ＋ for touch
+          (InsertMenu.tsx). Both copies are in the DOM at every width and one media query decides
+          which is painted — the §12.4 idiom, for the reason stated there: a `matchMedia` read in
+          React would render one way and correct itself, which is a hydration mismatch.
+
+          `contents`, so on a pointer the four controls are flex items of the toolbar exactly as
+          they were before this wrapper existed — the row wraps at the same widths. The hide rule
+          is written `.editor-toolbar-bar .toolbar-insert` (two classes) so it outranks the
+          `display: contents` this utility sets. */}
+      <InsertControls
+        editor={editor}
+        uploading={uploading}
+        onImageChange={onImageChange}
+        pickerTestId='image-picker'
+        className='toolbar-insert contents'
+      />
+    </div>
+  );
+}
+
+// 囲み枠・表・リンク・画像 — everything that puts a new thing into the post, as opposed to marking
+// what is already there. On a phone this group leaves the toolbar for a ＋ in the page header: it
+// is not wanted mid-keystroke, and the bottom bar has no width to spare once the software keyboard
+// is up (docs/table-requirements.md §12.5).
+//
+// `pickerTestId` rather than a fixed one, because both copies carry a file input and
+// `input[type="file"]` is already ambiguous on this screen — the thumbnail field has one too, which
+// is why the picker has a testid at all. Two copies of the same testid would fail strict mode where
+// two different ones do not.
+export function InsertControls({
+  editor,
+  uploading,
+  onImageChange,
+  pickerTestId,
+  className,
+  labelled,
+}: {
+  editor: Editor;
+  uploading: boolean;
+  onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  pickerTestId: string;
+  className: string;
+  // Draw the names beside the glyphs. See CalloutMenu — the ＋ menu is a column of worded rows and
+  // has no tooltips to fall back on, the toolbar is a row of icons that does.
+  labelled?: boolean;
+}) {
+  // An image is a block node, and none of the three hosts below can hold one: a table cell is
+  // paragraph-only, a code block is a `code` textblock, and an accordion's title is `text*`.
+  // Inserting splits the host in two around it and the saved markdown comes out corrupt every time
+  // (see useImageUpload, which refuses for all three). Grey the picker out to match — using
+  // ToolbarButton's own disabled treatment, since this control is a <label> + hidden <input>, not
+  // a button. Paste and drag-and-drop hit the same refusal but have no affordance to grey out.
+  // The host list is the refusal's own, so the two cannot drift on a selection that only reaches
+  // into one of them (see selection-scan.ts).
+  const imageBlocked = selectionTouches(editor.state, ...Object.keys(IMAGE_BLOCKED_HOSTS));
+
+  return (
+    <div className={className}>
+      <CalloutMenu editor={editor} labelled={labelled} />
       {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
           menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
       <TableGridMenu editor={editor} />
@@ -221,11 +273,11 @@ export function Toolbar({
         }`}>
         <ImageIcon />
         {uploading ? 'アップロード中…' : '画像'}
-        {/* The editor page now has two file pickers — this one and the
-            thumbnail field's — so both carry a testid. Without it a spec's
-            `input[type="file"]` matches two elements and fails strict mode. */}
+        {/* The editor page has three file pickers — this one, the ＋ menu's copy of it, and the
+            thumbnail field's — so each carries a testid. Without them a spec's
+            `input[type="file"]` matches three elements and fails strict mode. */}
         <input
-          data-testid='image-picker'
+          data-testid={pickerTestId}
           type='file'
           accept={ALLOWED_IMAGE_ACCEPT}
           className='hidden'

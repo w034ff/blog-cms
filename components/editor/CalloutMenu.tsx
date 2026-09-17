@@ -10,7 +10,11 @@ import { CALLOUT_TITLES, toCalloutType, type CalloutType } from '@/lib/callout-t
 // when the cursor is already inside one, switches that callout's type in place (setCallout
 // handles both, so callouts never nest; see the extension). Mirrors the list menu: the
 // trigger highlights while inside a callout and the panel marks the current type.
-export function CalloutMenu({ editor }: { editor: Editor }) {
+// `labelled` draws the name beside the glyph. The toolbar leaves it off — a row of icons, where
+// the tooltip carries the name and width is the scarce dimension. The ＋ menu turns it on: its
+// other rows (表・リンク・画像) are worded, and **a tooltip does not exist under `hover: none`**
+// (docs/link-requirements.md §5.5.19), so an icon alone there is a row that says nothing at all.
+export function CalloutMenu({ editor, labelled }: { editor: Editor; labelled?: boolean }) {
   const inCallout = editor.isActive('callout');
   // setCallout refuses where a callout doesn't belong — inside a table, and inside a quote
   // (someone else's words; a callout is the author's own aside). Ask the command rather than
@@ -31,7 +35,16 @@ export function CalloutMenu({ editor }: { editor: Editor }) {
 
   return (
     <ToolbarDropdown
-      trigger={<CalloutIcon />}
+      trigger={
+        labelled ? (
+          <span className='flex items-center gap-1'>
+            <CalloutIcon />
+            囲み枠
+          </span>
+        ) : (
+          <CalloutIcon />
+        )
+      }
       title='囲み枠'
       active={inCallout}
       disabled={!canInsert}>

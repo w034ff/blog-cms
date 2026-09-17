@@ -19,6 +19,7 @@ export function ToolbarDropdown({
   active,
   disabled,
   panelClass = 'min-w-max flex-col overflow-hidden px-1 py-0.5',
+  direction = 'down',
   children,
 }: {
   // Trigger content (icon and/or text label); the chevron is appended after it.
@@ -33,6 +34,13 @@ export function ToolbarDropdown({
   disabled?: boolean;
   // Interior layout of the panel; the default suits a plain column of items.
   panelClass?: string;
+  // `up` opens the panel above the trigger instead of below it, and only where there is no hover —
+  // that is, on the phone, where this toolbar is a bar at the bottom of the screen and a panel
+  // below the trigger would open under the software keyboard (docs/table-requirements.md §12.5).
+  // A class, not a measurement: which way there is room is decided by the arrangement, and the
+  // arrangement is decided by one media query in app/globals.css. The `shiftX` clamp below is
+  // horizontal and unaffected.
+  direction?: 'down' | 'up';
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -128,7 +136,9 @@ export function ToolbarDropdown({
           // it has to move into the inline style once shiftX needs to add to the same transform,
           // since the utility and an inline `transform` can't both win.
           style={{ transform: `translateX(calc(-50% + ${shiftX}px))` }}
-          className={`absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
+          className={`absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${
+            direction === 'up' ? 'dropdown-panel-up ' : ''
+          }${panelClass}`}>
           {children(() => setOpen(false))}
         </div>
       )}

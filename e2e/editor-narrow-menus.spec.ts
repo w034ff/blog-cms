@@ -359,20 +359,30 @@ test.describe('on an emulated phone at 360px', () => {
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).boxShadow));
     expect(shadows.length).toBeGreaterThan(4);
     expect(shadows.every((s) => s.includes('inset'))).toBe(true);
-    // The main toolbar takes the same rule from the same class, which is the point of putting it
-    // on `ToolbarButton` rather than on this menu — and every control there, not just the ones
-    // that are `<button>`s. 画像 is a `<label>` around a hidden file input, styled by hand to look
-    // like the buttons beside it, and it was the one control in the row left without an outline
-    // (§12.2). Asserted by tag, so a future control that copies the same shape has to opt in too.
-    const main = await page.locator('.sticky .toolbar-button').evaluateAll((els) =>
-      els.map((el) => ({
-        tag: el.tagName,
-        ring: getComputedStyle(el).boxShadow.includes('inset'),
-      })),
-    );
+    // The format bar takes the same rule from the same class, which is the point of putting it on
+    // `ToolbarButton` rather than on this menu.
+    const outlines = (selector: string) =>
+      page.locator(selector).evaluateAll((els) =>
+        els.map((el) => ({
+          tag: el.tagName,
+          ring: getComputedStyle(el).boxShadow.includes('inset'),
+        })),
+      );
+    const main = await outlines('.editor-toolbar-bar .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
     expect(main.every((c) => c.ring)).toBe(true);
-    expect(main.some((c) => c.tag === 'LABEL')).toBe(true);
+
+    // …and every control in the ＋ menu, not just the ones that are `<button>`s. 画像 is a
+    // `<label>` around a hidden file input, styled by hand to look like the buttons beside it, and
+    // it was the one control left without an outline (§12.2). It is in this panel rather than in
+    // the bar since §12.5, so the tag assertion moved here with it — asserted by tag, so a future
+    // control that copies the same shape has to opt in too.
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const inserts = await outlines('[data-testid="insert-menu-panel"] .toolbar-button');
+    expect(inserts.length).toBeGreaterThan(2);
+    expect(inserts.every((c) => c.ring)).toBe(true);
+    expect(inserts.some((c) => c.tag === 'LABEL')).toBe(true);
+    await page.keyboard.press('Escape');
 
     expect(await toolbarRows(page)).toBeLessThan(1.5);
     expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
@@ -394,14 +404,29 @@ test.describe('on an emulated phone at 360px', () => {
       );
 
     await openEditor(page);
-    const main = await shortest(page, '.sticky .toolbar-button');
+    // `.editor-toolbar-bar`, not `.sticky`: under `hover: none` this bar is fixed to the bottom of
+    // the screen and is not a sticky box at all (§12.5).
+    // `:visible` because the insert group's pointer copy is in this bar too and unpainted — its
+    // boxes are 0×0 here, and it is the ＋'s copy below that carries those four controls (§12.5).
+    const main = await shortest(page, '.editor-toolbar-bar .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
     expect(Math.min(...main.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+
+    // The ＋ in the page header, and the insert controls it holds — chrome that exists only under
+    // `hover: none`, so this file is the only place the floor can be measured on it (§12.5).
+    const plus = await shortest(page, '.insert-menu .toolbar-button');
+    expect(plus).toHaveLength(1);
+    expect(plus[0].h).toBeGreaterThanOrEqual(FLOOR);
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const inserts = await shortest(page, '[data-testid="insert-menu-panel"] .toolbar-button');
+    expect(inserts.length).toBeGreaterThan(2);
+    expect(Math.min(...inserts.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+    await page.keyboard.press('Escape');
 
     // Undo and redo take the floor in both directions (§12.4): they are the one pair whose width
     // costs no row, and squares are what they are drawn as. Asserted here rather than in
     // editor-history-buttons.spec.ts because it is this file that runs under `hover: none`.
-    const history = await shortest(page, '.sticky .toolbar-button-history');
+    const history = await shortest(page, '.editor-toolbar-bar .toolbar-button-history:visible');
     expect(history).toHaveLength(2);
     expect(Math.min(...history.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
 

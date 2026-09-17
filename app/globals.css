@@ -63,11 +63,16 @@ html {
   --foreground: #171717;
   /* The post editor's sticky header height, which the format toolbar below it pins against
      (`top-(--editor-header-h)` in components/PostEditor.tsx). The real value is measured at
-     runtime by components/editor/useStickyHeaderOffset.ts and set on the <form>, because the
+     runtime by components/editor/useMeasuredHeight.ts and set on the <form>, because the
      bar wraps at narrow widths; this is only what the first paint uses, before the measurement
      lands. Too small and the toolbar starts one frame too high — never too low, which would
      leave a gap. */
   --editor-header-h: 2.75rem;
+  /* The format toolbar's height, which the post pads under on a phone, where the toolbar is fixed
+     to the bottom of the screen (§12.5). Measured by the same hook and for the same reason — it
+     wraps to a second row at 320px. Too small here only means the last line sits a little close
+     until the measurement lands. */
+  --editor-toolbar-h: 2.25rem;
 }
 
 @theme inline {
@@ -243,6 +248,46 @@ body {
   }
 }
 
+/* Editor chrome, touch only: the press itself is visible (§12.7).
+
+   Tailwind's preflight sets `-webkit-tap-highlight-color: transparent` on `html`, which is the
+   right default only for a page that draws its own press state — and this one did not. Every
+   `hover:` utility compiles inside `@media (hover: hover)`, so `hover:bg-zinc-100` never fires
+   here either. Measured 2026-09-15 on an emulated Pixel 7 with `CSS.forcePseudoState`: the
+   background of every control was `rgba(0, 0, 0, 0)` at rest, forced `:active`, and forced
+   `:hover` alike. A press that turns into a scroll, and a press that misses, both looked exactly
+   like a press that worked.
+
+   **The shade is not `active`'s.** That one means "this mark is on right now" (`bg-zinc-200` /
+   dark `bg-zinc-700`, set in ToolbarButton.tsx); reusing it would leave an already-bold 太字
+   showing nothing while it is held. One step further from the ground in each scheme.
+
+   §12.2 rejected a background *at rest* because it would put "pressable" and "currently on" on one
+   axis. This is only while the finger is down, so that collision does not arise — the ring still
+   carries pressability, and `active` still carries state.
+
+   Disabled controls are outside this by construction and stay that way: they carry
+   `pointer-events-none`, and a disabled <button> never matches `:active`. */
+@media (hover: none) {
+  .toolbar-button:active,
+  .dropdown-item:active,
+  .link-bubble-open:active,
+  .prose .link-card-head button:active,
+  .prose .embed-head button:active {
+    background-color: #d4d4d8; /* zinc-300 */
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .toolbar-button:active,
+  .dropdown-item:active,
+  .link-bubble-open:active,
+  .prose .link-card-head button:active,
+  .prose .embed-head button:active {
+    background-color: #52525b; /* zinc-600 */
+  }
+}
+
 @media (hover: none) and (prefers-color-scheme: dark) {
   .toolbar-button,
   .prose .link-card-head button,
@@ -263,12 +308,14 @@ body {
    4px are not worth what they cost below.
 
    **Height for every button, width only where it is free.** Width is the dimension that has run
-   out: the toolbar already wraps, and a row it gains is 42px off a phone screen whose visible area
-   is 319px once the software keyboard is up (docs/embed-requirements.md, 2026-09-02), while the
-   height costs 16px per row once. Measured 2026-09-09: widening the 24px marks (B/I/S/A/引用) to
-   32px takes 390px and 393px from two rows to three, and 28px does it at 375px — so they keep
-   their width and take the height alone. The undo/redo pair is the exception, in its own rule
-   below.
+   out: the toolbar wraps (393px and below are two rows, 412px is one — measured 2026-09-15), and a
+   row it gains is 42px off a phone screen whose visible area is 319px once the software keyboard is
+   up (docs/embed-requirements.md, 2026-09-02), while the height costs 16px per row once. Measured
+   2026-09-09, against the arrangement of the time: widening the 24px marks (B/I/S/A/引用) to 32px
+   took 390px and 393px from two rows to three, and 28px did it at 375px — so they keep their width
+   and take the height alone. Those thresholds are not re-measured since the insert controls left
+   this row (§12.5); the decision they support is unaffected. The undo/redo pair is the exception,
+   in its own rule below.
 
    `min-height`, so nothing has to be re-centred: a `<button>` centres its own content, and the
    `inline-flex items-center` ones (the image label in Toolbar.tsx) centre theirs. Anything that is
@@ -346,6 +393,105 @@ body {
    and a mouse reports it, keeps its keyboard, and keeps the toolbar it already had. */
 @media (hover: hover) {
   .toolbar-button-history {
+    display: none;
+  }
+}
+
+/* The phone's arrangement of the editor's chrome (docs/table-requirements.md §12.5): the format
+   controls are a bar at the bottom of the screen, and the insert controls are behind a ＋ in the
+   page header.
+
+   **Why the bottom.** The toolbar used to pin under the page header, which put it at the opposite
+   end of the screen from the caret while the author typed, and took its rows out of a visible area
+   that is 319px once the software keyboard is up. At the bottom it sits where the thumb and the
+   caret already are, and the keyboard carries it rather than covering it.
+
+   Stated as a media query over markup that is the same at every width — the §12.4 idiom. Both
+   copies of the insert group are in the DOM and one of them is painted; a `matchMedia` read in
+   React would render one way and correct itself, which is the hydration mismatch §12.1 avoided. */
+@media (hover: none) {
+  .editor-toolbar-bar {
+    position: fixed;
+    inset-inline: 0;
+    top: auto;
+    /* 0 until a keyboard opens. On iOS the inset is measured (useKeyboardInset.ts); on Android the
+       layout viewport itself shrinks (`interactiveWidget: 'resizes-content'` in
+       app/admin/posts/layout.tsx) and the measurement comes out at ~0, so the two never stack. */
+    bottom: var(--editor-kb-inset, 0px);
+    /* Level with the page header and below the drop overlay and every dropdown panel (z-50), which
+       is the same contract the sticky arrangement had — see components/PostEditor.tsx. */
+    z-index: 40;
+    border-top: 1px solid #d4d4d8; /* zinc-300 */
+    border-bottom: none;
+    border-radius: 0;
+  }
+  /* The insert group's pointer copy. Two classes, so this outranks the `display: contents` that
+     keeps those four controls flex items of the toolbar on a pointer. */
+  .editor-toolbar-bar .toolbar-insert {
+    display: none;
+  }
+  /* The post ends above the bar rather than behind it. The height is the measured one for the
+     reason the variable exists: this row wraps at 320px. */
+  .ProseMirror {
+    padding-bottom: var(--editor-toolbar-h);
+  }
+  /* Both of the boxes that hang off the bar open upward here, because the bar's own bottom edge is
+     the screen's: `top-full` would put them under the keyboard. The panel keeps the horizontal
+     clamp it computes in ToolbarDropdown.tsx — only the vertical side is decided here. */
+  .dropdown-panel-up {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 0.25rem;
+  }
+  .editor-toast {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  /* The ＋ menu's rows are a list, not a row of chips: each control fills the panel and its
+     content starts at the left edge, so the four read as one column with one left margin. Without
+     this each takes its own width and the §12.2 ring draws four staggered boxes (seen on screen
+     2026-09-15). The rule lives here rather than on the components because the same controls are a
+     wrapping row of icons on a pointer, which is the shape they were written for. */
+  .insert-menu-rows > *,
+  .insert-menu-rows .toolbar-button {
+    width: 100%;
+  }
+  .insert-menu-rows .toolbar-button {
+    justify-content: flex-start;
+  }
+
+  /* The way out is the arrow alone (§12.6). Square, because what is left is one 16px icon and a
+     `min-height` on its own would leave a sliver — the same pairing `.toolbar-button-history` and
+     the card head's icons take, and the same reason the centring is written by hand: the icon is a
+     block-level <svg>, so the width the `min-width` adds all lands to its right unless flex places
+     it. The ring and the height come from `.toolbar-button`, which this link also wears. */
+  .editor-back-label {
+    display: none;
+  }
+  .editor-back-link {
+    min-width: 40px;
+    justify-content: center;
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .editor-toolbar-bar {
+    border-top-color: #3f3f46; /* zinc-700 */
+  }
+}
+
+/* The ＋ and its panel are a touch control and nothing else: a pointer keeps the insert group in
+   the toolbar, where it has always been. Stated as "hide where there is hover" for the same reason
+   the history pair is. */
+@media (hover: hover) {
+  .insert-menu {
+    display: none;
+  }
+  /* …and a pointer keeps the words, so the arrow is the half that goes (§12.6). */
+  .editor-back-icon {
     display: none;
   }
 }
