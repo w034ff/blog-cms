@@ -42,7 +42,8 @@ export function InsertMenu({
         onClick={() => setOpen((prev) => !prev)}
         active={open}
         title='ブロックを追加'
-        tooltipHidden={open}>
+        tooltipHidden={open}
+        round>
         <PlusIcon />
       </ToolbarButton>
       {open && (

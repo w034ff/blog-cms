@@ -25,6 +25,7 @@ import { useMeasuredHeight } from './editor/useMeasuredHeight';
 import { useKeyboardInset } from './editor/useKeyboardInset';
 import { InsertMenu } from './editor/InsertMenu';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
+import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
@@ -629,13 +630,24 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             {editor && (
               <InsertMenu editor={editor} uploading={uploading} onImageChange={handleImageChange} />
             )}
+            {/* A gear on a phone (docs/table-requirements.md §12.8) — not the §12.6 arrow's
+                reasoning (this glyph is not a universal convention the way "back" is), but the
+                §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu of
+                loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル・
+                限定公開). A gear is specific to "settings" without a label; an overflow glyph is
+                not. Same two-span idiom as 記事一覧, and `aria-label` for the same reason — the
+                word only names the icon-only side, the icon is `aria-hidden`. */}
             <button
               type='button'
               aria-expanded={settingsOpen}
               aria-controls={SETTINGS_PANEL_ID}
+              aria-label='記事の設定'
               onClick={() => setSettingsOpen((open) => !open)}
-              className='-mr-1 rounded px-1 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-              記事の設定
+              className='toolbar-button editor-settings-link -mr-1 inline-flex items-center rounded px-1 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800'>
+              <span className='editor-settings-icon'>
+                <SettingsIcon />
+              </span>
+              <span className='editor-settings-label'>記事の設定</span>
             </button>
             {/* A rule, not a gap: 記事の設定 is a toggle sitting next to the one button that
                 publishes. Zenn separates the same two the same way. `aria-hidden` because it divides nothing a screen reader needs —

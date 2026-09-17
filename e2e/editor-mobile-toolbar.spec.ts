@@ -69,12 +69,13 @@ test.describe('on an emulated phone', () => {
     // controls — which is what lets the arrangement be a media query over one markup.
     await expect(bar(page).locator('.toolbar-insert')).toBeHidden();
     await expect(bar(page).getByRole('button', { name: 'リンク' })).toHaveCount(0);
+    await expect(bar(page).getByRole('button', { name: '引用', exact: true })).toHaveCount(0);
 
     await expect(plus(page)).toBeVisible();
     await plus(page).click();
     const panel = page.getByTestId('insert-menu-panel');
     await expect(panel).toBeVisible();
-    for (const name of ['囲み枠', '表', 'リンク']) {
+    for (const name of ['囲み枠', '表', 'リンク', '引用']) {
       await expect(panel.getByRole('button', { name, exact: true })).toBeVisible();
     }
     // 画像 is the <label> around a file input, the one control here that is not a <button>.
@@ -110,16 +111,15 @@ test.describe('on an emulated phone', () => {
     await expect(page.locator('.ProseMirror table')).toBeVisible();
   });
 
-  test('リスト opens its menu above the bar', async ({ page }) => {
+  test('引用 in the ＋ wraps the current block', async ({ page }) => {
     await openEditor(page);
-    const trigger = page.getByRole('button', { name: 'リスト' });
-    await trigger.click();
-    const panel = page.getByTestId('toolbar-dropdown-panel');
-    await expect(panel).toBeVisible();
-    // Above, because below is where the keyboard is. Measured as edges rather than as a class, so
-    // the claim survives a change of how the flip is written.
-    const [panelBox, triggerBox] = [(await panel.boundingBox())!, (await trigger.boundingBox())!];
-    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(triggerBox.y + 1);
+    await loadMarkdown(page, '本文\n');
+    await plus(page).click();
+    await page
+      .getByTestId('insert-menu-panel')
+      .getByRole('button', { name: '引用', exact: true })
+      .click();
+    await expect(page.locator('.ProseMirror blockquote')).toContainText('本文');
   });
 
   test('the way out is the arrow alone, and still named 記事一覧', async ({ page }) => {
@@ -142,10 +142,30 @@ test.describe('on an emulated phone', () => {
     await expect(page).toHaveURL(/\/admin$/);
   });
 
+  test('記事の設定 is a gear, still named and still opening its panel', async ({ page }) => {
+    await openEditor(page);
+    // Same test as the back arrow (§12.6): the icon-only side still needs the word as its name.
+    const settings = page.getByRole('button', { name: '記事の設定' });
+    await expect(settings).toBeVisible();
+    await expect(page.locator('.editor-settings-label')).toBeHidden();
+    await expect(page.locator('.editor-settings-icon')).toBeVisible();
+
+    const box = (await settings.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(40);
+    expect(box.width).toBeGreaterThanOrEqual(40);
+
+    await expect(settings).toHaveAttribute('aria-expanded', 'false');
+    await settings.click();
+    await expect(settings).toHaveAttribute('aria-expanded', 'true');
+  });
+
   // The press state (§12.7). Driven with `CSS.forcePseudoState` rather than a real tap: a tap is
   // down-and-up in one call, so there is no moment to read the style in, and the claim is about
   // what is painted while the finger is down.
-  test('a press is visible, and says something the on-state does not', async ({ page, context }) => {
+  test('a press is visible, and says something the on-state does not', async ({
+    page,
+    context,
+  }) => {
     await openEditor(page);
     const bold = page.getByRole('button', { name: '太字' });
     const cdp = await (context as BrowserContext).newCDPSession(page);
@@ -202,11 +222,57 @@ test('a pointer keeps the toolbar it had', async ({ page }) => {
   const box = (await bar(page).boundingBox())!;
   const height = await page.evaluate(() => window.innerHeight);
   expect(box.y).toBeLessThan(height / 2);
-  for (const name of ['囲み枠', '表', 'リンク']) {
+  for (const name of ['囲み枠', '表', 'リンク', '引用']) {
     await expect(bar(page).getByRole('button', { name, exact: true })).toBeVisible();
   }
   await expect(bar(page).getByTestId('image-picker')).toHaveCount(1);
-  // And the way out is still words, not an arrow (§12.6).
+  // And the way out is still words, not an arrow (§12.6), and 記事の設定 is still words too (§12.8).
   await expect(page.locator('.editor-back-label')).toBeVisible();
   await expect(page.locator('.editor-back-icon')).toBeHidden();
+  await expect(page.locator('.editor-settings-label')).toBeVisible();
+  await expect(page.locator('.editor-settings-icon')).toBeHidden();
+});
+
+// The marks scroll instead of wrapping (§12.11), at 40px each — wide enough that this only
+// actually overflows on the narrowest screens, so this group runs at 320px rather than the file's
+// default 412px (where the strip's content happens to fit exactly, measured 2026-09-17).
+test.describe('on a narrow emulated phone', () => {
+  test.use({ ...PHONE, viewport: { width: 320, height: 800 } });
+
+  test('the toolbar is one row, and the marks are 40px wide', async ({ page }) => {
+    await openEditor(page);
+    const height = await bar(page).evaluate((el) => el.getBoundingClientRect().height);
+    // One row's worth — the 40px marks would have wrapped a 24px row at this width otherwise.
+    expect(height).toBeLessThan(50);
+
+    for (const name of ['大見出し', '太字', '斜体', '取り消し線', '強調']) {
+      const box = (await page.getByRole('button', { name }).boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(40);
+      expect(box.height).toBeGreaterThanOrEqual(40);
+    }
+  });
+
+  test('undo/redo stay put while the rest of the row scrolls', async ({ page }) => {
+    await openEditor(page);
+    await loadMarkdown(page, '本文\n');
+    const scroll = page.locator('.toolbar-scroll');
+    const { scrollWidth, clientWidth } = await scroll.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(scrollWidth).toBeGreaterThan(clientWidth);
+
+    const undoBefore = (await page.getByRole('button', { name: '元に戻す' }).boundingBox())!;
+    await scroll.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+    });
+    const undoAfter = (await page.getByRole('button', { name: '元に戻す' }).boundingBox())!;
+    expect(undoAfter.x).toBeCloseTo(undoBefore.x, 0);
+
+    // A control scrolled into view is still reachable — Playwright's click scrolls its target
+    // into view first, so this also stands in for a real drag-to-scroll-then-tap gesture. 番号付き
+    // is the strip's last control, so it is the one most likely to start out-of-view.
+    await page.getByRole('button', { name: '番号付き' }).click();
+    await expect(page.locator('.ProseMirror ol')).toContainText('本文');
+  });
 });

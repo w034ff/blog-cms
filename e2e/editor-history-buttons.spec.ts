@@ -93,12 +93,20 @@ test('a pointer does not get the pair, nor the gap that follows it', async ({ pa
   await expect(redo(page)).toBeHidden();
   await expect(page.locator('.editor-toolbar-bar .toolbar-button-history')).toHaveCount(2);
 
-  // The separator after the pair is a sibling margin, and `display: none` does not stop a sibling
-  // selector from matching — written outside the `hover: none` block it would open a hole at the
-  // left edge of a toolbar whose first visible button is 「大見出し」 (§12.4). Measured as the
-  // heading's own margin rather than by comparing edges, which the row's padding would muddy.
-  const margin = await page
-    .getByRole('button', { name: '大見出し' })
-    .evaluate((el) => getComputedStyle(el).marginLeft);
-  expect(margin).toBe('0px');
+  // The separator that follows the pair on touch (`.toolbar-history`'s own `margin-right`, moved
+  // there in §12.11 when the pair and the marks became two separate flex children instead of
+  // siblings in one row) is written inside its own `hover: none` block, so a pointer takes neither
+  // it nor the wrapper itself: without also hiding the wrapper, the outer row's `gap-0.5` would
+  // still open a stray gap in front of 大見出し ("H2" since §12.10, same button and name either
+  // way) for an empty flex item to sit in.
+  await expect(page.locator('.toolbar-history')).toBeHidden();
+  const [barBox, headingBox] = [
+    (await page.locator('.editor-toolbar-bar').boundingBox())!,
+    (await page.getByRole('button', { name: '大見出し' }).boundingBox())!,
+  ];
+  // The bar's own left padding is what should separate them — not that plus a stray gap.
+  const padding = await page
+    .locator('.editor-toolbar-bar')
+    .evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft));
+  expect(headingBox.x - barBox.x).toBeCloseTo(padding, 0);
 });

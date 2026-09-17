@@ -432,11 +432,18 @@ test.describe('on an emulated phone at 360px', () => {
 
     // A dropdown's rows are not `.toolbar-button` — they take the height from their own class, and
     // §12.2 deliberately leaves them out of the ring, so the two rules have to be checked apart.
-    await page.getByRole('button', { name: 'リスト' }).click();
+    // リスト would have been this dropdown, but on touch (this file runs under `hover: none` here,
+    // per the note above) it is two direct toggles instead (§12.11) — 囲み枠, reached through the
+    // ＋ opened above, is still a dropdown on touch too.
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    await page
+      .getByTestId('insert-menu-panel')
+      .getByRole('button', { name: '囲み枠', exact: true })
+      .click();
     const items = await shortest(page, '.dropdown-item');
     expect(items.length).toBeGreaterThan(1);
     expect(Math.min(...items.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
-    await page.keyboard.press('Escape');
+    await page.locator('.ProseMirror').click();
 
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -555,8 +562,9 @@ test.describe('in the width band where the card grows into the edge', () => {
   });
 });
 
-// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx), not the floating
-// menus above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
+// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx; リスト is a pointer
+// control only since §12.11, which gave touch two direct toggles instead), not the floating menus
+// above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
 // which assumes room on both sides — true while the toolbar fits one line, but it wraps
 // (`flex-wrap`), and which row a trigger lands in is a function of viewport width. The table picker
 // is the widest panel here (an 8×8 grid), so it is the one that first reaches an edge: measured, the

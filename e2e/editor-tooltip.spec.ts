@@ -28,13 +28,15 @@ test('toolbar tooltip appears centered below the button on hover', async ({ page
   expect(label.y).toBeGreaterThanOrEqual(btn.y + btn.height);
 });
 
-// The shortcut of any command that has one is surfaced in its tooltip: icon
-// buttons pair it with their name; text buttons (label already visible) show the
-// key alone. Rendered on Linux CI, so "Mod" formats as "Ctrl".
+// The shortcut of any command that has one is surfaced in its tooltip alongside its name. Every
+// ToolbarButton that carries a `shortcut` also carries a `title` now — 大見出し/小見出し were the
+// last holdout with a shortcut but no title (their own visible text, 大見出し, doubled as the name)
+// until they became the H2/H3 glyphs (docs/table-requirements.md §12.10), which moved them into
+// this same shape: the visible glyph is no longer the full name, so `title` restores it. Rendered
+// on Linux CI, so "Mod" formats as "Ctrl".
 test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
-  // Icon button: name + shortcut.
   const bold = page.getByRole('button', { name: '太字' });
   await expect(bold).toContainText('太字');
   await expect(bold).toContainText('Ctrl+B');
@@ -43,8 +45,8 @@ test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   const strike = page.getByRole('button', { name: '取り消し線' });
   await expect(strike).toContainText('Ctrl+Shift+S');
 
-  // Text button: shortcut only (its name is already the visible label).
   const heading2 = page.getByRole('button', { name: '大見出し' });
+  await expect(heading2).toContainText('大見出し');
   await expect(heading2).toContainText('Ctrl+Alt+2');
   await expect(heading2).toHaveAttribute('aria-keyshortcuts', 'Control+Alt+2');
 

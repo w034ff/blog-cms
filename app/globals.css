@@ -343,24 +343,12 @@ body {
   .prose .link-card-head button {
     min-height: 40px;
   }
-  /* Undo and redo, and only those two, at the full 40px in both directions. Measured 2026-09-09
-     with the pair in place: the toolbar is two rows at 375px and above and three at 360px and
-     320px, and 40px wide is what those numbers are measured at — the pair's own width is not what
-     decides the row. It is not free for their neighbours: with the pair present, B/I/S/A/引用 can
-     go to 30px at 390px and above but 32px takes a row there, and at 375px even 28px does. 40
-     rather than more, so they square against the height rule above. */
-  /* And a gap after the pair, so the two histories and the format controls read as two groups
-     rather than one run of twelve. The row's own gap is 2px, which is what put 「やり直す」 hard
-     against 「大見出し」 — a press aimed at the heading and missed left lands on redo. 6px (8px
-     with the row gap) costs no row at any width: measured 2026-09-09, 4, 6, 8 and 12px all leave
-     the toolbar at its two rows from 375px up and its three at 360px and 320px.
-
-     Inside this block on purpose. The pair is `display: none` on a pointer but still in the DOM,
-     so the sibling selector matches there too — outside, this would open a 6px hole at the left
-     edge of a desktop toolbar whose first button is 「大見出し」. */
-  .toolbar-button-history + :not(.toolbar-button-history) {
-    margin-left: 6px;
-  }
+  /* Undo and redo, full 40px in both directions — originally the only two, back when width was
+     the scarce dimension and every other mark had to stay at 24px to keep the row from wrapping a
+     line early (measured 2026-09-09). §12.11 replaced the wrap with a horizontal scroll, which is
+     what let `.toolbar-button-wide` (below) extend the same 40px to the rest of the strip; this
+     rule is kept distinct from that one only because it also does its own flex centring (next),
+     which the marks don't need. */
   .toolbar-button-history {
     min-width: 40px;
     /* Centred by hand for the reason the round variant is: the icon is a block-level `<svg>`, so
@@ -368,6 +356,28 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+  /* Every mark in the scroll strip (§12.11, §12.9's docs/table-requirements.md), now that going
+     wider costs no row — see `.toolbar-button-history` above for why this used to be 24px.
+
+     `display: inline-flex` etc. for the same reason `.toolbar-button-history` and
+     `.toolbar-button-round` carry it: a plain `<button>` does not centre a block/flex child
+     horizontally, so the 16px `min-width` adds all landed to the right of the glyph's own span
+     (measured 8px off-centre, reported 2026-09-17) — the exact failure §12.3 already documents for
+     this same button, just not yet hit on this class. */
+  .toolbar-button-wide {
+    min-width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* The gap between the pinned history pair and the scroll strip (Toolbar.tsx's `.toolbar-history`
+     and `.toolbar-scroll`, two separate flex children since §12.11 split them out of one row) —
+     replaces a sibling-selector rule that read the same two groups when they were still one run of
+     buttons. 6px (8px with the outer row's own 2px gap) is unchanged from that rule: measured
+     2026-09-09, enough that a press aimed at the first mark and missed does not land on redo. */
+  .toolbar-history {
+    margin-right: 6px;
   }
   .toolbar-button-round {
     min-width: 40px;
@@ -393,6 +403,13 @@ body {
    and a mouse reports it, keeps its keyboard, and keeps the toolbar it already had. */
 @media (hover: hover) {
   .toolbar-button-history {
+    display: none;
+  }
+  /* The wrapper too (Toolbar.tsx's `.toolbar-history`, §12.11): its buttons are display:none
+     above, but the wrapper itself would still be a flex item the outer row's own `gap-0.5` puts
+     space in front of, opening a stray gap before 大見出し that wasn't there when this pair was a
+     plain sibling of it. */
+  .toolbar-history {
     display: none;
   }
 }
@@ -430,20 +447,37 @@ body {
   .editor-toolbar-bar .toolbar-insert {
     display: none;
   }
+  /* The list dropdown's pointer copy (§12.11's docs/table-requirements.md) — touch keeps
+     `.list-buttons` instead, hidden the other way under `hover: hover` below. */
+  .editor-toolbar-bar .list-dropdown {
+    display: none;
+  }
+  /* The row scrolls sideways instead of wrapping (§12.11): `flex-wrap: wrap` is `.toolbar-scroll`'s
+     own Tailwind class on a pointer (today's behaviour, unchanged), overridden to a single
+     non-wrapping strip here. Undo/redo sit outside this element (`.toolbar-history`, Toolbar.tsx)
+     and don't scroll with it — the row that just moved under a thumb shouldn't also carry the pair
+     that undoes what the thumb was about to do.
+
+     The mask is a static fade at the visible right edge, not a function of scroll position — it
+     still shows once a scroll has reached the true end, which is a known simplification (requested
+     as "just a fade," not a scroll-position-aware one) rather than a claim that more content always
+     follows. `-webkit-` for Safari, which does not yet ship the unprefixed property. */
+  .toolbar-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  }
   /* The post ends above the bar rather than behind it. The height is the measured one for the
      reason the variable exists: this row wraps at 320px. */
   .ProseMirror {
     padding-bottom: var(--editor-toolbar-h);
   }
-  /* Both of the boxes that hang off the bar open upward here, because the bar's own bottom edge is
-     the screen's: `top-full` would put them under the keyboard. The panel keeps the horizontal
-     clamp it computes in ToolbarDropdown.tsx — only the vertical side is decided here. */
-  .dropdown-panel-up {
-    top: auto;
-    bottom: 100%;
-    margin-top: 0;
-    margin-bottom: 0.25rem;
-  }
+  /* The one box still hanging off the bar opens upward here, because the bar's own bottom edge is
+     the screen's: `top-full` would put it under the keyboard. §12.11 removed the other
+     (`.dropdown-panel-up`, the list dropdown's) along with the dropdown itself — 箇条書き/番号付き
+     are two direct toggles now, not a trigger with a panel. */
   .editor-toast {
     top: auto;
     bottom: 100%;
@@ -463,17 +497,48 @@ body {
     justify-content: flex-start;
   }
 
-  /* The way out is the arrow alone (§12.6). Square, because what is left is one 16px icon and a
-     `min-height` on its own would leave a sliver — the same pairing `.toolbar-button-history` and
-     the card head's icons take, and the same reason the centring is written by hand: the icon is a
-     block-level <svg>, so the width the `min-width` adds all lands to its right unless flex places
-     it. The ring and the height come from `.toolbar-button`, which this link also wears. */
+  /* The way out is the arrow alone (§12.6). `min-width` pairs with `.toolbar-button`'s
+     `min-height` for the same reason `.toolbar-button-history` and the card head's icons need the
+     pairing — the icon is a block-level <svg>, so the width `min-width` adds all lands to its
+     right unless flex places it.
+
+     Round, and without the §12.2 ring: alone at the header's edge, this control has no neighbour
+     for the ring to mark a boundary against — the problem the ring answers doesn't arise here —
+     and the arrow shape already reads as "back" on its own. `border-radius` overrides
+     `.toolbar-button`'s `rounded` at equal specificity by coming later in the cascade. */
   .editor-back-label {
     display: none;
   }
   .editor-back-link {
     min-width: 40px;
     justify-content: center;
+    border-radius: 9999px;
+    box-shadow: none;
+  }
+  /* ＋ and 記事の設定's gear (§12.8). `round` (ToolbarButton) already gives ＋ its `rounded-full`;
+     only `.toolbar-button`'s ring needs dropping, and scoped to these two triggers rather than to
+     `.toolbar-button-round` as a whole — LinkBubble's icon trio shares that class and sits
+     three-in-a-row at the toolbar's tighter gap, which is exactly the case the ring is for. */
+  .insert-menu > button,
+  .editor-settings-link {
+    box-shadow: none;
+  }
+  .editor-settings-label {
+    display: none;
+  }
+  .editor-settings-link {
+    min-width: 40px;
+    justify-content: center;
+    border-radius: 9999px;
+  }
+  /* Without a ring, the 40px box itself is invisible — what is on screen is a 16px glyph adrift in
+     12px of unmarked padding on every side, so the group's `gap-2` (8px) reads as roughly 32px of
+     visible blank space between ＋ and the gear (reported 2026-09-17). Negative margin claws 4px of
+     that back for this one seam without touching the others — the settings-to-separator and
+     separator-to-投稿 gaps still have a drawn line or a filled button to mark them, which this pair
+     does not. */
+  .insert-menu {
+    margin-right: -4px;
   }
 }
 
@@ -490,8 +555,15 @@ body {
   .insert-menu {
     display: none;
   }
-  /* …and a pointer keeps the words, so the arrow is the half that goes (§12.6). */
-  .editor-back-icon {
+  /* …and a pointer keeps the words, so the arrow is the half that goes (§12.6), and the gear's
+     half does too (§12.8). */
+  .editor-back-icon,
+  .editor-settings-icon {
+    display: none;
+  }
+  /* リスト's touch copy (§12.11's docs/table-requirements.md) — a pointer keeps the dropdown
+     instead (`.list-dropdown`, hidden the other way under `hover: none` above). */
+  .list-buttons {
     display: none;
   }
 }
