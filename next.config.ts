@@ -16,6 +16,13 @@ const nextConfig: NextConfig = {
 // runs have several at once and Next rewrites the file it is pointed at.
 if (process.env.NEXT_DIST_DIR) {
   nextConfig.typescript = { tsconfigPath: process.env.NEXT_TSCONFIG_PATH || 'tsconfig.e2e.json' };
+  // …and the dev indicator is turned off there, which is a harness fix, not a preference: the
+  // badge is a `<nextjs-portal>` fixed to the bottom-left corner, and the editor's format bar is
+  // now fixed to the bottom of the screen with 元に戻す at its left end. Playwright refuses a click
+  // an overlay would swallow, so every press at that end of the bar timed out with "nextjs-portal
+  // … intercepts pointer events". It exists only under `next dev`, so nothing about the shipped
+  // page changes; `npm run dev` keeps its indicator.
+  nextConfig.devIndicators = false;
 }
 
 export default nextConfig;
