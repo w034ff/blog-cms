@@ -119,7 +119,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
         onClick={() => editor.chain().focus().deleteColumn().run()}>
         <Label short='－列' long='列を削除' />
       </ToolbarButton>
-      <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
+      <span className='mx-0.5 w-px self-stretch bg-zinc-300 dark:bg-zinc-600' aria-hidden='true' />
       {/* A single toggle: center the current column, or clear it back to the
           default (left) when it is already centered. */}
       <ToolbarButton
@@ -138,7 +138,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
           tinted red, so this destructive action isn't mis-hit among the additive
           row/column controls (a table can also be removed by selecting every cell
           and pressing Backspace). */}
-      <span className='mx-0.5 w-px self-stretch bg-zinc-400 dark:bg-zinc-600' aria-hidden='true' />
+      <span className='mx-0.5 w-px self-stretch bg-zinc-300 dark:bg-zinc-600' aria-hidden='true' />
       <ToolbarButton destructive onClick={() => editor.chain().focus().deleteTable().run()}>
         表を削除
       </ToolbarButton>

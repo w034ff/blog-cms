@@ -1505,7 +1505,7 @@ export function LinkBubble({
             )}
           </div>
           <span
-            className='mx-1 h-5 w-px self-center bg-zinc-200 dark:bg-zinc-600'
+            className='mx-1 h-5 w-px self-center bg-zinc-300 dark:bg-zinc-600'
             aria-hidden='true'
           />
           <ToolbarButton round title='コピー' onClick={copyHref}>

@@ -26,6 +26,7 @@ import { useKeyboardInset } from './editor/useKeyboardInset';
 import { InsertMenu } from './editor/InsertMenu';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
+import { LockIcon } from './editor/svg/LockIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
@@ -606,9 +607,23 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               forget they set — and it is the one setting that changes who can read the post, on a
               bar whose other end publishes. */}
           {unlisted && (
-            <span className='rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
-              限定公開
-            </span>
+            <>
+              <span className='unlisted-badge-full rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
+                限定公開
+              </span>
+              {/* Touch copy (app/globals.css): the header already wraps to two lines at 360px once
+                  this badge and the autosave status are both showing (measured 2026-09-18, both
+                  present on a real unlisted draft mid-autosave) — same "both copies in the DOM,
+                  one painted" idiom as 記事一覧/設定 above. A dot keeps the warning (still the one
+                  setting an author forgets they set) without the chip's width. */}
+              <span
+                className='unlisted-badge-dot hidden shrink-0 text-violet-500 dark:text-violet-400'
+                role='img'
+                aria-label='限定公開'
+                title='限定公開'>
+                <LockIcon />
+              </span>
+            </>
           )}
           {/* Last in this group, so nothing sits to its right but empty space. It is the only
               item on the bar whose width changes — 保存中… / 保存済み ✓ / 保存に失敗 differ, and
@@ -616,11 +631,41 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               it would be nudged sideways each time. Reserving a width instead would mean picking
               the widest of the three strings as a constant, which stops being right the moment
               the font does. */}
-          {autosaveStatus && (
-            <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
-              {autosaveStatus.text}
-            </span>
-          )}
+          {autosaveStatus &&
+            (autosaveState === 'failed' ? (
+              // Kept full-width at every size: rare, and the one state where losing the words to
+              // save 40px of header would cost more than the 40px is worth.
+              <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+                {autosaveStatus.text}
+              </span>
+            ) : (
+              <>
+                <span
+                  className={`autosave-status-full text-xs ${autosaveStatus.className}`}
+                  aria-live='polite'>
+                  {autosaveStatus.text}
+                </span>
+                {/* Touch copy, 保存済み only: gated on `unsaved` rather than the hook's own
+                    `autosaveState === 'saving'` (line 634's branch already ruled out 'failed') —
+                    `unsaved` is what `autosaveStatus.text` above is keyed on too, and it stays true
+                    for the whole debounce-plus-request window, where the hook's 'saving' covers a
+                    narrower slice (measured 2026-09-18: keying on it left this span never
+                    rendering — `autosaveState` had already moved on by the time `unsaved` cleared).
+                    保存中… fires on every edit, and the full-text span above already covers what
+                    it is for — evidence autosave is alive — on a pointer. On touch that reassurance
+                    isn't worth a glyph on screen for the whole time an author is typing; 保存に失敗
+                    still interrupts above either way, so silence here still means "nothing is
+                    wrong". `aria-label` keeps the full word for a screen reader. */}
+                {!unsaved && (
+                  <span
+                    className='autosave-status-compact hidden text-xs text-green-600'
+                    aria-live='polite'
+                    aria-label={autosaveStatus.text}>
+                    ✓
+                  </span>
+                )}
+              </>
+            ))}
           <span className='ml-auto flex flex-wrap items-center gap-2'>
             {/* 囲み枠・表・リンク・画像 on a phone; hidden entirely on a pointer, where they stay
                 in the toolbar (docs/table-requirements.md §12.5). `editor &&` is the one condition
@@ -652,7 +697,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             {/* A rule, not a gap: 記事の設定 is a toggle sitting next to the one button that
                 publishes. Zenn separates the same two the same way. `aria-hidden` because it divides nothing a screen reader needs —
                 the button's own name and state already say what it is. */}
-            <span aria-hidden='true' className='h-5 w-px bg-zinc-300 dark:bg-zinc-700' />
+            <span aria-hidden='true' className='h-5 w-px bg-zinc-300 dark:bg-zinc-600' />
             {/* The form's first submit button, which is what an Enter pressed in a metadata field
                 would activate — hence blockImplicitSubmit on the wrapper those fields live in.
                 下書きに戻す is no longer its neighbour (it sits in the settings panel now), so

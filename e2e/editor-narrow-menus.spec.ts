@@ -341,14 +341,15 @@ test.describe('on an emulated phone at 360px', () => {
     expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 
-  test('every toolbar button is outlined, and the outline costs no width (12j)', async ({
-    page,
-  }) => {
-    // Without hover there is no `hover:bg-zinc-100`, so the buttons are bare text in a row and
-    // nothing shows where one ends (§12.2). Both halves are asserted here because they are one
-    // decision: a `border` would draw the same line and take the row back to two lines, which is
-    // the width §12.1 had just bought — so what is pinned is an inset shadow, and the row staying
-    // on one line is how a border would be caught.
+  test('no toolbar button rings anywhere, on touch or on a pointer (12j)', async ({ page }) => {
+    // §12.2 drew an inset ring here from 2026-08-22 — without hover there is no
+    // `hover:bg-zinc-100`, so a bare-glyph row had nothing to show where one button ended and the
+    // next began. §12.12 (2026-09-18) dropped it from the main format row first (compared against
+    // note and Google Docs' mobile toolbars, both borderless — a glyph plus a divider between
+    // groups instead); 2026-09-19 dropped it from everywhere else too (the table toolbar, the ＋
+    // drawer's rows, and every other `ToolbarButton` consumer), superseding this test's own name.
+    // What marks a control's edge now is the glyph/label itself, `:active`'s momentary tint
+    // (§12.7), and `.toolbar-mark-divider` between the main row's two groups.
     await openEditor(page);
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -358,9 +359,8 @@ test.describe('on an emulated phone at 360px', () => {
       .locator('.table-toolbar button')
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).boxShadow));
     expect(shadows.length).toBeGreaterThan(4);
-    expect(shadows.every((s) => s.includes('inset'))).toBe(true);
-    // The format bar takes the same rule from the same class, which is the point of putting it on
-    // `ToolbarButton` rather than on this menu.
+    expect(shadows.every((s) => !s.includes('inset'))).toBe(true);
+
     const outlines = (selector: string) =>
       page.locator(selector).evaluateAll((els) =>
         els.map((el) => ({
@@ -368,19 +368,18 @@ test.describe('on an emulated phone at 360px', () => {
           ring: getComputedStyle(el).boxShadow.includes('inset'),
         })),
       );
-    const main = await outlines('.editor-toolbar-bar .toolbar-button:visible');
+    const main = await outlines('.editor-toolbar-bar .toolbar-scroll .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
-    expect(main.every((c) => c.ring)).toBe(true);
+    expect(main.every((c) => !c.ring)).toBe(true);
 
-    // …and every control in the ＋ menu, not just the ones that are `<button>`s. 画像 is a
-    // `<label>` around a hidden file input, styled by hand to look like the buttons beside it, and
-    // it was the one control left without an outline (§12.2). It is in this panel rather than in
-    // the bar since §12.5, so the tag assertion moved here with it — asserted by tag, so a future
-    // control that copies the same shape has to opt in too.
+    // …and every control in the ＋ menu, not just the ones that are `<button>`s — none of them
+    // ring, including 画像 (a `<label>` around a hidden file input, styled by hand to look like the
+    // buttons beside it), asserted by tag so a future control that copies the same shape is still
+    // caught by this check.
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     const inserts = await outlines('[data-testid="insert-menu-panel"] .toolbar-button');
     expect(inserts.length).toBeGreaterThan(2);
-    expect(inserts.every((c) => c.ring)).toBe(true);
+    expect(inserts.every((c) => !c.ring)).toBe(true);
     expect(inserts.some((c) => c.tag === 'LABEL')).toBe(true);
     await page.keyboard.press('Escape');
 
@@ -443,6 +442,9 @@ test.describe('on an emulated phone at 360px', () => {
     const items = await shortest(page, '.dropdown-item');
     expect(items.length).toBeGreaterThan(1);
     expect(Math.min(...items.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+    // The sheet's backdrop (§12.18) blocks the press it used to let through — a real modal, not
+    // the old small anchored panel — so it needs an explicit close before the next press lands.
+    await page.keyboard.press('Escape');
     await page.locator('.ProseMirror').click();
 
     await loadMarkdown(page, TABLE_MD);

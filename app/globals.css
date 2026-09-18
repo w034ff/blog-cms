@@ -222,29 +222,92 @@ body {
   }
 }
 
-/* Editor chrome, touch only: outline every toolbar button so its pressable area can be seen.
-   Where there is no hover there is no `hover:bg-zinc-100` either, and the buttons are then bare
-   text separated by 2px gaps — nothing on screen says where one control ends and the next begins
-   (reported 2026-08-22, after the table toolbar's labels became 「＋行」-sized).
+/* Editor chrome, touch only: no ring around a toolbar button's pressable area (superseded
+   2026-09-19 — §12.2 originally drew one here; docs/table-requirements.md §12.2 records why it
+   came back off, everywhere, rather than staying scoped to the mark row §12.12 had carved out).
+   Kept the mark row's own reasoning for the *other* thing it still does: a background tint at
+   rest was rejected — `active` already means "on" (`bg-zinc-200`), and tinting every button at
+   rest would put "pressable" and "currently on" on one axis. What marks a control's edge is the
+   glyph/label itself, plus `.toolbar-mark-divider` between the mark row's two groups. */
 
-   `box-shadow`, not `border`: a border is 2px of layout per button, and the table toolbar has
-   seven — measured at 360px, that is 315px → 329px against a 328px cap, which puts the row back on
-   two lines (table-requirements.md §12.1 bought exactly that width back). An inset shadow draws the
-   same 1px and costs nothing, and it follows `border-radius`, so the link card's `round` buttons
-   come out as circles.
-
-   Not a background tint, which was the other candidate: `active` already means a filled button
-   (`bg-zinc-200`), and tinting every button at rest would put "pressable" and "currently on" on the
-   same axis. Compared on screen at 360px before choosing.
-
-   `hover: none` rather than a width: what is missing is the hover state itself, so the question is
-   the pointer, not the screen. A laptop with a touchscreen and a mouse reports `hover: hover` and
-   keeps the current look — the same test the tooltip rule above is written against. */
+/* The ＋ drawer's own rows (`.insert-menu-rows .toolbar-button`, InsertMenu.tsx, 2026-09-19,
+   requested as "not a card, make the full width pressable"): no rounded corners, full width,
+   text and icon left-aligned rather than centred — a flat list row, not the small boxed button
+   §12.2 once drew everywhere else. The selector reaches every row this way, including 囲み枠
+   and 表's own dropdown triggers (`ToolbarDropdown` nests its `ToolbarButton` inside
+   `.insert-menu-rows` regardless of which menu opened it), so this needed no prop threading
+   through either component — one selector, not four call sites. */
 @media (hover: none) {
-  .toolbar-button,
-  .prose .link-card-head button,
-  .prose .embed-head button {
-    box-shadow: inset 0 0 0 1px #d4d4d8; /* zinc-300 */
+  .insert-menu-rows .toolbar-button {
+    border-radius: 0;
+    width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    text-align: left;
+  }
+
+  /* Icon-to-label gap, drawer rows only: `画像`'s label carries `toolbar-button` and `gap-1` on
+     the same element, `リンク`/`表` carry `gap-1` on a span nested inside their `toolbar-button` —
+     the compound and descendant selectors below reach both shapes. The same markup renders in the
+     pointer toolbar (§12.4's dual-copy idiom), which this media query leaves untouched. */
+  .insert-menu-rows .toolbar-button.gap-1,
+  .insert-menu-rows .toolbar-button .gap-1 {
+    gap: 0.75rem;
+  }
+
+  /* 囲み枠・表 trigger chevron, drawer rows only: a disclosure ＞ instead of the pointer toolbar's
+     ⌄ (ChevronIcon.tsx's `open`-driven rotation is unchanged there) — these rows read as "opens a
+     picker", closer to how a settings row's ＞ reads, than "expands in place". Fixed at rest, not
+     rotating: since insert-menu-nav.ts routes the tap into a sheet-level view swap rather than
+     this component's own `open` state (ToolbarDropdown.tsx), `open` never turns true here and
+     `ChevronIcon`'s `rotate-180` class never applies — there is nothing left to override. */
+  .insert-menu-rows .toolbar-button .chevron-icon {
+    transform: rotate(-90deg);
+  }
+
+  /* 囲み枠・表's picker, once drilled into (InsertMenu.tsx's `view`, insert-menu-nav.ts): the
+     `.dropdown-item` rows it's built from were sized for the pointer copy's small floating panel
+     (`px-3`) — widened to match the row list's own edge padding (`px-4`) and given the same
+     hairline `divide-y` treatment, so 囲み枠's 3 rows read as a continuation of the row list they
+     replaced rather than a smaller, separate control. The adjacent-sibling selector reaches only
+     consecutive `.dropdown-item`s, which is what keeps 表's grid+dialog content (no `.dropdown-item`
+     in it) out of this rule without a second, content-aware selector. */
+  .insert-menu-drilldown .dropdown-item {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .insert-menu-drilldown .dropdown-item + .dropdown-item {
+    border-top: 1px solid #d4d4d8; /* zinc-300 */
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .insert-menu-drilldown .dropdown-item + .dropdown-item {
+    border-top-color: #3f3f46; /* zinc-700 */
+  }
+}
+
+/* A drilled-into picker's entrance (InsertMenu.tsx's `view`), drawer only: a fade + a small
+   rightward slide, matching the row's own ＞ (the picker enters from the direction the ＞ pointed).
+   Not applied to `.insert-menu-rows` itself — the row list's geometry is asserted immediately
+   after open by e2e/editor-mobile-toolbar.spec.ts §12.19, with no wait for a transition to settle,
+   and this animation only needed to cover the one surface that is new here. `@starting-style`
+   fires on first paint after mount; React swaps the row list and the picker via a ternary
+   (InsertMenu.tsx) rather than toggling `display` on either, so there is no exit state to animate
+   on unmount. */
+@media (hover: none) {
+  .insert-menu-drilldown {
+    transition:
+      opacity 150ms ease,
+      transform 150ms ease;
+    opacity: 1;
+    transform: translateX(0);
+  }
+  @starting-style {
+    .insert-menu-drilldown {
+      opacity: 0;
+      transform: translateX(8px);
+    }
   }
 }
 
@@ -263,8 +326,9 @@ body {
    showing nothing while it is held. One step further from the ground in each scheme.
 
    §12.2 rejected a background *at rest* because it would put "pressable" and "currently on" on one
-   axis. This is only while the finger is down, so that collision does not arise — the ring still
-   carries pressability, and `active` still carries state.
+   axis. This is only while the finger is down, so that collision does not arise — pressability at
+   rest is carried by the glyph or label itself now that §12.2's ring is gone everywhere (2026-09-19),
+   plus the group divider on the mark toolbar — and `active` still carries state either way.
 
    Disabled controls are outside this by construction and stay that way: they carry
    `pointer-events-none`, and a disabled <button> never matches `:active`. */
@@ -285,14 +349,6 @@ body {
   .prose .link-card-head button:active,
   .prose .embed-head button:active {
     background-color: #52525b; /* zinc-600 */
-  }
-}
-
-@media (hover: none) and (prefers-color-scheme: dark) {
-  .toolbar-button,
-  .prose .link-card-head button,
-  .prose .embed-head button {
-    box-shadow: inset 0 0 0 1px #52525b; /* zinc-600 */
   }
 }
 
@@ -371,14 +427,6 @@ body {
     align-items: center;
     justify-content: center;
   }
-  /* The gap between the pinned history pair and the scroll strip (Toolbar.tsx's `.toolbar-history`
-     and `.toolbar-scroll`, two separate flex children since §12.11 split them out of one row) —
-     replaces a sibling-selector rule that read the same two groups when they were still one run of
-     buttons. 6px (8px with the outer row's own 2px gap) is unchanged from that rule: measured
-     2026-09-09, enough that a press aimed at the first mark and missed does not land on redo. */
-  .toolbar-history {
-    margin-right: 6px;
-  }
   .toolbar-button-round {
     min-width: 40px;
     /* The centring is not automatic in this direction. A button centres its content vertically on
@@ -405,11 +453,11 @@ body {
   .toolbar-button-history {
     display: none;
   }
-  /* The wrapper too (Toolbar.tsx's `.toolbar-history`, §12.11): its buttons are display:none
-     above, but the wrapper itself would still be a flex item the outer row's own `gap-0.5` puts
-     space in front of, opening a stray gap before 大見出し that wasn't there when this pair was a
-     plain sibling of it. */
-  .toolbar-history {
+  /* The H3/B divider (Toolbar.tsx): stands in for the resting-state ring §12.2 removed on touch,
+     where there is no `hover:bg-zinc-100` to mark a button's edges. A pointer still has that, so
+     the divider would be a bare visual addition with no problem behind it — same "hide where there
+     is hover" idiom as the pair above. */
+  .toolbar-mark-divider {
     display: none;
   }
 }
@@ -441,6 +489,12 @@ body {
     border-top: 1px solid #d4d4d8; /* zinc-300 */
     border-bottom: none;
     border-radius: 0;
+    /* The container's own `px-2` (pointer's left inset) stacks with the first `wide` mark's own
+       centring gap (measured 2026-09-18: the button's box starts at the container edge, but its
+       glyph sits ~10.7px in, since `.toolbar-button-wide` centres a 40px box around content
+       narrower than that) — together an 18.7px gap before H2 that reads as more than every other
+       button gets. Zeroed here so the first glyph gets the same clearance every other one does. */
+    padding-left: 0;
   }
   /* The insert group's pointer copy. Two classes, so this outranks the `display: contents` that
      keeps those four controls flex items of the toolbar on a pointer. */
@@ -454,9 +508,12 @@ body {
   }
   /* The row scrolls sideways instead of wrapping (§12.11): `flex-wrap: wrap` is `.toolbar-scroll`'s
      own Tailwind class on a pointer (today's behaviour, unchanged), overridden to a single
-     non-wrapping strip here. Undo/redo sit outside this element (`.toolbar-history`, Toolbar.tsx)
-     and don't scroll with it — the row that just moved under a thumb shouldn't also carry the pair
-     that undoes what the thumb was about to do.
+     non-wrapping strip here. Undo/redo sit last in this same strip (Toolbar.tsx, superseding
+     §12.11's pinned placement, 2026-09-18) rather than outside it, on the frequency argument: the
+     marks ahead of them in the row are reached far more often, so they get the space at rest
+     instead of it going to a pair used rarely enough that a scroll to reach it is an acceptable
+     cost — unmeasured on both sides, but note's own mobile toolbar makes the same call, undo/redo
+     at the scroll strip's far end.
 
      The mask is a static fade at the visible right edge, not a function of scroll position — it
      still shows once a scroll has reached the true end, which is a known simplification (requested
@@ -502,27 +559,25 @@ body {
      pairing — the icon is a block-level <svg>, so the width `min-width` adds all lands to its
      right unless flex places it.
 
-     Round, and without the §12.2 ring: alone at the header's edge, this control has no neighbour
-     for the ring to mark a boundary against — the problem the ring answers doesn't arise here —
-     and the arrow shape already reads as "back" on its own. `border-radius` overrides
+     Round: the arrow shape already reads as "back" on its own. `border-radius` overrides
      `.toolbar-button`'s `rounded` at equal specificity by coming later in the cascade. */
   .editor-back-label {
     display: none;
+  }
+  .unlisted-badge-full,
+  .autosave-status-full {
+    display: none;
+  }
+  .unlisted-badge-dot,
+  .autosave-status-compact {
+    display: inline-block;
   }
   .editor-back-link {
     min-width: 40px;
     justify-content: center;
     border-radius: 9999px;
-    box-shadow: none;
   }
-  /* ＋ and 記事の設定's gear (§12.8). `round` (ToolbarButton) already gives ＋ its `rounded-full`;
-     only `.toolbar-button`'s ring needs dropping, and scoped to these two triggers rather than to
-     `.toolbar-button-round` as a whole — LinkBubble's icon trio shares that class and sits
-     three-in-a-row at the toolbar's tighter gap, which is exactly the case the ring is for. */
-  .insert-menu > button,
-  .editor-settings-link {
-    box-shadow: none;
-  }
+  /* ＋ and 記事の設定's gear (§12.8): `round` (ToolbarButton) already gives ＋ its `rounded-full`. */
   .editor-settings-label {
     display: none;
   }
@@ -559,6 +614,10 @@ body {
      half does too (§12.8). */
   .editor-back-icon,
   .editor-settings-icon {
+    display: none;
+  }
+  .unlisted-badge-dot,
+  .autosave-status-compact {
     display: none;
   }
   /* リスト's touch copy (§12.11's docs/table-requirements.md) — a pointer keeps the dropdown
