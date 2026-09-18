@@ -1,10 +1,12 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { ToolbarButton } from './ToolbarButton';
 import { useDismiss } from './useDismiss';
 import { ChevronIcon } from './svg/ChevronIcon';
+import { useInsertMenuNav } from './insert-menu-nav';
 
 // How far the panel is kept from the viewport edge by clampPanelToViewport below.
 const VIEWPORT_MARGIN = 8;
@@ -35,6 +37,12 @@ export function ToolbarDropdown({
   panelClass?: string;
   children: (close: () => void) => ReactNode;
 }) {
+  // A drawer row (InsertMenu.tsx) reads a nav here and portals into the sheet's drilldown slot
+  // instead of opening this component's own floating panel — see insert-menu-nav.ts. `open` then
+  // never turns true, so the effects and the panel below stay inert rather than needing a second
+  // `!nav` guard each.
+  const nav = useInsertMenuNav();
+  const isActive = nav !== null && nav.activeTitle === title;
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const panelRef = useRef<HTMLDivElement>(null);
@@ -110,8 +118,8 @@ export function ToolbarDropdown({
   return (
     <div ref={ref} className='relative flex'>
       <ToolbarButton
-        onClick={() => setOpen((prev) => !prev)}
-        active={active ?? open}
+        onClick={() => (nav ? nav.activate(title) : setOpen((prev) => !prev))}
+        active={active ?? (nav ? isActive : open)}
         disabled={disabled}
         title={title}
         tooltipHidden={open}>
@@ -132,6 +140,18 @@ export function ToolbarDropdown({
           {children(() => setOpen(false))}
         </div>
       )}
+      {/* The drawer copy of the panel above: portalled into InsertMenu.tsx's drilldown slot rather
+          than rendered here, so its DOM output moves but this component's own fiber — and
+          therefore CalloutMenu's/TableGridMenu's state — does not. Gated on `isActive`, not just
+          `nav`, since every drawer row shares one nav and one slot; only the row that was tapped
+          renders into it. */}
+      {isActive &&
+        nav &&
+        nav.portalTarget &&
+        createPortal(
+          children(() => nav.deactivate()),
+          nav.portalTarget,
+        )}
     </div>
   );
 }

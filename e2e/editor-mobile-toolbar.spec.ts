@@ -1,5 +1,5 @@
 import { test, expect, devices, type BrowserContext, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { closeHistory, expectAutosaved, loadMarkdown } from './editor-authoring';
 
 // Where the editor's chrome sits on a phone (docs/table-requirements.md §12.5): the format controls
 // are a bar at the bottom of the screen, and 囲み枠・表・リンク・画像 are behind a ＋ in the page
@@ -80,12 +80,86 @@ test.describe('on an emulated phone', () => {
     }
     // 画像 is the <label> around a file input, the one control here that is not a <button>.
     await expect(panel.getByTestId('image-picker-touch')).toHaveCount(1);
-    // The panel stays on screen: it is right-aligned under a trigger near the right edge of the
-    // header, where a centred one would run off.
+    // The panel is a full-width bottom sheet (§12.18), so it always spans the screen — there is no
+    // anchor-vs-viewport edge case left to measure, unlike the small anchored box it replaced.
     const box = (await panel.boundingBox())!;
     const width = await page.evaluate(() => document.documentElement.clientWidth);
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    expect(box.x).toBe(0);
+    expect(box.width).toBe(width);
+
+    // The sheet's heading (2026-09-19, note's and Google Docs' own precedent), plain text rather
+    // than the trigger's own accessible name — see InsertMenu.tsx's own comment on why 「挿入」
+    // can't be a button's name here (it would also match 挿入する and 2行2列の表を挿入).
+    const heading = panel.getByRole('heading', { name: '挿入', exact: true });
+    await expect(heading).toBeVisible();
+    const labelledBy = await panel.getAttribute('aria-labelledby');
+    expect(labelledBy).toBe(await heading.getAttribute('id'));
+  });
+
+  test("the ＋ sheet's rows are full-width, not cards (§12.19)", async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await expect(panel).toBeVisible();
+
+    const panelWidth = (await panel.boundingBox())!.width;
+    for (const name of ['引用', 'リンク']) {
+      const rowBox = (await panel.getByRole('button', { name, exact: true }).boundingBox())!;
+      expect(rowBox.x).toBe(0);
+      expect(rowBox.width).toBe(panelWidth);
+      const ring = await panel
+        .getByRole('button', { name, exact: true })
+        .evaluate((el) => getComputedStyle(el).boxShadow.includes('inset'));
+      expect(ring).toBe(false);
+      const radius = await panel
+        .getByRole('button', { name, exact: true })
+        .evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+      expect(radius).toBe('0px');
+    }
+  });
+
+  test('the ＋ sheet has a backdrop that dismisses it without reaching the post underneath (§12.18)', async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await page.keyboard.type('本文');
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await expect(panel).toBeVisible();
+
+    // The backdrop covers the post and the format bar underneath — a real modal, unlike the old
+    // small anchored box, which let a press pass through to whatever it landed on (the fix in
+    // "every pressable box… (12k)", editor-narrow-menus.spec.ts, hit this the same way).
+    const backdrop = page.locator('.fixed.inset-0.bg-black\\/40');
+    await expect(backdrop).toBeVisible();
+
+    // The sheet has real presence at rest (2026-09-18): `min-h-[40vh]` is a floor, not the content
+    // height — five rows alone already reached ~32% of a 740px screen, which is why an earlier
+    // 33vh floor barely moved anything.
+    const [panelHeight, viewportHeight] = await Promise.all([
+      panel.evaluate((el) => el.getBoundingClientRect().height),
+      page.evaluate(() => window.innerHeight),
+    ]);
+    expect(panelHeight / viewportHeight).toBeGreaterThanOrEqual(0.4 - 0.01);
+
+    // The sheet actually paints over the bar, not just contains its rect (§12.18's portal fix,
+    // 2026-09-18): before the portal, the sheet's own `getBoundingClientRect()` fully contained
+    // the bar's, and the bar still painted on top — nested in the header's `sticky`+`z-40`
+    // stacking context, the sheet's `z-50` was only compared within it, and the bar (also `z-40`,
+    // later in the DOM) won the top-level tie. `elementFromPoint` at the bar's own centre is what
+    // that bug would have failed and a rect comparison would not have caught.
+    const barCenterHitsSheet = await bar(page).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return Boolean(hit?.closest('[data-testid="insert-menu-panel"]'));
+    });
+    expect(barCenterHitsSheet).toBe(true);
+
+    // A tap on the backdrop dismisses the sheet and does nothing else — the post is untouched.
+    await backdrop.click({ position: { x: 5, y: 5 } });
+    await expect(panel).toBeHidden();
+    await expect(backdrop).toBeHidden();
+    await expect(page.locator('.ProseMirror')).toHaveText('本文');
   });
 
   test('リンク in the ＋ opens the insert dialog', async ({ page }) => {
@@ -105,10 +179,105 @@ test.describe('on an emulated phone', () => {
       .getByTestId('insert-menu-panel')
       .getByRole('button', { name: '表', exact: true })
       .click();
-    // The grid picker is a panel inside the ＋'s panel; choosing a size has to reach the editor
-    // through both.
+    // The grid picker replaces the row list in the same sheet (§12.20, insert-menu-nav.ts), not a
+    // floating panel nested inside it; choosing a size still has to reach the editor from there.
     await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
     await expect(page.locator('.ProseMirror table')).toBeVisible();
+  });
+
+  // 囲み枠 and 表 used to open a floating dropdown of their own, positioned under the row — the
+  // same `ToolbarDropdown` the pointer toolbar still uses. §12.20 replaces that, on touch only,
+  // with a drilldown: the row's picker takes over the sheet's own body, and 戻る returns to the
+  // row list. `insert-menu-nav.ts` is what makes this a portal into a slot InsertMenu.tsx renders,
+  // not a second mount of CalloutMenu/TableGridMenu — the difference matters because a naive
+  // "swap the JSX" version unmounts the row's own component, silently orphaning state that lives
+  // on it (TableGridMenu's grid highlight is what caught this the first time, below).
+  test('囲み枠 in the ＋ drills into the sheet, not a floating panel', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '囲み枠', exact: true }).click();
+
+    // The heading and the ＞ trigger swap for a 戻る + the row's own title (one `<h2>` throughout,
+    // InsertMenu.tsx — a second one sharing `aria-labelledby`'s id was tried and rejected).
+    await expect(panel.getByRole('heading', { name: '囲み枠', exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: '戻る' })).toBeVisible();
+    await expect(page.getByTestId('toolbar-dropdown-panel')).toHaveCount(0);
+
+    // The 3 types read as full-width rows continuing the list, not the pointer copy's small
+    // `.dropdown-item`s (§12.19's own row-list rule reaches them: `docs/table-requirements.md`).
+    const noteRow = panel.getByRole('button', { name: '注意', exact: true });
+    const rowBox = (await noteRow.boundingBox())!;
+    const panelWidth = (await panel.boundingBox())!.width;
+    expect(rowBox.width).toBeGreaterThan(panelWidth * 0.9);
+
+    await noteRow.click();
+    await expect(page.locator('.ProseMirror [data-callout]')).toBeVisible();
+    // Picking one returns to the row list rather than closing the whole sheet — same as the
+    // pointer copy's dropdown closing while the toolbar stays put.
+    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
+  });
+
+  test('表 in the ＋: the grid highlight still tracks focus once drilled in', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '表', exact: true }).click();
+
+    // No hover on a touch device — focus is what TableGridMenu's own `hover` state answers to.
+    // This only tracks at all if that state (owned by TableGridMenu, not by InsertMenu) survived
+    // the drilldown; an earlier version of §12.20 handed a `render()` closure up to InsertMenu
+    // instead of portalling, which unmounted TableGridMenu and made `setHover` a silent no-op.
+    await panel.getByRole('button', { name: '3行4列の表を挿入' }).focus();
+    await expect(panel.getByText('3 行 × 4 列')).toBeVisible();
+  });
+
+  // The numeric-input escape hatch (table-picker.spec.ts covers it on a pointer) is the sharper
+  // regression case: opening it calls `close()` first (closing the drilldown, same as the pointer
+  // copy's dropdown), and the dialog itself is portalled straight to `document.body` — a
+  // `display:none` ancestor stops even a `showModal()` dialog from painting, and once drilled in,
+  // TableGridMenu's whole tree sits under exactly that (InsertMenu.tsx `hidden`s the row list in
+  // favour of the drilldown slot). The regression this test actually caught wasn't that, though:
+  // the dialog opened fine, but nothing this file wrote reached `insertTable` — the dialog's own
+  // mousedown was bubbling to `document`, where InsertMenu's `useDismiss` saw a target outside its
+  // own `ref` (the portalled dialog) and closed the whole ＋ sheet mid-click, unmounting
+  // TableGridMenu (and the dialog with it) before `submit()` ran. Fixed the same way
+  // InsertDialog.tsx's own content div already was: `onMouseDown` stops there.
+  test('表 in the ＋: 行数・列数を入力… still inserts from the drilldown', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '表', exact: true }).click();
+    await panel.getByRole('button', { name: '行数・列数を入力…' }).click();
+
+    const dialog = page.getByRole('dialog').filter({ hasText: '表を追加' });
+    await expect(dialog).toBeVisible();
+    // Opening the dialog closes the drilldown too, same as the pointer copy's dropdown.
+    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
+
+    await dialog.getByRole('spinbutton', { name: '行数' }).fill('5');
+    await dialog.getByRole('spinbutton', { name: '列数' }).fill('2');
+    await dialog.getByRole('button', { name: '追加' }).click();
+    await expect(dialog).toBeHidden();
+
+    const rows = page.locator('.ProseMirror table tr');
+    await expect(rows).toHaveCount(5);
+    await expect(rows.first().locator('th')).toHaveCount(2);
+  });
+
+  test('戻る leaves the ＋ sheet row list exactly as it was', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '表', exact: true }).click();
+    await expect(panel.getByRole('heading', { name: '表', exact: true })).toBeVisible();
+
+    await panel.getByRole('button', { name: '戻る' }).click();
+    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
+    for (const name of ['囲み枠', '表', 'リンク', '引用']) {
+      await expect(panel.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    await expect(page.locator('.ProseMirror table')).toHaveCount(0);
   });
 
   test('引用 in the ＋ wraps the current block', async ({ page }) => {
@@ -159,6 +328,71 @@ test.describe('on an emulated phone', () => {
     await expect(settings).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('the format bar has no left inset on touch, so H2 sits flush with its edge', async ({
+    page,
+  }) => {
+    // §12.14's other half: the bar's own `px-2` (pointer's left inset) used to stack with the
+    // first `wide` mark's own centring gap — together an 18.7px gap before H2 that read as more
+    // than every other button gets (measured 2026-09-18). Zeroed on touch only; pointer keeps it.
+    await openEditor(page);
+    const padding = await bar(page).evaluate((el) => getComputedStyle(el).paddingLeft);
+    expect(padding).toBe('0px');
+    const [barBox, h2Box] = [
+      (await bar(page).boundingBox())!,
+      (await page.getByRole('button', { name: '大見出し' }).boundingBox())!,
+    ];
+    expect(h2Box.x).toBeCloseTo(barBox.x, 0);
+  });
+
+  test('限定公開 is a lock icon on touch, and the header is one line with it', async ({ page }) => {
+    // §12.14: the header wraps to two lines at 360px once the 限定公開 chip and the autosave
+    // status are both showing (measured 2026-09-18) — unrelated to undo/redo, and pre-existing.
+    // The fix shrinks both to a glyph on touch rather than removing either (both carry a real
+    // warning — see PostEditor.tsx).
+    await openEditor(page);
+    await page.getByRole('button', { name: '記事の設定' }).click();
+    await page.getByRole('checkbox', { name: '限定公開にする' }).check();
+    await page.getByRole('button', { name: '記事の設定' }).click();
+
+    await expect(page.locator('.unlisted-badge-full')).toBeHidden();
+    const dot = page.locator('.unlisted-badge-dot');
+    await expect(dot).toBeVisible();
+    await expect(dot).toHaveAttribute('aria-label', '限定公開');
+    await expect(dot.locator('svg')).toBeVisible();
+
+    // The row this chip sits in stays one line — the thing §12.14 was written to fix. One line's
+    // height is the tallest single control in it (the 40px back arrow, §12.6), not less.
+    const row = page.locator('.editor-back-link').locator('..');
+    const rowHeight = await row.evaluate((el) => el.getBoundingClientRect().height);
+    expect(rowHeight).toBeLessThanOrEqual(40);
+  });
+
+  test('autosave is silent while saving, a checkmark once saved, worded on failure', async ({
+    page,
+  }) => {
+    await openEditor(page);
+    await page.keyboard.type('本文');
+
+    // 保存中…: the full-text copy is a pointer control regardless of state (hidden on touch by
+    // §12.6's idiom), and the compact copy is deliberately not rendered for this state either
+    // (§12.14) — the reassurance it gave was for a pointer, which still gets the words.
+    await expect(page.locator('.autosave-status-full')).toBeHidden();
+    await expect(page.locator('.autosave-status-compact')).toHaveCount(0);
+
+    // 保存済み ✓: the compact copy is a checkmark, named for a screen reader by `aria-label`.
+    await expect(page.locator('.autosave-status-compact')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.autosave-status-compact')).toHaveText('✓');
+    await expect(page.locator('.autosave-status-compact')).toHaveAttribute(
+      'aria-label',
+      '保存済み ✓',
+    );
+
+    // 保存に失敗: kept full-width at every size (§12.14) — the one state worth the header's room.
+    await page.route('**/api/drafts', (route) => route.abort());
+    await page.keyboard.type('追記');
+    await expect(page.getByText('保存に失敗')).toBeVisible({ timeout: 10_000 });
+  });
+
   // The press state (§12.7). Driven with `CSS.forcePseudoState` rather than a real tap: a tap is
   // down-and-up in one call, so there is no moment to read the style in, and the claim is about
   // what is painted while the finger is down.
@@ -193,6 +427,34 @@ test.describe('on an emulated phone', () => {
     const on = await background();
     expect(on).not.toBe(rest);
     expect(pressed).not.toBe(on);
+  });
+
+  test('the row has dividers between H3/B, after 強調, and before 元に戻す, and no ring (§12.12/§12.17)', async ({
+    page,
+  }) => {
+    // Empty flex items shrink to 0 width first under the scroll strip's own flex-shrink (measured
+    // 2026-09-18: a bare `w-px` span collapsed invisibly) — `shrink-0` is what keeps it 1px.
+    const dividers = page.locator('.toolbar-mark-divider');
+    await openEditor(page);
+    await expect(dividers).toHaveCount(3);
+    for (const box of await dividers.evaluateAll((els) =>
+      els.map((el) => el.getBoundingClientRect()),
+    )) {
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.height).toBeGreaterThan(0);
+    }
+
+    // No `.toolbar-button` consumer rings any more (§12.2/§12.12, 2026-09-19 —
+    // editor-narrow-menus.spec.ts's 12j is the exhaustive check across every one of them); the
+    // divider plus each glyph's own shape is what marks a boundary in the mark row specifically.
+    const ring = (name: string) =>
+      page
+        .getByRole('button', { name, exact: true })
+        .evaluate((el) => getComputedStyle(el).boxShadow.includes('inset'));
+    expect(await ring('大見出し')).toBe(false);
+    await plus(page).click();
+    expect(await ring('表')).toBe(false);
+    await page.keyboard.press('Escape');
   });
 
   test('a refusal notice is readable above the bar', async ({ page }) => {
@@ -231,6 +493,9 @@ test('a pointer keeps the toolbar it had', async ({ page }) => {
   await expect(page.locator('.editor-back-icon')).toBeHidden();
   await expect(page.locator('.editor-settings-label')).toBeVisible();
   await expect(page.locator('.editor-settings-icon')).toBeHidden();
+  // The mark row's group divider (§12.12) stands in for the ring a pointer never lost — a pointer
+  // still has `hover:bg-zinc-100`, so it never needed either.
+  await expect(page.locator('.toolbar-mark-divider').first()).toBeHidden();
 });
 
 // The marks scroll instead of wrapping (§12.11), at 40px each — wide enough that this only
@@ -252,9 +517,19 @@ test.describe('on a narrow emulated phone', () => {
     }
   });
 
-  test('undo/redo stay put while the rest of the row scrolls', async ({ page }) => {
+  test('undo/redo scroll with the row and are reachable at its end', async ({ page }) => {
+    // Superseded 2026-09-18: undo/redo used to sit outside `.toolbar-scroll`, pinned so a thumb
+    // scrolling the row could return to them without hunting. Moved to the row's own end instead —
+    // the marks ahead of them are reached far more often (unmeasured, but note's own mobile
+    // toolbar makes the same call: undo/redo at its scroll strip's far end, not fixed) — so they
+    // now scroll with everything else and cost no space at rest.
     await openEditor(page);
     await loadMarkdown(page, '本文\n');
+    // Without this the undo below undoes the *load*: `setContent` is one history event and
+    // subsequent typing groups with it otherwise (editor-history-buttons.spec.ts explains it).
+    await closeHistory(page);
+    await page.locator('.ProseMirror').click();
+    await page.keyboard.press('End');
     const scroll = page.locator('.toolbar-scroll');
     const { scrollWidth, clientWidth } = await scroll.evaluate((el) => ({
       scrollWidth: el.scrollWidth,
@@ -267,12 +542,186 @@ test.describe('on a narrow emulated phone', () => {
       el.scrollLeft = el.scrollWidth;
     });
     const undoAfter = (await page.getByRole('button', { name: '元に戻す' }).boundingBox())!;
-    expect(undoAfter.x).toBeCloseTo(undoBefore.x, 0);
+    expect(undoAfter.x).toBeLessThan(undoBefore.x);
 
-    // A control scrolled into view is still reachable — Playwright's click scrolls its target
-    // into view first, so this also stands in for a real drag-to-scroll-then-tap gesture. 番号付き
-    // is the strip's last control, so it is the one most likely to start out-of-view.
-    await page.getByRole('button', { name: '番号付き' }).click();
-    await expect(page.locator('.ProseMirror ol')).toContainText('本文');
+    // A control scrolled into view is still reachable and still works — Playwright's click scrolls
+    // its target into view first, so this also stands in for a real drag-to-scroll-then-tap
+    // gesture.
+    await page.keyboard.type('追記');
+    await page.getByRole('button', { name: '元に戻す' }).click();
+    await expect(page.locator('.ProseMirror')).not.toContainText('本文追記');
+    await expect(page.locator('.ProseMirror')).toContainText('本文');
+  });
+});
+
+// A pressed-without-ever-focusing regression (reported 2026-09-19): 引用・囲み枠・表 are all
+// reachable from the ＋ sheet before the editor has ever had focus, and on Android/iOS
+// (`isAndroid()`/`isiOS()`, checked below — this is why `editor-narrow-menus.spec.ts`'s own
+// Chrome-desktop coverage never hit it) `.chain().focus()` calls `view.dom.focus()`
+// *synchronously*. That raises a native `focus` event synchronously too, which
+// `@tiptap/core`'s FocusEvents extension answers with its own `view.dispatch` — a transaction
+// built from `editor.state` as of that instant. If the post's last block isn't a paragraph,
+// trailing-node-extension.ts's `appendTransaction` rides that dispatch and advances the document
+// — and the toolbar handler's *own* transaction, already under construction from the state a
+// moment earlier, is stale by the time it dispatches: `RangeError: Applying a mismatched
+// transaction`. Splitting `.chain().focus().X()` into `editor.commands.focus()` then
+// `editor.chain().X()` does not fix this — `commands.focus()` hits the identical mismatch on its
+// own dispatch, for the same reason. The fix in Toolbar.tsx/CalloutMenu.tsx/TableGridMenu.tsx is
+// a raw `editor.view.dom.focus()` ahead of the chain, outside any tiptap command, so the nested
+// dispatch settles before a transaction the handler cares about is ever built.
+test.describe('pressing a ＋ row before the editor has ever had focus', () => {
+  test.use(PHONE);
+
+  // Ends in a table, not a paragraph — trailing-node-extension.ts has nothing to append until the
+  // first transaction after mount, which on this path is the toolbar handler's own.
+  const TABLE_TAIL_MD = '本文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n';
+
+  async function makeTableTailPost(page: Page, title: string): Promise<string> {
+    await page.goto('/admin/posts/new');
+    await page.getByLabel('タイトル').fill(title);
+    await page.locator('.ProseMirror').click();
+    await loadMarkdown(page, TABLE_TAIL_MD);
+    await expectAutosaved(page);
+    return page.url();
+  }
+
+  test('引用 does not throw and still wraps the last block', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 引用');
+
+    await page.goto(url); // A fresh load, same as a hard reload — the editor has never had focus.
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await plus(page).click();
+    await page
+      .getByTestId('insert-menu-panel')
+      .getByRole('button', { name: '引用', exact: true })
+      .click();
+
+    expect(errors).toEqual([]);
+    await expect(page.locator('.ProseMirror blockquote')).toBeVisible();
+  });
+
+  test('囲み枠 does not throw and still inserts a callout', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 囲み枠');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '囲み枠', exact: true }).click();
+    await panel.getByRole('button', { name: '注意', exact: true }).click();
+
+    expect(errors).toEqual([]);
+    await expect(page.locator('.ProseMirror [data-callout]')).toBeVisible();
+  });
+
+  test('表 does not throw and still inserts a table, from the grid and from the dialog', async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 表 grid');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '表', exact: true }).click();
+    await panel.getByRole('button', { name: '2行2列の表を挿入' }).click();
+
+    expect(errors).toEqual([]);
+    await expect(page.locator('.ProseMirror table')).toHaveCount(2);
+
+    // The numeric-input escape hatch is its own call site (TableGridMenu.tsx's `insert`, shared by
+    // both), reached the same no-focus way on a second freshly-loaded post.
+    const url2 = await makeTableTailPost(page, 'E2E no-focus repro — 表 dialog');
+    await page.goto(url2);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await plus(page).click();
+    const panel2 = page.getByTestId('insert-menu-panel');
+    await panel2.getByRole('button', { name: '表', exact: true }).click();
+    await panel2.getByRole('button', { name: '行数・列数を入力…' }).click();
+    const dialog = page.getByRole('dialog').filter({ hasText: '表を追加' });
+    await dialog.getByRole('button', { name: '追加' }).click();
+
+    expect(errors).toEqual([]);
+    await expect(page.locator('.ProseMirror table')).toHaveCount(2);
+  });
+
+  test('リンク does not throw opening the insert dialog', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — リンク');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await plus(page).click();
+    await page
+      .getByTestId('insert-menu-panel')
+      .getByRole('button', { name: 'リンク', exact: true })
+      .click();
+
+    expect(errors).toEqual([]);
+    await expect(page.getByRole('dialog', { name: 'リンクを挿入' })).toBeVisible();
+  });
+});
+
+// Same bug (§12.21), reached from the bottom format bar instead of the ＋ sheet — its controls
+// (太字, 大見出し, 箇条書き, …) are visible immediately when a post opens, so this is just as easy
+// to hit as the ＋ rows were. `focus-then-run.ts`'s `focusThenRun` is the one fix shared by every
+// mark/block/list toggle in Toolbar.tsx; these three stand in for the rest (a mark, a heading, a
+// list toggle) rather than repeating the same call-shape check per button.
+test.describe('pressing a format-bar control before the editor has ever had focus', () => {
+  test.use(PHONE);
+
+  const TABLE_TAIL_MD = '本文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n';
+
+  async function makeTableTailPost(page: Page, title: string): Promise<string> {
+    await page.goto('/admin/posts/new');
+    await page.getByLabel('タイトル').fill(title);
+    await page.locator('.ProseMirror').click();
+    await loadMarkdown(page, TABLE_TAIL_MD);
+    await expectAutosaved(page);
+    return page.url();
+  }
+
+  test('太字 does not throw and still marks the last block', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 太字');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await page.getByRole('button', { name: '太字' }).click();
+
+    expect(errors).toEqual([]);
+    await expect(page.locator('.ProseMirror')).toHaveClass(/./); // still mounted, no crash
+  });
+
+  test('大見出し does not throw and still converts the last block', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — H2');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await page.getByRole('button', { name: '大見出し' }).click();
+
+    expect(errors).toEqual([]);
+  });
+
+  test('箇条書き does not throw and still converts the last block', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 箇条書き');
+
+    await page.goto(url);
+    await expect(page.locator('.ProseMirror table')).toBeVisible();
+    await page.getByRole('button', { name: '箇条書き' }).click();
+
+    expect(errors).toEqual([]);
   });
 });

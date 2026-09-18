@@ -5,6 +5,7 @@ import type { Editor } from '@tiptap/core';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { selectionTouches } from './selection-scan';
 import { IMAGE_BLOCKED_HOSTS } from './useImageUpload';
+import { focusThenRun } from './focus-then-run';
 import { ToolbarButton } from './ToolbarButton';
 import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { CalloutMenu } from './CalloutMenu';
@@ -47,12 +48,12 @@ function ListMenu({ editor }: { editor: Editor }) {
         return (
           <>
             <DropdownItem
-              onClick={() => select(() => editor.chain().focus().toggleBulletList().run())}
+              onClick={() => select(() => focusThenRun(editor, (c) => c.toggleBulletList()))}
               active={bullet}>
               箇条書き
             </DropdownItem>
             <DropdownItem
-              onClick={() => select(() => editor.chain().focus().toggleOrderedList().run())}
+              onClick={() => select(() => focusThenRun(editor, (c) => c.toggleOrderedList()))}
               active={ordered}>
               番号付き
             </DropdownItem>
@@ -75,45 +76,14 @@ export function Toolbar({
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
-    <div className='flex items-center gap-0.5'>
-      {/* Undo and redo stay outside the scroll strip (§12.11): pinned so a thumb doesn't have to
-          chase them down a row that just moved under a scroll gesture. `shrink-0` keeps this group
-          its own width regardless of how little room `.toolbar-scroll` gets squeezed to. */}
-      <div className='toolbar-history flex shrink-0 items-center gap-0.5'>
-        {/* Undo and redo, first in the row because that is where every editor puts them — and drawn
-            only under `hover: none` (app/globals.css), since a pointer has the keyboard route.
-            They exist for touch: `Mod-z` is the only other route and a phone keyboard has no
-            Ctrl — Android offers no undo gesture at all, and the iOS one (shake, three-finger
-            swipe) reaches the editor as a `beforeinput` of `inputType: historyUndo`, which
-            prosemirror-view handles. Measured 2026-09-09: dispatching that event does undo, so
-            iOS has a route and Android has none. The pair is `toolbar-button-history`, which
-            is what widens them on touch (app/globals.css) — the row they cost there is already
-            paid by their being present, so the width is free. */}
-        <ToolbarButton
-          onClick={() => editor.chain().focus().undo().run()}
-          disabled={!editor.can().undo()}
-          title='元に戻す'
-          shortcut='Mod-z'
-          historyControl>
-          <UndoIcon />
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().redo().run()}
-          disabled={!editor.can().redo()}
-          title='やり直す'
-          shortcut='Mod-Shift-z'
-          historyControl>
-          <RedoIcon />
-        </ToolbarButton>
-      </div>
-      {/* Everything else scrolls horizontally on touch instead of wrapping to a second row
-          (§12.11) — `.toolbar-scroll` is `flex-wrap: wrap` here (pointer's unchanged behaviour,
-          the same row it always was) and becomes `flex-nowrap; overflow-x: auto` only under
-          `hover: none` (app/globals.css). `min-w-0` is load-bearing: a flex item won't shrink
-          below its content's width otherwise, and an un-shrinkable item can't scroll — it pushes
-          the bar itself wider instead. */}
-      <div className='toolbar-scroll flex min-w-0 flex-wrap items-center gap-0.5'>
-        {/* H2/H3, not 大見出し/小見出し (docs/table-requirements.md §12.10): the same abbreviation
+    <div className='toolbar-scroll flex min-w-0 flex-wrap items-center gap-0.5'>
+      {/* Everything scrolls horizontally on touch instead of wrapping to a second row (§12.11) —
+          `.toolbar-scroll` is `flex-wrap: wrap` here (pointer's unchanged behaviour, the same row
+          it always was) and becomes `flex-nowrap; overflow-x: auto` only under `hover: none`
+          (app/globals.css). `min-w-0` is load-bearing: a flex item won't shrink below its
+          content's width otherwise, and an un-shrinkable item can't scroll — it pushes the bar
+          itself wider instead. */}
+      {/* H2/H3, not 大見出し/小見出し (docs/table-requirements.md §12.10): the same abbreviation
           B/I/S/A already carry, so the row doesn't mix short glyphs with two spelled-out words.
           `title` moves this into the icon-button tooltip shape (name + shortcut) — the visible
           glyph alone no longer is the accessible name, the way it was when the button's own text
@@ -133,78 +103,89 @@ export function Toolbar({
           target, and the only reason it stayed that small was the row's width budget under
           `flex-wrap`. Once the strip scrolls instead of wrapping, that budget isn't scarce
           anymore, so every mark gets the same 40px undo/redo already had. */}
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-          active={editor.isActive('heading', { level: 2 })}
-          disabled={!editor.can().toggleHeading({ level: 2 })}
-          title='大見出し'
-          shortcut='Mod-Alt-2'
-          compact
-          wide>
-          <span className='flex items-center justify-center text-sm leading-4'>H2</span>
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-          active={editor.isActive('heading', { level: 3 })}
-          disabled={!editor.can().toggleHeading({ level: 3 })}
-          title='小見出し'
-          shortcut='Mod-Alt-3'
-          compact
-          wide>
-          <span className='flex items-center justify-center text-sm leading-4'>H3</span>
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleBold().run()}
-          active={editor.isActive('bold')}
-          disabled={!editor.can().toggleBold()}
-          title='太字'
-          shortcut='Mod-b'
-          compact
-          wide>
-          <span className='flex w-4 items-center justify-center text-sm leading-4 font-bold'>
-            B
-          </span>
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleItalic().run()}
-          active={editor.isActive('italic')}
-          disabled={!editor.can().toggleItalic()}
-          title='斜体'
-          shortcut='Mod-i'
-          compact
-          wide>
-          <span className='flex w-4 items-center justify-center text-sm leading-4 font-serif italic -skew-x-6'>
-            I
-          </span>
-        </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleStrike().run()}
-          active={editor.isActive('strike')}
-          disabled={!editor.can().toggleStrike()}
-          title='取り消し線'
-          shortcut='Mod-Shift-s'
-          compact
-          wide>
-          <span className='flex w-4 items-center justify-center text-sm leading-4 line-through'>
-            S
-          </span>
-        </ToolbarButton>
-        {/* Inline code has no toolbar button: it already has three entry points that cover both
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleHeading({ level: 2 }))}
+        active={editor.isActive('heading', { level: 2 })}
+        disabled={!editor.can().toggleHeading({ level: 2 })}
+        title='大見出し'
+        shortcut='Mod-Alt-2'
+        compact
+        wide>
+        <span className='flex items-center justify-center text-sm leading-4'>H2</span>
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleHeading({ level: 3 }))}
+        active={editor.isActive('heading', { level: 3 })}
+        disabled={!editor.can().toggleHeading({ level: 3 })}
+        title='小見出し'
+        shortcut='Mod-Alt-3'
+        compact
+        wide>
+        <span className='flex items-center justify-center text-sm leading-4'>H3</span>
+      </ToolbarButton>
+      {/* `shrink-0`: an empty span's min-content width is 0, so the scroll strip's default
+            flex-shrink (§12.11 makes it `flex-nowrap; overflow-x: auto` on touch, which shrinks
+            items to fit before it lets them overflow into the scroll) squeezed this to 0 width
+            first, ahead of the `wide` buttons whose own `min-width: 40px` stopped them from
+            shrinking further — measured 2026-09-18, the divider was invisible at every width. */}
+      <span
+        className='toolbar-mark-divider mx-0.5 w-px shrink-0 self-stretch bg-zinc-300 dark:bg-zinc-600'
+        aria-hidden='true'
+      />
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleBold())}
+        active={editor.isActive('bold')}
+        disabled={!editor.can().toggleBold()}
+        title='太字'
+        shortcut='Mod-b'
+        compact
+        wide>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 font-bold'>B</span>
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleItalic())}
+        active={editor.isActive('italic')}
+        disabled={!editor.can().toggleItalic()}
+        title='斜体'
+        shortcut='Mod-i'
+        compact
+        wide>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 font-serif italic -skew-x-6'>
+          I
+        </span>
+      </ToolbarButton>
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleStrike())}
+        active={editor.isActive('strike')}
+        disabled={!editor.can().toggleStrike()}
+        title='取り消し線'
+        shortcut='Mod-Shift-s'
+        compact
+        wide>
+        <span className='flex w-4 items-center justify-center text-sm leading-4 line-through'>
+          S
+        </span>
+      </ToolbarButton>
+      {/* Inline code has no toolbar button: it already has three entry points that cover both
           typing-as-you-go and marking already-typed text — Mod-e, the `` `text` `` input rule,
           and the matching paste rule (all from @tiptap/extension-code). */}
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleAccentEmphasis().run()}
-          active={editor.isActive('accentEmphasis')}
-          disabled={!editor.can().toggleAccentEmphasis()}
-          title='強調'
-          shortcut='Mod-Shift-e'
-          compact
-          wide>
-          <span className='accent-emphasis flex w-4 items-center justify-center text-sm leading-4'>
-            A
-          </span>
-        </ToolbarButton>
-        {/* Two copies, one control (§12.11's docs/table-requirements.md): a pointer keeps the
+      <ToolbarButton
+        onClick={() => focusThenRun(editor, (c) => c.toggleAccentEmphasis())}
+        active={editor.isActive('accentEmphasis')}
+        disabled={!editor.can().toggleAccentEmphasis()}
+        title='強調'
+        shortcut='Mod-Shift-e'
+        compact
+        wide>
+        <span className='accent-emphasis flex w-4 items-center justify-center text-sm leading-4'>
+          A
+        </span>
+      </ToolbarButton>
+      <span
+        className='toolbar-mark-divider mx-0.5 w-px shrink-0 self-stretch bg-zinc-300 dark:bg-zinc-600'
+        aria-hidden='true'
+      />
+      {/* Two copies, one control (§12.11's docs/table-requirements.md): a pointer keeps the
             dropdown it always had (`.list-dropdown`), touch gets two direct toggles instead
             (`.list-buttons`) — a trigger + panel inside `.toolbar-scroll` inherits its
             `overflow-y: auto` (a side effect of setting only `overflow-x`), which clipped the
@@ -214,32 +195,32 @@ export function Toolbar({
             (app/globals.css) decides which span the `display: none` lands on. Both toggles refuse
             inside a code block (guarded-block-toggles.ts), where converting would shred it into
             prose — `ListMenu`'s trigger reads that from `editor.can()` too. */}
-        <span className='list-dropdown contents'>
-          <ListMenu editor={editor} />
-        </span>
-        <span className='list-buttons contents'>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleBulletList().run()}
-            active={editor.isActive('bulletList')}
-            disabled={!editor.can().toggleBulletList()}
-            title='箇条書き'
-            shortcut='Mod-Shift-8'
-            compact
-            wide>
-            <ListIcon />
-          </ToolbarButton>
-          <ToolbarButton
-            onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            active={editor.isActive('orderedList')}
-            disabled={!editor.can().toggleOrderedList()}
-            title='番号付き'
-            shortcut='Mod-Shift-7'
-            compact
-            wide>
-            <OrderedListIcon />
-          </ToolbarButton>
-        </span>
-        {/* The insert group, rendered here for a pointer and inside the header's ＋ for touch
+      <span className='list-dropdown contents'>
+        <ListMenu editor={editor} />
+      </span>
+      <span className='list-buttons contents'>
+        <ToolbarButton
+          onClick={() => focusThenRun(editor, (c) => c.toggleBulletList())}
+          active={editor.isActive('bulletList')}
+          disabled={!editor.can().toggleBulletList()}
+          title='箇条書き'
+          shortcut='Mod-Shift-8'
+          compact
+          wide>
+          <ListIcon />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => focusThenRun(editor, (c) => c.toggleOrderedList())}
+          active={editor.isActive('orderedList')}
+          disabled={!editor.can().toggleOrderedList()}
+          title='番号付き'
+          shortcut='Mod-Shift-7'
+          compact
+          wide>
+          <OrderedListIcon />
+        </ToolbarButton>
+      </span>
+      {/* The insert group, rendered here for a pointer and inside the header's ＋ for touch
           (InsertMenu.tsx). Both copies are in the DOM at every width and one media query decides
           which is painted — the §12.4 idiom, for the reason stated there: a `matchMedia` read in
           React would render one way and correct itself, which is a hydration mismatch.
@@ -248,14 +229,56 @@ export function Toolbar({
           they were before this wrapper existed — the row wraps at the same widths. The hide rule
           is written `.editor-toolbar-bar .toolbar-insert` (two classes) so it outranks the
           `display: contents` this utility sets. */}
-        <InsertControls
-          editor={editor}
-          uploading={uploading}
-          onImageChange={onImageChange}
-          pickerTestId='image-picker'
-          className='toolbar-insert contents'
-        />
-      </div>
+      <InsertControls
+        editor={editor}
+        uploading={uploading}
+        onImageChange={onImageChange}
+        pickerTestId='image-picker'
+        className='toolbar-insert contents'
+      />
+      {/* Undo and redo, last in the row (§12.13). A same-day swap tried moving these to the page
+            header and ＋ here instead — reverted a back arrow (記事一覧) beside an undo arrow read
+            as confusable, so both stayed put (2026-09-18, see §12.13's own note). Drawn only
+            under `hover: none` (app/globals.css), since a pointer has the keyboard route. They
+            exist for touch: `Mod-z` is the only other route and a phone keyboard has no Ctrl —
+            Android offers no undo gesture at all, and the iOS one (shake, three-finger swipe)
+            reaches the editor as a `beforeinput` of `inputType: historyUndo`, which
+            prosemirror-view handles (measured 2026-09-09: dispatching that event does undo, so iOS
+            has a route and Android has none). `historyControl`, not `wide`: their icon is a bare
+            `<svg>` rather than a span-wrapped glyph, so it needs `.toolbar-button-history`'s own
+            manual flex centring (ToolbarButton.tsx) — `wide`'s targets already centre their own
+            content. */}
+      {/* A divider ahead of the pair (§12.17, 2026-09-18): history is a different kind of action
+          from the format/list marks ahead of it, the same reasoning `.toolbar-mark-divider`
+          already carries for the H2/H3 | B/I/S/A/強調 boundary — and the gap alone once measured a
+          real miss here (`.toolbar-history`'s old `margin-right: 6px`, §12.4: a press aimed at the
+          first mark and missed landed on redo). */}
+      <span
+        className='toolbar-mark-divider mx-0.5 w-px shrink-0 self-stretch bg-zinc-300 dark:bg-zinc-600'
+        aria-hidden='true'
+      />
+      <ToolbarButton
+        // Not `focusThenRun` (§12.21's fix on every other button here): `disabled` already keeps
+        // this unreachable in the state that fix is for. Undo history is empty until *some*
+        // transaction has landed, and every button that lands one now focuses first — so by the
+        // time this is enabled, the editor has already had focus.
+        onClick={() => editor.chain().focus().undo().run()}
+        disabled={!editor.can().undo()}
+        title='元に戻す'
+        shortcut='Mod-z'
+        historyControl>
+        <UndoIcon />
+      </ToolbarButton>
+      <ToolbarButton
+        // Same reasoning as 元に戻す above — unreachable while unfocused, since `disabled` gates it
+        // on redo history existing, which requires a prior undo, which requires prior focus.
+        onClick={() => editor.chain().focus().redo().run()}
+        disabled={!editor.can().redo()}
+        title='やり直す'
+        shortcut='Mod-Shift-z'
+        historyControl>
+        <RedoIcon />
+      </ToolbarButton>
     </div>
   );
 }
@@ -304,7 +327,7 @@ export function InsertControls({
           rows are worded (labelled), the same asymmetry CalloutMenu's own trigger has and for the
           same reason — no tooltip exists under `hover: none`. */}
       <ToolbarButton
-        onClick={() => editor.chain().focus().toggleBlockquote().run()}
+        onClick={() => focusThenRun(editor, (c) => c.toggleBlockquote())}
         active={editor.isActive('blockquote')}
         // Refuses in a paragraph-only table cell (table-extensions.ts) with no command guard
         // needed there — toggleBlockquote already reports false rather than converting anything,
@@ -317,7 +340,7 @@ export function InsertControls({
         shortcut='Mod-Shift-b'
         compact={!labelled}>
         {labelled ? (
-          <span className='flex items-center gap-1'>
+          <span className='flex items-center gap-3'>
             <QuoteIcon />
             引用
           </span>
@@ -333,7 +356,13 @@ export function InsertControls({
           both. `can()` mirrors that row's `available` guard — greyed out in a paragraph-only
           table cell, where neither outcome could land. */}
       <ToolbarButton
-        onClick={() => editor.chain().focus().openInsertDialog(editor.state.selection.from).run()}
+        onClick={() => {
+          // Captured ahead of `focusThenRun`, not inside its callback: that callback runs after
+          // the raw DOM focus (and whatever nested transaction it settles), and this position is
+          // meant to be where the caret already was, not wherever it ends up after that.
+          const from = editor.state.selection.from;
+          focusThenRun(editor, (c) => c.openInsertDialog(from));
+        }}
         disabled={!editor.can().openInsertDialog()}
         title='リンク'>
         <span className='flex items-center gap-1'>

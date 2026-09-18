@@ -2,6 +2,7 @@
 
 import type { Editor } from '@tiptap/core';
 import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
+import { focusThenRun } from './focus-then-run';
 import { CalloutIcon } from './svg/CalloutIcon';
 import { CALLOUT_MENU_ORDER } from './callout-extension';
 import { CALLOUT_TITLES, toCalloutType, type CalloutType } from '@/lib/callout-types';
@@ -29,7 +30,7 @@ export function CalloutMenu({ editor, labelled }: { editor: Editor; labelled?: b
     : null;
 
   const choose = (type: CalloutType, close: () => void) => {
-    editor.chain().focus().setCallout(type).run();
+    focusThenRun(editor, (c) => c.setCallout(type));
     close();
   };
 
@@ -37,7 +38,7 @@ export function CalloutMenu({ editor, labelled }: { editor: Editor; labelled?: b
     <ToolbarDropdown
       trigger={
         labelled ? (
-          <span className='flex items-center gap-1'>
+          <span className='flex items-center gap-3'>
             <CalloutIcon />
             囲み枠
           </span>

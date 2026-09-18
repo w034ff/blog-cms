@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Editor } from '@tiptap/core';
 import { ToolbarDropdown } from './ToolbarDropdown';
+import { focusThenRun } from './focus-then-run';
 import { TableIcon } from './svg/TableIcon';
 
 // Upper bound of the size picker. The grid is only for creating the table — the
@@ -76,8 +78,16 @@ function TableSizeDialog({
       className='m-auto rounded-lg border border-zinc-300 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100'>
       {/* A plain <div>, not a <form>: the editor already sits inside PostEditor's
           <form>, and a nested form is invalid HTML — the browser drops it and the
-          submit never fires. The 追加 button and Enter in a field both call submit(). */}
-      <div className='flex flex-col gap-4 p-4'>
+          submit never fires. The 追加 button and Enter in a field both call submit().
+
+          `onMouseDown` stops here for the same reason InsertDialog.tsx's own content div does:
+          this dialog is portalled to `document.body` (above), outside InsertMenu.tsx's own
+          `ref` — its `useDismiss` closes the whole ＋ sheet on any mousedown it doesn't contain,
+          and a click in here would otherwise both fire that (unmounting this dialog's own portal
+          mid-click, so `submit()` never runs) and do whatever it's actually for. Confirmed by
+          reproducing: 追加 visibly received the click (`elementFromPoint` agreed) yet `submit()`
+          never logged, until this stopped the bubble. */}
+      <div className='flex flex-col gap-4 p-4' onMouseDown={(event) => event.stopPropagation()}>
         <h2 className='text-sm font-medium'>表を追加</h2>
         <div
           className='flex items-end gap-3'
@@ -138,7 +148,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const insert = (rows: number, cols: number) => {
-    editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+    focusThenRun(editor, (c) => c.insertTable({ rows, cols, withHeaderRow: true }));
     setHover(null);
   };
 
@@ -156,9 +166,9 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
     <>
       <ToolbarDropdown
         trigger={
-          <>
+          <span className='flex items-center gap-1'>
             <TableIcon />表
-          </>
+          </span>
         }
         title='表'
         disabled={!canInsert}
@@ -166,7 +176,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
         {(close) => (
           <>
             <div
-              className='grid gap-0.5'
+              className='grid justify-center gap-0.5'
               style={{ gridTemplateColumns: `repeat(${TABLE_PICKER_COLS}, 1rem)` }}
               onMouseLeave={() => setHover(null)}>
               {Array.from({ length: TABLE_PICKER_ROWS * TABLE_PICKER_COLS }, (_, i) => {
@@ -221,16 +231,26 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
           </>
         )}
       </ToolbarDropdown>
-      {/* Modal top-layer dialog: DOM position is irrelevant, so it sits outside the
-          dropdown (which is closed before it opens). */}
-      <TableSizeDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onInsert={(rows, cols) => {
-          insert(rows, cols);
-          setDialogOpen(false);
-        }}
-      />
+      {/* Portalled to `document.body`, not left in place: `showModal()` promotes a `<dialog>` to
+          the top layer, but a top-layer element still doesn't paint while any ancestor is
+          `display:none` — and once drilled into from the drawer (insert-menu-nav.ts), this
+          component's whole tree sits under exactly that (InsertMenu.tsx's `hidden` on the row-list
+          wrapper, hiding it in favour of the drilldown slot this dropdown portals its OWN content
+          into). The dialog needs its own portal because it isn't part of that content — it's a
+          sibling TableGridMenu renders itself, outside `ToolbarDropdown`'s children. Same fix
+          InsertDialog already uses, for a related reason (a stacking-context ancestor there, a
+          display:none one here). */}
+      {createPortal(
+        <TableSizeDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          onInsert={(rows, cols) => {
+            insert(rows, cols);
+            setDialogOpen(false);
+          }}
+        />,
+        document.body,
+      )}
     </>
   );
 }
