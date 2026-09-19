@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, devices } from '@playwright/test';
 import {
   collapseToEnd,
   loadMarkdown,
@@ -225,6 +225,41 @@ test('typing [^ inserts a reference', async ({ page }) => {
   expect(await docString(page)).toBe(
     'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
   );
+});
+
+test.describe('on an emulated phone', () => {
+  // §9.4, criterion 23: the ＋ drawer's own 脚注 row, `hover: none` only. PIXEL_7's fields, the
+  // same subset editor-mobile-toolbar.spec.ts uses — `describe`-scoped keys only, since Playwright
+  // refuses a whole device descriptor at this level.
+  const PIXEL_7 = devices['Pixel 7'];
+  test.use({
+    viewport: PIXEL_7.viewport,
+    userAgent: PIXEL_7.userAgent,
+    deviceScaleFactor: PIXEL_7.deviceScaleFactor,
+    isMobile: PIXEL_7.isMobile,
+    hasTouch: PIXEL_7.hasTouch,
+  });
+
+  test("the ＋ drawer's 脚注 row inserts a reference and leaves the caret in the prose", async ({
+    page,
+  }) => {
+    const editor = page.locator('.ProseMirror');
+    await editor.click();
+    await page.keyboard.type('本文');
+
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '脚注', exact: true }).click();
+
+    // Same shape as Mod-Shift-F's own assertion above: one gesture, a reference in the prose and
+    // an empty definition in the section, caret back in the prose rather than in the definition.
+    expect(await docString(page)).toBe(
+      'doc(paragraph("本文", footnoteReference), footnoteSection(footnoteDefinition))',
+    );
+    expect(await caretPos(page)).toBe(4);
+    await page.keyboard.type('の続き');
+    expect(await docString(page)).toContain('paragraph("本文", footnoteReference, "の続き")');
+  });
 });
 
 test('undo takes back a [^ typed at the end of the document', async ({ page }) => {

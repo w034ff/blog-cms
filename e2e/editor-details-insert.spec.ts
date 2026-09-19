@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, selectInside, setRange } from './editor-authoring';
 import { markdown, docString, caret, caretPos } from './editor-probe';
 
@@ -26,6 +26,40 @@ test('the slash menu inserts an accordion with the caret in its title', async ({
   await page.keyboard.type('タイトル');
   expect(await caret(page)).toBe('タイトル@4');
   expect(await markdown(page)).toBe('<details>\n<summary>タイトル</summary>\n\n</details>');
+});
+
+// §7.9, criterion 45: the ＋ drawer's own アコーディオン row (`hover: none` only). PIXEL_7's
+// fields, the same subset editor-mobile-toolbar.spec.ts uses — `describe`-scoped keys only, since
+// Playwright refuses a whole device descriptor at this level.
+test.describe('on an emulated phone', () => {
+  const PIXEL_7 = devices['Pixel 7'];
+  test.use({
+    viewport: PIXEL_7.viewport,
+    userAgent: PIXEL_7.userAgent,
+    deviceScaleFactor: PIXEL_7.deviceScaleFactor,
+    isMobile: PIXEL_7.isMobile,
+    hasTouch: PIXEL_7.hasTouch,
+  });
+
+  test("the ＋ drawer's アコーディオン row inserts with the caret in its title, and closes the sheet", async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: 'アコーディオン', exact: true }).click();
+
+    // Same shape as the slash-menu test above: title focused, structure right — plus the sheet
+    // closing, the same "inserted, done" ending 引用/脚注/画像/囲み枠/表 all got (2026-09-20).
+    await expect(panel).not.toBeVisible();
+    expect(await docString(page)).toContain('details(detailsSummary, detailsContent(paragraph))');
+    await page.keyboard.type('タイトル');
+    expect(await caret(page)).toBe('タイトル@4');
+  });
 });
 
 // The row was labelled 折りたたみ until 2026-08-03 (§7.3). That word stays a search keyword, so an

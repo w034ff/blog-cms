@@ -8,9 +8,12 @@ import { IMAGE_BLOCKED_HOSTS } from './useImageUpload';
 import { focusThenRun } from './focus-then-run';
 import { ToolbarButton } from './ToolbarButton';
 import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
+import { useInsertMenuNav } from './insert-menu-nav';
 import { CalloutMenu } from './CalloutMenu';
 import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
+import { AccordionIcon } from './svg/AccordionIcon';
+import { FootnoteIcon } from './svg/FootnoteIcon';
 import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { OrderedListIcon } from './svg/OrderedListIcon';
@@ -319,92 +322,187 @@ export function InsertControls({
   // The host list is the refusal's own, so the two cannot drift on a selection that only reaches
   // into one of them (see selection-scan.ts).
   const imageBlocked = selectionTouches(editor.state, ...Object.keys(IMAGE_BLOCKED_HOSTS));
+  // `null` outside the drawer (the pointer toolbar), so `nav?.closeMenu()` below is a no-op there
+  // — see insert-menu-nav.ts. 引用/脚注/画像 insert something and are done in one gesture, unlike
+  // 囲み枠/表 (drill into a picker) and リンク (opens InsertDialog, which covers the sheet on its
+  // own); closing the sheet is what shows the author what just happened, instead of leaving them
+  // looking at a backdrop over their own edit.
+  const nav = useInsertMenuNav();
 
-  return (
-    <div className={className}>
-      <CalloutMenu editor={editor} labelled={labelled} />
-      {/* 引用 (§12.9): a pointer keeps it `compact` beside the toolbar's other icons; the ＋ panel's
-          rows are worded (labelled), the same asymmetry CalloutMenu's own trigger has and for the
-          same reason — no tooltip exists under `hover: none`. */}
-      <ToolbarButton
-        onClick={() => focusThenRun(editor, (c) => c.toggleBlockquote())}
-        active={editor.isActive('blockquote')}
-        // Refuses in a paragraph-only table cell (table-extensions.ts) with no command guard
-        // needed there — toggleBlockquote already reports false rather than converting anything,
-        // so `can()` is the whole fix. It stays enabled inside a code block on purpose — quoting
-        // one wraps it, keeping the block. A NodeSelection over a linkCard/embed is a separate
-        // case that does need a guard (blockquote-extension.ts), since wrapIn happily wraps a
-        // selected atom instead of refusing.
-        disabled={!editor.can().toggleBlockquote()}
-        title='引用'
-        shortcut='Mod-Shift-b'
-        compact={!labelled}>
-        {labelled ? (
-          <span className='flex items-center gap-3'>
-            <QuoteIcon />
-            引用
-          </span>
-        ) : (
-          <QuoteIcon />
-        )}
-      </ToolbarButton>
-      {/* Code block has no toolbar button (it's a rare block): insert it from the `/` slash
-          menu, the ```lang typing rule, or the Mod-Alt-c shortcut. */}
-      <TableGridMenu editor={editor} />
-      {/* Same command and target position as the slash menu's 「リンク」 row (slash-command.ts):
-          the dialog itself decides link card vs. embed from the URL, so one entry point covers
-          both. `can()` mirrors that row's `available` guard — greyed out in a paragraph-only
-          table cell, where neither outcome could land. */}
-      <ToolbarButton
-        onClick={() => {
-          // Captured ahead of `focusThenRun`, not inside its callback: that callback runs after
-          // the raw DOM focus (and whatever nested transaction it settles), and this position is
-          // meant to be where the caret already was, not wherever it ends up after that.
-          const from = editor.state.selection.from;
-          focusThenRun(editor, (c) => c.openInsertDialog(from));
+  // Each row is built once and placed twice below, in a different order per surface — the pointer
+  // toolbar keeps its original 囲み枠/引用/表/リンク/画像 order (unaffected by the drawer's own
+  // reordering below), and the ＋ drawer runs 画像/リンク/引用/囲み枠/表/アコーディオン/脚注
+  // (requested 2026-09-20). Building an element once and placing the *same* reference in whichever
+  // one of the two branches below actually renders is fine — only one branch ever mounts it.
+
+  // Image insert belongs in the toolbar too, but needs a file picker rather
+  // than an editor command, so it's a <label>-wrapped hidden input styled to
+  // match ToolbarButton. Paste and drag-and-drop also insert images.
+  //
+  // It keeps `cursor-pointer` of its own where the buttons beside it no longer
+  // need one: app/globals.css's base rule reaches `button`, and a <label> is
+  // not one — without this, the label's own text would hand back the I-beam.
+  //
+  // `toolbar-button` for the same reason, one rule further on: the touch-only ring
+  // (table-requirements.md §12.2) is written against that class, and being the one control in
+  // the row without a `<button>` under it left it as the one control in the row without an
+  // outline — on the phone where the outline is what says "press here".
+  const image = (
+    <label
+      key='image'
+      className={`toolbar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
+        imageBlocked
+          ? 'pointer-events-none opacity-40'
+          : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'
+      }`}>
+      <ImageIcon />
+      {uploading ? 'アップロード中…' : '画像'}
+      {/* The editor page has three file pickers — this one, the ＋ menu's copy of it, and the
+          thumbnail field's — so each carries a testid. Without them a spec's
+          `input[type="file"]` matches three elements and fails strict mode. */}
+      <input
+        data-testid={pickerTestId}
+        type='file'
+        accept={ALLOWED_IMAGE_ACCEPT}
+        className='hidden'
+        disabled={imageBlocked}
+        onChange={(event) => {
+          onImageChange(event);
+          nav?.closeMenu();
         }}
-        disabled={!editor.can().openInsertDialog()}
-        title='リンク'>
+      />
+    </label>
+  );
+
+  // Same command and target position as the slash menu's 「リンク」 row (slash-command.ts): the
+  // dialog itself decides link card vs. embed from the URL, so one entry point covers both.
+  // `can()` mirrors that row's `available` guard — greyed out in a paragraph-only table cell,
+  // where neither outcome could land.
+  //
+  // Icon-only on a pointer (2026-09-20, the same `labelled` ternary 引用 uses): worded, it sat
+  // between 表 and 画像 — both worded themselves, for reasons of their own the toolbar isn't
+  // reconsidering here — and read as one labelled button stranded between two others of the same
+  // kind. Icon-only alone would have swapped which neighbour it read oddly next to, not fixed it,
+  // so the pointer order below also moves it beside 囲み枠/引用, the toolbar's other two icon-only
+  // controls.
+  const link = (
+    <ToolbarButton
+      key='link'
+      onClick={() => {
+        // Captured ahead of `focusThenRun`, not inside its callback: that callback runs after
+        // the raw DOM focus (and whatever nested transaction it settles), and this position is
+        // meant to be where the caret already was, not wherever it ends up after that.
+        const from = editor.state.selection.from;
+        focusThenRun(editor, (c) => c.openInsertDialog(from));
+      }}
+      disabled={!editor.can().openInsertDialog()}
+      title='リンク'
+      compact={!labelled}>
+      {labelled ? (
         <span className='flex items-center gap-1'>
           <LinkIcon />
           リンク
         </span>
-      </ToolbarButton>
-      {/* Horizontal rule has no toolbar button: h2's red underline already carries the
-          section-divider role, so this is left to the `---` + Enter input rule (StarterKit
-          default) for the rare case someone wants an in-section break. */}
-      {/* Image insert belongs in the toolbar too, but needs a file picker rather
-          than an editor command, so it's a <label>-wrapped hidden input styled to
-          match ToolbarButton. Paste and drag-and-drop also insert images.
+      ) : (
+        <LinkIcon />
+      )}
+    </ToolbarButton>
+  );
 
-          It keeps `cursor-pointer` of its own where the buttons beside it no longer
-          need one: app/globals.css's base rule reaches `button`, and a <label> is
-          not one — without this, the label's own text would hand back the I-beam.
+  // 引用 (§12.9): a pointer keeps it `compact` beside the toolbar's other icons; the ＋ panel's
+  // rows are worded (labelled), the same asymmetry CalloutMenu's own trigger has and for the
+  // same reason — no tooltip exists under `hover: none`.
+  const quote = (
+    <ToolbarButton
+      key='quote'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.toggleBlockquote());
+        nav?.closeMenu();
+      }}
+      active={editor.isActive('blockquote')}
+      // Refuses in a paragraph-only table cell (table-extensions.ts) with no command guard
+      // needed there — toggleBlockquote already reports false rather than converting anything,
+      // so `can()` is the whole fix. It stays enabled inside a code block on purpose — quoting
+      // one wraps it, keeping the block. A NodeSelection over a linkCard/embed is a separate
+      // case that does need a guard (blockquote-extension.ts), since wrapIn happily wraps a
+      // selected atom instead of refusing.
+      disabled={!editor.can().toggleBlockquote()}
+      title='引用'
+      shortcut='Mod-Shift-b'
+      compact={!labelled}>
+      {labelled ? (
+        <span className='flex items-center gap-3'>
+          <QuoteIcon />
+          引用
+        </span>
+      ) : (
+        <QuoteIcon />
+      )}
+    </ToolbarButton>
+  );
 
-          `toolbar-button` for the same reason, one rule further on: the touch-only ring
-          (table-requirements.md §12.2) is written against that class, and being the one control in
-          the row without a `<button>` under it left it as the one control in the row without an
-          outline — on the phone where the outline is what says "press here". */}
-      <label
-        className={`toolbar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
-          imageBlocked
-            ? 'pointer-events-none opacity-40'
-            : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'
-        }`}>
-        <ImageIcon />
-        {uploading ? 'アップロード中…' : '画像'}
-        {/* The editor page has three file pickers — this one, the ＋ menu's copy of it, and the
-            thumbnail field's — so each carries a testid. Without them a spec's
-            `input[type="file"]` matches three elements and fails strict mode. */}
-        <input
-          data-testid={pickerTestId}
-          type='file'
-          accept={ALLOWED_IMAGE_ACCEPT}
-          className='hidden'
-          disabled={imageBlocked}
-          onChange={onImageChange}
-        />
-      </label>
+  const callout = <CalloutMenu key='callout' editor={editor} labelled={labelled} />;
+
+  // Code block has no toolbar button (it's a rare block): insert it from the `/` slash menu, the
+  // ```lang typing rule, or the Mod-Alt-c shortcut.
+  const table = <TableGridMenu key='table' editor={editor} />;
+
+  // Horizontal rule has no toolbar button: h2's red underline already carries the section-divider
+  // role, so this is left to the `---` + Enter input rule (StarterKit default) for the rare case
+  // someone wants an in-section break.
+
+  // アコーディオン: drawer only (`labelled`) — docs/accordion-requirements.md §7 still declines a
+  // *pointer* toolbar button (unlike 囲み枠, it has no type to pick, so the reasoning that put
+  // callout there doesn't reach it, and the row would only cost the cramped toolbar a column). The
+  // drawer isn't that row: it's a scrollable list, not a width-constrained strip, and 囲み枠/表
+  // already sit there despite having their own slash-menu and input-rule routes too — an
+  // occasionally-reached block earns a discoverable row there on that basis alone, not because
+  // typing `:::details ` is hard (2026-09-20).
+  const accordion = labelled && (
+    <ToolbarButton
+      key='accordion'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.setDetails());
+        nav?.closeMenu();
+      }}
+      disabled={!editor.can().setDetails()}
+      title='アコーディオン'>
+      <span className='flex items-center gap-3'>
+        <AccordionIcon />
+        アコーディオン
+      </span>
+    </ToolbarButton>
+  );
+
+  // 脚注: drawer only (`labelled`), not the pointer toolbar — docs/footnote-requirements.md §9
+  // still declines a toolbar button there, on the inline-code precedent. The drawer is a narrower
+  // carve-out: `[^` and Mod-Shift-F both need symbols a phone keyboard puts behind a shift layer,
+  // which is the reason 囲み枠/表/リンク/画像 got a row here despite `:::info` etc. having their
+  // own input rules too. `setFootnote` inserts a reference at the caret like the shortcut does —
+  // it doesn't care that the call came from a menu rather than a keybinding — so this reuses the
+  // same command Toolbar's own `Mod-Shift-f` calls, not a new one.
+  const footnote = labelled && (
+    <ToolbarButton
+      key='footnote'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.setFootnote());
+        nav?.closeMenu();
+      }}
+      disabled={!editor.can().setFootnote()}
+      title='脚注'
+      shortcut='Mod-Shift-f'>
+      <span className='flex items-center gap-3'>
+        <FootnoteIcon />
+        脚注
+      </span>
+    </ToolbarButton>
+  );
+
+  return (
+    <div className={className}>
+      {labelled
+        ? [image, link, quote, callout, table, accordion, footnote]
+        : [callout, quote, link, table, image]}
     </div>
   );
 }

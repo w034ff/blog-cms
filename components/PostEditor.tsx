@@ -134,6 +134,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const [insertDialogAt, setInsertDialogAt] = useState<number | null>(null);
   // Stable, so the dialog's Escape listener registers once per open instead of once per render.
   const closeInsertDialog = useCallback(() => setInsertDialogAt(null), []);
+  // The ＋ drawer's own open state, lifted out of InsertMenu.tsx: InsertDialog (リンク's picker)
+  // is this component's own sibling of InsertMenu, not its descendant, and needs to reopen the
+  // sheet on cancel — see insert-menu-nav.ts's comment on why that can't go through the nav
+  // context CalloutMenu/TableGridMenu use instead.
+  const [insertMenuOpen, setInsertMenuOpen] = useState(false);
+  // Mirrors `insertMenuOpen` for the `openInsertDialog` event handler below, which registers once
+  // per `editor` change rather than once per render and would otherwise close over a stale value.
+  const insertMenuOpenRef = useRef(insertMenuOpen);
+  useLayoutEffect(() => {
+    insertMenuOpenRef.current = insertMenuOpen;
+  }, [insertMenuOpen]);
+  // Whether the *current* InsertDialog session started from the ＋ drawer's own リンク row, snapshot
+  // at the moment it opened — the same dialog also opens from the slash menu, which never touched
+  // the drawer, so a cancel there must not pop the sheet back open.
+  const insertDialogFromDrawer = useRef(false);
 
   // The post's server identity (row id). Null in create mode until the first
   // autosave (or a publish) materializes the row; from then on edits update it.
@@ -440,6 +455,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     const dom = live.view.dom;
     const open = (event: Event) => {
       const detail = (event as CustomEvent<InsertDialogDetail>).detail;
+      insertDialogFromDrawer.current = insertMenuOpenRef.current;
       setInsertDialogAt(detail.at);
     };
     dom.addEventListener(INSERT_DIALOG_EVENT, open);
@@ -673,7 +689,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 so that publish survives an editor that fails to mount (see the comment above),
                 while these controls are commands on the editor and cannot. */}
             {editor && (
-              <InsertMenu editor={editor} uploading={uploading} onImageChange={handleImageChange} />
+              <InsertMenu
+                editor={editor}
+                uploading={uploading}
+                onImageChange={handleImageChange}
+                open={insertMenuOpen}
+                onOpenChange={setInsertMenuOpen}
+              />
             )}
             {/* A gear on a phone (docs/table-requirements.md §12.8) — not the §12.6 arrow's
                 reasoning (this glyph is not a universal convention the way "back" is), but the
@@ -899,6 +921,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 editor={editor}
                 at={insertDialogAt}
                 onClose={closeInsertDialog}
+                onCancel={() => {
+                  if (insertDialogFromDrawer.current) setInsertMenuOpen(true);
+                }}
+                onCommit={() => setInsertMenuOpen(false)}
                 ownSlug={slug}
               />
             )}

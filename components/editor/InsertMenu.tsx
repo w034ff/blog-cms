@@ -6,6 +6,7 @@ import type { Editor } from '@tiptap/core';
 import { InsertControls } from './Toolbar';
 import { ToolbarButton } from './ToolbarButton';
 import { useDismiss } from './useDismiss';
+import { useBodyScrollLock } from './useBodyScrollLock';
 import { InsertMenuNavContext } from './insert-menu-nav';
 import { PlusIcon } from './svg/PlusIcon';
 import { ArrowLeftIcon } from './svg/ArrowLeftIcon';
@@ -39,16 +40,25 @@ export function InsertMenu({
   editor,
   uploading,
   onImageChange,
+  open,
+  onOpenChange,
 }: {
   editor: Editor;
   uploading: boolean;
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  // Controlled, not local state: PostEditor.tsx also has to reopen this sheet from InsertDialog
+  // (リンク's own picker), which is its own sibling rather than a descendant — mousedown anywhere
+  // inside that dialog closes this sheet as a side effect of `useDismiss` before the author ever
+  // reaches a cancel button (insert-menu-nav.ts's own comment has the measurement), so cancelling
+  // has to explicitly reopen it rather than merely not-close it.
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
   // Only the sheet itself is inside `ref` — the backdrop covers the whole screen, so there is no
   // "outside" left for useDismiss's own outside-press check to catch. The backdrop gets its own
   // `onClick` instead (below).
-  const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
+  const ref = useDismiss<HTMLDivElement>(open, () => onOpenChange(false));
+  useBodyScrollLock(open);
 
   // Which row's picker (if any) is drilled into, and the DOM node it portals into — see
   // insert-menu-nav.ts for why this is a portal target rather than a `view` snapshot that would
@@ -81,7 +91,7 @@ export function InsertMenu({
     // `insert-menu` is the hook the `hover: hover` rule hides.
     <div className='insert-menu flex'>
       <ToolbarButton
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => onOpenChange(!open)}
         active={open}
         title='ブロックを追加'
         tooltipHidden={open}
@@ -96,7 +106,7 @@ export function InsertMenu({
             <div
               className='fixed inset-0 z-[45] bg-black/40'
               aria-hidden='true'
-              onClick={() => setOpen(false)}
+              onClick={() => onOpenChange(false)}
             />
             {/* Covers the format bar rather than sitting above it (both note and Google Docs hide
                 their own toolbar behind this same drawer, checked directly against both).
@@ -129,7 +139,7 @@ export function InsertMenu({
               data-testid='insert-menu-panel'
               role='dialog'
               aria-labelledby={INSERT_MENU_HEADING_ID}
-              className='fixed inset-x-0 bottom-[var(--editor-kb-inset,0px)] z-50 min-h-[40vh] max-h-[70vh] overflow-y-auto rounded-t-lg border-t border-zinc-300 bg-white pt-2 pb-2 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-zinc-700 dark:bg-zinc-900'>
+              className='fixed inset-x-0 bottom-[var(--editor-kb-inset,0px)] z-50 min-h-[40vh] max-h-[70vh] overflow-y-auto rounded-t-lg border-t border-zinc-300 bg-white pb-2 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-zinc-700 dark:bg-zinc-900'>
               {/* Had a drag-handle bar here (mx-auto h-1 w-10 rounded-full) — removed 2026-09-19:
                   purely decorative with no drag-to-dismiss gesture behind it, and that mismatch
                   outweighed the note-precedent affordance it was standing in for. */}
@@ -137,16 +147,48 @@ export function InsertMenu({
                   drilled-in state (an earlier version of this did) left two elements sharing
                   `aria-labelledby`'s target once neither branch unmounted any more — see the
                   portal-target comment below for why both now stay mounted. 戻る only when a
-                  picker is active; 挿入 itself has nowhere to go back to. */}
-              <div className='flex items-center gap-1 border-b border-zinc-300 px-2 pb-2 dark:border-zinc-700'>
+                  picker is active; 挿入 itself has nowhere to go back to.
+
+                  `min-h-10` (40px) matches every row below it (`.insert-menu-rows
+                  .toolbar-button`, 40px under `hover: none`) and 戻る's own touch box, so the
+                  header reads as one more row in the same list rather than a shorter strip above
+                  it. No `pb-2` here (unlike the rest of the sheet): that padding used to stack on
+                  TOP of 戻る's 40px box, taking the drilled-in header to 49px against the row
+                  list's 40px — measured via `getBoundingClientRect()`, not eyeballed.
+
+                  The sheet's own `pt-2` (above, on the panel div) is gone for the same reason: it
+                  added an 8px gap before the header that no row gets before it, so even at an equal
+                  40px the header's own text sat 18.5px from the panel's top edge against 10.5px to
+                  the border below it — asymmetric padding read as "this row is bigger" even though
+                  the box wasn't. `items-center` alone (≈10px above the text) still clears the
+                  `rounded-t-lg` corner.
+
+                  The divider itself moved to `border-t` on the two content wrappers below (was
+                  `border-b` here): on this element it was part of the header's own border-box, so
+                  it stacked on top of 戻る's 40px content in the drilled-in state (41px) but got
+                  absorbed into the row-list state's `min-h-10` clamp (still 40px, since a min-height
+                  that already has to stretch the box swallows a 1px border for free) — a 1px
+                  mismatch from the same clamp/no-clamp asymmetry as the `pb-2` one above, just an
+                  order of magnitude smaller. Moving the border off the clamped element removes the
+                  asymmetry instead of chasing it with another pixel value. */}
+              <div className='flex min-h-10 items-center gap-1 px-2'>
                 {activeTitle && (
                   <ToolbarButton onClick={() => setActiveTitle(null)} title='戻る'>
                     <ArrowLeftIcon />
                   </ToolbarButton>
                 )}
+                {/* `pl-2` only without 戻る: 挿入 needs it to reach the rows' own 16px icon inset
+                    (container's `px-2` alone falls 8px short, measured). With 戻る, it's dropped —
+                    stacked on the container's own `gap-1` plus the button's own padding, `pl-2`
+                    put ~20px between the arrow and 囲み枠/表/… against the row list's 12px `gap-3`
+                    between an icon and its own label (measured) — and widening the container's own
+                    `px-2` instead (tried first) pushed 戻る itself 8px right of the sheet's other
+                    edge-aligned controls, which is a bigger tell than the header's internal gap
+                    being a few px looser. `pr-2` stays unconditional: the trailing space before the
+                    header's own right edge isn't part of either problem. */}
                 <h2
                   id={INSERT_MENU_HEADING_ID}
-                  className='px-2 text-sm font-light text-black dark:text-zinc-100'>
+                  className={`pr-2 text-sm font-light text-black dark:text-zinc-100 ${activeTitle ? '' : 'pl-2'}`}>
                   {activeTitle ?? '挿入'}
                 </h2>
               </div>
@@ -156,14 +198,18 @@ export function InsertMenu({
                   itself (2026-09-19): the rows go edge to edge under app/globals.css's
                   `.insert-menu-rows .toolbar-button` rule, which is where their own `px-4` lives
                   instead. `divide-y` stands in for the gap as a row separator, thin enough not to
-                  read as a card boundary. */}
-              <div hidden={activeTitle !== null}>
+                  read as a card boundary. `border-t` here is the header/content divider that used
+                  to be the header's own `border-b` — see the comment above it. */}
+              <div
+                hidden={activeTitle !== null}
+                className='border-t border-zinc-300 dark:border-zinc-700'>
                 <InsertMenuNavContext.Provider
                   value={{
                     activeTitle,
                     activate: setActiveTitle,
                     deactivate,
                     portalTarget: portalNode,
+                    closeMenu: () => onOpenChange(false),
                   }}>
                   <InsertControls
                     editor={editor}
@@ -178,11 +224,20 @@ export function InsertMenu({
               {/* The portal target a row's own `ToolbarDropdown` (CalloutMenu, TableGridMenu)
                   renders its picker into — see insert-menu-nav.ts. Rendered unconditionally so
                   `portalNode` is attached (via the callback ref) before any trigger can be tapped,
-                  rather than only once a picker is first active. */}
+                  rather than only once a picker is first active. `border-t` is the same
+                  header/content divider as the row list's own wrapper above. No `py-2` or `px-4`
+                  (like the row list, which has neither of its own): `py-2` put 8px of air above
+                  情報 and below 警告 that the row list doesn't have above 囲み枠 or below 画像, and
+                  `px-4` stacked on TOP OF `.insert-menu-drilldown .dropdown-item`'s own
+                  `padding-left: 1rem` (app/globals.css) — 32px of icon indent against the row
+                  list's 16px, measured via `getBoundingClientRect()`. Both are the same "row list
+                  has no padding of its own, the row/item's own padding does the indenting"
+                  pattern the comment above this element's sibling already states, just not
+                  carried over to this element when it was written. */}
               <div
                 ref={setPortalNode}
                 hidden={activeTitle === null}
-                className='insert-menu-drilldown flex flex-col items-stretch px-4 py-2'
+                className='insert-menu-drilldown flex flex-col items-stretch border-t border-zinc-300 dark:border-zinc-700'
               />
             </div>
           </>,

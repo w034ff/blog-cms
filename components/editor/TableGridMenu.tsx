@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Editor } from '@tiptap/core';
 import { ToolbarDropdown } from './ToolbarDropdown';
+import { useInsertMenuNav } from './insert-menu-nav';
 import { focusThenRun } from './focus-then-run';
 import { TableIcon } from './svg/TableIcon';
 
@@ -146,10 +147,18 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
   // null when nothing is hovered, which clears the highlight and the size readout.
   const [hover, setHover] = useState<{ rows: number; cols: number } | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // `null` outside the drawer (the pointer toolbar's own floating panel) — see insert-menu-nav.ts.
+  const nav = useInsertMenuNav();
 
+  // The one place both success paths meet: the grid cell's own onClick below, and the numeric
+  // dialog's 追加 (TableSizeDialog's `onInsert`). `nav?.closeMenu()` here closes the sheet whole
+  // for both, on top of the grid cell's own `close()` ("back to the row list") — a pick here is as
+  // final as 引用/脚注/画像 tapping their own row (2026-09-20). The numeric dialog's *opening*
+  // ("行数・列数を入力…", below) does NOT call this — the table isn't inserted yet at that point.
   const insert = (rows: number, cols: number) => {
     focusThenRun(editor, (c) => c.insertTable({ rows, cols, withHeaderRow: true }));
     setHover(null);
+    nav?.closeMenu();
   };
 
   // insertTable refuses where a table can't go — anywhere the selection touches an existing table,

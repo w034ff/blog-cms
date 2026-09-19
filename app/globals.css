@@ -553,6 +553,29 @@ body {
   .insert-menu-rows .toolbar-button {
     justify-content: flex-start;
   }
+  /* 囲み枠・表's chevron sits at the row's trailing edge, settings-row style, rather than right
+     after the label (screenshot-compared 2026-09-20, trailing edge picked) — a fixed scan
+     position regardless of label length, and closer to the "settings row" reading the chevron
+     rule above this one already names. `:has(.chevron-icon)` reaches only ToolbarDropdown's own
+     trigger+chevron wrapper span, not 引用/リンク's icon+label spans, which carry the same
+     `gap-1`/`gap-3` classes but no chevron to key off. */
+  .insert-menu-rows .toolbar-button > span:has(.chevron-icon) {
+    width: 100%;
+    justify-content: space-between;
+  }
+  /* 囲み枠・表 measured 41px against every plain row's 40px (`getBoundingClientRect`, not
+     eyeballed) — both are `min-height: 40px` and neither has padding, border or margin, so the
+     two should already match. They only wrap their `ToolbarButton` in a `relative flex` div
+     (`ToolbarDropdown.tsx`, the row that would also hold its own floating panel on a pointer),
+     and it's that extra flex box, not any of this rule's own properties, that resolves to a
+     fractional height (`scrollHeight` read 40, `offsetHeight`/`getBoundingClientRect` read
+     41 — a sub-pixel remainder from the wrapper's own flex sizing, rounded up on paint) even at
+     an integer device pixel ratio. An explicit `height` on the wrapper (not `min-height`, which
+     leaves the flex algorithm to size it and reproduces the same remainder) sidesteps that
+     calculation instead of chasing the rounding. */
+  .insert-menu-rows > * {
+    height: 2.5rem;
+  }
 
   /* The way out is the arrow alone (§12.6). `min-width` pairs with `.toolbar-button`'s
      `min-height` for the same reason `.toolbar-button-history` and the card head's icons need the

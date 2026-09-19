@@ -144,7 +144,14 @@ export function ToolbarDropdown({
           than rendered here, so its DOM output moves but this component's own fiber — and
           therefore CalloutMenu's/TableGridMenu's state — does not. Gated on `isActive`, not just
           `nav`, since every drawer row shares one nav and one slot; only the row that was tapped
-          renders into it. */}
+          renders into it.
+
+          `close` here is `nav.deactivate` — back to the row list, not the sheet whole. A
+          *successful pick* additionally calls `nav.closeMenu()` itself (CalloutMenu's `choose`,
+          TableGridMenu's `insert`) so the sheet closes the way 引用/脚注/画像 do (2026-09-20). This
+          `close` stays `deactivate` because it is also what "行数・列数を入力…" calls mid-flow,
+          before a table is actually inserted — closing the sheet there would be premature, and the
+          numeric dialog is portalled independently of it regardless (see TableGridMenu.tsx). */}
       {isActive &&
         nav &&
         nav.portalTarget &&

@@ -162,6 +162,38 @@ test.describe('on an emulated phone', () => {
     await expect(page.locator('.ProseMirror')).toHaveText('本文');
   });
 
+  // Regression (2026-09-20): neither the sheet nor InsertDialog is a native `<dialog>`, so neither
+  // got a background-scroll lock for free — a wheel/swipe over the backdrop (or the sheet's own
+  // content, chaining past its scroll edge) moved the post visibly behind the dim
+  // (useBodyScrollLock.ts).
+  test('the ＋ sheet locks the background from scrolling, and releases it on close', async ({
+    page,
+  }) => {
+    await openEditor(page);
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.type(`本文行 ${i}`);
+      await page.keyboard.press('Enter');
+    }
+    const before = await page.evaluate(() => window.scrollY);
+
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await expect(panel).toBeVisible();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+
+    const backdrop = page.locator('.fixed.inset-0.bg-black\\/40');
+    await backdrop.hover();
+    await page.mouse.wheel(0, 300);
+    expect(await page.evaluate(() => window.scrollY)).toBe(before);
+
+    await backdrop.click();
+    await expect(panel).toBeHidden();
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+
+    await page.mouse.wheel(0, 300);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+  });
+
   test('リンク in the ＋ opens the insert dialog', async ({ page }) => {
     await openEditor(page);
     await plus(page).click();
@@ -172,17 +204,67 @@ test.describe('on an emulated phone', () => {
     await expect(page.getByRole('dialog', { name: 'リンクを挿入' })).toBeVisible();
   });
 
-  test('表 in the ＋ inserts a table', async ({ page }) => {
+  // Regression (2026-09-20): the sheet was still mounted underneath the dialog (mousedown inside
+  // the dialog closes it as a `useDismiss` side effect, but `fill()` isn't a mousedown), and equal
+  // z-index left paint order to DOM/mount timing — the sheet, portalled after the dialog in the
+  // tree, won and physically blocked clicks on 挿入する, which a full-height phone dialog puts
+  // inside the bottom sheet's own screen region. InsertDialog.tsx's `z-[55]` fixes the stacking;
+  // `insert-menu-nav.ts`'s comment on why InsertDialog can't reach the nav context covers the
+  // rest (`onCancel`/`onCommit` props from PostEditor.tsx instead).
+  test('リンク in the ＋: 閉じる returns to the row list, and committing closes the sheet', async ({
+    page,
+  }) => {
     await openEditor(page);
     await plus(page).click();
-    await page
-      .getByTestId('insert-menu-panel')
-      .getByRole('button', { name: '表', exact: true })
-      .click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: 'リンク', exact: true }).click();
+    let dialog = page.getByRole('dialog', { name: 'リンクを挿入' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('button', { name: '閉じる' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
+
+    await panel.getByRole('button', { name: 'リンク', exact: true }).click();
+    dialog = page.getByRole('dialog', { name: 'リンクを挿入' });
+    const field = dialog.getByLabel('URL または埋め込みコード');
+    await field.fill('https://www.youtube.com/watch?v=hDPybQwAuVo');
+    const submit = dialog.getByRole('button', { name: '挿入する' });
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    await expect(dialog).toBeHidden();
+    await expect(panel).not.toBeVisible();
+  });
+
+  // A separate call site of the same dialog, and it never touched the drawer — a cancel there
+  // must not pop the ＋ sheet open (PostEditor.tsx's `insertDialogFromDrawer` ref).
+  test('リンク from the slash menu does not involve the ＋ drawer at all', async ({ page }) => {
+    await openEditor(page);
+    await page.keyboard.type('/リンク');
+    await expect(page.locator('[data-slash-menu]')).toBeVisible();
+    await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
+    const dialog = page.getByRole('dialog', { name: 'リンクを挿入' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('button', { name: '閉じる' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByTestId('insert-menu-panel')).toHaveCount(0);
+  });
+
+  test('表 in the ＋ inserts a table and closes the sheet', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '表', exact: true }).click();
     // The grid picker replaces the row list in the same sheet (§12.20, insert-menu-nav.ts), not a
     // floating panel nested inside it; choosing a size still has to reach the editor from there.
     await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
     await expect(page.locator('.ProseMirror table')).toBeVisible();
+    // Regression, same as 引用/脚注/画像: a pick here is a final "inserted, done" action, so the
+    // whole sheet closes rather than returning to the row list (TableGridMenu.tsx's `insert`,
+    // 2026-09-20).
+    await expect(panel).not.toBeVisible();
   });
 
   // 囲み枠 and 表 used to open a floating dropdown of their own, positioned under the row — the
@@ -213,9 +295,10 @@ test.describe('on an emulated phone', () => {
 
     await noteRow.click();
     await expect(page.locator('.ProseMirror [data-callout]')).toBeVisible();
-    // Picking one returns to the row list rather than closing the whole sheet — same as the
-    // pointer copy's dropdown closing while the toolbar stays put.
-    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
+    // Picking one closes the whole sheet, same as 引用/脚注/画像's own row — a pick here is as
+    // final as tapping one of those (CalloutMenu.tsx's `choose`, 2026-09-20; previously this
+    // returned to the row list instead).
+    await expect(panel).not.toBeVisible();
   });
 
   test('表 in the ＋: the grid highlight still tracks focus once drilled in', async ({ page }) => {
@@ -263,6 +346,9 @@ test.describe('on an emulated phone', () => {
     const rows = page.locator('.ProseMirror table tr');
     await expect(rows).toHaveCount(5);
     await expect(rows.first().locator('th')).toHaveCount(2);
+    // The table is actually inserted now (unlike opening the dialog, above) — TableGridMenu.tsx's
+    // `insert` is the one place both success paths meet, so the sheet closes here too (2026-09-20).
+    await expect(panel).not.toBeVisible();
   });
 
   test('戻る leaves the ＋ sheet row list exactly as it was', async ({ page }) => {
@@ -280,15 +366,41 @@ test.describe('on an emulated phone', () => {
     await expect(page.locator('.ProseMirror table')).toHaveCount(0);
   });
 
-  test('引用 in the ＋ wraps the current block', async ({ page }) => {
+  test('引用 in the ＋ wraps the current block and closes the sheet', async ({ page }) => {
     await openEditor(page);
     await loadMarkdown(page, '本文\n');
     await plus(page).click();
-    await page
-      .getByTestId('insert-menu-panel')
-      .getByRole('button', { name: '引用', exact: true })
-      .click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '引用', exact: true }).click();
     await expect(page.locator('.ProseMirror blockquote')).toContainText('本文');
+    // Regression: 引用/脚注/画像 ran their command and left the sheet exactly as it was — the
+    // author saw only the backdrop, with no sign anything had happened underneath it
+    // (insert-menu-nav.ts's `closeMenu`, 2026-09-20). 囲み枠/表 (drill into a picker) and リンク
+    // (opens InsertDialog, which covers the sheet on its own) are unaffected — see the tests below
+    // and 表/囲み枠's own drilldown tests above.
+    await expect(panel).not.toBeVisible();
+  });
+
+  test('脚注 in the ＋ inserts a reference and closes the sheet', async ({ page }) => {
+    await openEditor(page);
+    await loadMarkdown(page, '本文\n');
+    await page.locator('.ProseMirror p').first().click();
+    await page.keyboard.press('End');
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: '脚注', exact: true }).click();
+    await expect(page.locator('.ProseMirror sup[data-footnote-ref]')).toBeVisible();
+    await expect(panel).not.toBeVisible();
+  });
+
+  test('画像 in the ＋ closes the sheet once a file is picked', async ({ page }) => {
+    await openEditor(page);
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel
+      .getByTestId('image-picker-touch')
+      .setInputFiles({ name: 'x.png', mimeType: 'image/png', buffer: Buffer.from([0]) });
+    await expect(panel).not.toBeVisible();
   });
 
   test('the way out is the arrow alone, and still named 記事一覧', async ({ page }) => {

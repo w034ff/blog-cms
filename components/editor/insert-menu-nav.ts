@@ -19,6 +19,18 @@ export type InsertMenuNav = {
   activate: (title: string) => void;
   deactivate: () => void;
   portalTarget: HTMLElement | null;
+  // Closes the sheet whole — for a row that inserts something and is done (引用, 脚注, 画像), as
+  // opposed to `deactivate`, which only backs out of a drilled-in picker to the row list. Rows
+  // that drill in (囲み枠, 表) never call this themselves; InsertMenu.tsx is still the only
+  // provider, so a trigger outside the drawer reads `null` here and this never applies to it.
+  //
+  // `InsertDialog` (リンク's own picker) does NOT reach this context — it is mounted as
+  // PostEditor.tsx's own sibling of `InsertMenu`, not inside it (see InsertMenu.tsx's own comment
+  // on why), so it is outside this provider's subtree entirely and `useInsertMenuNav()` there
+  // would read `null` always, regardless of touch/drawer context. It talks to InsertMenu.tsx
+  // through props PostEditor.tsx passes to both instead — see PostEditor.tsx's
+  // `insertMenuOpen`/`setInsertMenuOpen`.
+  closeMenu: () => void;
 };
 
 export const InsertMenuNavContext = createContext<InsertMenuNav | null>(null);
