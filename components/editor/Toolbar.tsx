@@ -14,6 +14,7 @@ import { TableGridMenu } from './TableGridMenu';
 import { ImageIcon } from './svg/ImageIcon';
 import { AccordionIcon } from './svg/AccordionIcon';
 import { FootnoteIcon } from './svg/FootnoteIcon';
+import { CodeBlockIcon } from './svg/CodeBlockIcon';
 import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { OrderedListIcon } from './svg/OrderedListIcon';
@@ -331,9 +332,11 @@ export function InsertControls({
 
   // Each row is built once and placed twice below, in a different order per surface — the pointer
   // toolbar keeps its original 囲み枠/引用/表/リンク/画像 order (unaffected by the drawer's own
-  // reordering below), and the ＋ drawer runs 画像/リンク/引用/囲み枠/表/アコーディオン/脚注
-  // (requested 2026-09-20). Building an element once and placing the *same* reference in whichever
-  // one of the two branches below actually renders is fine — only one branch ever mounts it.
+  // reordering below), and the ＋ drawer runs
+  // 画像/リンク/引用/囲み枠/表/アコーディオン/コードブロック/脚注 (コードブロック added
+  // 2026-09-20, ahead of 脚注 on request, on the same "rare block" basis as 脚注/アコーディオン).
+  // Building an element once and placing the *same* reference in whichever one of the two
+  // branches below actually renders is fine — only one branch ever mounts it.
 
   // Image insert belongs in the toolbar too, but needs a file picker rather
   // than an editor command, so it's a <label>-wrapped hidden input styled to
@@ -443,8 +446,6 @@ export function InsertControls({
 
   const callout = <CalloutMenu key='callout' editor={editor} labelled={labelled} />;
 
-  // Code block has no toolbar button (it's a rare block): insert it from the `/` slash menu, the
-  // ```lang typing rule, or the Mod-Alt-c shortcut.
   const table = <TableGridMenu key='table' editor={editor} />;
 
   // Horizontal rule has no toolbar button: h2's red underline already carries the section-divider
@@ -470,6 +471,29 @@ export function InsertControls({
       <span className='flex items-center gap-3'>
         <AccordionIcon />
         アコーディオン
+      </span>
+    </ToolbarButton>
+  );
+
+  // コードブロック: drawer only (`labelled`), not the pointer toolbar — it's a rare block, and the
+  // ```lang typing rule / Mod-Alt-c shortcut / `/` slash row cover a keyboard author. The drawer
+  // row exists for the same reason 脚注/アコーディオン got one despite already having a route of
+  // their own: ``` and `/` both sit behind a phone keyboard's symbol layer. Inline code (`` ` ``,
+  // Mod-e) stays out of both toolbar and drawer — its own three entry points are a decision this
+  // row doesn't reopen.
+  const codeBlock = labelled && (
+    <ToolbarButton
+      key='code-block'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.insertCodeBlock());
+        nav?.closeMenu();
+      }}
+      disabled={!editor.can().insertCodeBlock()}
+      title='コードブロック'
+      shortcut='Mod-Alt-c'>
+      <span className='flex items-center gap-3'>
+        <CodeBlockIcon />
+        コードブロック
       </span>
     </ToolbarButton>
   );
@@ -501,7 +525,7 @@ export function InsertControls({
   return (
     <div className={className}>
       {labelled
-        ? [image, link, quote, callout, table, accordion, footnote]
+        ? [image, link, quote, callout, table, accordion, codeBlock, footnote]
         : [callout, quote, link, table, image]}
     </div>
   );

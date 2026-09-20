@@ -257,9 +257,12 @@ test.describe('on an emulated phone', () => {
     await plus(page).click();
     const panel = page.getByTestId('insert-menu-panel');
     await panel.getByRole('button', { name: '表', exact: true }).click();
-    // The grid picker replaces the row list in the same sheet (§12.20, insert-menu-nav.ts), not a
-    // floating panel nested inside it; choosing a size still has to reach the editor from there.
-    await page.getByRole('button', { name: '2行2列の表を挿入' }).click();
+    // The 行数/列数 steppers replace the row list in the same sheet (§12.20, insert-menu-nav.ts) —
+    // no grid on touch, unlike the pointer copy (table-picker.spec.ts), and no text field either
+    // (TableGridMenu.tsx's own comment has the reasoning for both, 2026-09-20). Default is 3×3.
+    await panel.getByRole('button', { name: '行数を減らす' }).click();
+    await panel.getByRole('button', { name: '列数を減らす' }).click();
+    await panel.getByRole('button', { name: '表を追加' }).click();
     await expect(page.locator('.ProseMirror table')).toBeVisible();
     // Regression, same as 引用/脚注/画像: a pick here is a final "inserted, done" action, so the
     // whole sheet closes rather than returning to the row list (TableGridMenu.tsx's `insert`,
@@ -301,53 +304,32 @@ test.describe('on an emulated phone', () => {
     await expect(panel).not.toBeVisible();
   });
 
-  test('表 in the ＋: the grid highlight still tracks focus once drilled in', async ({ page }) => {
+  // Regression (2026-09-20): the touch drawer used to drill into the same grid the pointer keeps
+  // (table-picker.spec.ts) — replaced with TableSizeRows' steppers directly, since a tap both
+  // focuses and clicks in the same gesture, so a grid's hover preview never has a moment to show
+  // before the tap already commits, and its cells (h-4 w-4, 16px) sit under the 40px touch target
+  // every other drawer row uses. This exercises a size the pointer's own 8×8 grid cannot reach in
+  // one click, to keep the steppers' own `TABLE_MAX_ROWS`/`TABLE_MAX_COLS` clamps (not the grid's
+  // bounds) live — one stepper pinned at its own max (行数を増やす disables past 50) would not.
+  test('表 in the ＋: the steppers insert a size the grid could not reach directly', async ({
+    page,
+  }) => {
     await openEditor(page);
     await plus(page).click();
     const panel = page.getByTestId('insert-menu-panel');
     await panel.getByRole('button', { name: '表', exact: true }).click();
+    await expect(panel.getByRole('button', { name: '2行2列の表を挿入' })).toHaveCount(0);
 
-    // No hover on a touch device — focus is what TableGridMenu's own `hover` state answers to.
-    // This only tracks at all if that state (owned by TableGridMenu, not by InsertMenu) survived
-    // the drilldown; an earlier version of §12.20 handed a `render()` closure up to InsertMenu
-    // instead of portalling, which unmounted TableGridMenu and made `setHover` a silent no-op.
-    await panel.getByRole('button', { name: '3行4列の表を挿入' }).focus();
-    await expect(panel.getByText('3 行 × 4 列')).toBeVisible();
-  });
-
-  // The numeric-input escape hatch (table-picker.spec.ts covers it on a pointer) is the sharper
-  // regression case: opening it calls `close()` first (closing the drilldown, same as the pointer
-  // copy's dropdown), and the dialog itself is portalled straight to `document.body` — a
-  // `display:none` ancestor stops even a `showModal()` dialog from painting, and once drilled in,
-  // TableGridMenu's whole tree sits under exactly that (InsertMenu.tsx `hidden`s the row list in
-  // favour of the drilldown slot). The regression this test actually caught wasn't that, though:
-  // the dialog opened fine, but nothing this file wrote reached `insertTable` — the dialog's own
-  // mousedown was bubbling to `document`, where InsertMenu's `useDismiss` saw a target outside its
-  // own `ref` (the portalled dialog) and closed the whole ＋ sheet mid-click, unmounting
-  // TableGridMenu (and the dialog with it) before `submit()` ran. Fixed the same way
-  // InsertDialog.tsx's own content div already was: `onMouseDown` stops there.
-  test('表 in the ＋: 行数・列数を入力… still inserts from the drilldown', async ({ page }) => {
-    await openEditor(page);
-    await plus(page).click();
-    const panel = page.getByTestId('insert-menu-panel');
-    await panel.getByRole('button', { name: '表', exact: true }).click();
-    await panel.getByRole('button', { name: '行数・列数を入力…' }).click();
-
-    const dialog = page.getByRole('dialog').filter({ hasText: '表を追加' });
-    await expect(dialog).toBeVisible();
-    // Opening the dialog closes the drilldown too, same as the pointer copy's dropdown.
-    await expect(panel.getByRole('heading', { name: '挿入', exact: true })).toBeVisible();
-
-    await dialog.getByRole('spinbutton', { name: '行数' }).fill('5');
-    await dialog.getByRole('spinbutton', { name: '列数' }).fill('2');
-    await dialog.getByRole('button', { name: '追加' }).click();
-    await expect(dialog).toBeHidden();
+    // Default is 3×3: +9 rows to reach 12, −1 col to reach 2.
+    const growRows = panel.getByRole('button', { name: '行数を増やす' });
+    for (let i = 0; i < 9; i++) await growRows.click();
+    await panel.getByRole('button', { name: '列数を減らす' }).click();
+    await panel.getByRole('button', { name: '表を追加' }).click();
 
     const rows = page.locator('.ProseMirror table tr');
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(12);
     await expect(rows.first().locator('th')).toHaveCount(2);
-    // The table is actually inserted now (unlike opening the dialog, above) — TableGridMenu.tsx's
-    // `insert` is the one place both success paths meet, so the sheet closes here too (2026-09-20).
+    // Same final-action rule as the pointer's own escape hatch and 引用/脚注/画像's own rows.
     await expect(panel).not.toBeVisible();
   });
 
@@ -393,6 +375,18 @@ test.describe('on an emulated phone', () => {
     await expect(panel).not.toBeVisible();
   });
 
+  test('コードブロック in the ＋ inserts a block and closes the sheet', async ({ page }) => {
+    await openEditor(page);
+    await loadMarkdown(page, '本文\n');
+    await page.locator('.ProseMirror p').first().click();
+    await page.keyboard.press('End');
+    await plus(page).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: 'コードブロック', exact: true }).click();
+    await expect(page.locator('.ProseMirror pre code')).toBeVisible();
+    await expect(panel).not.toBeVisible();
+  });
+
   test('画像 in the ＋ closes the sheet once a file is picked', async ({ page }) => {
     await openEditor(page);
     await plus(page).click();
@@ -413,11 +407,12 @@ test.describe('on an emulated phone', () => {
     await expect(page.locator('.editor-back-label')).toBeHidden();
     await expect(page.locator('.editor-back-icon')).toBeVisible();
 
-    // Square at the touch floor: one 16px icon in a box that a `min-height` alone would have left
-    // a sliver (§12.3's pairing).
+    // Square at the header's own touch floor: one 16px icon in a box that a `min-height` alone
+    // would have left a sliver (§12.3's pairing) — 34px here, not the app-wide 40px, since
+    // `.editor-header-bar` drops the header's own controls (app/globals.css, 2026-09-20).
     const box = (await back.boundingBox())!;
-    expect(box.height).toBeGreaterThanOrEqual(40);
-    expect(box.width).toBeGreaterThanOrEqual(40);
+    expect(box.height).toBeGreaterThanOrEqual(34);
+    expect(box.width).toBeGreaterThanOrEqual(34);
 
     await back.click();
     await expect(page).toHaveURL(/\/admin$/);
@@ -431,9 +426,10 @@ test.describe('on an emulated phone', () => {
     await expect(page.locator('.editor-settings-label')).toBeHidden();
     await expect(page.locator('.editor-settings-icon')).toBeVisible();
 
+    // 34px here too — see the back-arrow test above for why this isn't the app-wide 40px floor.
     const box = (await settings.boundingBox())!;
-    expect(box.height).toBeGreaterThanOrEqual(40);
-    expect(box.width).toBeGreaterThanOrEqual(40);
+    expect(box.height).toBeGreaterThanOrEqual(34);
+    expect(box.width).toBeGreaterThanOrEqual(34);
 
     await expect(settings).toHaveAttribute('aria-expanded', 'false');
     await settings.click();
@@ -730,34 +726,19 @@ test.describe('pressing a ＋ row before the editor has ever had focus', () => {
     await expect(page.locator('.ProseMirror [data-callout]')).toBeVisible();
   });
 
-  test('表 does not throw and still inserts a table, from the grid and from the dialog', async ({
+  test('表 does not throw and still inserts a table, from the drilldown fields', async ({
     page,
   }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
-    const url = await makeTableTailPost(page, 'E2E no-focus repro — 表 grid');
+    const url = await makeTableTailPost(page, 'E2E no-focus repro — 表');
 
     await page.goto(url);
     await expect(page.locator('.ProseMirror table')).toBeVisible();
     await plus(page).click();
     const panel = page.getByTestId('insert-menu-panel');
     await panel.getByRole('button', { name: '表', exact: true }).click();
-    await panel.getByRole('button', { name: '2行2列の表を挿入' }).click();
-
-    expect(errors).toEqual([]);
-    await expect(page.locator('.ProseMirror table')).toHaveCount(2);
-
-    // The numeric-input escape hatch is its own call site (TableGridMenu.tsx's `insert`, shared by
-    // both), reached the same no-focus way on a second freshly-loaded post.
-    const url2 = await makeTableTailPost(page, 'E2E no-focus repro — 表 dialog');
-    await page.goto(url2);
-    await expect(page.locator('.ProseMirror table')).toBeVisible();
-    await plus(page).click();
-    const panel2 = page.getByTestId('insert-menu-panel');
-    await panel2.getByRole('button', { name: '表', exact: true }).click();
-    await panel2.getByRole('button', { name: '行数・列数を入力…' }).click();
-    const dialog = page.getByRole('dialog').filter({ hasText: '表を追加' });
-    await dialog.getByRole('button', { name: '追加' }).click();
+    await panel.getByRole('button', { name: '表を追加' }).click();
 
     expect(errors).toEqual([]);
     await expect(page.locator('.ProseMirror table')).toHaveCount(2);

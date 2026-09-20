@@ -116,12 +116,20 @@ export function InsertMenu({
                 not, and this is measured for that case.
 
                 A column, and the controls keep their row shape inside it: these are
-                ToolbarButtons, and their own touch height (40px, `hover: none`) is what makes the
-                rows pressable. `max-h-[70vh]` plus its own `overflow-y-auto` keeps a tall keyboard
-                from pushing the sheet's own top off-screen — the five rows never approach that
-                height today, but nothing here assumes they stay five. `min-h-[40vh]` (2026-09-18,
-                raised from an initial 33vh that barely moved anything — five rows alone already
-                settled around 32% of a 740px screen) gives the sheet real presence at rest.
+                ToolbarButtons, and their own touch height (44px here, `.insert-menu-rows
+                .toolbar-button` in app/globals.css — the app-wide floor elsewhere is 40px) is
+                what makes the rows pressable.
+
+                **`min-h-[44vh] max-h-[44vh]`, a pinned height rather than a floor (2026-09-20).**
+                Raising the rows to 44px grew the row list's own content past the sheet height
+                that had been settled on (~370px against an 839px-tall phone, i.e. ~44vh — the
+                value this pin reuses) — rather than let the sheet grow to match (which the
+                previous `min-h-[47vh]`/`max-h-[70vh]` pair did), the sheet stays put and
+                `overflow-y-auto` scrolls the row list internally for the rows that no longer fit
+                (requested 2026-09-20: keep the drawer the height it already was). A drilled-in
+                picker (表/囲み枠) is short enough that this pin still reads as its own floor for
+                it, the same way `min-h-[47vh]` briefly did for both surfaces at once — re-measure
+                if that stops being true (a picker gains enough rows to also need to scroll).
 
                 **Choosing a row does not close this sheet.** 囲み枠 and 表 are themselves drawer
                 triggers (`insert-menu-nav.ts`): tapping one swaps the sheet's own body for that
@@ -139,7 +147,10 @@ export function InsertMenu({
               data-testid='insert-menu-panel'
               role='dialog'
               aria-labelledby={INSERT_MENU_HEADING_ID}
-              className='fixed inset-x-0 bottom-[var(--editor-kb-inset,0px)] z-50 min-h-[40vh] max-h-[70vh] overflow-y-auto rounded-t-lg border-t border-zinc-300 bg-white pb-2 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-zinc-700 dark:bg-zinc-900'>
+              // `insert-menu-panel` (a class, not the testid above) is the slide-up-on-open hook —
+              // app/globals.css, gated on `prefers-reduced-motion` the same way html's smooth
+              // scroll is (requested 2026-09-20).
+              className='insert-menu-panel fixed inset-x-0 bottom-[var(--editor-kb-inset,0px)] z-50 min-h-[44vh] max-h-[44vh] overflow-y-auto rounded-t-lg border-t border-zinc-300 bg-white pb-2 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] dark:border-zinc-700 dark:bg-zinc-900'>
               {/* Had a drag-handle bar here (mx-auto h-1 w-10 rounded-full) — removed 2026-09-19:
                   purely decorative with no drag-to-dismiss gesture behind it, and that mismatch
                   outweighed the note-precedent affordance it was standing in for. */}

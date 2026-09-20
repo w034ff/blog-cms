@@ -580,7 +580,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         ref={headerRef}
         data-publish-state={publishState}
         data-autosave-state={autosaveDisplayState}
-        className='sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
+        // `editor-header-bar` (app/globals.css) scopes the header's own `.toolbar-button` height
+        // to 34px, under the app-wide 40px floor (requested 2026-09-20) — see that rule's own
+        // comment for the tradeoff (editor-narrow-menus.spec.ts §12.3/12k updated to match).
+        className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
         <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
           {/* Hover is a background, not an underline, so this reads as the same kind of control as
               記事の設定 further along the line rather than as prose. `-mx-1` cancels the padding
@@ -730,7 +733,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               name='intent'
               value='publish'
               disabled={publishDisabled}
-              className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              // `editor-publish-button` (app/globals.css, touch only): 投稿 isn't a `.toolbar-button`
+              // and its `py-2` sizing (36px, text-sm's own line-height) was the tallest thing in
+              // the header once every other control dropped to 34px — this pins it to match on a
+              // phone, leaving the desktop `py-2` shape alone (requested 2026-09-20).
+              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
               {publishLabel}
             </button>
           </span>

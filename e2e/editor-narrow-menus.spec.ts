@@ -411,11 +411,15 @@ test.describe('on an emulated phone at 360px', () => {
     expect(main.length).toBeGreaterThan(8);
     expect(Math.min(...main.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
 
-    // The ＋ in the page header, and the insert controls it holds — chrome that exists only under
-    // `hover: none`, so this file is the only place the floor can be measured on it (§12.5).
+    // The ＋ in the page header — chrome that exists only under `hover: none`, so this file is the
+    // only place the floor can be measured on it (§12.5). The header is the one exemption from
+    // `FLOOR`: `.editor-header-bar` (app/globals.css) drops its own `.toolbar-button`s to 34px so
+    // the header fits in 50px (requested 2026-09-20, the tradeoff argued through at the time).
+    const HEADER_FLOOR = 34;
     const plus = await shortest(page, '.insert-menu .toolbar-button');
     expect(plus).toHaveLength(1);
-    expect(plus[0].h).toBeGreaterThanOrEqual(FLOOR);
+    expect(plus[0].h).toBeGreaterThanOrEqual(HEADER_FLOOR);
+    // The insert controls the ＋ opens are the drawer's own rows, not the header — back to FLOOR.
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     const inserts = await shortest(page, '[data-testid="insert-menu-panel"] .toolbar-button');
     expect(inserts.length).toBeGreaterThan(2);

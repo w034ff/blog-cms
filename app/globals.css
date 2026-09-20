@@ -238,6 +238,12 @@ body {
    `.insert-menu-rows` regardless of which menu opened it), so this needed no prop threading
    through either component — one selector, not four call sites. */
 @media (hover: none) {
+  /* 44px, not the app-wide 40px floor (requested 2026-09-20, compared against 44/48 side by
+     side): scoped to just this drawer's rows via the compound selector, so the app's other
+     `.toolbar-button`s (main toolbar, table toolbar, image bubble) stay at 40px. */
+  .insert-menu-rows .toolbar-button {
+    min-height: 44px;
+  }
   .insert-menu-rows .toolbar-button {
     border-radius: 0;
     width: 100%;
@@ -294,12 +300,23 @@ body {
    and this animation only needed to cover the one surface that is new here. `@starting-style`
    fires on first paint after mount; React swaps the row list and the picker via a ternary
    (InsertMenu.tsx) rather than toggling `display` on either, so there is no exit state to animate
-   on unmount. */
+   on unmount.
+
+   An exit half (戻る sliding the picker back out) was tried and dropped the same day: the wrapper
+   this rule targets stays mounted and CAN fade via `display: … allow-discrete`, but the picker's
+   own content (CalloutMenu/TableGridMenu, portalled in only while `isActive` — ToolbarDropdown.tsx)
+   unmounts on the very next render once `activeTitle` goes null, well before any transition frame
+   paints. Measured directly: the wrapper's own `getBoundingClientRect().height` was already ~1px
+   in the first sample taken after 戻る, opacity fading over an empty box. Doing this properly needs
+   the content's own removal delayed until the transition ends — real React state, not the
+   CSS-only trick that covers the entrance — and that was judged not worth it (2026-09-20). */
 @media (hover: none) {
+  /* 200ms, not 150 (2026-09-20): matches `.insert-menu-panel`'s own open slide below, so the
+     sheet-open → drill-in sequence doesn't run at two different speeds. */
   .insert-menu-drilldown {
     transition:
-      opacity 150ms ease,
-      transform 150ms ease;
+      opacity 200ms ease,
+      transform 200ms ease;
     opacity: 1;
     transform: translateX(0);
   }
@@ -307,6 +324,27 @@ body {
     .insert-menu-drilldown {
       opacity: 0;
       transform: translateX(8px);
+    }
+  }
+}
+
+/* The ＋ sheet's own entrance, drawer only: a slide up from the bottom edge it's anchored to
+   (`bottom-[var(--editor-kb-inset,0px)]`) — note's and Google Docs' own sheets both do this
+   (InsertMenu.tsx's own comment on why this drawer is modelled on them), requested 2026-09-20.
+   Gated on `prefers-reduced-motion` (the guard html's smooth scroll uses, this file's own top)
+   rather than left unconditional like `.insert-menu-drilldown` above: that one is an 8px nudge no
+   E2E assertion right after open ever had reason to catch, but a full off-screen slide is large
+   enough that a `boundingBox()` mid-transition would fail loudly rather than by a few px —
+   playwright.config.ts sets `reducedMotion: 'reduce'` project-wide, which keeps the whole suite
+   off this branch entirely rather than needing a per-test wait for the transition to settle. */
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  .insert-menu-panel {
+    transition: transform 200ms ease-out;
+    transform: translateY(0);
+  }
+  @starting-style {
+    .insert-menu-panel {
+      transform: translateY(100%);
     }
   }
 }
@@ -441,6 +479,44 @@ body {
   }
 }
 
+/* The page header's own controls (記事一覧, ＋, 記事の設定, 投稿 — `editor-header-bar`,
+   PostEditor.tsx) drop under the 40px floor above, to 34px (requested 2026-09-20, in full
+   knowledge of the tradeoff the floor's own comment argues for): with `py-2` (8px top and
+   bottom, kept as asked) plus the header's own 1px `border-b`, that puts the header at 51px
+   border-box, not the ~57px a 40px control inside it measured at. `.toolbar-button-round` (＋'s
+   own shape), `.editor-back-link` and `.editor-settings-link` (記事一覧/記事の設定's own circles,
+   a separate pairing from the round variant's) each get the matching `min-width` so none of the
+   three read as a 40×34 stadium instead of a circle. 投稿 isn't a `.toolbar-button` at all —
+   `.editor-publish-button` pins it to the same 34px separately, since its own `py-2` + `text-sm`
+   line-height (36px) would otherwise stay the tallest thing in the row and the header would
+   settle on its height instead of this one's. This is the one surface exempted from "the
+   editor's whole pressable chrome" the floor's own comment claims —
+   editor-narrow-menus.spec.ts §12.3/12k and editor-mobile-toolbar.spec.ts's own 記事一覧/記事の
+   設定 checks all read 34px here, not 40, to match. */
+@media (hover: none) {
+  .editor-header-bar .toolbar-button {
+    min-height: 34px;
+  }
+  .editor-header-bar .toolbar-button-round,
+  .editor-header-bar .editor-back-link,
+  .editor-header-bar .editor-settings-link {
+    min-width: 34px;
+  }
+  .editor-header-bar .editor-publish-button {
+    /* `min-height` alone does nothing here: the button's own `py-2` (16px) plus `text-sm`'s
+       20px line-height already total 36px, past this floor, so the floor was never binding —
+       measured red the first time this shipped. Zeroing the vertical padding is what actually
+       drops it, down to the 20px line height alone; the floor then does bind, and flex centres
+       the line inside the taller box instead of padding doing it. `px-4` (horizontal) stays. */
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
 /* Undo and redo are a touch control and nothing else, so they are drawn only where the pointer
    has no `Mod-z` behind it (§12.4). Stated as "hide where there is hover" rather than "show where
    there is not", so the buttons are in the markup at every width and one query decides whether
@@ -563,18 +639,25 @@ body {
     width: 100%;
     justify-content: space-between;
   }
-  /* 囲み枠・表 measured 41px against every plain row's 40px (`getBoundingClientRect`, not
-     eyeballed) — both are `min-height: 40px` and neither has padding, border or margin, so the
-     two should already match. They only wrap their `ToolbarButton` in a `relative flex` div
-     (`ToolbarDropdown.tsx`, the row that would also hold its own floating panel on a pointer),
-     and it's that extra flex box, not any of this rule's own properties, that resolves to a
-     fractional height (`scrollHeight` read 40, `offsetHeight`/`getBoundingClientRect` read
-     41 — a sub-pixel remainder from the wrapper's own flex sizing, rounded up on paint) even at
-     an integer device pixel ratio. An explicit `height` on the wrapper (not `min-height`, which
-     leaves the flex algorithm to size it and reproduces the same remainder) sidesteps that
-     calculation instead of chasing the rounding. */
+  /* 囲み枠・表 measured a fraction of a px against every plain row's own height
+     (`getBoundingClientRect`, not eyeballed) — both are `min-height: …` (2026-09-20: 44px, was
+     40px) and neither has padding, border or margin, so the two should already match. They only
+     wrap their `ToolbarButton` in a `relative flex` div (`ToolbarDropdown.tsx`, the row that
+     would also hold its own floating panel on a pointer), and it's that extra flex box, not any
+     of this rule's own properties, that resolves to a fractional height (`scrollHeight` reads the
+     integer figure, `offsetHeight`/`getBoundingClientRect` round up a hair — a sub-pixel
+     remainder from the wrapper's own flex sizing) even at an integer device pixel ratio. An
+     explicit `height` on the wrapper (not `min-height`, which leaves the flex algorithm to size
+     it and reproduces the same remainder) sidesteps that calculation instead of chasing the
+     rounding — **and has to move in lockstep with `.insert-menu-rows .toolbar-button`'s own
+     `min-height` above, which this rule does not read from.** Left at the old 2.5rem (40px) after
+     that rule went to 44px (2026-09-20): 囲み枠/表's wrapper clamped to exactly 40px while the
+     button inside it still asked for 44px via its own `min-height`, which a `flex` parent with no
+     `overflow: hidden` does not clip — the button overflowed its own wrapper by 4px, reported as
+     "囲み枠/表 look shifted down" against the other rows, which have no such wrapper to disagree
+     with. Kept in rem, not px, so a future rem-based type-scale change moves both together. */
   .insert-menu-rows > * {
-    height: 2.5rem;
+    height: 2.75rem;
   }
 
   /* The way out is the arrow alone (§12.6). `min-width` pairs with `.toolbar-button`'s

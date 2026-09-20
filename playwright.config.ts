@@ -38,6 +38,11 @@ export default defineConfig({
     navigationTimeout: 60_000, // next dev compiles each route on first hit
     actionTimeout: 15_000,
     trace: 'retain-on-failure',
+    // CSS gated on `prefers-reduced-motion` (app/globals.css) reads this as "reduce" and skips
+    // the branch entirely — added with the ＋ sheet's own open animation (2026-09-20), whose
+    // `boundingBox()` assertions run right after open with no wait for a transition to settle.
+    // Nested under `contextOptions`, not a top-level `use` key, in this Playwright version.
+    contextOptions: { reducedMotion: 'reduce' },
   },
   projects: [
     { name: 'setup', testMatch: /.*\.setup\.ts/ },
