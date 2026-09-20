@@ -442,7 +442,7 @@ _測り直しは 2026-09-15、§12.5 で挿入系の 4 つがこの行を離れ�
 
 **`overflow-x: auto` は `overflow-y` も暗黙に `auto` にする。** CSS の仕様どおりの挙動で、`.toolbar-scroll` の中に住んでいたリストのドロップダウン（トリガー+パネル、`ToolbarDropdown.tsx`）のパネルが、開いても実際には見えなくなっていた——`getBoundingClientRect()` は要素自身の寸法しか返さないので、パネルの位置だけを見る既存の spec はこのクリップを一度も検出しなかった（発見時のスクリーンショットで確認）。
 
-**タッチだけドロップダウンでなくす**のが採った修正である。ポインタは元のリストのドロップダウンを保つ——タッチだけが `.toolbar-scroll` の中に住んでいたので、クリップされるのもタッチだけだった。機構は §12.4/§12.5 と同じ「DOM に両方、`hover` が描く側を決める」idiom そのものである: `.list-dropdown`（`<ListMenu>` を包む）は `.editor-toolbar-bar .list-dropdown { display: none }`（`hover: none`）でタッチから消え、`.list-buttons`（箇条書き・番号付き の直接トグル2つを包む、ショートカットは元の `Mod-Shift-8`/`Mod-Shift-7` のまま）は `.list-buttons { display: none }`（`hover: hover`）でポインタから消える。どちらの span も常に `contents` なので、内側の要素はこのツールバー行の直接の flex item のままである。`ToolbarDropdown` の `direction` prop（`up` 用。§12.5 で導入）は、リストのドロップダウンがポインタ専用になった今も呼び出し元が無い——ポインタ側のツールバーはフレーム上端にあり、下向きで足りるからで、削除したままにしている。
+**タッチだけドロップダウンでなくす**のが採った修正である。ポインタは元のリストのドロップダウンを保つ——タッチだけが `.toolbar-scroll` の中に住んでいたので、クリップされるのもタッチだけだった。機構は §12.4/§12.5 と同じ「DOM に両方、`hover` が描く側を決める」idiom そのものである: `.list-dropdown`（`<ListMenu>` を包む）は同じ span が併記する `pointer-only` でタッチから消え、`.list-buttons`（箇条書き・番号付き の直接トグル2つを包む、ショートカットは元の `Mod-Shift-8`/`Mod-Shift-7` のまま）は `touch-only` でポインタから消える。`display: none` を宣言しているのは `.pointer-only`（`hover: none`）と `.touch-only`（`hover: hover`）の2ルールだけで、形状名の側はもう gate を持たない——どちらの面に属するかが TSX の行だけで読めるようにするため（2026-09-20）。どちらの span も常に `contents` なので、内側の要素はこのツールバー行の直接の flex item のままである。`ToolbarDropdown` の `direction` prop（`up` 用。§12.5 で導入）は、リストのドロップダウンがポインタ専用になった今も呼び出し元が無い——ポインタ側のツールバーはフレーム上端にあり、下向きで足りるからで、削除したままにしている。
 
 基準 33。
 

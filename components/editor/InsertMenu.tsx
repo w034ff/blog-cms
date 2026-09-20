@@ -18,11 +18,11 @@ const INSERT_MENU_HEADING_ID = 'insert-menu-heading';
 // four did not go with them, because they are not wanted mid-keystroke and the bottom bar has no
 // width to spare once the software keyboard is up.
 //
-// Drawn only under `hover: none` — the whole component, trigger and panel together, is hidden by
-// one rule in app/globals.css. Written that way rather than as a `matchMedia` read in React for
-// the reason §12.1 and §12.4 give: a media query in React renders one way and corrects itself,
-// which is a hydration mismatch. The controls themselves are `InsertControls`, the same component
-// the toolbar renders for a pointer — two copies in the DOM, one painted.
+// Drawn only under `hover: none` — `touch-only` on the root hides the whole component, trigger and
+// panel together, by one rule in app/globals.css. Written that way rather than as a `matchMedia`
+// read in React for the reason §12.1 and §12.4 give: a media query in React renders one way and
+// corrects itself, which is a hydration mismatch. The controls themselves are `InsertControls`,
+// the same component the toolbar renders for a pointer — two copies in the DOM, one painted.
 //
 // **The panel is a bottom sheet (§12.18, 2026-09-18), not the small anchored box §12.15's
 // screenshot showed** — the note precedent it was modelled on opens this way rather than as a
@@ -89,7 +89,7 @@ export function InsertMenu({
 
   return (
     // `insert-menu` is the hook the `hover: hover` rule hides.
-    <div className='insert-menu flex'>
+    <div className='insert-menu touch-only flex'>
       <ToolbarButton
         onClick={() => onOpenChange(!open)}
         active={open}

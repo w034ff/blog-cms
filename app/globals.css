@@ -572,16 +572,6 @@ body {
        button gets. Zeroed here so the first glyph gets the same clearance every other one does. */
     padding-left: 0;
   }
-  /* The insert group's pointer copy. Two classes, so this outranks the `display: contents` that
-     keeps those four controls flex items of the toolbar on a pointer. */
-  .editor-toolbar-bar .toolbar-insert {
-    display: none;
-  }
-  /* The list dropdown's pointer copy (§12.11's docs/table-requirements.md) — touch keeps
-     `.list-buttons` instead, hidden the other way under `hover: hover` below. */
-  .editor-toolbar-bar .list-dropdown {
-    display: none;
-  }
   /* The row scrolls sideways instead of wrapping (§12.11): `flex-wrap: wrap` is `.toolbar-scroll`'s
      own Tailwind class on a pointer (today's behaviour, unchanged), overridden to a single
      non-wrapping strip here. Undo/redo sit last in this same strip (Toolbar.tsx, superseding
@@ -709,13 +699,44 @@ body {
   }
 }
 
+/* §12.4's idiom, named. Where one control is written twice — once for a pointer, once for touch —
+   both copies are in the DOM at every width and one of these two classes says which surface a copy
+   belongs to. The alternative is a `matchMedia` read in React, which renders one way and corrects
+   itself: a hydration mismatch.
+
+   **The marker carries the gate; the shape class carries the styling.** Before this pair the
+   `display: none` lived on each copy's own class (`.toolbar-insert`, `.list-buttons`, …), which
+   left the surface invisible at the point it is read — `<span className='list-dropdown contents'>`
+   in Toolbar.tsx says which *shape* it is and nothing about which surface paints it. The shape
+   classes are all still there and still cited (docs/table-requirements.md §12.11, the specs); what
+   moved is the one declaration.
+
+   **Unlayered, so it beats the `display: contents` these copies wear.** `@import 'tailwindcss'`
+   puts `contents` in `@layer utilities` and every rule in this file is outside any layer, so an
+   unlayered single class wins on layer order without needing specificity — which is why neither
+   selector below repeats itself or reaches through an ancestor. (`.editor-toolbar-bar
+   .toolbar-insert` used to, on the belief that specificity was what settled it.)
+
+   Only the pairs wear these. A control that is simply absent on one surface (`.editor-tooltip`,
+   `.toolbar-button-history`, `.editor-back-label`) has no twin to be confused with, and the header
+   badges reveal with a positive `display` over a Tailwind `hidden` rather than hiding — a marker
+   that only asserts `display: none` cannot state either, and marking everything would mark
+   nothing. */
+@media (hover: none) {
+  .pointer-only {
+    display: none;
+  }
+}
+@media (hover: hover) {
+  .touch-only {
+    display: none;
+  }
+}
+
 /* The ＋ and its panel are a touch control and nothing else: a pointer keeps the insert group in
    the toolbar, where it has always been. Stated as "hide where there is hover" for the same reason
    the history pair is. */
 @media (hover: hover) {
-  .insert-menu {
-    display: none;
-  }
   /* …and a pointer keeps the words, so the arrow is the half that goes (§12.6), and the gear's
      half does too (§12.8). */
   .editor-back-icon,
@@ -724,11 +745,6 @@ body {
   }
   .unlisted-badge-dot,
   .autosave-status-compact {
-    display: none;
-  }
-  /* リスト's touch copy (§12.11's docs/table-requirements.md) — a pointer keeps the dropdown
-     instead (`.list-dropdown`, hidden the other way under `hover: none` above). */
-  .list-buttons {
     display: none;
   }
 }

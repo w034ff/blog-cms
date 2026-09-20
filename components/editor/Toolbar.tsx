@@ -27,7 +27,7 @@ import { RedoIcon } from './svg/RedoIcon';
 // inside `.toolbar-scroll` on touch, where its own `overflow-x: auto` implicitly clips the panel's
 // vertical overflow invisibly (CSS's overflow-x/-y coupling) — 箇条書き/番号付き are two direct
 // touch-only toggles instead, and this dropdown is the pointer-only counterpart, picked by the same
-// `contents`-vs-`display:none` idiom the insert group uses. It highlights whenever the cursor is in
+// `pointer-only`/`touch-only` gate the insert group uses. It highlights whenever the cursor is in
 // any list, and the open menu marks which kind — which the rendered bullets/numbers also show — so
 // merging them doesn't hide the active state.
 function ListMenu({ editor }: { editor: Editor }) {
@@ -190,19 +190,20 @@ export function Toolbar({
         aria-hidden='true'
       />
       {/* Two copies, one control (§12.11's docs/table-requirements.md): a pointer keeps the
-            dropdown it always had (`.list-dropdown`), touch gets two direct toggles instead
-            (`.list-buttons`) — a trigger + panel inside `.toolbar-scroll` inherits its
-            `overflow-y: auto` (a side effect of setting only `overflow-x`), which clipped the
-            dropdown's panel invisibly on touch; `getBoundingClientRect()`-based specs never caught
-            it because clipping doesn't move a box's own geometry. `contents` on both spans, so
-            either shape's own element(s) are flex items of this row directly, and one media query
-            (app/globals.css) decides which span the `display: none` lands on. Both toggles refuse
-            inside a code block (guarded-block-toggles.ts), where converting would shred it into
-            prose — `ListMenu`'s trigger reads that from `editor.can()` too. */}
-      <span className='list-dropdown contents'>
+            dropdown it always had, touch gets two direct toggles instead — a trigger + panel inside
+            `.toolbar-scroll` inherits its `overflow-y: auto` (a side effect of setting only
+            `overflow-x`), which clipped the dropdown's panel invisibly on touch;
+            `getBoundingClientRect()`-based specs never caught it because clipping doesn't move a
+            box's own geometry. `pointer-only`/`touch-only` are the gate (app/globals.css) and say
+            on the line which surface paints each span; `list-dropdown`/`list-buttons` stay as the
+            shapes' own names, which §12.11 and the specs cite. `contents` on both, so either
+            shape's own element(s) are flex items of this row directly. Both toggles refuse inside a
+            code block (guarded-block-toggles.ts), where converting would shred it into prose —
+            `ListMenu`'s trigger reads that from `editor.can()` too. */}
+      <span className='list-dropdown pointer-only contents'>
         <ListMenu editor={editor} />
       </span>
-      <span className='list-buttons contents'>
+      <span className='list-buttons touch-only contents'>
         <ToolbarButton
           onClick={() => focusThenRun(editor, (c) => c.toggleBulletList())}
           active={editor.isActive('bulletList')}
@@ -225,20 +226,19 @@ export function Toolbar({
         </ToolbarButton>
       </span>
       {/* The insert group, rendered here for a pointer and inside the header's ＋ for touch
-          (InsertMenu.tsx). Both copies are in the DOM at every width and one media query decides
-          which is painted — the §12.4 idiom, for the reason stated there: a `matchMedia` read in
-          React would render one way and correct itself, which is a hydration mismatch.
+          (InsertMenu.tsx). Both copies are in the DOM at every width and `pointer-only` says which
+          surface paints this one — the §12.4 idiom, for the reason stated there: a `matchMedia`
+          read in React would render one way and correct itself, which is a hydration mismatch.
 
           `contents`, so on a pointer the four controls are flex items of the toolbar exactly as
-          they were before this wrapper existed — the row wraps at the same widths. The hide rule
-          is written `.editor-toolbar-bar .toolbar-insert` (two classes) so it outranks the
-          `display: contents` this utility sets. */}
+          they were before this wrapper existed — the row wraps at the same widths. `toolbar-insert`
+          is no longer the gate, only this copy's own name (the spec locates it by that). */}
       <InsertControls
         editor={editor}
         uploading={uploading}
         onImageChange={onImageChange}
         pickerTestId='image-picker'
-        className='toolbar-insert contents'
+        className='toolbar-insert pointer-only contents'
       />
       {/* Undo and redo, last in the row (§12.13). A same-day swap tried moving these to the page
             header and ＋ here instead — reverted a back arrow (記事一覧) beside an undo arrow read

@@ -818,3 +818,30 @@ test.describe('pressing a format-bar control before the editor has ever had focu
     expect(errors).toEqual([]);
   });
 });
+
+// The other half of the same gate. Every assertion above runs under `PHONE`, so the touch copy is
+// the only one a failing `pointer-only` would be seen through — and the copies `touch-only` hides
+// (the ＋, the two list toggles) would go unmeasured entirely on a desktop viewport, where they
+// have no business being drawn. This describe takes the project's own viewport, which is where
+// `hover: hover` matches.
+test.describe('on a pointer, the other copy of each pair is the one painted', () => {
+  test('the ＋ and the list toggles are unpainted, and the toolbar keeps both groups', async ({
+    page,
+  }) => {
+    await openEditor(page);
+
+    // `touch-only`: both are in the DOM at this width, neither is drawn.
+    await expect(page.locator('.insert-menu')).toHaveCount(1);
+    await expect(page.locator('.insert-menu')).toBeHidden();
+    await expect(page.locator('.list-buttons')).toHaveCount(1);
+    await expect(page.locator('.list-buttons')).toBeHidden();
+
+    // `pointer-only`: the copies the phone hides are the ones drawn here. `display: contents` means
+    // the span itself has no box, so the claim is made through a control inside it — which is also
+    // what rules out the marker having eaten the whole group.
+    await expect(bar(page).getByRole('button', { name: 'リンク' })).toBeVisible();
+    await expect(bar(page).getByRole('button', { name: 'リスト' })).toBeVisible();
+    // And the touch copy's toggles are not in the accessibility tree beside it.
+    await expect(bar(page).getByRole('button', { name: '箇条書き' })).toHaveCount(0);
+  });
+});
