@@ -86,8 +86,18 @@ export function InsertDialog({
   // Closing hands the caret back. Without this the author is left with focus on nothing — the
   // dialog is gone, the editor is not focused, and the next keystroke goes to the document rather
   // than the post (measured 2026-09-02: a second `/` after Escape opened no menu at all).
+  //
+  // A raw `view.dom.focus({ preventScroll: true })`, not `editor.commands.focus()` (reported
+  // 2026-09-20, two tries): the command's own `scrollIntoView: false` option only cancels its
+  // *own* `editor.commands.scrollIntoView()` call — @tiptap/core's `focus` command (index.js)
+  // calls a bare `view.dom.focus()` first, on iOS/Android, unconditionally, regardless of that
+  // option, which is the same native-scroll problem focus-then-run.ts's own `preventScroll`
+  // exists for. `scrollIntoView: false` alone still measured the page landing at `scrollY: 0`.
+  // ProseMirror keeps the model selection through a DOM blur/focus cycle on its own (the same
+  // fact the comment above already leans on), so the raw call is enough — nothing here is
+  // choosing a new position the way `focus(at)` below does.
   const close = () => {
-    editor.commands.focus();
+    editor.view.dom.focus({ preventScroll: true });
     onClose();
     onCancel();
   };
@@ -127,9 +137,10 @@ export function InsertDialog({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       // Stopped, or the editor's own Escape handling runs too — and the last thing a dialog should
-      // do on the way out is move the caret it is about to insert at.
+      // do on the way out is move the caret it is about to insert at. Same raw
+      // `view.dom.focus({ preventScroll: true })` as `close()` above, and for the same reason.
       event.stopPropagation();
-      editor.commands.focus();
+      editor.view.dom.focus({ preventScroll: true });
       onClose();
     };
     document.addEventListener('keydown', onKey, true);
