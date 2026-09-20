@@ -14,6 +14,7 @@ import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
 import { ImageBubble } from './editor/ImageBubble';
 import { InsertDialog } from './editor/InsertDialog';
+import { WritingHelpDialog } from './editor/WritingHelpDialog';
 import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
@@ -26,6 +27,7 @@ import { useKeyboardInset } from './editor/useKeyboardInset';
 import { InsertMenu } from './editor/InsertMenu';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
+import { HelpIcon } from './editor/svg/HelpIcon';
 import { LockIcon } from './editor/svg/LockIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
@@ -117,6 +119,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // fields away is for. A new post is not left guessing: the category arrives pre-filled
   // (DEFAULT_CATEGORY) and nothing else above is required to publish.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // ヘルプ (docs/cms-features.md「書き方ヘルプ」). Held here rather than in the button because the
+  // sheet is mounted below, outside the header: the header is `sticky` with its own `z-40`, and a
+  // stacking context is what InsertMenu.tsx's own comment says not to put a full-screen overlay in.
+  const [helpOpen, setHelpOpen] = useState(false);
   // The author's explicit card image ('' = none chosen). Held in React rather
   // than left uncontrolled like the text fields, because the picker writes it
   // and the preview reads it back.
@@ -707,6 +713,25 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 限定公開). A gear is specific to "settings" without a label; an overflow glyph is
                 not. Same two-span idiom as 記事一覧, and `aria-label` for the same reason — the
                 word only names the icon-only side, the icon is `aria-hidden`. */}
+            {/* ヘルプ — the input rules, the slash menu and the keys, in one sheet
+                (docs/cms-features.md「書き方ヘルプ」§2). On the pointer side only
+                (`editor-help-button`, app/globals.css): every row it holds is either a key or
+                something typed, and it is a second opinion on the toolbar's tooltips, which do not
+                exist under `hover: none` either. No touch twin, so it hides by its own class rather
+                than wearing `.pointer-only` — that marker pair is for a control written twice.
+
+                No `editor &&` gate, unlike the ＋ above: this sheet is content about the editor
+                rather than a command on one, so it still answers when the editor failed to mount.
+                `aria-haspopup` says a dialog is what opens, and the icon is `aria-hidden`, so the
+                label has to be on the button itself. */}
+            <button
+              type='button'
+              aria-label='ヘルプ'
+              aria-haspopup='dialog'
+              onClick={() => setHelpOpen(true)}
+              className='editor-help-button toolbar-button inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              <HelpIcon />
+            </button>
             <button
               type='button'
               aria-expanded={settingsOpen}
@@ -935,6 +960,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 ownSlug={slug}
               />
             )}
+            {/* Mounted here, not in the header: the header is `sticky` with its own `z-40`, which
+                makes it a stacking context — a `fixed` overlay inside it is compared within that
+                stack instead of against the page (InsertMenu.tsx's own comment). */}
+            {helpOpen && <WritingHelpDialog onClose={() => setHelpOpen(false)} />}
           </div>
         </div>
       </SiteColumn>

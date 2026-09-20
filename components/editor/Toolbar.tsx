@@ -7,6 +7,7 @@ import { selectionTouches } from './selection-scan';
 import { IMAGE_BLOCKED_HOSTS } from './useImageUpload';
 import { focusThenRun } from './focus-then-run';
 import { ToolbarButton } from './ToolbarButton';
+import { SHORTCUT } from './shortcut-catalog';
 import { ToolbarDropdown, DropdownItem } from './ToolbarDropdown';
 import { useInsertMenuNav } from './insert-menu-nav';
 import { CalloutMenu } from './CalloutMenu';
@@ -111,8 +112,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleHeading({ level: 2 }))}
         active={editor.isActive('heading', { level: 2 })}
         disabled={!editor.can().toggleHeading({ level: 2 })}
-        title='大見出し'
-        shortcut='Mod-Alt-2'
+        title={SHORTCUT.heading2.label}
+        shortcut={SHORTCUT.heading2.token}
         compact
         wide>
         <span className='flex items-center justify-center text-sm leading-4'>H2</span>
@@ -121,8 +122,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleHeading({ level: 3 }))}
         active={editor.isActive('heading', { level: 3 })}
         disabled={!editor.can().toggleHeading({ level: 3 })}
-        title='小見出し'
-        shortcut='Mod-Alt-3'
+        title={SHORTCUT.heading3.label}
+        shortcut={SHORTCUT.heading3.token}
         compact
         wide>
         <span className='flex items-center justify-center text-sm leading-4'>H3</span>
@@ -140,8 +141,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleBold())}
         active={editor.isActive('bold')}
         disabled={!editor.can().toggleBold()}
-        title='太字'
-        shortcut='Mod-b'
+        title={SHORTCUT.bold.label}
+        shortcut={SHORTCUT.bold.token}
         compact
         wide>
         <span className='flex w-4 items-center justify-center text-sm leading-4 font-bold'>B</span>
@@ -150,8 +151,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleItalic())}
         active={editor.isActive('italic')}
         disabled={!editor.can().toggleItalic()}
-        title='斜体'
-        shortcut='Mod-i'
+        title={SHORTCUT.italic.label}
+        shortcut={SHORTCUT.italic.token}
         compact
         wide>
         <span className='flex w-4 items-center justify-center text-sm leading-4 font-serif italic -skew-x-6'>
@@ -162,8 +163,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleStrike())}
         active={editor.isActive('strike')}
         disabled={!editor.can().toggleStrike()}
-        title='取り消し線'
-        shortcut='Mod-Shift-s'
+        title={SHORTCUT.strike.label}
+        shortcut={SHORTCUT.strike.token}
         compact
         wide>
         <span className='flex w-4 items-center justify-center text-sm leading-4 line-through'>
@@ -177,8 +178,8 @@ export function Toolbar({
         onClick={() => focusThenRun(editor, (c) => c.toggleAccentEmphasis())}
         active={editor.isActive('accentEmphasis')}
         disabled={!editor.can().toggleAccentEmphasis()}
-        title='強調'
-        shortcut='Mod-Shift-e'
+        title={SHORTCUT.accentEmphasis.label}
+        shortcut={SHORTCUT.accentEmphasis.token}
         compact
         wide>
         <span className='accent-emphasis flex w-4 items-center justify-center text-sm leading-4'>
@@ -208,8 +209,8 @@ export function Toolbar({
           onClick={() => focusThenRun(editor, (c) => c.toggleBulletList())}
           active={editor.isActive('bulletList')}
           disabled={!editor.can().toggleBulletList()}
-          title='箇条書き'
-          shortcut='Mod-Shift-8'
+          title={SHORTCUT.bulletList.label}
+          shortcut={SHORTCUT.bulletList.token}
           compact
           wide>
           <ListIcon />
@@ -218,8 +219,8 @@ export function Toolbar({
           onClick={() => focusThenRun(editor, (c) => c.toggleOrderedList())}
           active={editor.isActive('orderedList')}
           disabled={!editor.can().toggleOrderedList()}
-          title='番号付き'
-          shortcut='Mod-Shift-7'
+          title={SHORTCUT.orderedList.label}
+          shortcut={SHORTCUT.orderedList.token}
           compact
           wide>
           <OrderedListIcon />
@@ -268,8 +269,8 @@ export function Toolbar({
         // time this is enabled, the editor has already had focus.
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
-        title='元に戻す'
-        shortcut='Mod-z'
+        title={SHORTCUT.undo.label}
+        shortcut={SHORTCUT.undo.token}
         historyControl>
         <UndoIcon />
       </ToolbarButton>
@@ -278,8 +279,8 @@ export function Toolbar({
         // on redo history existing, which requires a prior undo, which requires prior focus.
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
-        title='やり直す'
-        shortcut='Mod-Shift-z'
+        title={SHORTCUT.redo.label}
+        shortcut={SHORTCUT.redo.token}
         historyControl>
         <RedoIcon />
       </ToolbarButton>
@@ -430,8 +431,8 @@ export function InsertControls({
       // case that does need a guard (blockquote-extension.ts), since wrapIn happily wraps a
       // selected atom instead of refusing.
       disabled={!editor.can().toggleBlockquote()}
-      title='引用'
-      shortcut='Mod-Shift-b'
+      title={SHORTCUT.blockquote.label}
+      shortcut={SHORTCUT.blockquote.token}
       compact={!labelled}>
       {labelled ? (
         <span className='flex items-center gap-3'>
@@ -489,8 +490,8 @@ export function InsertControls({
         nav?.closeMenu();
       }}
       disabled={!editor.can().insertCodeBlock()}
-      title='コードブロック'
-      shortcut='Mod-Alt-c'>
+      title={SHORTCUT.codeBlock.label}
+      shortcut={SHORTCUT.codeBlock.token}>
       <span className='flex items-center gap-3'>
         <CodeBlockIcon />
         コードブロック
@@ -513,8 +514,8 @@ export function InsertControls({
         nav?.closeMenu();
       }}
       disabled={!editor.can().setFootnote()}
-      title='脚注'
-      shortcut='Mod-Shift-f'>
+      title={SHORTCUT.footnote.label}
+      shortcut={SHORTCUT.footnote.token}>
       <span className='flex items-center gap-3'>
         <FootnoteIcon />
         脚注

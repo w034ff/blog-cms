@@ -5,24 +5,34 @@ import { EditorTooltip } from './EditorTooltip';
 
 // Client-only component (the toolbar mounts after the client editor exists), so
 // navigator is available; the guard just keeps any SSR pass from throwing.
-function isMac(): boolean {
+// Exported for WritingHelpDialog, which prints the same keys in a list and must
+// make the same ⌘/Ctrl choice — a second copy of this would be a second answer.
+export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iP(hone|ad|od)/.test(navigator.platform);
 }
 
-// TipTap keymap token ("Mod-Shift-s") → a human tooltip label. "Mod" is the
-// platform command key: ⌘ on macOS, Ctrl elsewhere. Mac joins glyphs (⌘⇧S);
-// other platforms use "+" (Ctrl+Shift+S).
-function formatShortcut(token: string, mac: boolean): string {
-  return token
-    .split('-')
-    .map((part) => {
-      if (part === 'Mod') return mac ? '⌘' : 'Ctrl';
-      if (part === 'Alt') return mac ? '⌥' : 'Alt';
-      if (part === 'Shift') return mac ? '⇧' : 'Shift';
-      return part.toUpperCase();
-    })
-    .join(mac ? '' : '+');
+// TipTap keymap token ("Mod-Shift-s") → the keys a reader presses, one per element. "Mod" is the
+// platform command key: ⌘ on macOS, Ctrl elsewhere. Split out from formatShortcut below for
+// WritingHelpDialog, which draws a cap per key and so needs the parts rather than the joined line.
+export function shortcutParts(token: string, mac: boolean): string[] {
+  return token.split('-').map((part) => {
+    if (part === 'Mod') return mac ? '⌘' : 'Ctrl';
+    if (part === 'Alt') return mac ? '⌥' : 'Alt';
+    if (part === 'Shift') return mac ? '⇧' : 'Shift';
+    // A named key keeps its own spelling — `Enter` reads as shouting once uppercased, and the
+    // uppercase is only there to make a single letter look like a key cap (`ariaKeyshortcuts`
+    // below already draws the same line).
+    return part.length === 1 ? part.toUpperCase() : part;
+  });
+}
+
+// The same keys as one label, for the tooltip. Mac joins glyphs (⌘⇧S); other platforms use "+"
+// (Ctrl+Shift+S) — **which is also what decides how many caps the help sheet draws**: the separator
+// is the platform saying where one key ends, so a surface that splits on it is splitting where the
+// platform already does.
+export function formatShortcut(token: string, mac: boolean): string {
+  return shortcutParts(token, mac).join(mac ? '' : '+');
 }
 
 // Same token in the ARIA-mandated form (proper modifier names, "+"-joined), so

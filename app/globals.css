@@ -222,6 +222,17 @@ body {
   }
 }
 
+/* 書き方 (docs/cms-features.md「書き方ヘルプ」§2), pointer only. Every row the sheet holds is
+   either a key or something typed, and it is a second opinion on the tooltips above — which do not
+   exist under `hover: none` either, so the surface that loses this one loses nothing it could have
+   used. It has no touch twin, so it hides by its own class rather than wearing `.pointer-only`:
+   that marker pair is for a control written twice (see its comment further down). */
+@media (hover: none) {
+  .editor-help-button {
+    display: none;
+  }
+}
+
 /* Editor chrome, touch only: no ring around a toolbar button's pressable area (superseded
    2026-09-19 — §12.2 originally drew one here; docs/table-requirements.md §12.2 records why it
    came back off, everywhere, rather than staying scoped to the mark row §12.12 had carved out).
