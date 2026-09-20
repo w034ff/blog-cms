@@ -88,7 +88,7 @@ export function ThumbnailField({ value, onChange, body }: Props) {
               type='button'
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+              className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
               {uploading ? 'アップロード中…' : value ? '変更' : '画像を選ぶ'}
             </button>
             {value !== '' && (

@@ -233,6 +233,54 @@ body {
   }
 }
 
+/* The header's three glyphs (記事一覧, ヘルプ, 記事の設定) are 36px circles on a pointer, the same
+   shape touch gives them at its own 34px (§12.6 / §12.8, requested 2026-09-21). Without it each one
+   is a 16px icon in a 24px box: the hover background then reads as a small rounded smudge behind
+   the glyph rather than as a control, and the three do not line up with each other.
+
+   `min-height` pairs with `min-width` for the reason `.toolbar-button-history` records — the icon
+   is a block-level `<svg>`, so any width a `min-width` adds lands to its right unless flex centres
+   it. The negative margins on the two end controls are re-set here: they exist to keep the glyph
+   flush with the column edge (the title's left edge below 記事一覧), and a 36px box holds its icon
+   10px in, not 4px, so the old `-mx-1` would leave the arrow visibly indented. */
+@media (hover: hover) {
+  .editor-back-link,
+  .editor-help-button,
+  .editor-settings-link {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+    border-radius: 9999px;
+  }
+  /* 18px glyphs, not the 16px the icon components default to: at 16 the glyph is 44% of the box
+     and reads as adrift in it — the same thing reported about the touch header on 2026-09-17, now
+     that this side has the same shape. 18 is half the box, which is where GitHub (16/32) and
+     Material (24/48) both sit. 20 was tried and is too loud beside 投稿's 14px label; the header is
+     chrome with one principal (rendered and compared 2026-09-21).
+
+     Pointer only, so the touch header stays internally consistent: its ＋ (InsertMenu) is a header
+     control too and keeps 16px, and this side has no ＋ to match. */
+  .editor-back-link svg,
+  .editor-help-button svg,
+  .editor-settings-link svg {
+    height: 18px;
+    width: 18px;
+  }
+  .editor-back-link {
+    /* 9px, not 10: the box holds its 18px glyph 9px in, and this is what keeps the arrow's own left
+       edge flush with the title input's below it (measured). It moved with the glyph — at 16px the
+       inset was 10px — so the two numbers have to be changed together. */
+    margin-left: -9px;
+  }
+  /* The gear is NOT at the column's right edge — the divider and 投稿 follow it — so it gets no
+     negative margin at all here, and the Tailwind `-mr-1` it wears for the touch layout is undone.
+     Pulled in either way, the 36px box sits on top of the divider (reported 2026-09-21): what the
+     circle needs on that side is the group's own `gap-2`, not less. */
+  .editor-settings-link {
+    margin-right: 0;
+  }
+}
+
 /* Editor chrome, touch only: no ring around a toolbar button's pressable area (superseded
    2026-09-19 — §12.2 originally drew one here; docs/table-requirements.md §12.2 records why it
    came back off, everywhere, rather than staying scoped to the mark row §12.12 had carved out).
@@ -668,9 +716,6 @@ body {
 
      Round: the arrow shape already reads as "back" on its own. `border-radius` overrides
      `.toolbar-button`'s `rounded` at equal specificity by coming later in the cascade. */
-  .editor-back-label {
-    display: none;
-  }
   .unlisted-badge-full,
   .autosave-status-full {
     display: none;
@@ -685,9 +730,6 @@ body {
     border-radius: 9999px;
   }
   /* ＋ and 記事の設定's gear (§12.8): `round` (ToolbarButton) already gives ＋ its `rounded-full`. */
-  .editor-settings-label {
-    display: none;
-  }
   .editor-settings-link {
     min-width: 40px;
     justify-content: center;
@@ -729,7 +771,7 @@ body {
    .toolbar-insert` used to, on the belief that specificity was what settled it.)
 
    Only the pairs wear these. A control that is simply absent on one surface (`.editor-tooltip`,
-   `.toolbar-button-history`, `.editor-back-label`) has no twin to be confused with, and the header
+   `.toolbar-button-history`, `.editor-help-button`) has no twin to be confused with, and the header
    badges reveal with a positive `display` over a Tailwind `hidden` rather than hiding — a marker
    that only asserts `display: none` cannot state either, and marking everything would mark
    nothing. */
@@ -748,12 +790,6 @@ body {
    the toolbar, where it has always been. Stated as "hide where there is hover" for the same reason
    the history pair is. */
 @media (hover: hover) {
-  /* …and a pointer keeps the words, so the arrow is the half that goes (§12.6), and the gear's
-     half does too (§12.8). */
-  .editor-back-icon,
-  .editor-settings-icon {
-    display: none;
-  }
   .unlisted-badge-dot,
   .autosave-status-compact {
     display: none;

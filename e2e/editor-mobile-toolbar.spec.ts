@@ -404,8 +404,12 @@ test.describe('on an emulated phone', () => {
     // the markup (§12.6).
     const back = page.getByRole('link', { name: '記事一覧' });
     await expect(back).toBeVisible();
-    await expect(page.locator('.editor-back-label')).toBeHidden();
-    await expect(page.locator('.editor-back-icon')).toBeVisible();
+    // Icon alone: the glyph, plus the tooltip span — which `hover: none` does not paint at all
+    // (app/globals.css), so nothing but the arrow is on screen and the name above is the only one
+    // there is. `toHaveText` reads textContent, which a tooltip's own words would satisfy, so the
+    // claim is made against what is painted instead.
+    await expect(back.locator('.editor-tooltip')).toBeHidden();
+    await expect(back.locator(':scope > *:not(svg):not(.editor-tooltip)')).toHaveCount(0);
 
     // Square at the header's own touch floor: one 16px icon in a box that a `min-height` alone
     // would have left a sliver (§12.3's pairing) — 34px here, not the app-wide 40px, since
@@ -423,8 +427,8 @@ test.describe('on an emulated phone', () => {
     // Same test as the back arrow (§12.6): the icon-only side still needs the word as its name.
     const settings = page.getByRole('button', { name: '記事の設定' });
     await expect(settings).toBeVisible();
-    await expect(page.locator('.editor-settings-label')).toBeHidden();
-    await expect(page.locator('.editor-settings-icon')).toBeVisible();
+    await expect(settings.locator('.editor-tooltip')).toBeHidden();
+    await expect(settings.locator(':scope > *:not(svg):not(.editor-tooltip)')).toHaveCount(0);
 
     // 34px here too — see the back-arrow test above for why this isn't the app-wide 40px floor.
     const box = (await settings.boundingBox())!;
@@ -596,11 +600,24 @@ test('a pointer keeps the toolbar it had', async ({ page }) => {
     await expect(bar(page).getByRole('button', { name, exact: true })).toBeVisible();
   }
   await expect(bar(page).getByTestId('image-picker')).toHaveCount(1);
-  // And the way out is still words, not an arrow (§12.6), and 記事の設定 is still words too (§12.8).
-  await expect(page.locator('.editor-back-label')).toBeVisible();
-  await expect(page.locator('.editor-back-icon')).toBeHidden();
-  await expect(page.locator('.editor-settings-label')).toBeVisible();
-  await expect(page.locator('.editor-settings-icon')).toBeHidden();
+  // And the header's own controls are icons on this surface too (§12.6, §12.8, 2026-09-21): the
+  // words moved into `aria-label` and a hover tooltip, so a pointer has no painted text here
+  // either. Asserted through the name, which is what survives the change and what a screen reader
+  // and a voice-control user actually use.
+  const back = page.getByRole('link', { name: '記事一覧' });
+  const settings = page.getByRole('button', { name: '記事の設定' });
+  await expect(back).toBeVisible();
+  await expect(settings).toBeVisible();
+  await expect(back.locator(':scope > *:not(svg):not(.editor-tooltip)')).toHaveCount(0);
+  await expect(settings.locator(':scope > *:not(svg):not(.editor-tooltip)')).toHaveCount(0);
+  // The tooltip is what gives the word back, and only on hover: at rest it is transparent, so the
+  // header reads as three glyphs. Measured as opacity rather than visibility because that is how
+  // the bubble is revealed (`group-hover/tt:opacity-100`, on a 300ms delay).
+  const tip = back.locator('.editor-tooltip');
+  await expect(tip).toHaveText('記事一覧');
+  await expect(tip).toHaveCSS('opacity', '0');
+  await back.hover();
+  await expect(tip).toHaveCSS('opacity', '1');
   // The mark row's group divider (§12.12) stands in for the ring a pointer never lost — a pointer
   // still has `hover:bg-zinc-100`, so it never needed either.
   await expect(page.locator('.toolbar-mark-divider').first()).toBeHidden();

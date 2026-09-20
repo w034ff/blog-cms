@@ -25,6 +25,7 @@ import { useDragContainment } from './editor/useDragContainment';
 import { useMeasuredHeight } from './editor/useMeasuredHeight';
 import { useKeyboardInset } from './editor/useKeyboardInset';
 import { InsertMenu } from './editor/InsertMenu';
+import { EditorTooltip } from './editor/EditorTooltip';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
@@ -591,21 +592,19 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         // comment for the tradeoff (editor-narrow-menus.spec.ts §12.3/12k updated to match).
         className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
         <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
-          {/* Hover is a background, not an underline, so this reads as the same kind of control as
-              記事の設定 further along the line rather than as prose. `-mx-1` cancels the padding
-              the background needs, which keeps the text itself flush with the title's left edge
-              below it — 記事の設定 carries `-mr-1` for the same reason on its side.
+          {/* **Icon alone on both surfaces** (docs/table-requirements.md §12.6), with the name in
+              `aria-label` and an `EditorTooltip` on hover. It was words on a pointer and an arrow on
+              touch until 2026-09-21, written as the §12.4 two-span pair; the pair is gone now, and
+              with it the media query that painted one half.
 
-              On a phone it is the arrow alone (docs/table-requirements.md §12.6). Both are in the
-              markup at every width and one media query decides which is painted — §12.4's idiom,
-              not a `matchMedia` read. `toolbar-button` is the hook that gives the icon-only form
-              its touch height and its ring: the class carries no styling of its own, and the 画像
-              picker is the existing precedent for a non-<button> wearing it.
+              **The header is chrome, and now it is one kind of chrome**: three icons and the one
+              button that publishes. The mixed row is what made this worth changing — ヘルプ arrived
+              as a glyph beside two words, and aligning on words would have meant labelling a `?`.
 
-              `aria-label` rather than letting the text span name it, because that span is
-              `display: none` on the side where the name is most needed. It repeats the visible
-              words verbatim, so the desktop label is contained in the accessible name
-              (WCAG 2.5.3). */}
+              `-mx-1` cancels the padding the hover background needs, keeping the glyph flush with
+              the title's left edge below it. `aria-label` rather than visible text: there is no
+              visible text left, and the tooltip is `aria-hidden` (it echoes a name AT already has).
+              WCAG 2.5.3 does not apply where nothing is painted. */}
           <Link
             href='/admin'
             aria-label='記事一覧'
@@ -614,11 +613,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             // `pointerup`/`click` — the same class of hijack useImageUpload's drag guard exists
             // for, just on a link instead of an image.
             onDragStart={(event) => event.preventDefault()}
-            className='toolbar-button editor-back-link -mx-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
-            <span className='editor-back-icon'>
-              <ArrowLeftIcon />
-            </span>
-            <span className='editor-back-label'>記事一覧</span>
+            className='toolbar-button editor-back-link group/tt relative -mx-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+            <ArrowLeftIcon />
+            <EditorTooltip label='記事一覧' />
           </Link>
           {/* On the left, with the autosave state, because it is the same kind of thing: this end
               of the bar says what is true about the post, the other end says what can be done to
@@ -706,13 +703,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 onOpenChange={setInsertMenuOpen}
               />
             )}
-            {/* A gear on a phone (docs/table-requirements.md §12.8) — not the §12.6 arrow's
-                reasoning (this glyph is not a universal convention the way "back" is), but the
-                §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu of
-                loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル・
-                限定公開). A gear is specific to "settings" without a label; an overflow glyph is
-                not. Same two-span idiom as 記事一覧, and `aria-label` for the same reason — the
-                word only names the icon-only side, the icon is `aria-hidden`. */}
             {/* ヘルプ — the input rules, the slash menu and the keys, in one sheet
                 (docs/cms-features.md「書き方ヘルプ」§2). On the pointer side only
                 (`editor-help-button`, app/globals.css): every row it holds is either a key or
@@ -729,20 +719,26 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               aria-label='ヘルプ'
               aria-haspopup='dialog'
               onClick={() => setHelpOpen(true)}
-              className='editor-help-button toolbar-button inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              className='editor-help-button toolbar-button group/tt relative inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
               <HelpIcon />
+              <EditorTooltip label='ヘルプ' />
             </button>
+            {/* A gear on both surfaces now (docs/table-requirements.md §12.8) — not the §12.6
+                arrow's reasoning (this glyph is not a universal convention the way "back" is), but
+                the §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu
+                of loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル・
+                限定公開). A gear is specific to "settings" without a label; an overflow glyph is not.
+                The word survives as `aria-label` and as the tooltip, and `aria-expanded` still says
+                whether the panel is open — which is the part a glyph could never carry. */}
             <button
               type='button'
               aria-expanded={settingsOpen}
               aria-controls={SETTINGS_PANEL_ID}
               aria-label='記事の設定'
               onClick={() => setSettingsOpen((open) => !open)}
-              className='toolbar-button editor-settings-link -mr-1 inline-flex items-center rounded px-1 text-sm font-medium hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-              <span className='editor-settings-icon'>
-                <SettingsIcon />
-              </span>
-              <span className='editor-settings-label'>記事の設定</span>
+              className='toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              <SettingsIcon />
+              <EditorTooltip label='記事の設定' />
             </button>
             {/* A rule, not a gap: 記事の設定 is a toggle sitting next to the one button that
                 publishes. Zenn separates the same two the same way. `aria-hidden` because it divides nothing a screen reader needs —
@@ -762,7 +758,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               // and its `py-2` sizing (36px, text-sm's own line-height) was the tallest thing in
               // the header once every other control dropped to 34px — this pins it to match on a
               // phone, leaving the desktop `py-2` shape alone (requested 2026-09-20).
-              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
               {publishLabel}
             </button>
           </span>
@@ -890,7 +886,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                     name='intent'
                     value='unpublish'
                     disabled={pending}
-                    className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                    className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
                     下書きに戻す
                   </button>
                 </div>
