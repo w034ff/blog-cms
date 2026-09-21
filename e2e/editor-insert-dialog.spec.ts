@@ -444,7 +444,7 @@ test('Escape and the backdrop close the dialog without inserting (24f)', async (
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
   await expect(dialog(page).getByLabel('URL または埋め込みコード')).toHaveValue('');
-  await page.locator('div[role="dialog"]').press('Escape');
+  await dialog(page).press('Escape');
   await expect(dialog(page)).toHaveCount(0);
 });
 

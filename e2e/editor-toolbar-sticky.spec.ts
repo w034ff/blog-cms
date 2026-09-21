@@ -27,10 +27,12 @@ test('the sticky header stays pinned when scrolling a long post', async ({ page 
       const box = await heading.boundingBox();
       return box?.y ?? -1;
     })
-    // Pinned near the top rather than scrolled off. Measured at 47 with the publish row
-    // above the toolbar inside the same sticky header; the bound is that plus slack, not a
-    // round number, so a row that grows tall enough to push the toolbar down is caught.
-    .toBeLessThan(60);
+    // Pinned near the top rather than scrolled off. Measured at 63 with the publish row
+    // above the toolbar inside the same sticky header (63 rather than 47 since 8948d8b's
+    // `py-3` matched the header's height to SiteHeader's touch floor); the bound is that
+    // plus slack, not a round number, so a row that grows tall enough to push the toolbar
+    // down is caught.
+    .toBeLessThan(76);
   await expect(heading).toBeInViewport();
 
   // The publish controls ride the same pinned header. They used to sit below the whole
