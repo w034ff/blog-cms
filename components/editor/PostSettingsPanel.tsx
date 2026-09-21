@@ -24,7 +24,7 @@ import { useBodyScrollLock } from './useBodyScrollLock';
 //
 // **Always mounted, never conditionally rendered**, unlike InsertMenu. Its children are form
 // fields — useAutosave and publish both read the live form with `new FormData(form)`, so a field
-// that leaves the document leaves the payload (限定公開 would silently clear itself and the
+// that leaves the document leaves the payload (カテゴリ would fall back to its default and the
 // thumbnail would come off, the hazard the original inline panel's own comment recorded). `open`
 // never toggles mounting — a hidden form control still submits, which is the property this
 // component exists to keep — only a class (`.is-open`, on the stable `post-settings-backdrop`/
@@ -54,15 +54,9 @@ type Props = {
   onCategoryChange: (value: string) => void;
   tags: string;
   onTagsChange: (value: string) => void;
-  descriptionDefaultValue: string;
   thumbnail: string;
   onThumbnailChange: (value: string) => void;
   body: string;
-  unlisted: boolean;
-  onUnlistedChange: (checked: boolean) => void;
-  // Bumped on every action result, and used as a `key` to remount the 限定公開 checkbox — see
-  // PostEditor.tsx's own comment on why a controlled checkbox needs it after a form reset.
-  formResetNonce: number;
   isPublished: boolean;
   pending: boolean;
 };
@@ -74,13 +68,9 @@ export function PostSettingsPanel({
   onCategoryChange,
   tags,
   onTagsChange,
-  descriptionDefaultValue,
   thumbnail,
   onThumbnailChange,
   body,
-  unlisted,
-  onUnlistedChange,
-  formResetNonce,
   isPublished,
   pending,
 }: Props) {
@@ -206,25 +196,7 @@ export function PostSettingsPanel({
               className={inputClass}
             />
           </Field>
-          <Field label='説明'>
-            <input
-              name='description'
-              defaultValue={descriptionDefaultValue}
-              className={inputClass}
-            />
-          </Field>
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          <label className='flex items-center gap-2 text-sm'>
-            <input
-              key={formResetNonce}
-              type='checkbox'
-              name='unlisted'
-              checked={unlisted}
-              onChange={(event) => onUnlistedChange(event.target.checked)}
-              className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-            />
-            <span>限定公開にする</span>
-          </label>
           {/* 下書きに戻す lives here rather than beside 更新 in the header. It is never wanted from
           the middle of writing, and a pinned bar would keep an unpublish one click away for the
           whole session; the panel is opened deliberately, which is the right gate for it. Zenn

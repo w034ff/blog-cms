@@ -827,11 +827,9 @@ body {
 
      Round: the arrow shape already reads as "back" on its own. `border-radius` overrides
      `.toolbar-button`'s `rounded` at equal specificity by coming later in the cascade. */
-  .unlisted-badge-full,
   .autosave-status-full {
     display: none;
   }
-  .unlisted-badge-dot,
   .autosave-status-compact {
     display: inline-block;
   }
@@ -901,7 +899,6 @@ body {
    the toolbar, where it has always been. Stated as "hide where there is hover" for the same reason
    the history pair is. */
 @media (hover: hover) {
-  .unlisted-badge-dot,
   .autosave-status-compact {
     display: none;
   }

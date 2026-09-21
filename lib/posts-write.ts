@@ -9,13 +9,11 @@ export type PostInput = {
   slug: string;
   title: string;
   date: string;
-  description: string;
   category: string;
   tags: string[];
   draft: boolean;
   body: string;
   thumbnail: string;
-  unlisted: boolean;
 };
 
 // The two ways content reaches the server disagree about line endings: autosave posts JSON and

@@ -13,12 +13,10 @@ const emptyInitial: PostEditorInitial = {
   id: null,
   slug: '',
   title: '',
-  description: '',
   category: DEFAULT_CATEGORY,
   tags: [],
   body: '',
   thumbnail: '',
-  unlisted: false,
 };
 
 export default function NewPostPage() {

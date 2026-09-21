@@ -58,11 +58,9 @@ function seed(options: SeedOptions = {}): number {
 // this is a published post's own content parked in draft_content, which is what the race produces.
 const LIVE_CONTENT: DraftContent = {
   title: 'Live',
-  description: '',
   category: 'cat',
   tags: ['x'],
   thumbnail: '',
-  unlisted: false,
   body: 'live body',
 };
 
@@ -150,11 +148,9 @@ describe('listAllPosts (admin)', () => {
   it('flags a published post that is carrying unpublished edits', async () => {
     const working: DraftContent = {
       title: 'Newer',
-      description: '',
       category: 'cat',
       tags: [],
       thumbnail: '',
-      unlisted: false,
       body: 'newer body',
     };
     seed({ slug: 'pending', date: '2026-02-02', draftContent: working });
@@ -186,11 +182,9 @@ describe('listAllPosts (admin)', () => {
   // of the comparison would make the post silently publishable-looking while carrying an edit.
   const fieldEdits: [string, Partial<DraftContent>][] = [
     ['title', { title: 'Renamed' }],
-    ['description', { description: 'new desc' }],
     ['category', { category: 'other' }],
     ['body', { body: 'new body' }],
     ['thumbnail', { thumbnail: '/uploads/a.png' }],
-    ['unlisted', { unlisted: true }],
     ['tags (changed)', { tags: ['y'] }],
     ['tags (added)', { tags: ['x', 'y'] }],
     ['tags (removed)', { tags: [] }],
@@ -217,7 +211,6 @@ describe('listAllPosts (admin)', () => {
   it('does not flag a working copy that merely predates a field', async () => {
     const legacy = {
       title: 'Live',
-      description: '',
       category: 'cat',
       tags: ['x'],
       body: 'live body',
@@ -233,17 +226,40 @@ describe('listAllPosts (admin)', () => {
     const [row] = await listAllPosts();
     expect(row.hasPendingEdits).toBe(false);
   });
+
+  // The reverse of the case above: a working copy stashed before 2026-09-21 carries keys the type
+  // no longer has — the description field (docs/cms-features.md「説明文の自動抽出」) and 限定公開
+  // (「非公開限定URL投稿」). They must be ignored, not read as an edit.
+  it('does not flag a working copy that carries retired keys', async () => {
+    const stale = {
+      title: 'Live',
+      description: 'old summary',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      thumbnail: '',
+      unlisted: true,
+    } as unknown as DraftContent;
+    seed({
+      slug: 'stale',
+      title: 'Live',
+      category: 'cat',
+      tags: ['x'],
+      body: 'live body',
+      draftContent: stale,
+    });
+    const [row] = await listAllPosts();
+    expect(row.hasPendingEdits).toBe(false);
+  });
 });
 
 describe('getPostForEdit', () => {
   it('returns the pending working copy when present', async () => {
     const pending: DraftContent = {
       title: 'Pending',
-      description: 'd',
       category: 'cat',
       tags: ['x'],
       thumbnail: '',
-      unlisted: false,
       body: 'pending body',
     };
     const id = seed({ slug: 'p', draft: false, draftContent: pending });
@@ -257,14 +273,12 @@ describe('getPostForEdit', () => {
     // never ran. Cast because the whole point is a stored value that does not match the type.
     const legacy = {
       title: 'Pending',
-      description: 'd',
       category: 'cat',
       tags: ['x'],
       body: 'pending body',
     } as DraftContent;
     const id = seed({ slug: 'p', draft: false, draftContent: legacy });
     expect((await getPostForEdit(id))?.draftContent?.thumbnail).toBe('');
-    expect((await getPostForEdit(id))?.draftContent?.unlisted).toBe(false);
   });
 
   it('returns null draftContent when there are no pending edits', async () => {

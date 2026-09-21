@@ -253,7 +253,7 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
   );
 }
 
-// 記事の設定 starts closed, so a spec that touches カテゴリ, タグ, 説明, サムネイル or 限定公開
+// 記事の設定 starts closed, so a spec that touches カテゴリ, タグ or サムネイル
 // has to open it first. Idempotent: a panel already open is left alone rather than toggled shut.
 //
 // The toggle is a <button> on the editor's pinned bar and the panel is a modal drawer

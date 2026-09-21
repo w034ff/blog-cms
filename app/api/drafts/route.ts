@@ -16,7 +16,6 @@ const autosaveSchema = z.object({
   id: z.number().int().optional(),
   content: z.object({
     title: z.string().catch(''),
-    description: z.string().catch(''),
     category: z.string().catch(''),
     tags: z.array(z.string()).catch([]),
     body: z.string().catch(''),
@@ -28,7 +27,6 @@ const autosaveSchema = z.object({
       .string()
       .transform((value) => (isUploadPath(value) ? value : ''))
       .catch(''),
-    unlisted: z.boolean().catch(false),
   }),
 });
 

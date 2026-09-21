@@ -29,24 +29,20 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     slug: 'slug',
     title: 'Title',
     date: '2026-01-01',
-    description: '',
     category: 'uncategorized',
     tags: [],
     draft: true,
     body: 'body',
     thumbnail: '',
-    unlisted: false,
     ...overrides,
   });
 }
 
 const content: DraftContent = {
   title: 'Edited',
-  description: 'desc',
   category: 'cat',
   tags: ['a', 'b'],
   thumbnail: '',
-  unlisted: false,
   body: 'edited body',
 };
 

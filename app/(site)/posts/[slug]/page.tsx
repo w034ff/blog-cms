@@ -12,6 +12,7 @@ import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import type { Post } from '@/lib/types';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
+import { excerptFromBody } from '@/lib/excerpt';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
@@ -72,7 +73,7 @@ async function resolveCard(href: string): Promise<CardTarget | null> {
   // reaches the same function through `/api/posts/search`.
   return {
     title: target.title,
-    description: target.description,
+    description: excerptFromBody(target.body),
     image: internalCardImage(resolveThumbnail(target)),
   };
 }
@@ -110,9 +111,12 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     return { title: `[下書き] ${post.title}`, robots: { index: false, follow: false } };
   }
   const thumbnail = resolveThumbnail(post);
+  // The body's opening (lib/excerpt.ts). A post with no prose at all leaves it unset, so the
+  // layout's site description stands in rather than an empty tag.
+  const description = excerptFromBody(post.body) || undefined;
   return {
     title: post.title,
-    description: post.description,
+    description,
     openGraph: {
       // Spread, not replaced: setting `openGraph` here overrides the layout's
       // object wholesale, so siteName and locale have to come along or this one
@@ -129,7 +133,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
       ...(thumbnail ? { images: [{ url: thumbnail, alt: post.title }] } : {}),
       type: 'article',
       title: post.title,
-      description: post.description,
+      description,
       // Relative, resolved against metadataBase — the canonical address of the
       // post, so a share from a proxied or query-decorated URL still points here.
       url: `/posts/${slug}`,

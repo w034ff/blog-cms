@@ -1,12 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  closePostSettings,
-  expectAutosaved,
-  expectDraft,
-  expectPublished,
-  loadMarkdown,
-  openPostSettings,
-} from './editor-authoring';
+import { expectAutosaved, expectDraft, expectPublished, loadMarkdown } from './editor-authoring';
 
 // The editor's chrome is two stacked sticky layers: the page header (記事一覧 / the autosave
 // state / 記事の設定 / 更新) and the format toolbar inside the editor frame. The toolbar pins
@@ -213,59 +206,6 @@ test('the header rule spans the window while its contents keep the column', asyn
   const glyphBox = await box(page, page.getByRole('link', { name: '記事一覧' }).locator('svg'));
   expect(Math.abs(glyphBox.x - titleBox.x)).toBeLessThanOrEqual(1);
   expect(titleBox.width).toBeLessThan(pageWidth);
-});
-
-test('the 限定公開 chip sits with the state, left of the controls', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/admin/posts/new');
-  await expect(page.locator('.ProseMirror')).toBeVisible();
-
-  // The chip renders only for an unlisted post, so it has to actually be set — a version of this
-  // test that skipped the checkbox would pass against a bar that never draws the chip at all.
-  const chip = page.getByText('限定公開', { exact: true });
-  await expect(chip).toHaveCount(0);
-  await openPostSettings(page);
-  await page.getByRole('checkbox', { name: '限定公開にする' }).check();
-
-  await expect(chip).toBeVisible();
-  const chipBox = await box(page, chip);
-  const backBox = await box(page, page.getByRole('link', { name: '記事一覧' }));
-  const settingsBox = await box(page, page.getByRole('button', { name: '記事の設定' }));
-
-  // The left end of the bar is what is true about the post; the right end is what can be done to
-  // it. The chip is a state, so it belongs after the way out and well before the controls.
-  expect(chipBox.x).toBeGreaterThan(backBox.x);
-  expect(chipBox.x).toBeLessThan(settingsBox.x);
-});
-
-test('the autosave status never nudges the chip beside it', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/admin/posts/new');
-  await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.getByLabel('タイトル').fill('E2E chip shift');
-  await openPostSettings(page);
-  await page.getByRole('checkbox', { name: '限定公開にする' }).check();
-  // The panel is modal (PostSettingsPanel.tsx): its backdrop blocks the body until closed.
-  await closePostSettings(page);
-
-  const chip = page.getByText('限定公開', { exact: true });
-  await expect(chip).toBeVisible();
-
-  // Three positions, one per state the status passes through: silent, then 保存中… while the edit
-  // is in flight, then 保存済み ✓ once it lands. The strings are different widths, so an item
-  // placed after the status would sit somewhere different in each.
-  const atRest = (await box(page, chip)).x;
-
-  await page.locator('.ProseMirror').click();
-  await page.keyboard.type('Shift me.');
-  await expect(page.getByText('保存中…')).toBeVisible();
-  const whileSaving = (await box(page, chip)).x;
-
-  await expect(page.getByText('保存済み ✓')).toBeVisible();
-  const whenSaved = (await box(page, chip)).x;
-
-  expect(whileSaving).toBe(atRest);
-  expect(whenSaved).toBe(atRest);
 });
 
 test('the toolbar follows the header when a narrow viewport wraps it', async ({ page }) => {

@@ -29,7 +29,6 @@ import { EditorTooltip } from './editor/EditorTooltip';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
-import { LockIcon } from './editor/svg/LockIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
@@ -39,12 +38,10 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  description: string;
   category: string;
   tags: string[];
   body: string;
   thumbnail: string;
-  unlisted: boolean;
 };
 
 type Props = {
@@ -98,7 +95,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // change would buy nothing and 説明 already shows the uncontrolled shape works.
   const [category, setCategory] = useState(initial.category);
   const [tags, setTags] = useState(initial.tags.join(', '));
-  const [unlisted, setUnlisted] = useState(initial.unlisted);
   // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
   // down, below the fold on a 600px-tall window, which is the opposite of what folding these
   // fields away is for. A new post is not left guessing: the category arrives pre-filled
@@ -147,24 +143,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Live visibility, and whether the editor holds edits not yet pushed public.
   const [isPublished, setIsPublished] = useState(published);
   const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
-  // Bumped on every action result, and used as a `key` to remount the 限定公開 checkbox.
-  //
-  // React 19 resets the form once a server action settles, and a reset restores each control to
-  // its default. A controlled text input is unaffected: React keeps its default in step with the
-  // value it renders. A controlled checkbox is not — `defaultChecked` stays false however the box
-  // is rendered, so the reset turns it off. React state still says true, and because the rendered
-  // `checked` prop did not change between those two renders React never writes the DOM property
-  // back, so the box sits unchecked until some later render happens to touch it.
-  //
-  // Measured 2026-09-13, after 更新 on a post just marked 限定公開: checked=false with
-  // defaultChecked=false while the state behind it was still true, and `new FormData(form)` —
-  // what autosave and publish both read — reported no `unlisted` at all. Ctrl/⌘+S in that window
-  // would have written the working copy back as public. Remounting re-runs the initial DOM write,
-  // which is the one path that sets `checked` from the prop unconditionally.
-  //
-  // Only this field needs it; title, カテゴリ, タグ, 説明, サムネイル and the body all came
-  // through the same 更新 intact.
-  const [formResetNonce, setFormResetNonce] = useState(0);
   // Whether 保存済み ✓ is still within its moment on screen, and the save it is answering for.
   const [savedNoticeShown, setSavedNoticeShown] = useState(false);
   const [noticedSavedAt, setNoticedSavedAt] = useState<number | null>(null);
@@ -297,8 +275,6 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       // published state below) so the field and 表示 link reflect the real URL.
       if (state.saved.slug !== null) setSlug(state.saved.slug);
     }
-    // Every result, not just a saved one: the reset follows the action settling, not its outcome.
-    setFormResetNonce((nonce) => nonce + 1);
   }
 
   // A thumbnail marked in the body (ImageBubble.tsx) drops back to the auto-fallback once its
@@ -605,32 +581,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               of the bar says what is true about the post, the other end says what can be done to
               it. A chip is a state, not a control. Ahead of the autosave state rather than after
               it — see there.
-
-              Only 限定公開 is reported. カテゴリ・タグ・サムネイル always hold a value — a
-              category is pre-filled, and 「タグなし」「サムネイルなし」 are the ordinary case —
-              so their chips said something on every post and therefore marked nothing. This one
-              is absent unless the post is unlisted, which is the state an author can otherwise
-              forget they set — and it is the one setting that changes who can read the post, on a
-              bar whose other end publishes. */}
-          {unlisted && (
-            <>
-              <span className='unlisted-badge-full rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-700 dark:bg-violet-950 dark:text-violet-300'>
-                限定公開
-              </span>
-              {/* Touch copy (app/globals.css): the header already wraps to two lines at 360px once
-                  this badge and the autosave status are both showing (measured 2026-09-18, both
-                  present on a real unlisted draft mid-autosave) — same "both copies in the DOM,
-                  one painted" idiom as 記事一覧/設定 above. A dot keeps the warning (still the one
-                  setting an author forgets they set) without the chip's width. */}
-              <span
-                className='unlisted-badge-dot hidden shrink-0 text-violet-500 dark:text-violet-400'
-                role='img'
-                aria-label='限定公開'
-                title='限定公開'>
-                <LockIcon />
-              </span>
-            </>
-          )}
+ */}
           {/* Last in this group, so nothing sits to its right but empty space. It is the only
               item on the bar whose width changes — 保存中… / 保存済み ✓ / 保存に失敗 differ, and
               it leaves entirely when it goes quiet — and it changes on every edit. Anything after
@@ -710,8 +661,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             {/* A gear on both surfaces now (docs/editor-requirements.md §12.8) — not the §12.6
                 arrow's reasoning (this glyph is not a universal convention the way "back" is), but
                 the §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu
-                of loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル・
-                限定公開). A gear is specific to "settings" without a label; an overflow glyph is not.
+                of loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル). A gear is specific to "settings" without a label; an overflow glyph is not.
                 The word survives as `aria-label` and as the tooltip, and `aria-expanded` still says
                 whether the panel is open — which is the part a glyph could never carry. */}
             <button
@@ -816,13 +766,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             onCategoryChange={setCategory}
             tags={tags}
             onTagsChange={setTags}
-            descriptionDefaultValue={initial.description}
             thumbnail={thumbnail}
             onThumbnailChange={applyThumbnail}
             body={body}
-            unlisted={unlisted}
-            onUnlistedChange={setUnlisted}
-            formResetNonce={formResetNonce}
             isPublished={isPublished}
             pending={pending}
           />

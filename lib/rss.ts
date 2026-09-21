@@ -1,6 +1,7 @@
 import 'server-only';
 import { siteOrigin } from '@/lib/site';
 import { SITE_DESCRIPTION, SITE_NAME } from '@/app/shared-metadata';
+import { excerptFromBody } from '@/lib/excerpt';
 import type { Post } from '@/lib/types';
 
 // How many items ship when the caller doesn't ask for `?all=1` — matches Zenn's
@@ -32,7 +33,7 @@ function buildItem(post: FeedPost): string {
     `<link>${link}</link>` +
     `<guid isPermaLink="true">${link}</guid>` +
     `<pubDate>${new Date(post.date).toUTCString()}</pubDate>` +
-    `<description>${wrapCdata(post.description)}</description>` +
+    `<description>${wrapCdata(excerptFromBody(post.body))}</description>` +
     '</item>'
   );
 }

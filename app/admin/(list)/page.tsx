@@ -89,17 +89,11 @@ export default async function AdminHome() {
                         下書き
                       </span>
                     )}
-                    {post.unlisted && (
-                      <span className='rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
-                        限定公開
-                      </span>
-                    )}
                     {/* Only ever on a published row — a draft's autosave writes the live columns,
                         so draft_content stays null (lib/posts.ts listAllPosts). It is here rather
                         than only in the editor because forgetting happens days later: inside the
                         editor the same state is the publish button being pressable, which you
-                        have to be in the editor to see. Sky, so it reads apart from 下書き's amber
-                        and 限定公開's violet. */}
+                        have to be in the editor to see. Sky, so it reads apart from 下書き's amber. */}
                     {post.hasPendingEdits && (
                       <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                         未公開の変更
@@ -132,10 +126,7 @@ export default async function AdminHome() {
                     ahead of time what the destination says on arrival (its 下書きのプレビュー
                     banner), and the row already carries the state — the 下書き badge above. (Not
                     the date column: `date` is stamped at first publish and never cleared, so a
-                    post taken back to a draft still shows one.)
-
-                    This row is also the only click-path to a 限定公開 post, which lib/posts.ts
-                    keeps out of every public listing. */}
+                    post taken back to a draft still shows one.) */}
                 {post.slug && (
                   <a
                     href={`/posts/${post.slug}`}

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Post } from '@/lib/types';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
+import { excerptFromBody } from '@/lib/excerpt';
 
 type Props = {
   post: Post;
@@ -19,6 +20,8 @@ export function PostCard({ post }: Props) {
   // first upload, which is what makes the existing archive show pictures without
   // anyone re-editing it (lib/thumbnail.ts).
   const thumbnail = resolveThumbnail(post);
+  // The body's opening, not a field — there is none (lib/excerpt.ts).
+  const excerpt = excerptFromBody(post.body);
   return (
     <article className='flex gap-4 border-b border-zinc-200 dark:border-zinc-800 py-6'>
       <div className='min-w-0 flex-1'>
@@ -38,8 +41,14 @@ export function PostCard({ post }: Props) {
             {post.category}
           </Link>
         </div>
-        {post.description && (
-          <p className='mt-3 text-zinc-700 dark:text-zinc-300'>{post.description}</p>
+        {/* Clamped by lines, not by EXCERPT_MAX_CHARS: that length is shared with the meta
+            description, og:description and RSS, which want the whole excerpt. Three lines on a
+            phone (about 36 characters beside a thumbnail — two would not hold a first sentence),
+            two from `sm`, the same break where the thumbnail grows (about 78 at full width). */}
+        {excerpt && (
+          <p className='mt-3 line-clamp-3 text-zinc-700 sm:line-clamp-2 dark:text-zinc-300'>
+            {excerpt}
+          </p>
         )}
         {post.tags.length > 0 && (
           <ul className='mt-3 flex flex-wrap gap-2'>

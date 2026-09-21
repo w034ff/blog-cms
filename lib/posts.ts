@@ -29,7 +29,6 @@ function toPost(row: PostRow): Post {
     slug: row.slug,
     title: row.title,
     date: row.date,
-    description: row.description,
     category: row.category,
     tags: tagsSchema.parse(row.tags),
     draft: row.draft,
@@ -101,12 +100,10 @@ export async function listAllPosts(): Promise<AdminPost[]> {
 export function liveContent(post: Post): DraftContent {
   return {
     title: post.title,
-    description: post.description,
     category: post.category,
     tags: post.tags,
     body: post.body,
     thumbnail: post.thumbnail,
-    unlisted: post.unlisted,
   };
 }
 
@@ -127,11 +124,9 @@ function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boo
   const live = liveContent(post);
   return (
     draftContent.title !== live.title ||
-    draftContent.description !== live.description ||
     draftContent.category !== live.category ||
     draftContent.body !== live.body ||
     draftContent.thumbnail !== live.thumbnail ||
-    draftContent.unlisted !== live.unlisted ||
     draftContent.tags.length !== live.tags.length ||
     draftContent.tags.some((tag, index) => tag !== live.tags[index])
   );
@@ -148,7 +143,7 @@ function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boo
 // for `tags` (`tagsSchema … .catch([])`). A field added to DraftContent later needs its default
 // added here too.
 function toDraftContent(stored: DraftContent): DraftContent {
-  return { ...stored, thumbnail: stored.thumbnail ?? '', unlisted: stored.unlisted ?? false };
+  return { ...stored, thumbnail: stored.thumbnail ?? '' };
 }
 
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {

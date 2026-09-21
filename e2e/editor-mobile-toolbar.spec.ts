@@ -1,5 +1,5 @@
 import { test, expect, devices, type BrowserContext, type Page } from '@playwright/test';
-import { closeHistory, closePostSettings, expectAutosaved, loadMarkdown } from './editor-authoring';
+import { closeHistory, expectAutosaved, loadMarkdown } from './editor-authoring';
 
 // Where the editor's chrome sits on a phone (docs/editor-requirements.md §12.5): the format controls
 // are a bar at the bottom of the screen, and 囲み枠・表・リンク・画像 are behind a ＋ in the page
@@ -477,31 +477,6 @@ test.describe('on an emulated phone', () => {
       (await page.getByRole('button', { name: '大見出し' }).boundingBox())!,
     ];
     expect(h2Box.x).toBeCloseTo(barBox.x, 0);
-  });
-
-  test('限定公開 is a lock icon on touch, and the header is one line with it', async ({ page }) => {
-    // §12.14: the header wraps to two lines at 360px once the 限定公開 chip and the autosave
-    // status are both showing (measured 2026-09-18) — unrelated to undo/redo, and pre-existing.
-    // The fix shrinks both to a glyph on touch rather than removing either (both carry a real
-    // warning — see PostEditor.tsx).
-    await openEditor(page);
-    await page.getByRole('button', { name: '記事の設定' }).click();
-    await page.getByRole('checkbox', { name: '限定公開にする' }).check();
-    // The panel is modal (PostSettingsPanel.tsx): its backdrop sits above the gear too, so
-    // closing it again takes ×, not a second click on the toggle that opened it.
-    await closePostSettings(page);
-
-    await expect(page.locator('.unlisted-badge-full')).toBeHidden();
-    const dot = page.locator('.unlisted-badge-dot');
-    await expect(dot).toBeVisible();
-    await expect(dot).toHaveAttribute('aria-label', '限定公開');
-    await expect(dot.locator('svg')).toBeVisible();
-
-    // The row this chip sits in stays one line — the thing §12.14 was written to fix. One line's
-    // height is the tallest single control in it (the 40px back arrow, §12.6), not less.
-    const row = page.locator('.editor-back-link').locator('..');
-    const rowHeight = await row.evaluate((el) => el.getBoundingClientRect().height);
-    expect(rowHeight).toBeLessThanOrEqual(40);
   });
 
   test('autosave is silent while saving, a checkmark once saved, worded on failure', async ({

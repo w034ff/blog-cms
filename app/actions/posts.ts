@@ -18,7 +18,6 @@ import type { DraftContent } from '@/lib/types';
 // stays lenient so partial work is never lost.
 const contentSchema = z.object({
   title: z.string().min(1),
-  description: z.string(),
   category: z.string().min(1),
   tags: z.array(z.string()),
   body: z.string(),
@@ -28,9 +27,6 @@ const contentSchema = z.object({
   // whole publish over one would be the wrong trade. `isUploadPath` is what
   // keeps an off-site URL out of `<img src>` and `og:image`.
   thumbnail: z.string().transform((value) => (isUploadPath(value) ? value : '')),
-  // Excluded from the home/tag/category listings and the RSS feed; still reachable at its own
-  // /posts/<slug> URL (docs/cms-features.md, 非公開限定URL投稿).
-  unlisted: z.boolean(),
 });
 
 export type PostFormState = {
@@ -63,15 +59,10 @@ function parseId(formData: FormData): number | null {
 function parseContent(formData: FormData): DraftContent | null {
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
-    description: field(formData, 'description'),
     category: field(formData, 'category') || DEFAULT_CATEGORY,
     tags: parseTags(field(formData, 'tags')),
     body: field(formData, 'body'),
     thumbnail: field(formData, 'thumbnail'),
-    // A checkbox is absent from FormData entirely when unchecked, so `field()`
-    // (which reads only string values) returns '' either way; 'on' is the
-    // browser's default value for a checked box with no explicit `value`.
-    unlisted: field(formData, 'unlisted') === 'on',
   });
   return parsed.success ? parsed.data : null;
 }
