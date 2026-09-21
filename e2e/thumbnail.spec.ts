@@ -66,7 +66,7 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
   // own status text needs it open and each body/title interaction needs it closed first.
   await openPostSettings(page);
   // Nothing chosen and nothing in the body: the field says so rather than showing a stale box.
-  await expect(page.getByText('未設定。本文に画像を入れると自動で使われます。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像が自動で入ります', { exact: true })).toBeVisible();
   await closePostSettings(page);
 
   await page.locator('.ProseMirror').click();
@@ -84,7 +84,7 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
   const preview = page.locator('input[name="thumbnail"]');
   await expect(preview).toHaveValue(UPLOAD_SRC);
   await openPostSettings(page);
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
   await closePostSettings(page);
 
   const chosen = await preview.inputValue();
@@ -126,14 +126,14 @@ test('解除 drops back to the body’s first image', async ({ page }) => {
   // modal (PostSettingsPanel.tsx), so it opens only for the checks that need it visible and closes
   // again before the next body/bubble interaction, which its own backdrop would otherwise block.
   await openPostSettings(page);
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   await closePostSettings(page);
 
   await bodyImages.nth(1).click();
   await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
   await openPostSettings(page);
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
   const secondSrc = await bodyImages.nth(1).getAttribute('src');
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(secondSrc ?? '');
 
@@ -143,7 +143,7 @@ test('解除 drops back to the body’s first image', async ({ page }) => {
   // just above.
   await page.getByRole('button', { name: '解除', exact: true }).click();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
 });
 
 // A marked image is a body reference, not an independent choice — deleting it from the body (via
@@ -181,7 +181,7 @@ test('deleting the marked image clears the thumbnail back to the fallback', asyn
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
   // The panel is modal (PostSettingsPanel.tsx), so this status text needs it open to be visible.
   await openPostSettings(page);
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
 });
 
 // The other route, and the one thing that can quietly undo it. A picture chosen through
@@ -216,7 +216,7 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   });
   const chosenField = page.locator('input[name="thumbnail"]');
   await expect(chosenField).toHaveValue(UPLOAD_SRC, { timeout: 20_000 });
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
   const chosen = await chosenField.inputValue();
   expect(chosen).not.toBe(bodySrc);
   await closePostSettings(page);

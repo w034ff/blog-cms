@@ -296,6 +296,17 @@ body {
    and 表's own dropdown triggers (`ToolbarDropdown` nests its `ToolbarButton` inside
    `.insert-menu-rows` regardless of which menu opened it), so this needed no prop threading
    through either component — one selector, not four call sites. */
+/* サムネイル's 画像を選ぶ / 変更 / 解除 (ThumbnailField.tsx): 30px on a pointer, the app's 40px floor on
+   touch. Were a 24px `py-1 text-xs`. */
+.thumbnail-field-button {
+  min-height: 30px;
+}
+@media (hover: none) {
+  .thumbnail-field-button {
+    min-height: 40px;
+  }
+}
+
 /* A dialog's close button (CloseButton.tsx) at the app's 40px touch floor; 36px on a pointer is
    the component's own `h-9 w-9`, matching 記事一覧's arrow. Unlayered, so it outranks the utilities. */
 @media (hover: none) {
