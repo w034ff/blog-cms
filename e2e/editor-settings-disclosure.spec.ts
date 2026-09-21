@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  closePostSettings,
   expectAutosaved,
   expectDraft,
   expectPublished,
@@ -23,13 +24,17 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await page.getByLabel('カテゴリ').fill('開発');
   await page.getByLabel('タグ（カンマ区切り）').fill('tiptap, prosemirror');
   await page.getByText('限定公開にする').click();
+
+  // The drawer is modal (PostSettingsPanel.tsx): its own backdrop catches a click into the body
+  // and closes the drawer rather than letting it through, so the panel has to be closed explicitly
+  // before typing — closing it here is also the state the assertions right below want to check.
+  await closePostSettings(page);
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Collapsed publish.');
 
   // Closed, 限定公開 is the one thing the top line still reports — カテゴリ and タグ always hold
   // a value, so a chip for them marked nothing and was dropped.
   const bar = page.locator('form > div').first();
-  await page.getByRole('button', { name: '記事の設定' }).click();
   await expect(page.getByLabel('カテゴリ')).toBeHidden();
   await expect(bar.getByText('限定公開', { exact: true })).toBeVisible();
 
@@ -41,7 +46,7 @@ test('values set inside 記事の設定 survive a publish made while it is close
   // that dropped them would come back with an empty category and the post listed publicly.
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.getByRole('button', { name: '記事の設定' }).click();
+  await openPostSettings(page);
   await expect(page.getByLabel('カテゴリ')).toHaveValue('開発');
   await expect(page.getByLabel('タグ（カンマ区切り）')).toHaveValue('tiptap, prosemirror');
   await expect(page.getByText('限定公開にする')).toBeVisible();
@@ -91,6 +96,8 @@ test('更新 does not clear 限定公開', async ({ page }) => {
   await page.getByText('限定公開にする').click();
   await expectAutosaved(page);
 
+  // The drawer is modal: its backdrop covers 更新 too, so it has to close before that click lands.
+  await closePostSettings(page);
   await page.getByRole('button', { name: '更新' }).click();
   await expectPublished(page);
   await expect(page.locator('input[name="unlisted"]')).toBeChecked();

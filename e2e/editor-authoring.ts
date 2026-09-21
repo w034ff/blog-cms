@@ -256,15 +256,27 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
 // 記事の設定 starts closed, so a spec that touches カテゴリ, タグ, 説明, サムネイル or 限定公開
 // has to open it first. Idempotent: a panel already open is left alone rather than toggled shut.
 //
-// The toggle is a <button> on the editor's pinned bar and the panel is a `hidden` div below it —
-// they are no longer one <details>, because the panel has to render outside the sticky block or
-// an open panel would pin its whole height to the top of the viewport. `aria-expanded` is what
-// ties them together, and it is what this reads.
+// The toggle is a <button> on the editor's pinned bar and the panel is a modal drawer
+// (PostSettingsPanel.tsx, docs/table-requirements.md §12.22) — `aria-expanded` ties them together,
+// and it is what this reads.
 export async function openPostSettings(page: Page): Promise<void> {
   const toggle = page.getByRole('button', { name: '記事の設定' });
   if ((await toggle.getAttribute('aria-expanded')) === 'true') return;
   await toggle.click();
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
+}
+
+// The drawer is modal: its own backdrop catches a click anywhere outside it, including into the
+// editor, and closes the drawer rather than letting the click reach through. A spec that opens
+// 記事の設定 and then needs the editor — to type, to publish, to do anything outside the panel —
+// has to close it explicitly first. Idempotent the same way openPostSettings is.
+export async function closePostSettings(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: '記事の設定' });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') return;
+  // Scoped to the panel: a bare `name: '閉じる'` is a substring match, and WritingHelpDialog's
+  // own close button carries the same name.
+  await page.locator('#post-settings-panel').getByRole('button', { name: '閉じる' }).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 }
 
 // The editor's publish state, read from the pinned row's `data-publish-state`.

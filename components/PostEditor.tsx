@@ -2,12 +2,11 @@
 
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
 import { isTrailingNodeOnlyUpdate } from './editor/trailing-node-extension';
-import { ThumbnailField } from './editor/ThumbnailField';
 import { isPublishableUri } from './editor/link-protocols';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
@@ -15,6 +14,7 @@ import { LinkBubble } from './editor/LinkBubble';
 import { ImageBubble } from './editor/ImageBubble';
 import { InsertDialog } from './editor/InsertDialog';
 import { WritingHelpDialog } from './editor/WritingHelpDialog';
+import { PostSettingsPanel, SETTINGS_PANEL_ID } from './editor/PostSettingsPanel';
 import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
@@ -60,13 +60,6 @@ type Props = {
 
 const emptyState: PostFormState = {};
 
-// The button is on the sticky bar and the panel is below it, so aria-controls has to name a
-// fixed id rather than rely on the two being nested.
-const SETTINGS_PANEL_ID = 'post-settings-panel';
-
-const inputClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
-
 // The title is the one metadata field that is always on screen, and the only one whose value
 // the reader sees, so it carries the weight the rest of the fields don't — and it is the only
 // one that can lose its label. A placeholder only works where the typed value names its own
@@ -91,15 +84,6 @@ const SAVED_NOTICE_MS = 3000;
 function blockImplicitSubmit(event: KeyboardEvent<HTMLDivElement>): void {
   if (event.key !== 'Enter') return;
   if (event.target instanceof HTMLInputElement) event.preventDefault();
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className='block text-sm'>
-      <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>{label}</span>
-      {children}
-    </label>
-  );
 }
 
 export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
@@ -736,7 +720,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               aria-controls={SETTINGS_PANEL_ID}
               aria-label='記事の設定'
               onClick={() => setSettingsOpen((open) => !open)}
-              className='toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              // `bg-zinc-200`/`dark:bg-zinc-700` while open, ToolbarButton's own `active` fill
+              // (ToolbarButton.tsx) rather than a bespoke treatment — this button predates that
+              // component and never picked up its states, so 記事の設定 was the one toggle in the
+              // header with no visible sign of being open beyond `aria-expanded` (requested
+              // 2026-09-21).
+              className={`toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 ${settingsOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}>
               <SettingsIcon />
               <EditorTooltip label='記事の設定' />
             </button>
@@ -811,88 +800,32 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               aria-label='記事タイトル'
               className={titleClass}
             />
-            {/* Below the title, not above it. The toggle is up on the top line and this opens here,
-            which separates them — `aria-controls` is what ties them back together. The reason is
-            measured: opened above, the panel pushed the title ~280px down and took the post off
-            the screen, so the author could not see which post they were setting up.
-
-            `hidden`, never `{settingsOpen && …}`: useAutosave reads the live form with
-            `new FormData(form)` and publish reads the same DOM, so a field that leaves the
-            document leaves the payload — 限定公開 would silently clear itself and the thumbnail
-            would come off. A hidden child is still in both.
-
-            It keeps its own blockImplicitSubmit even though the wrapper around it has one. The
-            guard belongs to these fields, not to a position: without it Enter in カテゴリ reaches
-            the form's first submit button, which is 投稿, and this panel has already moved twice. */}
-            <div
-              id={SETTINGS_PANEL_ID}
-              hidden={!settingsOpen}
-              onKeyDown={blockImplicitSubmit}
-              className='space-y-4 rounded border border-zinc-300 px-3 py-4 dark:border-zinc-700'>
-              <div className='grid gap-4 sm:grid-cols-2'>
-                <Field label='カテゴリ'>
-                  <input
-                    name='category'
-                    value={category}
-                    onChange={(event) => setCategory(event.target.value)}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label='タグ（カンマ区切り）'>
-                  <input
-                    name='tags'
-                    value={tags}
-                    onChange={(event) => setTags(event.target.value)}
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
-              <Field label='説明'>
-                <input
-                  name='description'
-                  defaultValue={initial.description}
-                  className={inputClass}
-                />
-              </Field>
-              {/* Paired on one row rather than given a grid cell each: the picker is 64px tall and
-            the checkbox is one line, so as grid siblings they left the row's baseline ragged. */}
-              <div className='flex flex-wrap items-end justify-between gap-6'>
-                <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
-                <label className='flex items-center gap-2 pb-1 text-sm'>
-                  <input
-                    key={formResetNonce}
-                    type='checkbox'
-                    name='unlisted'
-                    checked={unlisted}
-                    onChange={(event) => setUnlisted(event.target.checked)}
-                    className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-                  />
-                  <span>限定公開にする</span>
-                </label>
-              </div>
-              {/* 下書きに戻す lives here rather than beside 更新 in the header. It is never wanted
-              from the middle of writing, and a pinned bar would keep an unpublish one click away
-              for the whole session; the panel is opened deliberately, which is the right gate for
-              it. Zenn shapes the same pair this way — its header publishes, and taking a post
-              back down is in the settings. Rendered only for a published post, so the panel has
-              no dead control on a draft. */}
-              {isPublished && (
-                <div className='flex flex-wrap items-center justify-between gap-3 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
-                  <span className='text-sm text-zinc-600 dark:text-zinc-400'>
-                    この記事は公開されています。
-                  </span>
-                  <button
-                    type='submit'
-                    name='intent'
-                    value='unpublish'
-                    disabled={pending}
-                    className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-                    下書きに戻す
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
+
+          {/* A modal now, not an inline panel (PostSettingsPanel.tsx says why): opened while
+          scrolled deep into a long post, the panel used to render below the title and the author
+          had to scroll back up to reach it. `aria-controls` still ties the toggle to this by id.
+          A sibling of the `space-y-3` wrapper above, not a child inside it, because it is not
+          really one of the title's own fields — the component's `!mb-0` (PostSettingsPanel.tsx's
+          own comment) is what actually keeps it safe from `space-y-*`'s margin wherever it ends
+          up mounted, this placement included. */}
+          <PostSettingsPanel
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            category={category}
+            onCategoryChange={setCategory}
+            tags={tags}
+            onTagsChange={setTags}
+            descriptionDefaultValue={initial.description}
+            thumbnail={thumbnail}
+            onThumbnailChange={applyThumbnail}
+            body={body}
+            unlisted={unlisted}
+            onUnlistedChange={setUnlisted}
+            formResetNonce={formResetNonce}
+            isPublished={isPublished}
+            pending={pending}
+          />
 
           <div className='space-y-2'>
             {/* The frame must NOT be overflow-hidden: that would make the toolbar below pin to the

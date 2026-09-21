@@ -408,6 +408,102 @@ body {
   }
 }
 
+/* 記事の設定's own drawer (PostSettingsPanel.tsx), requested 2026-09-21. Not gated on `hover`,
+   unlike the ＋ sheet above: this is the one panel both a pointer and a touch device open (§12.6/
+   §12.8 only changed the toggle's own glyph, never this).
+
+   **The show/hide is unconditional; only the animation is gated.** This pair alone (no media
+   query) reproduces the plain instant toggle this used before it had a class of its own
+   (`open ? '…' : 'hidden'`, PostSettingsPanel.tsx's own history) — the block below only adds a
+   transition on top of the same two rules, so a reduced-motion viewer never enters it and keeps
+   the instant toggle. */
+.post-settings-backdrop,
+.post-settings-drawer {
+  display: none;
+}
+.post-settings-backdrop.is-open,
+.post-settings-drawer.is-open {
+  display: block;
+}
+
+/* **An exit half exists here, unlike the ＋ sheet's (dropped 2026-09-20, InsertMenu.tsx's own
+   comment).** That one was dropped because the sheet's own content unmounts on the very next
+   render once its `activeTitle` state goes null, well before a transition frame paints — animating
+   a wrapper around content that is already gone. This panel's fields never unmount (the same
+   `new FormData(form)` constraint recorded where `.is-open` is applied above), so `display` itself
+   can be transitioned with `transition-behavior: allow-discrete`: the browser keeps the box painted
+   for the full duration on the way out, and only then commits to `display: none` — the standard
+   pattern for animating to and from `display: none`, which needs both the `@starting-style` block
+   (the entrance) and this same pairing running in reverse (the exit) to work in both directions. */
+@media (prefers-reduced-motion: no-preference) {
+  .post-settings-backdrop {
+    opacity: 0;
+    transition:
+      opacity 200ms ease,
+      display 200ms allow-discrete;
+  }
+  .post-settings-backdrop.is-open {
+    opacity: 1;
+  }
+  @starting-style {
+    .post-settings-backdrop.is-open {
+      opacity: 0;
+    }
+  }
+
+  .post-settings-drawer {
+    transform: translateX(100%);
+    transition:
+      transform 200ms ease-out,
+      display 200ms allow-discrete;
+  }
+  .post-settings-drawer.is-open {
+    transform: translateX(0);
+  }
+  @starting-style {
+    .post-settings-drawer.is-open {
+      transform: translateX(100%);
+    }
+  }
+}
+
+/* §12.25: past `min-width: 100rem`, the drawer stops being modal — measured (not guessed): the
+   drawer's own left edge is `100vw - 380px`, the editor column's right edge is
+   `(100vw - 32px - 50rem) / 2 + 16px + 50rem` (PageMain's `px-4`, SiteColumn's `max-w-site`
+   centred within it), and those two cross at 1545px of `document.documentElement.clientWidth` on
+   an empty post (no scrollbar). `100rem` (1600px) is chosen with ~40-55px of margin past that,
+   not the crossover itself — scrollbar width is OS-dependent and a real post almost always has
+   one, so a literal picked to the pixel would be wrong somewhere; a number a reader can hold, with
+   daylight either side of the true crossover, is the same call §12.6 made choosing 18px glyphs
+   over solving for the exact ratio.
+
+   **Only the backdrop changes.** The drawer itself keeps its position, width, shadow and slide —
+   it is still the same box, just no longer standing in front of anything. `background-color`
+   (not `opacity`, which the block above already drives for the fade) and `pointer-events: none`
+   are what actually retire it: transparent so there is nothing to dim, `pointer-events: none` so
+   a press reaches the editor underneath instead of the backdrop's own `onClick`. `useDismiss`'s
+   own listener is on `document`, not this element, so it does not stop reading presses as
+   "outside" just because this rule fired — PostSettingsPanel.tsx reads this same computed style at
+   the moment of the press to decide whether to actually close.
+
+   **On the plain `.post-settings-backdrop`, not `.post-settings-backdrop.is-open`.** Scoped to
+   `.is-open` first, this reproduced as a black flash on close (reported 2026-09-21): `.is-open` is
+   what React removes the instant the drawer starts closing, and `background-color` is not one of
+   the properties the animation block above transitions — only `opacity` and `display` are. The
+   moment `.is-open` came off, `background-color` snapped straight back to `bg-black/40` (the
+   Tailwind utility, unconditional in the component's own className) while `opacity` was still 1
+   and had not yet begun its 200ms fade, so the close animation spent its whole first stretch
+   fading out a backdrop that had just turned solid black again. Written on the bare class instead,
+   `background-color` never depends on `.is-open` at this width and stays transparent through the
+   entire open-to-closed cycle, leaving only `opacity`/`display` to animate — which is invisible
+   either way, since there is nothing under them to see. */
+@media (min-width: 100rem) {
+  .post-settings-backdrop {
+    background-color: transparent;
+    pointer-events: none;
+  }
+}
+
 /* Editor chrome, touch only: the press itself is visible (§12.7).
 
    Tailwind's preflight sets `-webkit-tap-highlight-color: transparent` on `html`, which is the
@@ -573,6 +669,21 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+}
+
+/* A pointer never hits the 34px floor above, so `.editor-header-bar` keeps its `py-2` (8px) and
+   settles on 投稿's own 36px content height — 53px border-box, against SiteHeader's 61px
+   (`py-4` plus `text-lg`'s 28px line-height, `components/SiteHeader.tsx`). The two headers are
+   never on screen together, but a reader moving between 記事一覧 and the editor felt the jump
+   (requested 2026-09-21). +4px top and bottom, not a `py-3` swap on the element itself, because
+   that class is shared with the touch block above — raising it there would drag the tuned 51px
+   touch height up with it and desync the pixel budget that comment argues for. Measured
+   61px/61px in e2e/editor-sticky-header.spec.ts. */
+@media (hover: hover) {
+  .editor-header-bar {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
   }
 }
 

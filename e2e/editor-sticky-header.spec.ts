@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  closePostSettings,
   expectAutosaved,
   expectDraft,
   expectPublished,
@@ -59,6 +60,129 @@ test('both sticky layers survive the middle of a long post, stacked and not over
   // Both are reachable, which is the point of pinning either of them.
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
   await expect(page.getByRole('button', { name: '太字' })).toBeVisible();
+});
+
+test('the header stands as tall as SiteHeader, on a pointer', async ({ page }) => {
+  // A pointer never hits the 34px touch floor (app/globals.css, `@media (hover: none)`), so
+  // without its own padding bump the editor's header settles on 投稿's 36px content height (53px
+  // border-box) against SiteHeader's 61px (`py-4` plus `text-lg`'s line-height,
+  // components/SiteHeader.tsx) — a jump felt moving between 記事一覧 and the editor (requested
+  // 2026-09-21). The two headers are never on screen together, so this is two navigations, not
+  // one box compared against a sibling.
+  await page.goto('/');
+  const siteHeaderHeight = (await box(page, page.locator('header'))).height;
+
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const editorHeaderHeight = (await box(page, header(page))).height;
+
+  expect(editorHeaderHeight).toBe(siteHeaderHeight);
+});
+
+test('記事の設定 dims the full screen, not a margin-shortened strip of it', async ({ page }) => {
+  // The backdrop and the drawer (PostSettingsPanel.tsx) are `position: fixed` with `bottom-0`,
+  // which resolves against their own margin box — a `space-y-*` ancestor giving them an inherited
+  // `margin-bottom` (as a non-last flow child) silently shortens that box short of the true
+  // viewport bottom. Measured 788px against an 800px screen the first time this shipped, with the
+  // last ~12px of the page left undimmed. `!mb-0` in the component is the fix; this is the guard.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
+
+  const backdropHeight = (await box(page, page.locator('[aria-hidden="true"].bg-black\\/40')))
+    .height;
+  const panelHeight = (await box(page, page.locator('#post-settings-panel'))).height;
+  expect(backdropHeight).toBe(800);
+  expect(panelHeight).toBe(800);
+});
+
+test("記事の設定 gets a background fill while open, ToolbarButton's own active state", async ({
+  page,
+}) => {
+  // This toggle predates ToolbarButton and never picked up its `active` prop (ToolbarButton.tsx's
+  // own `bg-zinc-200`/`dark:bg-zinc-700`), so it was the one control in the header with no visible
+  // sign of being open beyond `aria-expanded` (requested 2026-09-21).
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const toggle = page.getByRole('button', { name: '記事の設定' });
+
+  const closed = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(closed).toBe('rgba(0, 0, 0, 0)');
+
+  await toggle.click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
+  const open = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(open).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+test('記事の設定 stops being modal once the drawer clears the editor column (§12.25)', async ({
+  page,
+}) => {
+  // `min-width: 100rem` (app/globals.css) is chosen with margin past the measured crossover
+  // (1545px of clientWidth on an empty post), not the crossover itself — see that rule's own
+  // comment for why a literal pixel isn't the right target. 1280 stays well under it and must stay
+  // modal; 1700 clears it with room to spare and must stop being one.
+  await page.setViewportSize({ width: 1700, height: 900 });
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
+
+  const pointerEvents = await page
+    .locator('.post-settings-backdrop')
+    .evaluate((el) => getComputedStyle(el).pointerEvents);
+  expect(pointerEvents).toBe('none');
+
+  // The claim that matters: the editor is still reachable and the drawer does not close on its
+  // own — useDismiss's outside-click listener has to read the same computed style, not just the
+  // backdrop's own onClick, since the press reaches the editor rather than the backdrop at all.
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('Still editing at 1700px.');
+  await expect(page.locator('.ProseMirror')).toContainText('Still editing at 1700px.');
+  await expect(page.getByRole('button', { name: '記事の設定' })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
+
+  // The page itself is also free to scroll here — this is the one piece that tracks the
+  // breakpoint through live React state rather than a computed-style read at event time, since it
+  // has to hold or release continuously rather than answer a single press (PostSettingsPanel.tsx's
+  // own comment on why). A resize back under the line has to re-lock it just as live.
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+});
+
+test('closing 記事の設定 at that width never flashes black (§12.25)', async ({ browser }) => {
+  // Needs real motion: this reproduced only mid-transition, with a `reducedMotion: 'reduce'`
+  // context (the project default, playwright.config.ts) never entering the animated branch at all
+  // and so never seeing it. `background-color: transparent` was first written scoped to `.is-open`
+  // (app/globals.css §12.25) — the class React removes the instant a close starts, while `opacity`
+  // (the only property that actually animates) had not yet begun its own fade. The result was one
+  // frame where the backdrop was solid `bg-black/40` again, briefly, before fading back out —
+  // reported 2026-09-21. Moving the transparency onto the bare `.post-settings-backdrop` class
+  // means it no longer depends on `.is-open` at all at this width, so nothing reverts on close.
+  const context = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1700, height: 900 });
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
+
+  await page.getByRole('button', { name: '閉じる' }).click();
+  // Sampled as soon as possible after the click, before the 200ms fade has any chance to hide a
+  // one-frame revert — a `background-color` transition would be forgiving of this; the bug this
+  // guards is that there wasn't one, so any non-transparent read here is the failure.
+  const backgroundColor = await page.evaluate(() => {
+    const el = document.querySelector('.post-settings-backdrop') as HTMLElement;
+    return getComputedStyle(el).backgroundColor;
+  });
+  expect(backgroundColor).toBe('rgba(0, 0, 0, 0)');
+
+  await context.close();
 });
 
 test('the header rule spans the window while its contents keep the column', async ({ page }) => {
@@ -121,6 +245,8 @@ test('the autosave status never nudges the chip beside it', async ({ page }) => 
   await page.getByLabel('タイトル').fill('E2E chip shift');
   await openPostSettings(page);
   await page.getByRole('checkbox', { name: '限定公開にする' }).check();
+  // The panel is modal (PostSettingsPanel.tsx): its backdrop blocks the body until closed.
+  await closePostSettings(page);
 
   const chip = page.getByText('限定公開', { exact: true });
   await expect(chip).toBeVisible();

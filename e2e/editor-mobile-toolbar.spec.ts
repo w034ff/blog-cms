@@ -1,5 +1,5 @@
 import { test, expect, devices, type BrowserContext, type Page } from '@playwright/test';
-import { closeHistory, expectAutosaved, loadMarkdown } from './editor-authoring';
+import { closeHistory, closePostSettings, expectAutosaved, loadMarkdown } from './editor-authoring';
 
 // Where the editor's chrome sits on a phone (docs/table-requirements.md §12.5): the format controls
 // are a bar at the bottom of the screen, and 囲み枠・表・リンク・画像 are behind a ＋ in the page
@@ -130,7 +130,12 @@ test.describe('on an emulated phone', () => {
     // The backdrop covers the post and the format bar underneath — a real modal, unlike the old
     // small anchored box, which let a press pass through to whatever it landed on (the fix in
     // "every pressable box… (12k)", editor-narrow-menus.spec.ts, hit this the same way).
-    const backdrop = page.locator('.fixed.inset-0.bg-black\\/40');
+    //
+    // `z-\[45\]`, not just the shape classes: 記事の設定's own drawer (PostSettingsPanel.tsx) is
+    // now a persistent `.fixed.inset-0.bg-black/40` element too (`.post-settings-backdrop`, always
+    // in the DOM for the animation to have something to transition), so the bare shape resolves to
+    // two elements in strict mode since 2026-09-21.
+    const backdrop = page.locator('.fixed.inset-0.z-\\[45\\].bg-black\\/40');
     await expect(backdrop).toBeVisible();
 
     // The sheet has real presence at rest (2026-09-18): `min-h-[40vh]` is a floor, not the content
@@ -181,7 +186,7 @@ test.describe('on an emulated phone', () => {
     await expect(panel).toBeVisible();
     expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
 
-    const backdrop = page.locator('.fixed.inset-0.bg-black\\/40');
+    const backdrop = page.locator('.fixed.inset-0.z-\\[45\\].bg-black\\/40');
     await backdrop.hover();
     await page.mouse.wheel(0, 300);
     expect(await page.evaluate(() => window.scrollY)).toBe(before);
@@ -440,6 +445,24 @@ test.describe('on an emulated phone', () => {
     await expect(settings).toHaveAttribute('aria-expanded', 'true');
   });
 
+  test('記事の設定 leaves a tappable strip of its own backdrop on a phone', async ({ page }) => {
+    // `w-full` would cover the whole screen and take the only other way to dismiss the drawer on
+    // touch with it — Escape has no equivalent here. The ＋ sheet's own mobile version makes the
+    // same trade for the same reason (§12.18, capped at `44vh` rather than the full screen).
+    await openEditor(page);
+    await page.getByRole('button', { name: '記事の設定' }).click();
+    await expect(page.getByLabel('カテゴリ')).toBeVisible();
+
+    const drawerBox = (await page.locator('#post-settings-panel').boundingBox())!;
+    expect(drawerBox.x).toBeGreaterThan(0);
+
+    await page.mouse.click(5, 100);
+    await expect(page.getByRole('button', { name: '記事の設定' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
   test('the format bar has no left inset on touch, so H2 sits flush with its edge', async ({
     page,
   }) => {
@@ -464,7 +487,9 @@ test.describe('on an emulated phone', () => {
     await openEditor(page);
     await page.getByRole('button', { name: '記事の設定' }).click();
     await page.getByRole('checkbox', { name: '限定公開にする' }).check();
-    await page.getByRole('button', { name: '記事の設定' }).click();
+    // The panel is modal (PostSettingsPanel.tsx): its backdrop sits above the gear too, so
+    // closing it again takes ×, not a second click on the toggle that opened it.
+    await closePostSettings(page);
 
     await expect(page.locator('.unlisted-badge-full')).toBeHidden();
     const dot = page.locator('.unlisted-badge-dot');
