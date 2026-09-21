@@ -1,4 +1,4 @@
-// 記事の設定 on a phone (docs/table-requirements.md §12.8): a gear reads as "settings" on its own,
+// 記事の設定 on a phone (docs/editor-requirements.md §12.8): a gear reads as "settings" on its own,
 // unlike a generic overflow glyph (⋮), which this panel is not — it opens a specific, named group
 // (カテゴリ・タグ・サムネイル・限定公開), not a grab-bag of secondary actions. The path is the
 // standard 12-tooth gear (Feather's `settings`), stroke-first like the rest of this row.

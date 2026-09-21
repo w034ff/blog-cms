@@ -15,7 +15,7 @@ import type { CellAlign } from './table-extensions';
 // editor content but below the sticky main toolbar's z-30 stacking context — the
 // pinned toolbar and its dropdown panels/tooltips must never be covered by this menu.
 
-// The four row/column labels, in two lengths (docs/table-requirements.md §12.1). Below `sm` the
+// The four row/column labels, in two lengths (docs/editor-requirements.md §12.1). Below `sm` the
 // button reads `＋行`, above it `行を追加` — the phone gets the whole toolbar on one line, and the
 // desktop keeps the words it has room for. Two spans rather than a media-query hook: this decides
 // itself at layout time, so there is no first render with the wrong one and nothing to hydrate
@@ -85,7 +85,7 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       // `flex-wrap` has always been here; what it lacked was a width to wrap against. An absolutely
       // positioned box sizes shrink-to-fit against its containing block, which is wider than a phone,
       // so the row stayed on one line and ran off the screen — measured at 441px against 390px, with
-      // `shift` already pinned to the left edge (docs/table-requirements.md, §5.5.19's twin).
+      // `shift` already pinned to the left edge (docs/editor-requirements.md, §5.5.19's twin).
       // `[&_button]:px-1.5` below `sm`: the full-width signs (§12.1) cost 16px over the four
       // labels, which is what put the row back on two lines at 360px and 375px — 343px against a
       // 328px cap. The 4px per button that this gives back is enough (315px, measured), and it is

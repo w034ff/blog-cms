@@ -23,7 +23,7 @@ import {
 // The body is destroyed and the fragment lands in the field with its newlines flattened.
 //
 // **Only タイトル is exercised here now — カテゴリ・タグ・説明 dropped 2026-09-21, when 記事の設定
-// became a modal drawer (PostSettingsPanel.tsx, docs/table-requirements.md §12.22).** A drag is one
+// became a modal drawer (PostSettingsPanel.tsx, docs/editor-requirements.md §12.22).** A drag is one
 // continuous mouse gesture (select in the body → mousedown in the body → move → drop on the field),
 // and those three fields are mounted `hidden` unless the panel is open, at which point its backdrop
 // blocks the body outright — there is no moment where the body is a legal drag source and the field

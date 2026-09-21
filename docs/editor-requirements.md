@@ -1,6 +1,6 @@
-# 表（テーブル）要件定義
+# エディタ要件定義
 
-- 対象: `components/editor/table-cell-rules.ts`、`components/editor/table-extensions.ts`、`components/editor/TableToolbar.tsx`、`components/editor/TableGridMenu.tsx`
+- 対象: 表の実装(`components/editor/table-cell-rules.ts`、`components/editor/table-extensions.ts`、`components/editor/TableToolbar.tsx`、`components/editor/TableGridMenu.tsx`)と、エディタの chrome 全般 — ヘッダー・主ツールバー・＋シート・記事の設定ドロワーなど(§12 以降。`components/PostEditor.tsx`、`components/editor/Toolbar.tsx`、`components/editor/ToolbarButton.tsx`、`components/editor/InsertMenu.tsx`、`components/editor/PostSettingsPanel.tsx` ほか)
 - 関連: `docs/accordion-requirements.md` §6.3・§6.6・§7.1（挿入先の拒否述語を共有する）、`docs/footnote-requirements.md` §6（セル内は参照を置けない）、`docs/link-requirements.md` §5.5.4（セル内ではリンクのカードがツールバーに勝つ）
 
 ## 0. この文書の位置づけ — 事後に書いた記録
@@ -9,9 +9,11 @@
 
 そのため 2 つの節が他と形を変えている。**「却下した案」は置かない** — 当時どの案を捨てたかの記録が無く、あとから並べれば捏造になる。**§9 の受け入れ基準は「実装時に測る」ではなく「測ってある」**で、根拠は既存の E2E spec 7 本である。
 
-**範囲も絞ってある。** 表の実装は 931 行あるが、ここに書くのは他機能が繰り返し引いてくる契約層だけとする。`table-extensions.ts` のコメントが既に十分に説明している箇所（パイプ形式が崩れる 2 つの経路 A・B の詳細、修復の位置計算の順序など）は書き写さない。2 部に増やせば必ず片方が古くなる。
+**表の実装は範囲を絞ってある。** 表の実装は 931 行あるが、ここに書くのは他機能が繰り返し引いてくる契約層だけとする。`table-extensions.ts` のコメントが既に十分に説明している箇所（パイプ形式が崩れる 2 つの経路 A・B の詳細、修復の位置計算の順序など）は書き写さない。2 部に増やせば必ず片方が古くなる。
 
 **書く動機は引用である。** 表の挙動は他文書から 15 回以上参照されているのに、すべて散文で引かれている（「issue #7」「テーブルの drop guard が採っているのと同じ形」「テーブルセルが既に出している答え（issue #8）」）。番地が無いためで、その結果 `docs/accordion-requirements.md` §6 と `docs/footnote-requirements.md` §6 には**同一の一文がそのまま重複している**。この文書はその引き先を作るためにある。
+
+**ファイル名は `table-requirements.md` から `editor-requirements.md` に変わっている**（2026-09-21）。§12(2026-08-21)はテーブルのツールバー折り返しから始まったが、§12.2 以降(2026-09-09 以降)はヘッダー・主ツールバー・＋シート・記事の設定ドロワーなど、テーブルに限らないエディタ chrome 全般の決定を同じ番号の下に積み重ねてきた——引用は`§12.x`という番地だけを頼りにこのファイルへ届くものが大半で、番号を動かさずファイルを分けると届かなくなる引用の方が多いため、内容を割らずファイル名だけをこの実態に合わせた。表の実装(§0-11、§12・§12.1)と、エディタ chrome 全般(§12.2 以降)の両方がこの1本にある、というのが現在の位置づけである。
 
 ## 1. 目的と非目標
 

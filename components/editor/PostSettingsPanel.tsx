@@ -7,8 +7,8 @@ import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
 
 // A drawer that slides in from the right, modal like the phone's own ＋ sheet
-// (InsertMenu.tsx, docs/table-requirements.md §12.18) — requested 2026-09-21, reversing this
-// file's first revision the same day, which had gone the other way (see docs/table-requirements.md
+// (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
+// file's first revision the same day, which had gone the other way (see docs/editor-requirements.md
 // §12.22 for both turns and why). Shares that sheet's dismiss mechanics: `useDismiss` closes on an
 // outside `mousedown` or Escape, a separate full-screen backdrop dims everything behind it and
 // closes on its own click, and `useBodyScrollLock` freezes the page while it is up — nothing here

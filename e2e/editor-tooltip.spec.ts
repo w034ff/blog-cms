@@ -31,7 +31,7 @@ test('toolbar tooltip appears centered below the button on hover', async ({ page
 // The shortcut of any command that has one is surfaced in its tooltip alongside its name. Every
 // ToolbarButton that carries a `shortcut` also carries a `title` now — 大見出し/小見出し were the
 // last holdout with a shortcut but no title (their own visible text, 大見出し, doubled as the name)
-// until they became the H2/H3 glyphs (docs/table-requirements.md §12.10), which moved them into
+// until they became the H2/H3 glyphs (docs/editor-requirements.md §12.10), which moved them into
 // this same shape: the visible glyph is no longer the full name, so `title` restores it. Rendered
 // on Linux CI, so "Mod" formats as "Ctrl".
 test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {

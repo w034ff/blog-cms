@@ -3,7 +3,7 @@ import { PageMain } from '@/components/PageShell';
 
 // `resizes-content` is what puts the editor's bottom toolbar above the software keyboard on
 // Android rather than underneath it: the layout viewport itself shrinks when the keyboard opens,
-// so the bar's `bottom: 0` follows it with no measurement at all (docs/table-requirements.md
+// so the bar's `bottom: 0` follows it with no measurement at all (docs/editor-requirements.md
 // §12.5). iOS Safari ignores this key and is handled by components/editor/useKeyboardInset.ts,
 // whose formula comes out at ~0 here — the two do not stack.
 //

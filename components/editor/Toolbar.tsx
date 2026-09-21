@@ -24,7 +24,7 @@ import { UndoIcon } from './svg/UndoIcon';
 import { RedoIcon } from './svg/RedoIcon';
 
 // A single toolbar entry that folds the two list types into one control, restored for a pointer
-// only (§12.11's docs/table-requirements.md): the trigger + panel shape is what put a dropdown
+// only (§12.11's docs/editor-requirements.md): the trigger + panel shape is what put a dropdown
 // inside `.toolbar-scroll` on touch, where its own `overflow-x: auto` implicitly clips the panel's
 // vertical overflow invisibly (CSS's overflow-x/-y coupling) — 箇条書き/番号付き are two direct
 // touch-only toggles instead, and this dropdown is the pointer-only counterpart, picked by the same
@@ -88,7 +88,7 @@ export function Toolbar({
           (app/globals.css). `min-w-0` is load-bearing: a flex item won't shrink below its
           content's width otherwise, and an un-shrinkable item can't scroll — it pushes the bar
           itself wider instead. */}
-      {/* H2/H3, not 大見出し/小見出し (docs/table-requirements.md §12.10): the same abbreviation
+      {/* H2/H3, not 大見出し/小見出し (docs/editor-requirements.md §12.10): the same abbreviation
           B/I/S/A already carry, so the row doesn't mix short glyphs with two spelled-out words.
           `title` moves this into the icon-button tooltip shape (name + shortcut) — the visible
           glyph alone no longer is the accessible name, the way it was when the button's own text
@@ -190,7 +190,7 @@ export function Toolbar({
         className='toolbar-mark-divider mx-0.5 w-px shrink-0 self-stretch bg-zinc-300 dark:bg-zinc-600'
         aria-hidden='true'
       />
-      {/* Two copies, one control (§12.11's docs/table-requirements.md): a pointer keeps the
+      {/* Two copies, one control (§12.11's docs/editor-requirements.md): a pointer keeps the
             dropdown it always had, touch gets two direct toggles instead — a trigger + panel inside
             `.toolbar-scroll` inherits its `overflow-y: auto` (a side effect of setting only
             `overflow-x`), which clipped the dropdown's panel invisibly on touch;
@@ -291,7 +291,7 @@ export function Toolbar({
 // 囲み枠・表・リンク・画像・引用 — controls a phone author reaches for occasionally rather than
 // mid-keystroke, as opposed to marks like 太字 that apply to the word being typed. On a phone this
 // group leaves the toolbar for a ＋ in the page header, where the bottom bar's width goes to what
-// is used every sentence instead (docs/table-requirements.md §12.5, §12.9 for 引用 specifically —
+// is used every sentence instead (docs/editor-requirements.md §12.5, §12.9 for 引用 specifically —
 // it shipped with the marks in §12.5 and moved out later, at the same frequency as 囲み枠).
 //
 // `pickerTestId` rather than a fixed one, because both copies carry a file input and
@@ -348,7 +348,7 @@ export function InsertControls({
   // not one — without this, the label's own text would hand back the I-beam.
   //
   // `toolbar-button` for the same reason, one rule further on: the touch-only ring
-  // (table-requirements.md §12.2) is written against that class, and being the one control in
+  // (editor-requirements.md §12.2) is written against that class, and being the one control in
   // the row without a `<button>` under it left it as the one control in the row without an
   // outline — on the phone where the outline is what says "press here".
   const image = (

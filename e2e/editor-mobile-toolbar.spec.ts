@@ -1,7 +1,7 @@
 import { test, expect, devices, type BrowserContext, type Page } from '@playwright/test';
 import { closeHistory, closePostSettings, expectAutosaved, loadMarkdown } from './editor-authoring';
 
-// Where the editor's chrome sits on a phone (docs/table-requirements.md §12.5): the format controls
+// Where the editor's chrome sits on a phone (docs/editor-requirements.md §12.5): the format controls
 // are a bar at the bottom of the screen, and 囲み枠・表・リンク・画像 are behind a ＋ in the page
 // header.
 //
@@ -295,7 +295,7 @@ test.describe('on an emulated phone', () => {
     await expect(page.getByTestId('toolbar-dropdown-panel')).toHaveCount(0);
 
     // The 3 types read as full-width rows continuing the list, not the pointer copy's small
-    // `.dropdown-item`s (§12.19's own row-list rule reaches them: `docs/table-requirements.md`).
+    // `.dropdown-item`s (§12.19's own row-list rule reaches them: `docs/editor-requirements.md`).
     const noteRow = panel.getByRole('button', { name: '注意', exact: true });
     const rowBox = (await noteRow.boundingBox())!;
     const panelWidth = (await panel.boundingBox())!.width;

@@ -257,7 +257,7 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
 // has to open it first. Idempotent: a panel already open is left alone rather than toggled shut.
 //
 // The toggle is a <button> on the editor's pinned bar and the panel is a modal drawer
-// (PostSettingsPanel.tsx, docs/table-requirements.md §12.22) — `aria-expanded` ties them together,
+// (PostSettingsPanel.tsx, docs/editor-requirements.md §12.22) — `aria-expanded` ties them together,
 // and it is what this reads.
 export async function openPostSettings(page: Page): Promise<void> {
   const toggle = page.getByRole('button', { name: '記事の設定' });

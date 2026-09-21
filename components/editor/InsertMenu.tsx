@@ -13,7 +13,7 @@ import { ArrowLeftIcon } from './svg/ArrowLeftIcon';
 
 const INSERT_MENU_HEADING_ID = 'insert-menu-heading';
 
-// The phone's home for 囲み枠・表・リンク・画像 (docs/table-requirements.md §12.5). The format
+// The phone's home for 囲み枠・表・リンク・画像 (docs/editor-requirements.md §12.5). The format
 // controls moved to a bar at the bottom of the screen, where the caret and the thumb are; these
 // four did not go with them, because they are not wanted mid-keystroke and the bottom bar has no
 // width to spare once the software keyboard is up.

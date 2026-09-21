@@ -2,7 +2,7 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 
 // The editor's two floating menus on a phone (docs/link-requirements.md §5.5.19,
-// docs/table-requirements.md §12).
+// docs/editor-requirements.md §12).
 //
 // Browser-only, and not merely because the editor is: what broke here is a box wider than the
 // screen, which nothing about the markup or the class list states. Both menus are placed by
@@ -46,7 +46,7 @@ async function margins(page: Page, selector: string): Promise<{ smallest: number
 
 // The toolbar's height in buttons: 1 while it is on one line, ~2 once `flex-wrap` has taken over.
 // A ratio rather than a pixel height, so a change in the button's own padding does not read as a
-// wrap (docs/table-requirements.md §12, §12.1).
+// wrap (docs/editor-requirements.md §12, §12.1).
 async function toolbarRows(page: Page): Promise<number> {
   return page
     .locator('.table-toolbar')

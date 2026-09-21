@@ -207,7 +207,7 @@ test('the header rule spans the window while its contents keep the column', asyn
 
   // The contents did not go with it: 記事一覧 still starts where the title does. Measured on the
   // glyph, not on its box — since 2026-09-21 the control is a 36px circle pulled left by 9px so
-  // that the 18px icon inside it lands on the column's edge (docs/table-requirements.md §12.6).
+  // that the 18px icon inside it lands on the column's edge (docs/editor-requirements.md §12.6).
   // Those two numbers move together with the glyph's size, and the claim here is about neither:
   // it is that the arrow and the title share a left edge.
   const glyphBox = await box(page, page.getByRole('link', { name: '記事一覧' }).locator('svg'));

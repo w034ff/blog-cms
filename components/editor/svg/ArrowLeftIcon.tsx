@@ -1,5 +1,5 @@
 // The way out of the editor on a phone, where 記事一覧 is drawn as this arrow instead of as its
-// own words (docs/table-requirements.md §12.6). A shaft with a head and nothing else — at 16px in
+// own words (docs/editor-requirements.md §12.6). A shaft with a head and nothing else — at 16px in
 // the top-left corner of a writing screen, that shape is read as "back" without a label, which is
 // the whole reason the words can come off. Stroke-first, so it takes the same weight as the
 // controls at the other end of the bar.

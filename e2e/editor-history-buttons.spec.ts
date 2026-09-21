@@ -1,7 +1,7 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { closeHistory, loadMarkdown } from './editor-authoring';
 
-// The toolbar's undo and redo (docs/table-requirements.md §12.4).
+// The toolbar's undo and redo (docs/editor-requirements.md §12.4).
 //
 // Browser-only, and not only because the editor is: what these two add is a *route* — the command
 // already existed under `Mod-z`, and the thing worth measuring is that a press reaches it, that the

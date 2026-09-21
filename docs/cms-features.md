@@ -518,7 +518,7 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 
 状態: **設計のみ** — 2026-09-20 の相談で設計まで進めてある。未着手
 作成: 2026-09-20、着手前に書いている（このファイルの他の記録と同じ流儀）
-関連: `docs/table-requirements.md` §12.4/§12.5（ポインタとタッチの出し分け idiom）、`docs/link-requirements.md` §8（`Mod-k` の受け入れ基準 4f/4g/4r）
+関連: `docs/editor-requirements.md` §12.4/§12.5（ポインタとタッチの出し分け idiom）、`docs/link-requirements.md` §8（`Mod-k` の受け入れ基準 4f/4g/4r）
 
 ## 1. 目的と決定
 

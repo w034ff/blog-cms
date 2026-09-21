@@ -576,7 +576,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         // comment for the tradeoff (editor-narrow-menus.spec.ts §12.3/12k updated to match).
         className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
         <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
-          {/* **Icon alone on both surfaces** (docs/table-requirements.md §12.6), with the name in
+          {/* **Icon alone on both surfaces** (docs/editor-requirements.md §12.6), with the name in
               `aria-label` and an `EditorTooltip` on hover. It was words on a pointer and an arrow on
               touch until 2026-09-21, written as the §12.4 two-span pair; the pair is gone now, and
               with it the media query that painted one half.
@@ -674,7 +674,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             ))}
           <span className='ml-auto flex flex-wrap items-center gap-2'>
             {/* 囲み枠・表・リンク・画像 on a phone; hidden entirely on a pointer, where they stay
-                in the toolbar (docs/table-requirements.md §12.5). `editor &&` is the one condition
+                in the toolbar (docs/editor-requirements.md §12.5). `editor &&` is the one condition
                 in this bar, and it is required: the bar itself is deliberately outside that gate
                 so that publish survives an editor that fails to mount (see the comment above),
                 while these controls are commands on the editor and cannot. */}
@@ -707,7 +707,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
               <HelpIcon />
               <EditorTooltip label='ヘルプ' />
             </button>
-            {/* A gear on both surfaces now (docs/table-requirements.md §12.8) — not the §12.6
+            {/* A gear on both surfaces now (docs/editor-requirements.md §12.8) — not the §12.6
                 arrow's reasoning (this glyph is not a universal convention the way "back" is), but
                 the §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu
                 of loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル・

@@ -11,7 +11,7 @@ import { useLayoutEffect, useState, type RefObject } from 'react';
 // notice to the same box.
 //
 // `--editor-toolbar-h` — the format toolbar itself. On a phone it is fixed to the bottom of the
-// screen (docs/table-requirements.md §12.5), so the post needs that much padding under it or the
+// screen (docs/editor-requirements.md §12.5), so the post needs that much padding under it or the
 // last line is written underneath the bar. It wraps to a second row at 320px, which is why a
 // constant would be the same mistake here as above.
 //

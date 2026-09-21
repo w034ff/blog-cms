@@ -4,7 +4,7 @@ import { useEffect, type RefObject } from 'react';
 
 // How far the software keyboard covers the bottom of the window, published as `--editor-kb-inset`
 // on `host` (the <form>). The format toolbar is fixed to `bottom: var(--editor-kb-inset, 0px)` on a
-// phone (docs/table-requirements.md §12.5), so this is what lifts it clear of the keyboard instead
+// phone (docs/editor-requirements.md §12.5), so this is what lifts it clear of the keyboard instead
 // of leaving it underneath.
 //
 // **One formula, both platforms.** Android is handled by `interactiveWidget: 'resizes-content'` in

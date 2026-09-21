@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 
-// `.prose table { table-layout: fixed }` (app/globals.css, docs/table-requirements.md §11).
+// `.prose table { table-layout: fixed }` (app/globals.css, docs/editor-requirements.md §11).
 // Two things depend on it, and both are invisible until they are not: a table that outgrows
 // the editor frame, and column widths that move while the author types.
 
