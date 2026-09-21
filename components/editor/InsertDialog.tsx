@@ -15,6 +15,7 @@ import { isOwnPostHref } from '@/lib/link-card-href';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { PostSearchResult } from '@/lib/types';
 import { useBodyScrollLock } from './useBodyScrollLock';
+import { CloseButton } from './CloseButton';
 
 // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md §21):
 // one modal for both a link card and an embed. Two tabs, never a sub-tab choosing between the two
@@ -263,18 +264,12 @@ export function InsertDialog({
         className='flex h-full w-full flex-col overflow-hidden border-zinc-300 bg-white shadow-xl sm:h-auto sm:max-h-full sm:max-w-lg sm:rounded-lg sm:border dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
-          <h2 id={headingId} className='text-sm font-bold'>
+          <h2 id={headingId} className='text-base font-bold'>
             リンクを挿入
           </h2>
           {/* type='button' everywhere: PostEditor wraps the editor in one <form>, and a
               default-type button inside it submits the post. */}
-          <button
-            type='button'
-            aria-label='閉じる'
-            onClick={close}
-            className='rounded-full border border-zinc-300 px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            ×
-          </button>
+          <CloseButton onClick={close} />
         </div>
 
         {/* No sub-tab chooses card vs. embed — only these two, which split how the author starts

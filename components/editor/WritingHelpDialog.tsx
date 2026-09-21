@@ -4,6 +4,7 @@ import { Fragment, useEffect, useId, useRef, type ReactNode } from 'react';
 import { isMac, shortcutParts } from './ToolbarButton';
 import { SHORTCUT_CATALOG } from './shortcut-catalog';
 import { useBodyScrollLock } from './useBodyScrollLock';
+import { CloseButton } from './CloseButton';
 
 // 「ヘルプ」 — the editor's one reference sheet: the markdown input rules, the slash menu, and the
 // keyboard shortcuts (docs/cms-features.md「書き方ヘルプ」§4).
@@ -179,19 +180,12 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
         className='flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
-          <h2 id={headingId} className='text-sm font-bold'>
+          <h2 id={headingId} className='text-base font-bold'>
             ヘルプ
           </h2>
           {/* type='button' everywhere: PostEditor wraps the editor in one <form>, and a
               default-type button inside it submits the post. */}
-          <button
-            ref={closeRef}
-            type='button'
-            aria-label='閉じる'
-            onClick={onClose}
-            className='rounded-full border border-zinc-300 px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            ×
-          </button>
+          <CloseButton ref={closeRef} onClick={onClose} />
         </div>
 
         {/* One scroll over the three sections — no tabs. What an author does here is scan for one
