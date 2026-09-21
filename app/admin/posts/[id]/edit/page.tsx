@@ -32,6 +32,8 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
         initial={initial}
         mode='edit'
         published={!post.draft}
+        // `date` is stamped at first publish and never cleared (lib/posts-write.ts).
+        everPublished={post.date !== ''}
         hasPendingEdits={post.hasPendingEdits}
       />
     </section>

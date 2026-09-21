@@ -50,6 +50,9 @@ type Props = {
   mode: 'create' | 'edit';
   // Current visibility of the live post: true once it has been published.
   published: boolean;
+  // Whether the post has ever been published — its publish date is set, and stays set through a
+  // return to draft. 記事の設定's 公開 switch exists only then (docs/editor-requirements.md §12.27).
+  everPublished: boolean;
   // Whether the loaded content is a working copy ahead of the published version
   // (a published post with unsaved-to-public edits). Always false in create mode.
   hasPendingEdits: boolean;
@@ -83,7 +86,14 @@ function blockImplicitSubmit(event: KeyboardEvent<HTMLDivElement>): void {
   if (event.target instanceof HTMLInputElement) event.preventDefault();
 }
 
-export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
+export function PostEditor({
+  action,
+  initial,
+  mode,
+  published,
+  everPublished: initialEverPublished,
+  hasPendingEdits,
+}: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // Markdown source of the body, kept in sync with the editor and mirrored into a
   // hidden input so autosave and publish read it through the form like before.
@@ -100,6 +110,8 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // fields away is for. A new post is not left guessing: the category arrives pre-filled
   // (DEFAULT_CATEGORY) and nothing else above is required to publish.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Where focus returns when 記事の設定 closes (PostSettingsPanel.tsx, §12.29).
+  const settingsToggleRef = useRef<HTMLButtonElement>(null);
   // ヘルプ (docs/cms-features.md「書き方ヘルプ」). Held here rather than in the button because the
   // sheet is mounted below, outside the header: the header is `sticky` with its own `z-40`, and a
   // stacking context is what InsertMenu.tsx's own comment says not to put a full-screen overlay in.
@@ -143,6 +155,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Live visibility, and whether the editor holds edits not yet pushed public.
   const [isPublished, setIsPublished] = useState(published);
   const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
+  const [everPublished, setEverPublished] = useState(initialEverPublished);
   // Whether 保存済み ✓ is still within its moment on screen, and the save it is answering for.
   const [savedNoticeShown, setSavedNoticeShown] = useState(false);
   const [noticedSavedAt, setNoticedSavedAt] = useState<number | null>(null);
@@ -267,6 +280,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       setSessionExpired(true);
     } else if (state.saved) {
       setIsPublished(state.saved.published);
+      if (state.saved.published) setEverPublished(true);
       setPendingPublish(false);
       acceptSaved(state.saved.at);
       setSessionExpired(false);
@@ -666,6 +680,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
                 whether the panel is open — which is the part a glyph could never carry. */}
             <button
               type='button'
+              ref={settingsToggleRef}
               aria-expanded={settingsOpen}
               aria-controls={SETTINGS_PANEL_ID}
               aria-label='記事の設定'
@@ -685,9 +700,9 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             <span aria-hidden='true' className='h-5 w-px bg-zinc-300 dark:bg-zinc-600' />
             {/* The form's first submit button, which is what an Enter pressed in a metadata field
                 would activate — hence blockImplicitSubmit on the wrapper those fields live in.
-                下書きに戻す is no longer its neighbour (it sits in the settings panel now), so
-                "first" is a property of this bar being the form's first child, not of the order
-                of two buttons. */}
+                The other submit button, 記事の設定's 公開 switch, sits in the drawer later in the
+                form, so "first" is a property of this bar being the form's first child, not of the
+                order of two buttons. */}
             <button
               type='submit'
               name='intent'
@@ -770,7 +785,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
             onThumbnailChange={applyThumbnail}
             body={body}
             isPublished={isPublished}
-            pending={pending}
+            everPublished={everPublished}
+            publishToggleDisabled={pending || (!hasIdentity && autosaveState === 'saving')}
+            error={state.error && errorVisible ? state.error : null}
+            returnFocusRef={settingsToggleRef}
           />
 
           <div className='space-y-2'>

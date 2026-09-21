@@ -20,12 +20,12 @@ async function draftWithSlug(page: import('@playwright/test').Page, title: strin
   await page.keyboard.type('本文です。');
   await expectAutosaved(page);
 
-  // Published first, then unpublished: that is the state an author reaches by 下書きに戻す, and it
+  // Published first, then unpublished: that is the state an author reaches by turning 公開 off, and it
   // is the one where a stale public address could still be in someone's hands.
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await page.getByRole('button', { name: '記事の設定' }).click();
-  await page.getByRole('button', { name: '下書きに戻す' }).click();
+  await page.getByRole('switch', { name: '公開' }).click();
   await expectDraft(page);
 
   await page.goto('/admin');

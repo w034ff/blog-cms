@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
+import { CloseButton } from './CloseButton';
 
 // A drawer that slides in from the right, modal like the phone's own ＋ sheet
 // (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
@@ -58,7 +60,15 @@ type Props = {
   onThumbnailChange: (value: string) => void;
   body: string;
   isPublished: boolean;
-  pending: boolean;
+  // False until the first publish, which only the header's 投稿 makes (§12.27).
+  everPublished: boolean;
+  // Mirrors 投稿's own race guard (PostEditor.tsx `publishDisabled`), minus its "nothing to
+  // update" clause: turning a current post off is always meaningful.
+  publishToggleDisabled: boolean;
+  // The last action's refusal, while PostEditor still shows it in the header.
+  error: string | null;
+  // The gear that opens this, where focus goes back on close (§12.29).
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
 };
 
 export function PostSettingsPanel({
@@ -72,7 +82,10 @@ export function PostSettingsPanel({
   onThumbnailChange,
   body,
   isPublished,
-  pending,
+  everPublished,
+  publishToggleDisabled,
+  error,
+  returnFocusRef,
 }: Props) {
   // Above `app/globals.css`'s own `min-width: 100rem` (§12.25), the backdrop goes
   // `pointer-events: none` and transparent — the drawer clears the editor column at that width, so
@@ -82,10 +95,22 @@ export function PostSettingsPanel({
   // reaches it and still reads as "outside the drawer." Reading the backdrop's own computed style
   // at the moment of the press is what makes this one CSS breakpoint the only place the mode is
   // decided — no matching state in React, no resize listener, nothing to fall out of sync with it.
+  //
+  // Escape is not a press, and is not ignored the same way (§12.29): it closes at every width, but
+  // past the line only while focus is inside the drawer — there the editor stays usable beside it,
+  // and an Escape meant for a bubble menu or the slash menu must not take the drawer with it.
   const backdropRef = useRef<HTMLDivElement>(null);
-  const panelRef = useDismiss<HTMLDivElement>(open, () => {
+  const panelRef = useDismiss<HTMLDivElement>(open, (reason) => {
     const backdrop = backdropRef.current;
-    if (backdrop && getComputedStyle(backdrop).pointerEvents === 'none') return;
+    const modal = !(backdrop && getComputedStyle(backdrop).pointerEvents === 'none');
+    if (reason === 'outside' && !modal) return;
+    if (
+      reason === 'escape' &&
+      !modal &&
+      !document.activeElement?.closest(`#${SETTINGS_PANEL_ID}`)
+    ) {
+      return;
+    }
     onClose();
   });
 
@@ -107,19 +132,59 @@ export function PostSettingsPanel({
   }, []);
   useBodyScrollLock(open && lockScroll);
 
-  // No forced focus in on open or restored on close, unlike WritingHelpDialog — matched to
-  // InsertMenu instead, which has neither. This panel cycles open/closed multiple times around
-  // image-bubble interactions in the body (setting or clearing a thumbnail), and a captured
-  // "opener" from one open can be a transient button (e.g. the bubble's own サムネイルに設定) that
-  // no longer exists or means anything by the next close — forcing focus back onto it stole DOM
-  // focus from the editor and closed the bubble menu that was still needed (measured 2026-09-21:
-  // 解除 became unreachable one open/close cycle after this component's first draft, which did
-  // force focus, was written). Leaving focus alone is also what the phone's own sheet does.
-  //
+  // Focus (§12.29). On open it moves to the drawer itself (`tabIndex={-1}`), not to カテゴリ: a
+  // field would raise the phone's keyboard the moment the drawer slides in, and the dialog's own
+  // name is what a screen reader should announce. On close it goes back to the gear, which is the
+  // only way this opens — but only when it was inside the drawer or had fallen to <body> (a press
+  // on the backdrop). The first draft of this component returned focus to whatever held it at open
+  // time; after an image-bubble round trip that was the bubble's own button, and restoring it stole
+  // focus from the editor and closed the bubble with 解除 still needed (measured 2026-09-21). A
+  // fixed target plus the "was it ours" check cannot do that: focus that the author put in the
+  // editor stays there.
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (open && !wasOpen.current) {
+      panel?.focus({ preventScroll: true });
+    } else if (!open && wasOpen.current) {
+      const active = document.activeElement;
+      if (active === document.body || (panel && panel.contains(active))) {
+        returnFocusRef.current?.focus({ preventScroll: true });
+      }
+    }
+    wasOpen.current = open;
+  }, [open, panelRef, returnFocusRef]);
+
+  // While modal (below `min-width: 100rem`, where `lockScroll` holds), Tab wraps inside the drawer:
+  // the backdrop blocks the pointer from the page behind, and without this the keyboard walked
+  // straight out into the editor under it. Past the line the drawer is not modal and Tab leaves it
+  // as it would any sidebar.
+  function wrapTab(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    const panel = panelRef.current;
+    if (!lockScroll || !panel) return;
+    const focusable = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => el.getClientRects().length > 0);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === panel)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   // Enter in a text field submits the form by activating its first submit button (投稿/更新);
   // Escape itself is `useDismiss`'s job, not this handler's.
   function onKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Enter' && event.target instanceof HTMLInputElement) event.preventDefault();
+    if (event.key === 'Tab') wrapTab(event);
   }
 
   return (
@@ -158,6 +223,9 @@ export function PostSettingsPanel({
       <div
         ref={backdropRef}
         aria-hidden='true'
+        // The press closes the drawer on `mousedown` (useDismiss) and focus goes back to the gear
+        // in the same turn; the press's own default then moved focus to <body>, undoing it.
+        onMouseDown={(event) => event.preventDefault()}
         onClick={onClose}
         className={`post-settings-backdrop fixed inset-0 z-[54] !mb-0 bg-black/40 ${open ? 'is-open' : ''}`}
       />
@@ -166,20 +234,20 @@ export function PostSettingsPanel({
         ref={panelRef}
         role='dialog'
         aria-label='記事の設定'
+        aria-modal={lockScroll ? true : undefined}
+        tabIndex={-1}
         onKeyDown={onKeyDown}
-        className={`post-settings-drawer fixed top-0 right-0 bottom-0 z-[55] w-[calc(100%-2.5rem)] !mb-0 overflow-y-auto border-l border-zinc-300 bg-white px-4 py-4 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 sm:w-[380px] ${open ? 'is-open' : ''}`}>
+        className={`post-settings-drawer outline-none fixed top-0 right-0 bottom-0 z-[55] w-[calc(100%-2.5rem)] !mb-0 overflow-y-auto border-l border-zinc-300 bg-white px-4 py-4 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 sm:w-[380px] ${open ? 'is-open' : ''}`}>
         <div className='mb-3 flex items-center justify-between gap-3'>
-          <h2 className='text-sm font-bold'>記事の設定</h2>
-          <button
-            type='button'
-            aria-label='閉じる'
-            onClick={onClose}
-            className='rounded-full border border-zinc-300 px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            ×
-          </button>
+          <h2 className='text-base font-bold'>記事の設定</h2>
+          <CloseButton onClick={onClose} />
         </div>
 
         <div className='space-y-4'>
+          {/* サムネイル first: it is the post's face on every card, and the one field here whose
+          state (chosen / picked from the body / none) is worth seeing the moment the drawer opens
+          (requested 2026-09-21). */}
+          <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
           <Field label='カテゴリ'>
             <input
               name='category'
@@ -196,26 +264,63 @@ export function PostSettingsPanel({
               className={inputClass}
             />
           </Field>
-          <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          {/* 下書きに戻す lives here rather than beside 更新 in the header. It is never wanted from
-          the middle of writing, and a pinned bar would keep an unpublish one click away for the
-          whole session; the panel is opened deliberately, which is the right gate for it. Zenn
-          shapes the same pair this way — its header publishes, and taking a post back down is in
-          the settings. Rendered only for a published post, so the panel has no dead control on a
-          draft. */}
-          {isPublished && (
-            <div className='flex flex-wrap items-center justify-between gap-3 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
-              <span className='text-sm text-zinc-600 dark:text-zinc-400'>
-                この記事は公開されています。
-              </span>
-              <button
-                type='submit'
-                name='intent'
-                value='unpublish'
-                disabled={pending}
-                className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-                下書きに戻す
-              </button>
+          {/* 公開 — the post's visibility as a switch, at the end of the group so it is decided
+          after the fields above are checked (docs/editor-requirements.md §12.27). The header keeps
+          投稿/更新 as the everyday way to publish; this is where the state is read and where a post
+          goes back to a draft. Not on the header bar: a pinned unpublish would sit one click away
+          for the whole writing session.
+
+          A submit button wearing `role='switch'`, not a checkbox: it sends the same `intent` 投稿
+          and 下書きに戻す sent, so the server-side checks (title required, footnotes) apply
+          unchanged, and it never flips on its own — `aria-checked` is the server's answer
+          (`isPublished`), so a refused publish leaves it where it was. The header's 投稿 is still
+          the form's first submit button, which is what an Enter in a field would activate, and
+          blockImplicitSubmit cancels that anyway.
+
+          Only once the post has been published. The first publish stamps a date that never changes
+          and puts the URL out, so it is not the reversible act a switch stands for; it stays with
+          投稿 alone. From then on, off and on again restore the post as it was dated. */}
+          {everPublished && (
+            <div className='space-y-2 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
+              {/* A section heading, a step below the drawer title (18px) and a step above the field
+              labels (カテゴリ・タグ・サムネイル, 14px grey) — this is the one control here that acts
+              the moment it is pressed. */}
+              <h3 className='text-sm font-bold'>公開状態</h3>
+              <div className='flex items-center gap-3'>
+                {/* Named 公開, not by the heading: "公開状態, on" leaves the direction open, and
+                the name is what fixes it — on means public. */}
+                <button
+                  type='submit'
+                  name='intent'
+                  value={isPublished ? 'unpublish' : 'publish'}
+                  role='switch'
+                  aria-checked={isPublished}
+                  aria-label='公開'
+                  disabled={publishToggleDisabled}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${isPublished ? 'bg-zinc-900 dark:bg-zinc-100' : 'bg-zinc-300 dark:bg-zinc-600'}`}>
+                  <span
+                    aria-hidden='true'
+                    className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform dark:bg-zinc-900 ${isPublished ? 'translate-x-[1.375rem]' : 'translate-x-0.5'}`}
+                  />
+                </button>
+                {/* The state in words, right of the switch it describes (the switch leads the row,
+                on the column's left edge), coloured with the track: dark when public, muted as a
+                draft. 公開中 rather than 公開, so it reads as a state and not a label. No in-flight
+                wording — the switch is disabled while the action runs, and the word changes once
+                it settles. Hidden from assistive tech: `aria-checked` already says it. */}
+                <span
+                  aria-hidden='true'
+                  className={`text-sm ${isPublished ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                  {isPublished ? '公開中' : '下書き'}
+                </span>
+              </div>
+              {/* The header shows the same message, but this drawer is modal and dims the header
+            beneath it — a refusal caused by this switch would otherwise land out of reach. */}
+              {error && (
+                <p role='alert' className='text-sm text-red-600'>
+                  {error}
+                </p>
+              )}
             </div>
           )}
         </div>

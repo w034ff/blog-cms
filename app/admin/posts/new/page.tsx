@@ -27,6 +27,7 @@ export default function NewPostPage() {
         initial={emptyInitial}
         mode='create'
         published={false}
+        everPublished={false}
         hasPendingEdits={false}
       />
     </section>

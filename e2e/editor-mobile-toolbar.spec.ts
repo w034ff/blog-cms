@@ -456,6 +456,11 @@ test.describe('on an emulated phone', () => {
     const drawerBox = (await page.locator('#post-settings-panel').boundingBox())!;
     expect(drawerBox.x).toBeGreaterThan(0);
 
+    // The drawer's other way out, at the app's 40px touch floor (§12.28, CloseButton.tsx).
+    const closeBox = (await page.getByRole('button', { name: '閉じる' }).boundingBox())!;
+    expect(closeBox.width).toBe(40);
+    expect(closeBox.height).toBe(40);
+
     await page.mouse.click(5, 100);
     await expect(page.getByRole('button', { name: '記事の設定' })).toHaveAttribute(
       'aria-expanded',

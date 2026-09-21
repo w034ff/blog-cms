@@ -249,23 +249,166 @@ test('Enter in the title does not reach 投稿', async ({ page }) => {
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
 });
 
-test('下書きに戻す unpublishes from inside 記事の設定', async ({ page }) => {
+// 記事の設定's 公開 switch (docs/editor-requirements.md §12.27). The switch is the server's answer,
+// not the click: `aria-checked` follows `isPublished`, which only a settled action moves.
+test('公開 in 記事の設定 appears after the first 投稿, then unpublishes and publishes again', async ({
+  page,
+}) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.getByLabel('タイトル').fill('E2E unpublish from panel');
+  await page.getByLabel('タイトル').fill('E2E publish switch');
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Take me down.');
   await expectAutosaved(page);
+
+  // Never published: the first publish stamps a date for good, so it belongs to 投稿 alone.
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  await expect(page.getByRole('switch', { name: '公開' })).toHaveCount(0);
+  await page.getByRole('button', { name: '閉じる' }).click();
+
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
   // It is not on the header bar: a pinned unpublish would sit one click away for the whole
   // writing session, and it is never wanted from the middle of a post.
-  await expect(header(page).getByRole('button', { name: '下書きに戻す' })).toHaveCount(0);
+  await expect(header(page).getByRole('switch')).toHaveCount(0);
 
   await page.getByRole('button', { name: '記事の設定' }).click();
-  await page.getByRole('button', { name: '下書きに戻す' }).click();
-
+  // On a pointer the close button is 36px, 記事一覧's arrow's size (§12.28, CloseButton.tsx).
+  const closeBox = (await page.getByRole('button', { name: '閉じる' }).boundingBox())!;
+  expect([closeBox.width, closeBox.height]).toEqual([36, 36]);
+  const toggle = page.getByRole('switch', { name: '公開' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
   await expectDraft(page);
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
+
+  // The drawer stays open through the action, so the same switch takes it back up.
+  await toggle.click();
+  await expectPublished(page);
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+});
+
+// A refused publish leaves the switch off and says why inside the drawer — the header carries the
+// same message, but the modal drawer's backdrop dims it. A reference with no note is refused by
+// the server (lib/footnotes.ts `incompleteFootnotes`), past the browser's own `required` check.
+test('a refused 公開 leaves the switch off and shows the reason in the drawer', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByLabel('タイトル').fill('E2E refused publish switch');
+  await page.locator('.ProseMirror').click();
+  await page.keyboard.type('Body.');
+  await expectAutosaved(page);
+  await page.getByRole('button', { name: '投稿' }).click();
+  await expectPublished(page);
+
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  const toggle = page.getByRole('switch', { name: '公開' });
+  await toggle.click();
+  await expectDraft(page);
+  await page.getByRole('button', { name: '閉じる' }).click();
+  await loadMarkdown(page, '本文[^a]\n\n[^a]:\n');
+  await expectAutosaved(page);
+
+  await page.getByRole('button', { name: '記事の設定' }).click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+
+  const drawer = page.getByRole('dialog', { name: '記事の設定' });
+  await expect(drawer.getByRole('alert')).toContainText('注釈が空の脚注');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expectDraft(page);
+});
+
+// A refused first 投稿 on a post begun at /admin/posts/new, without a reload. Autosave has rewritten
+// the URL to /edit by then, and the refusal used to vanish: the proxy's session refresh made every
+// action a full-page revalidation, which swapped in the edit page and remounted the editor
+// (proxy.ts's `next-action` check, §12.27).
+test('a refused first 投稿 keeps its message and the editor', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByLabel('タイトル').fill('E2E refused first publish');
+  await loadMarkdown(page, '本文[^a]\n\n[^a]:\n');
+  await expectAutosaved(page);
+  await page.evaluate(() => {
+    (document.querySelector('form') as HTMLFormElement).dataset.mountProbe = 'kept';
+  });
+
+  await page.getByRole('button', { name: '投稿' }).click();
+
+  await expect(header(page).getByText('注釈が空の脚注')).toBeVisible();
+  await expectDraft(page);
+  // The same <form> element: a remount would have replaced it without the marker.
+  await expect(page.locator('form[data-mount-probe="kept"]')).toHaveCount(1);
+});
+
+// 記事の設定's focus (docs/editor-requirements.md §12.29). Opening moves focus to the drawer itself;
+// every way of closing it returns focus to the gear; while modal, Tab stays inside.
+test.describe('記事の設定 focus', () => {
+  const panelHasFocus = (page: Page) =>
+    page.evaluate(() => Boolean(document.activeElement?.closest('#post-settings-panel')));
+
+  test('opens onto the drawer, keeps Tab inside, and returns to the gear', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    const gear = page.getByRole('button', { name: '記事の設定' });
+    const drawer = page.getByRole('dialog', { name: '記事の設定' });
+
+    await gear.click();
+    await expect(drawer).toBeFocused();
+    await expect(drawer).toHaveAttribute('aria-modal', 'true');
+
+    // More presses than the drawer has stops, in both directions: none may land outside it.
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press('Tab');
+      expect(await panelHasFocus(page)).toBe(true);
+    }
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press('Shift+Tab');
+      expect(await panelHasFocus(page)).toBe(true);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(gear).toBeFocused();
+
+    await gear.click();
+    await page.getByRole('button', { name: '閉じる' }).click();
+    await expect(gear).toBeFocused();
+
+    await gear.click();
+    await page.mouse.click(100, 400);
+    await expect(drawer).toBeHidden();
+    await expect(gear).toBeFocused();
+  });
+
+  // Past `min-width: 100rem` the drawer is not modal (§12.25): no trap, a press into the editor
+  // leaves it open, and Escape closes it only from inside — one pressed in the editor is the
+  // editor's.
+  test('past the modal width, Escape closes it only from inside', async ({ page }) => {
+    await page.setViewportSize({ width: 1700, height: 900 });
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    const gear = page.getByRole('button', { name: '記事の設定' });
+    const drawer = page.getByRole('dialog', { name: '記事の設定' });
+
+    await gear.click();
+    await expect(drawer).toBeFocused();
+    await expect(drawer).not.toHaveAttribute('aria-modal', 'true');
+
+    await page.locator('.ProseMirror').click();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeVisible();
+    await expect(page.locator('.ProseMirror')).toBeFocused();
+
+    await page.getByLabel('カテゴリ').click();
+    await page.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(gear).toBeFocused();
+  });
 });
