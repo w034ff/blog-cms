@@ -789,6 +789,8 @@ export function PostEditor({
             publishToggleDisabled={pending || (!hasIdentity && autosaveState === 'saving')}
             error={state.error && errorVisible ? state.error : null}
             returnFocusRef={settingsToggleRef}
+            historyHref={hasIdentity ? `/admin/posts/${committedId}/revisions` : null}
+            historyDisabled={unsaved || pending}
           />
 
           <div className='space-y-2'>

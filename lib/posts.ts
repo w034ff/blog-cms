@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
+import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
 import type { CategoryCount, DraftContent, Post, TagCount } from '@/lib/types';
 
 const tagsSchema = z.array(z.string()).catch([]);
@@ -89,7 +90,7 @@ export async function listAllPosts(): Promise<AdminPost[]> {
       ...post,
       hasPendingEdits: hasUnpublishedEdits(
         post,
-        row.draftContent ? toDraftContent(row.draftContent) : null,
+        row.draftContent ? normalizeDraftContent(row.draftContent) : null,
       ),
     };
   });
@@ -116,41 +117,15 @@ export function liveContent(post: Post): DraftContent {
 // only by publishing again. Comparing the content answers that case and the genuine one alike, and
 // asks nothing of the write path (where an abort would not help: the request is already sent, and
 // the handler runs whether or not the client is still listening).
-//
-// The comparison is written out field by field on purpose: a field added to DraftContent later
-// needs a line here too, the same obligation `toDraftContent` above carries for its defaults.
 function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boolean {
-  if (draftContent === null) return false;
-  const live = liveContent(post);
-  return (
-    draftContent.title !== live.title ||
-    draftContent.category !== live.category ||
-    draftContent.body !== live.body ||
-    draftContent.thumbnail !== live.thumbnail ||
-    draftContent.tags.length !== live.tags.length ||
-    draftContent.tags.some((tag, index) => tag !== live.tags[index])
-  );
-}
-
-// `draft_content` is JSON, and `$type<DraftContent>()` only asserts its shape — nothing validates
-// what is actually in the column. Every row written before a field existed is missing that field,
-// and the assertion hides it: `thumbnail` came in 2026-08-15, so a post that had pending edits
-// before then hands back `undefined` where the type promises a string. That reached the editor as a
-// field showing 「なし」 while its label claimed an image had been chosen, with the body fallback
-// skipped, because `undefined === ''` is false.
-//
-// Normalized here rather than at each reader, which is the same call `toPost` makes one function up
-// for `tags` (`tagsSchema … .catch([])`). A field added to DraftContent later needs its default
-// added here too.
-function toDraftContent(stored: DraftContent): DraftContent {
-  return { ...stored, thumbnail: stored.thumbnail ?? '' };
+  return draftContent !== null && !sameDraftContent(draftContent, liveContent(post));
 }
 
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
   const row = db.select().from(posts).where(eq(posts.id, id)).get();
   if (!row) return null;
   const post = toPost(row);
-  const draftContent = row.draftContent ? toDraftContent(row.draftContent) : null;
+  const draftContent = row.draftContent ? normalizeDraftContent(row.draftContent) : null;
   return { ...post, draftContent, hasPendingEdits: hasUnpublishedEdits(post, draftContent) };
 }
 

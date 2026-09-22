@@ -6,6 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 const dest = process.env.BLOG_DB_PATH;
 const username = process.env.E2E_ADMIN_USERNAME;
@@ -43,6 +45,12 @@ src.close();
 // Cost 12 mirrors scripts/seed.mts.
 const db = new Database(dest);
 db.pragma('journal_mode = WAL');
+
+// Bring the copy up to the schema this checkout declares. The source is the real DB, which is
+// migrated by hand (`npm run db:migrate`, scripts/migrate-db.mts) and can lag a branch that adds a
+// migration — without this every spec touching the new table fails as if the harness were broken.
+// Only the copy is touched; the source was opened read-only above.
+migrate(drizzle(db), { migrationsFolder: path.join(process.cwd(), 'drizzle') });
 db.prepare(
   `INSERT INTO users (username, password_hash) VALUES (?, ?)
    ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash`,

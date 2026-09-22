@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getDraftBySlug, getPostBySlug } from '@/lib/posts';
+import { getDraftBySlug, getPostBySlug, getPostForEdit } from '@/lib/posts';
+import { getRevision } from '@/lib/revisions';
+import { restoreRevisionAction } from '@/app/actions/revisions';
 import { getOptionalSession } from '@/lib/dal';
 import { readLinkPreview } from '@/lib/link-previews';
 import { linkImageSrc } from '@/lib/link-image';
@@ -10,7 +12,7 @@ import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
 import { siteOrigin } from '@/lib/site';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
 import type { Post } from '@/lib/types';
-import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
+import { formatPostDate, formatRevisionTime, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
@@ -21,6 +23,7 @@ import { TocNavMobile, TocNavDesktop } from '@/components/TocNav';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 
 type Params = { slug: string };
+type SearchParams = { [key: string]: string | string[] | undefined };
 
 // Below this, a table of contents is more clutter than aid (see the design discussion this
 // pins: a 1-2 heading post has nothing worth jumping around for).
@@ -99,11 +102,62 @@ async function readablePost(slug: string): Promise<{ post: Post; preview: boolea
   return draft ? { post: draft, preview: true } : null;
 }
 
-export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
+// A past version of the post, shown in place of the current one (docs/revision-requirements.md
+// §5). The same route and rendering as the draft preview above, for the same reason: what the
+// author judges a version by is how it reads, so it is drawn exactly as it would ship.
+//
+// Session-gated on its own, not through readablePost: a published post answers without a session,
+// and `?rev=` must not widen that to its history. Without one the parameter is simply ignored.
+//
+// `live` is the version in the post's own columns — a published post's current public text, and
+// what restoring discards pending edits back to. A draft has none.
+type RevisionView = {
+  target: number | 'live';
+  // What the banner names the version as.
+  label: string;
+  // Whether 「この版に戻す」 would change anything. Only `live` can be a no-op: it is one when
+  // there are no pending edits to discard.
+  restorable: boolean;
+};
+
+async function revisionView(
+  post: Post,
+  rev: string | string[] | undefined,
+): Promise<{ post: Post; view: RevisionView } | null | 'not-found'> {
+  if (typeof rev !== 'string' || !(await getOptionalSession())) return null;
+  if (rev === 'live') {
+    if (post.draft) return 'not-found';
+    const forEdit = await getPostForEdit(post.id);
+    return {
+      post,
+      view: { target: 'live', label: '公開中の版', restorable: forEdit?.hasPendingEdits ?? false },
+    };
+  }
+  const revisionId = Number(rev);
+  const revision = Number.isInteger(revisionId) ? getRevision(post.id, revisionId) : null;
+  if (!revision) return 'not-found';
+  return {
+    post: { ...post, ...revision.content },
+    view: { target: revision.id, label: formatRevisionTime(revision.createdAt), restorable: true },
+  };
+}
+
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
+}): Promise<Metadata> {
   const { slug } = await params;
   const readable = await readablePost(slug);
   if (!readable) return {};
   const { post, preview } = readable;
+  const revision = await revisionView(post, (await searchParams).rev);
+  if (revision !== null) {
+    const title = revision === 'not-found' ? post.title : revision.post.title;
+    return { title: `[履歴] ${title}`, robots: { index: false, follow: false } };
+  }
   // A preview says so in the tab, because the page it is previewing will look identical there.
   if (preview) {
     // Explicit, not inherited. The site is noindex-wide today; that flag goes when it opens up,
@@ -144,11 +198,20 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   };
 }
 
-export default async function PostPage({ params }: { params: Promise<Params> }) {
+export default async function PostPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
+}) {
   const { slug } = await params;
   const readable = await readablePost(slug);
   if (!readable) notFound();
-  const { post, preview } = readable;
+  const revision = await revisionView(readable.post, (await searchParams).rev);
+  if (revision === 'not-found') notFound();
+  const post = revision?.post ?? readable.post;
+  const preview = readable.preview && revision === null;
 
   // resolveCard is handed over unchanged, so a link card inside a draft still resolves through
   // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
@@ -168,6 +231,35 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
           author who already knows how their own editor works. 下書きのプレビュー is the whole
           claim; the link is the next thing an author wants. Outside the <article>, because it is
           not part of the post. */}
+      {revision && (
+        <div
+          role='status'
+          className='mx-auto mb-6 flex max-w-site flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-sky-400 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-100'>
+          <span>
+            <b className='font-semibold'>履歴のプレビュー</b> · {revision.view.label}
+          </span>
+          <div className='flex shrink-0 items-center gap-4'>
+            <Link
+              href={`/admin/posts/${post.id}/revisions`}
+              className='font-medium underline underline-offset-2'>
+              履歴に戻る
+            </Link>
+            {/* Restores without asking: what it replaces is kept as a revision first, so the
+                restore can itself be undone from the same list (§2). */}
+            {revision.view.restorable && (
+              <form action={restoreRevisionAction}>
+                <input type='hidden' name='postId' value={post.id} />
+                <input type='hidden' name='revision' value={revision.view.target} />
+                <button
+                  type='submit'
+                  className='rounded bg-sky-700 px-3 py-1 font-medium text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500'>
+                  この版に戻す
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
       {preview && (
         <div
           role='status'

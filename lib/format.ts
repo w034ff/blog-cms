@@ -33,3 +33,15 @@ export function hasVisibleUpdate(date: string, updatedAt: string): boolean {
   if (!date) return false;
   return formatPostDate(date) !== formatPostDate(updatedAt);
 }
+
+// A revision's moment (docs/revision-requirements.md §5): date and minute in JST. The minute is
+// the point — several revisions of one post routinely share a day.
+const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  ...DATE_OPTIONS,
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
+export function formatRevisionTime(epochMs: number): string {
+  return format(new Date(epochMs).toISOString(), DATE_TIME_OPTIONS);
+}

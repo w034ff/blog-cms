@@ -111,3 +111,22 @@ export const linkPreviews = sqliteTable('link_previews', {
   // includes "it had one and it could not be fetched when the row was written".
   image: text('image').notNull().default(''),
 });
+
+// Past versions of a post (docs/revision-requirements.md). Its own table, not columns on `posts`:
+// one post carries several, and `posts` only accepts schema changes appended at its tail.
+//
+// No foreign key. `deletePost` removes a post's revisions in the same transaction instead, because
+// a cascade would hold only where `foreign_keys` is on — the app's connection, not test/db.ts's —
+// and a test of "deleting a post deletes its revisions" would then measure nothing.
+export const postRevisions = sqliteTable('post_revisions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  postId: integer('post_id').notNull(),
+  // Epoch milliseconds, like `loginAttempts.lastFailureAt`; the history page formats it as JST.
+  createdAt: integer('created_at').notNull(),
+  // What was about to be lost when this was taken (§3): a published version being replaced, the
+  // stored content an editing session was about to overwrite, or what a restore replaced.
+  reason: text('reason', { enum: ['publish', 'session', 'restore'] }).notNull(),
+  // A DraftContent, newlines normalized to LF. Read through `normalizeDraftContent`, for the same
+  // reason `draft_content` is: `$type` asserts the shape of rows written before a field existed.
+  content: text('content', { mode: 'json' }).$type<DraftContent>().notNull(),
+});

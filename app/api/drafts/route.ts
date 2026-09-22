@@ -14,6 +14,9 @@ const autosaveSchema = z.object({
   // Present when updating an existing post. Absent on the first save of a
   // brand-new post, which has no row (and no slug) yet.
   id: z.number().int().optional(),
+  // The first save of an editing session (docs/revision-requirements.md §3): it keeps what it is
+  // about to overwrite as a revision. Lenient like everything here — a bad value only costs that.
+  sessionStart: z.boolean().catch(false).optional(),
   content: z.object({
     title: z.string().catch(''),
     category: z.string().catch(''),
@@ -41,7 +44,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid' }, { status: 400 });
   }
-  const { id, content } = parsed.data;
+  const { id, content, sessionStart } = parsed.data;
 
   // Update intent: stash edits in the right place (live columns for a draft,
   // the private working copy for a published post). No-op if it was deleted.
@@ -49,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (!postExists(id)) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
-    autosavePost(id, content);
+    autosavePost(id, content, { sessionStart });
     return NextResponse.json({ id, savedAt: Date.now() });
   }
 

@@ -10,7 +10,7 @@
 // not disagree about which one it is.
 
 // The shape a thumbnail may take: a site-relative path into the uploads
-// directory. The character class matches scripts/gc-uploads.mts's `UPLOAD_REF`,
+// directory. The character class matches scripts/upload-refs.mts's `UPLOAD_REF`,
 // which is what decides whether the file is still referenced — a thumbnail this
 // accepts but the sweep does not recognise would be deleted out from under the
 // post.

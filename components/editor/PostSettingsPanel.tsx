@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import { useRouter } from 'next/navigation';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
@@ -69,6 +70,12 @@ type Props = {
   error: string | null;
   // The gear that opens this, where focus goes back on close (§12.29).
   returnFocusRef: RefObject<HTMLButtonElement | null>;
+  // The post's history page, or null while a brand-new post has no row yet
+  // (docs/revision-requirements.md §5).
+  historyHref: string | null;
+  // True while edits are not yet persisted (§5): leaving would strand them, and an autosave still
+  // in flight could land on top of a restore made from the history.
+  historyDisabled: boolean;
 };
 
 export function PostSettingsPanel({
@@ -86,7 +93,10 @@ export function PostSettingsPanel({
   publishToggleDisabled,
   error,
   returnFocusRef,
+  historyHref,
+  historyDisabled,
 }: Props) {
+  const router = useRouter();
   // Above `app/globals.css`'s own `min-width: 100rem` (§12.25), the backdrop goes
   // `pointer-events: none` and transparent — the drawer clears the editor column at that width, so
   // there is nothing left to block. That alone stops presses from reaching it and stops the
@@ -321,6 +331,21 @@ export function PostSettingsPanel({
                   {error}
                 </p>
               )}
+            </div>
+          )}
+          {/* 履歴 (docs/revision-requirements.md §5). A button that navigates rather than a link,
+          because it has to be disableable: an in-app navigation gets no beforeunload guard, so
+          while edits are unsaved this is the only thing stopping them from being left behind.
+          Also how pending edits are discarded — the history lists 公開中の版 first. */}
+          {historyHref !== null && (
+            <div className='border-t border-zinc-300 pt-4 dark:border-zinc-700'>
+              <button
+                type='button'
+                disabled={historyDisabled}
+                onClick={() => router.push(historyHref)}
+                className='text-sm font-medium hover:underline disabled:opacity-50 disabled:hover:no-underline'>
+                履歴
+              </button>
             </div>
           )}
         </div>

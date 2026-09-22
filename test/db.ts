@@ -21,7 +21,13 @@ const STATEMENTS = readMigrations().flatMap((migration) => migration.statements)
 // A fresh in-memory database carrying the whole schema, wired to the same drizzle
 // schema the app uses. Swap it in for `@/lib/db` via vi.mock in a test file.
 export function createTestDb(): AppDatabase {
+  return drizzle({ client: createTestSqlite(), schema });
+}
+
+// The same database without the drizzle wrapper, for code that takes a raw better-sqlite3
+// connection — the maintenance scripts do (scripts/upload-refs.mts).
+export function createTestSqlite(): Database.Database {
   const sqlite = new Database(':memory:');
   for (const statement of STATEMENTS) sqlite.exec(statement);
-  return drizzle({ client: sqlite, schema });
+  return sqlite;
 }
