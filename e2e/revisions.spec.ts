@@ -103,6 +103,24 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
   await expect(page.getByRole('link', { name: /復元する前/ })).toBeVisible();
 });
 
+test('the 差分 view shows what the editor holds beyond the version (row 13)', async ({ page }) => {
+  const editPath = await newPost(page, `E2E revision diff ${Date.now()}`, '公開した本文');
+  await page.getByRole('button', { name: '投稿' }).click();
+  await expectPublished(page);
+  await appendInNewSession(page, editPath, ' 未公開の追記');
+
+  await openHistory(page);
+  await page.getByRole('link', { name: /公開中の記事/ }).click();
+  await page.getByRole('link', { name: '差分', exact: true }).click();
+  await expect(page).toHaveURL(/[?&]view=diff/);
+  const diff = page.locator('#revision-diff');
+  await expect(diff.locator('ins')).toContainText('未公開の追記');
+  await expect(page.locator('#post-body')).toHaveCount(0);
+
+  await page.getByRole('link', { name: '本文', exact: true }).click();
+  await expect(page.locator('#post-body')).toContainText('公開した本文');
+});
+
 test.describe('with no session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 

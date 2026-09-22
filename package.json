@@ -36,6 +36,7 @@
     "@tiptap/suggestion": "3.28.0",
     "bcryptjs": "3.0.3",
     "better-sqlite3": "12.11.1",
+    "diff": "9.0.0",
     "drizzle-orm": "0.45.2",
     "github-slugger": "2.0.0",
     "gray-matter": "^4.0.3",

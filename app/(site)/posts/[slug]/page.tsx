@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Metadata } from 'next';
-import { getDraftBySlug, getPostBySlug, getPostForEdit } from '@/lib/posts';
+import { getDraftBySlug, getPostBySlug, getPostForEdit, liveContent } from '@/lib/posts';
+import { diffRevision } from '@/lib/revision-diff';
+import { RevisionDiffView } from '@/components/RevisionDiffView';
 import { getRevision } from '@/lib/revisions';
 import { restoreRevisionAction } from '@/app/actions/revisions';
 import { getOptionalSession } from '@/lib/dal';
@@ -11,7 +13,7 @@ import { normalizeCardHref } from '@/lib/link-card-href';
 import { externalCardImage, internalCardImage } from '@/lib/link-card-image';
 import { siteOrigin } from '@/lib/site';
 import { renderMdxToHtml, type CardTarget } from '@/lib/render';
-import type { Post } from '@/lib/types';
+import type { DraftContent, Post } from '@/lib/types';
 import { formatPostDate, formatRevisionTime, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
@@ -121,6 +123,9 @@ type RevisionView = {
   // Whether the button would change anything. Only `live` can be a no-op: it is one when
   // there are no pending edits to discard.
   restorable: boolean;
+  // The version shown, and what the editor holds now — the two the 差分 view compares (§9).
+  content: DraftContent;
+  current: DraftContent;
 };
 
 async function revisionView(
@@ -128,16 +133,21 @@ async function revisionView(
   rev: string | string[] | undefined,
 ): Promise<{ post: Post; view: RevisionView } | null | 'not-found'> {
   if (typeof rev !== 'string' || !(await getOptionalSession())) return null;
+  const forEdit = await getPostForEdit(post.id);
+  if (!forEdit) return 'not-found';
+  // What the editor opens with: the working copy when there is one.
+  const current = forEdit.draftContent ?? liveContent(forEdit);
   if (rev === 'live') {
     if (post.draft) return 'not-found';
-    const forEdit = await getPostForEdit(post.id);
     return {
       post,
       view: {
         target: 'live',
         label: '公開中の記事',
         action: '未公開の変更を破棄',
-        restorable: forEdit?.hasPendingEdits ?? false,
+        restorable: forEdit.hasPendingEdits,
+        content: liveContent(post),
+        current,
       },
     };
   }
@@ -151,6 +161,8 @@ async function revisionView(
       label: formatRevisionTime(revision.createdAt),
       action: '復元する',
       restorable: true,
+      content: revision.content,
+      current,
     },
   };
 }
@@ -225,11 +237,22 @@ export default async function PostPage({
   if (revision === 'not-found') notFound();
   const post = revision?.post ?? readable.post;
   const preview = readable.preview && revision === null;
+  // The revision preview's 差分 view (§9) replaces the body; the header and banner stay.
+  const diff =
+    revision && (await searchParams).view === 'diff'
+      ? diffRevision(revision.view.content, revision.view.current)
+      : null;
+  const revisionHref = (view: 'body' | 'diff') =>
+    revision
+      ? `/posts/${slug}?rev=${revision.view.target}${view === 'diff' ? '&view=diff' : ''}`
+      : '';
 
   // resolveCard is handed over unchanged, so a link card inside a draft still resolves through
   // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
   // would for a reader. The preview shows what will ship, and that includes what will not resolve.
-  const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
+  const { html, toc } = diff
+    ? { html: '', toc: [] }
+    : await renderMdxToHtml(post.body, { resolveCard });
   const showToc = toc.length >= MIN_HEADINGS_FOR_TOC;
 
   return (
@@ -251,7 +274,24 @@ export default async function PostPage({
           <span>
             <b className='font-semibold'>リビジョンのプレビュー</b> · {revision.view.label}
           </span>
-          <div className='flex shrink-0 items-center gap-4'>
+          <div className='flex flex-wrap items-center gap-x-4 gap-y-2'>
+            {/* 本文 / 差分: the same version read two ways. Links, since each is its own URL. */}
+            <nav
+              aria-label='表示'
+              className='flex overflow-hidden rounded border border-sky-400 dark:border-sky-700'>
+              {(['body', 'diff'] as const).map((view) => {
+                const active = (view === 'diff') === (diff !== null);
+                return (
+                  <Link
+                    key={view}
+                    href={revisionHref(view)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`px-2 py-0.5 ${active ? 'bg-sky-700 text-white dark:bg-sky-600' : 'hover:bg-sky-100 dark:hover:bg-sky-900'}`}>
+                    {view === 'diff' ? '差分' : '本文'}
+                  </Link>
+                );
+              })}
+            </nav>
             <Link
               href={`/admin/posts/${post.id}/revisions`}
               className='font-medium underline underline-offset-2'>
@@ -347,12 +387,20 @@ export default async function PostPage({
             column, so it — not the column — sets the body's reading width (--container-site
             − 2×padding − 2×border). At 6 that lands on ~750px; at 8 it would drop to ~734px. */}
           <div className='rounded-lg border border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6 sm:py-8'>
-            {showToc && <TocNavMobile toc={toc} />}
-            <div
-              id='post-body'
-              className='prose prose-zinc dark:prose-invert max-w-none'
-              dangerouslySetInnerHTML={{ __html: html }}
-            />
+            {diff ? (
+              <div id='revision-diff'>
+                <RevisionDiffView diff={diff} />
+              </div>
+            ) : (
+              <>
+                {showToc && <TocNavMobile toc={toc} />}
+                <div
+                  id='post-body'
+                  className='prose prose-zinc dark:prose-invert max-w-none'
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
+              </>
+            )}
           </div>
           {/* Client enhancers: each attaches behaviour to the server-rendered body after mount and
             renders nothing itself — a copy button on each code block, a preview of the note behind
