@@ -1,6 +1,6 @@
 import { Extension } from '@tiptap/core';
 import { isHistoryTransaction } from '@tiptap/pm/history';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state';
 import { hasUndoableInputRule } from './input-rule-undo';
 
 // Replaces StarterKit's TrailingNode (`StarterKit.configure({ trailingNode: false })`), whose
@@ -85,9 +85,33 @@ export const TrailingNode = Extension.create({
 
           const end = state.doc.content.size;
           const position = trailingSection ? end - trailingSection.nodeSize : end;
-          return state.tr.insert(position, defaultType.create());
+          // Marked so the append can be told apart from an edit. See isTrailingNodeOnlyUpdate.
+          return state.tr.insert(position, defaultType.create()).setMeta(trailingNodeKey, true);
         },
       }),
     ];
   },
 });
+
+// Whether a round of transactions changed the document only because this extension appended its
+// paragraph — that is, the author did nothing.
+//
+// This is asked because the append rides someone else's transaction rather than its own (see the
+// wait described at the top of this file), and @tiptap/core emits `update` for the whole round:
+// its bail-out is `!transactions.some(tr => tr.docChanged)`, so an appended transaction is enough
+// on its own. The visible consequence, measured 2026-09-13: opening a published post whose last
+// block is a list, heading, table or fence and merely clicking to place the caret ran an autosave.
+// The saved markdown was identical — an empty trailing paragraph does not survive serialization —
+// but it wrote a `draft_content` row, so the post read as carrying unpublished changes it did not
+// have. A post ending in a paragraph never showed it, because then there is nothing to append.
+//
+// `appendedTransactions` is handed to the handler by the same emit, which is what makes the two
+// separable at all.
+export function isTrailingNodeOnlyUpdate(
+  transaction: Transaction,
+  appendedTransactions: readonly Transaction[],
+): boolean {
+  if (transaction.docChanged) return false;
+  const changed = appendedTransactions.filter((tr) => tr.docChanged);
+  return changed.length > 0 && changed.every((tr) => tr.getMeta(trailingNodeKey) === true);
+}

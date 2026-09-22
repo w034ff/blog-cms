@@ -1,52 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { getSchema } from '@tiptap/core';
-import { TableKit } from '@tiptap/extension-table';
-import StarterKit from '@tiptap/starter-kit';
 import { Fragment, Slice } from '@tiptap/pm/model';
-import type { Schema } from '@tiptap/pm/model';
-import { Callout } from './callout-extension';
 import { isInDetailsTitle, titleAcceptsSlice } from './details-slice-guard';
-import {
-  MarkdownDetails,
-  MarkdownDetailsContent,
-  MarkdownDetailsSummary,
-} from './details-extension';
-import {
-  Document,
-  FootnoteDefinition,
-  FootnoteReference,
-  FootnoteSection,
-} from './footnote-extension';
-import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
+import { docOf, nodes, para, text } from './test-schema';
 
-// §6.8's rule, asked of the schema PostEditor actually builds — the same reason
-// footnote-placement.test.ts assembles the real one: what refuses here is `detailsSummary`'s own
-// content expression, so a schema written to suit the test would prove nothing.
+// §6.8's rule, asked of the schema PostEditor actually builds: what refuses here is
+// `detailsSummary`'s own content expression, so a schema written to suit the test would prove
+// nothing. `test-schema.ts` builds it from `postEditorExtensions` itself — which is the claim the
+// hand-listed array this file used to carry could only make in a comment.
 //
 // This exists as a unit test because the drop half cannot be driven end-to-end: an in-editor drag
 // never fires `dragstart` under CDP, so the harness cannot start one (see the E2E notes). The paste
 // half is covered in `e2e/editor-details-title-guard.spec.ts`; both halves ask this one predicate,
 // so pinning it here is what stands behind the gesture the browser can't be made to perform.
-const schema: Schema = getSchema([
-  StarterKit.configure({ document: false }),
-  Document,
-  TableKit.configure({ tableCell: false, tableHeader: false }),
-  ParagraphTableCell,
-  ParagraphTableHeader,
-  FootnoteReference,
-  FootnoteDefinition,
-  FootnoteSection,
-  Callout,
-  MarkdownDetails,
-  MarkdownDetailsSummary,
-  MarkdownDetailsContent,
-]);
-
-const { details, detailsSummary, detailsContent, paragraph, callout, footnoteReference } =
-  schema.nodes;
-
-const text = (value: string) => schema.text(value);
-const para = (value: string) => paragraph.create(null, value ? text(value) : null);
+//
+// **The slices below are built by hand on purpose.** This file is a truth table over slice shapes —
+// open depths and child counts — rather than a stand-in for one gesture, so `nodeSlice` and
+// `rangeSlice` would narrow it rather than sharpen it. Where a test does stand for a gesture, those
+// are what it should use.
+const { details, detailsSummary, detailsContent, paragraph, callout, footnoteReference } = nodes;
 
 describe('titleAcceptsSlice', () => {
   it('accepts a range copied from within one paragraph', () => {
@@ -102,13 +73,13 @@ describe('titleAcceptsSlice', () => {
 });
 
 describe('isInDetailsTitle', () => {
-  const doc = schema.nodes.doc.create(null, [
+  const doc = docOf(
     details.create(null, [
       detailsSummary.create(null, text('タイトル')),
       detailsContent.create(null, para('本文')),
     ]),
     para('あと'),
-  ]);
+  );
 
   it('is true inside the title', () => {
     // 2 = inside detailsSummary's text (details opens at 0, the summary at 1).

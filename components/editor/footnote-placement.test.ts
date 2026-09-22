@@ -1,47 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { getSchema } from '@tiptap/core';
-import { TableKit } from '@tiptap/extension-table';
-import StarterKit from '@tiptap/starter-kit';
 import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { Fragment, Slice } from '@tiptap/pm/model';
-import type { Schema } from '@tiptap/pm/model';
-import { Callout } from './callout-extension';
-import {
-  MarkdownDetails,
-  MarkdownDetailsContent,
-  MarkdownDetailsSummary,
-} from './details-extension';
-import {
-  Document,
-  FootnoteDefinition,
-  FootnoteReference,
-  FootnoteSection,
-  hostRefusalAt,
-  placementRefusal,
-} from './footnote-extension';
-import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
+import { hostRefusalAt, placementRefusal } from './footnote-extension';
+import { schema } from './test-schema';
 
 // §6's placement rules, asked of the schema PostEditor actually builds rather than of a hand-written
 // one — the whole point of the accordion case below is that it is the *node's content expression*
-// that refuses, so a schema assembled to suit the test would prove nothing.
-//
-// Only the schema-shaped extensions are listed. The rest of PostEditor's array (the slash menu, the
-// drag handle, the toolbar's guarded toggles) contributes commands and plugins, not nodes.
-const schema: Schema = getSchema([
-  StarterKit.configure({ document: false }),
-  Document,
-  TableKit.configure({ tableCell: false, tableHeader: false }),
-  ParagraphTableCell,
-  ParagraphTableHeader,
-  FootnoteReference,
-  FootnoteDefinition,
-  FootnoteSection,
-  Callout,
-  MarkdownDetails,
-  MarkdownDetailsSummary,
-  MarkdownDetailsContent,
-]);
-
+// that refuses, so a schema assembled to suit the test would prove nothing. `test-schema.ts` builds
+// it from `postEditorExtensions`, so that is now the registration itself and not a list of the
+// schema-shaped extensions kept in step with it by hand.
 const { details, detailsSummary, detailsContent, paragraph, footnoteReference } = schema.nodes;
 
 // One accordion with a filled-in title and a one-line body, then a trailing paragraph — the shape

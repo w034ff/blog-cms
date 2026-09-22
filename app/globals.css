@@ -61,6 +61,18 @@ html {
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* The post editor's sticky header height, which the format toolbar below it pins against
+     (`top-(--editor-header-h)` in components/PostEditor.tsx). The real value is measured at
+     runtime by components/editor/useMeasuredHeight.ts and set on the <form>, because the
+     bar wraps at narrow widths; this is only what the first paint uses, before the measurement
+     lands. Too small and the toolbar starts one frame too high — never too low, which would
+     leave a gap. */
+  --editor-header-h: 2.75rem;
+  /* The format toolbar's height, which the post pads under on a phone, where the toolbar is fixed
+     to the bottom of the screen (§12.5). Measured by the same hook and for the same reason — it
+     wraps to a second row at 320px. Too small here only means the last line sits a little close
+     until the measurement lands. */
+  --editor-toolbar-h: 2.25rem;
 }
 
 @theme inline {
@@ -210,37 +222,346 @@ body {
   }
 }
 
-/* Editor chrome, touch only: outline every toolbar button so its pressable area can be seen.
-   Where there is no hover there is no `hover:bg-zinc-100` either, and the buttons are then bare
-   text separated by 2px gaps — nothing on screen says where one control ends and the next begins
-   (reported 2026-08-22, after the table toolbar's labels became 「＋行」-sized).
-
-   `box-shadow`, not `border`: a border is 2px of layout per button, and the table toolbar has
-   seven — measured at 360px, that is 315px → 329px against a 328px cap, which puts the row back on
-   two lines (table-requirements.md §12.1 bought exactly that width back). An inset shadow draws the
-   same 1px and costs nothing, and it follows `border-radius`, so the link card's `round` buttons
-   come out as circles.
-
-   Not a background tint, which was the other candidate: `active` already means a filled button
-   (`bg-zinc-200`), and tinting every button at rest would put "pressable" and "currently on" on the
-   same axis. Compared on screen at 360px before choosing.
-
-   `hover: none` rather than a width: what is missing is the hover state itself, so the question is
-   the pointer, not the screen. A laptop with a touchscreen and a mouse reports `hover: hover` and
-   keeps the current look — the same test the tooltip rule above is written against. */
+/* 書き方 (docs/cms-features.md「書き方ヘルプ」§2), pointer only. Every row the sheet holds is
+   either a key or something typed, and it is a second opinion on the tooltips above — which do not
+   exist under `hover: none` either, so the surface that loses this one loses nothing it could have
+   used. It has no touch twin, so it hides by its own class rather than wearing `.pointer-only`:
+   that marker pair is for a control written twice (see its comment further down). */
 @media (hover: none) {
-  .toolbar-button,
-  .prose .link-card-head button,
-  .prose .embed-head button {
-    box-shadow: inset 0 0 0 1px #d4d4d8; /* zinc-300 */
+  .editor-help-button {
+    display: none;
+  }
+}
+
+/* The header's three glyphs (記事一覧, ヘルプ, 記事の設定) are 36px circles on a pointer, the same
+   shape touch gives them at its own 34px (§12.6 / §12.8, requested 2026-09-21). Without it each one
+   is a 16px icon in a 24px box: the hover background then reads as a small rounded smudge behind
+   the glyph rather than as a control, and the three do not line up with each other.
+
+   `min-height` pairs with `min-width` for the reason `.toolbar-button-history` records — the icon
+   is a block-level `<svg>`, so any width a `min-width` adds lands to its right unless flex centres
+   it. The negative margins on the two end controls are re-set here: they exist to keep the glyph
+   flush with the column edge (the title's left edge below 記事一覧), and a 36px box holds its icon
+   10px in, not 4px, so the old `-mx-1` would leave the arrow visibly indented. */
+@media (hover: hover) {
+  .editor-back-link,
+  .editor-help-button,
+  .editor-settings-link {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+    border-radius: 9999px;
+  }
+  /* 18px glyphs, not the 16px the icon components default to: at 16 the glyph is 44% of the box
+     and reads as adrift in it — the same thing reported about the touch header on 2026-09-17, now
+     that this side has the same shape. 18 is half the box, which is where GitHub (16/32) and
+     Material (24/48) both sit. 20 was tried and is too loud beside 投稿's 14px label; the header is
+     chrome with one principal (rendered and compared 2026-09-21).
+
+     Pointer only, so the touch header stays internally consistent: its ＋ (InsertMenu) is a header
+     control too and keeps 16px, and this side has no ＋ to match. */
+  .editor-back-link svg,
+  .editor-help-button svg,
+  .editor-settings-link svg {
+    height: 18px;
+    width: 18px;
+  }
+  .editor-back-link {
+    /* 9px, not 10: the box holds its 18px glyph 9px in, and this is what keeps the arrow's own left
+       edge flush with the title input's below it (measured). It moved with the glyph — at 16px the
+       inset was 10px — so the two numbers have to be changed together. */
+    margin-left: -9px;
+  }
+  /* The gear is NOT at the column's right edge — the divider and 投稿 follow it — so it gets no
+     negative margin at all here, and the Tailwind `-mr-1` it wears for the touch layout is undone.
+     Pulled in either way, the 36px box sits on top of the divider (reported 2026-09-21): what the
+     circle needs on that side is the group's own `gap-2`, not less. */
+  .editor-settings-link {
+    margin-right: 0;
+  }
+}
+
+/* Editor chrome, touch only: no ring around a toolbar button's pressable area (superseded
+   2026-09-19 — §12.2 originally drew one here; docs/table-requirements.md §12.2 records why it
+   came back off, everywhere, rather than staying scoped to the mark row §12.12 had carved out).
+   Kept the mark row's own reasoning for the *other* thing it still does: a background tint at
+   rest was rejected — `active` already means "on" (`bg-zinc-200`), and tinting every button at
+   rest would put "pressable" and "currently on" on one axis. What marks a control's edge is the
+   glyph/label itself, plus `.toolbar-mark-divider` between the mark row's two groups. */
+
+/* The ＋ drawer's own rows (`.insert-menu-rows .toolbar-button`, InsertMenu.tsx, 2026-09-19,
+   requested as "not a card, make the full width pressable"): no rounded corners, full width,
+   text and icon left-aligned rather than centred — a flat list row, not the small boxed button
+   §12.2 once drew everywhere else. The selector reaches every row this way, including 囲み枠
+   and 表's own dropdown triggers (`ToolbarDropdown` nests its `ToolbarButton` inside
+   `.insert-menu-rows` regardless of which menu opened it), so this needed no prop threading
+   through either component — one selector, not four call sites. */
+/* サムネイル's 画像を選ぶ / 変更 / 解除 (ThumbnailField.tsx): 30px on a pointer, the app's 40px floor on
+   touch. Were a 24px `py-1 text-xs`. */
+.thumbnail-field-button {
+  min-height: 30px;
+}
+@media (hover: none) {
+  .thumbnail-field-button {
+    min-height: 40px;
+  }
+}
+
+/* A dialog's close button (CloseButton.tsx) at the app's 40px touch floor; 36px on a pointer is
+   the component's own `h-9 w-9`, matching 記事一覧's arrow. Unlayered, so it outranks the utilities. */
+@media (hover: none) {
+  .dialog-close-button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (hover: none) {
+  /* 44px, not the app-wide 40px floor (requested 2026-09-20, compared against 44/48 side by
+     side): scoped to just this drawer's rows via the compound selector, so the app's other
+     `.toolbar-button`s (main toolbar, table toolbar, image bubble) stay at 40px. */
+  .insert-menu-rows .toolbar-button {
+    min-height: 44px;
+  }
+  .insert-menu-rows .toolbar-button {
+    border-radius: 0;
+    width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    text-align: left;
+  }
+
+  /* Icon-to-label gap, drawer rows only: `画像`'s label carries `toolbar-button` and `gap-1` on
+     the same element, `リンク`/`表` carry `gap-1` on a span nested inside their `toolbar-button` —
+     the compound and descendant selectors below reach both shapes. The same markup renders in the
+     pointer toolbar (§12.4's dual-copy idiom), which this media query leaves untouched. */
+  .insert-menu-rows .toolbar-button.gap-1,
+  .insert-menu-rows .toolbar-button .gap-1 {
+    gap: 0.75rem;
+  }
+
+  /* 囲み枠・表 trigger chevron, drawer rows only: a disclosure ＞ instead of the pointer toolbar's
+     ⌄ (ChevronIcon.tsx's `open`-driven rotation is unchanged there) — these rows read as "opens a
+     picker", closer to how a settings row's ＞ reads, than "expands in place". Fixed at rest, not
+     rotating: since insert-menu-nav.ts routes the tap into a sheet-level view swap rather than
+     this component's own `open` state (ToolbarDropdown.tsx), `open` never turns true here and
+     `ChevronIcon`'s `rotate-180` class never applies — there is nothing left to override. */
+  .insert-menu-rows .toolbar-button .chevron-icon {
+    transform: rotate(-90deg);
+  }
+
+  /* 囲み枠・表's picker, once drilled into (InsertMenu.tsx's `view`, insert-menu-nav.ts): the
+     `.dropdown-item` rows it's built from were sized for the pointer copy's small floating panel
+     (`px-3`) — widened to match the row list's own edge padding (`px-4`) and given the same
+     hairline `divide-y` treatment, so 囲み枠's 3 rows read as a continuation of the row list they
+     replaced rather than a smaller, separate control. The adjacent-sibling selector reaches only
+     consecutive `.dropdown-item`s, which is what keeps 表's grid+dialog content (no `.dropdown-item`
+     in it) out of this rule without a second, content-aware selector. */
+  .insert-menu-drilldown .dropdown-item {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  .insert-menu-drilldown .dropdown-item + .dropdown-item {
+    border-top: 1px solid #d4d4d8; /* zinc-300 */
   }
 }
 
 @media (hover: none) and (prefers-color-scheme: dark) {
-  .toolbar-button,
-  .prose .link-card-head button,
-  .prose .embed-head button {
-    box-shadow: inset 0 0 0 1px #52525b; /* zinc-600 */
+  .insert-menu-drilldown .dropdown-item + .dropdown-item {
+    border-top-color: #3f3f46; /* zinc-700 */
+  }
+}
+
+/* A drilled-into picker's entrance (InsertMenu.tsx's `view`), drawer only: a fade + a small
+   rightward slide, matching the row's own ＞ (the picker enters from the direction the ＞ pointed).
+   Not applied to `.insert-menu-rows` itself — the row list's geometry is asserted immediately
+   after open by e2e/editor-mobile-toolbar.spec.ts §12.19, with no wait for a transition to settle,
+   and this animation only needed to cover the one surface that is new here. `@starting-style`
+   fires on first paint after mount; React swaps the row list and the picker via a ternary
+   (InsertMenu.tsx) rather than toggling `display` on either, so there is no exit state to animate
+   on unmount.
+
+   An exit half (戻る sliding the picker back out) was tried and dropped the same day: the wrapper
+   this rule targets stays mounted and CAN fade via `display: … allow-discrete`, but the picker's
+   own content (CalloutMenu/TableGridMenu, portalled in only while `isActive` — ToolbarDropdown.tsx)
+   unmounts on the very next render once `activeTitle` goes null, well before any transition frame
+   paints. Measured directly: the wrapper's own `getBoundingClientRect().height` was already ~1px
+   in the first sample taken after 戻る, opacity fading over an empty box. Doing this properly needs
+   the content's own removal delayed until the transition ends — real React state, not the
+   CSS-only trick that covers the entrance — and that was judged not worth it (2026-09-20). */
+@media (hover: none) {
+  /* 200ms, not 150 (2026-09-20): matches `.insert-menu-panel`'s own open slide below, so the
+     sheet-open → drill-in sequence doesn't run at two different speeds. */
+  .insert-menu-drilldown {
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease;
+    opacity: 1;
+    transform: translateX(0);
+  }
+  @starting-style {
+    .insert-menu-drilldown {
+      opacity: 0;
+      transform: translateX(8px);
+    }
+  }
+}
+
+/* The ＋ sheet's own entrance, drawer only: a slide up from the bottom edge it's anchored to
+   (`bottom-[var(--editor-kb-inset,0px)]`) — note's and Google Docs' own sheets both do this
+   (InsertMenu.tsx's own comment on why this drawer is modelled on them), requested 2026-09-20.
+   Gated on `prefers-reduced-motion` (the guard html's smooth scroll uses, this file's own top)
+   rather than left unconditional like `.insert-menu-drilldown` above: that one is an 8px nudge no
+   E2E assertion right after open ever had reason to catch, but a full off-screen slide is large
+   enough that a `boundingBox()` mid-transition would fail loudly rather than by a few px —
+   playwright.config.ts sets `reducedMotion: 'reduce'` project-wide, which keeps the whole suite
+   off this branch entirely rather than needing a per-test wait for the transition to settle. */
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  .insert-menu-panel {
+    transition: transform 200ms ease-out;
+    transform: translateY(0);
+  }
+  @starting-style {
+    .insert-menu-panel {
+      transform: translateY(100%);
+    }
+  }
+}
+
+/* 記事の設定's own drawer (PostSettingsPanel.tsx), requested 2026-09-21. Not gated on `hover`,
+   unlike the ＋ sheet above: this is the one panel both a pointer and a touch device open (§12.6/
+   §12.8 only changed the toggle's own glyph, never this).
+
+   **The show/hide is unconditional; only the animation is gated.** This pair alone (no media
+   query) reproduces the plain instant toggle this used before it had a class of its own
+   (`open ? '…' : 'hidden'`, PostSettingsPanel.tsx's own history) — the block below only adds a
+   transition on top of the same two rules, so a reduced-motion viewer never enters it and keeps
+   the instant toggle. */
+.post-settings-backdrop,
+.post-settings-drawer {
+  display: none;
+}
+.post-settings-backdrop.is-open,
+.post-settings-drawer.is-open {
+  display: block;
+}
+
+/* **An exit half exists here, unlike the ＋ sheet's (dropped 2026-09-20, InsertMenu.tsx's own
+   comment).** That one was dropped because the sheet's own content unmounts on the very next
+   render once its `activeTitle` state goes null, well before a transition frame paints — animating
+   a wrapper around content that is already gone. This panel's fields never unmount (the same
+   `new FormData(form)` constraint recorded where `.is-open` is applied above), so `display` itself
+   can be transitioned with `transition-behavior: allow-discrete`: the browser keeps the box painted
+   for the full duration on the way out, and only then commits to `display: none` — the standard
+   pattern for animating to and from `display: none`, which needs both the `@starting-style` block
+   (the entrance) and this same pairing running in reverse (the exit) to work in both directions. */
+@media (prefers-reduced-motion: no-preference) {
+  .post-settings-backdrop {
+    opacity: 0;
+    transition:
+      opacity 200ms ease,
+      display 200ms allow-discrete;
+  }
+  .post-settings-backdrop.is-open {
+    opacity: 1;
+  }
+  @starting-style {
+    .post-settings-backdrop.is-open {
+      opacity: 0;
+    }
+  }
+
+  .post-settings-drawer {
+    transform: translateX(100%);
+    transition:
+      transform 200ms ease-out,
+      display 200ms allow-discrete;
+  }
+  .post-settings-drawer.is-open {
+    transform: translateX(0);
+  }
+  @starting-style {
+    .post-settings-drawer.is-open {
+      transform: translateX(100%);
+    }
+  }
+}
+
+/* §12.25: past `min-width: 100rem`, the drawer stops being modal — measured (not guessed): the
+   drawer's own left edge is `100vw - 380px`, the editor column's right edge is
+   `(100vw - 32px - 50rem) / 2 + 16px + 50rem` (PageMain's `px-4`, SiteColumn's `max-w-site`
+   centred within it), and those two cross at 1545px of `document.documentElement.clientWidth` on
+   an empty post (no scrollbar). `100rem` (1600px) is chosen with ~40-55px of margin past that,
+   not the crossover itself — scrollbar width is OS-dependent and a real post almost always has
+   one, so a literal picked to the pixel would be wrong somewhere; a number a reader can hold, with
+   daylight either side of the true crossover, is the same call §12.6 made choosing 18px glyphs
+   over solving for the exact ratio.
+
+   **Only the backdrop changes.** The drawer itself keeps its position, width, shadow and slide —
+   it is still the same box, just no longer standing in front of anything. `background-color`
+   (not `opacity`, which the block above already drives for the fade) and `pointer-events: none`
+   are what actually retire it: transparent so there is nothing to dim, `pointer-events: none` so
+   a press reaches the editor underneath instead of the backdrop's own `onClick`. `useDismiss`'s
+   own listener is on `document`, not this element, so it does not stop reading presses as
+   "outside" just because this rule fired — PostSettingsPanel.tsx reads this same computed style at
+   the moment of the press to decide whether to actually close.
+
+   **On the plain `.post-settings-backdrop`, not `.post-settings-backdrop.is-open`.** Scoped to
+   `.is-open` first, this reproduced as a black flash on close (reported 2026-09-21): `.is-open` is
+   what React removes the instant the drawer starts closing, and `background-color` is not one of
+   the properties the animation block above transitions — only `opacity` and `display` are. The
+   moment `.is-open` came off, `background-color` snapped straight back to `bg-black/40` (the
+   Tailwind utility, unconditional in the component's own className) while `opacity` was still 1
+   and had not yet begun its 200ms fade, so the close animation spent its whole first stretch
+   fading out a backdrop that had just turned solid black again. Written on the bare class instead,
+   `background-color` never depends on `.is-open` at this width and stays transparent through the
+   entire open-to-closed cycle, leaving only `opacity`/`display` to animate — which is invisible
+   either way, since there is nothing under them to see. */
+@media (min-width: 100rem) {
+  .post-settings-backdrop {
+    background-color: transparent;
+    pointer-events: none;
+  }
+}
+
+/* Editor chrome, touch only: the press itself is visible (§12.7).
+
+   Tailwind's preflight sets `-webkit-tap-highlight-color: transparent` on `html`, which is the
+   right default only for a page that draws its own press state — and this one did not. Every
+   `hover:` utility compiles inside `@media (hover: hover)`, so `hover:bg-zinc-100` never fires
+   here either. Measured 2026-09-15 on an emulated Pixel 7 with `CSS.forcePseudoState`: the
+   background of every control was `rgba(0, 0, 0, 0)` at rest, forced `:active`, and forced
+   `:hover` alike. A press that turns into a scroll, and a press that misses, both looked exactly
+   like a press that worked.
+
+   **The shade is not `active`'s.** That one means "this mark is on right now" (`bg-zinc-200` /
+   dark `bg-zinc-700`, set in ToolbarButton.tsx); reusing it would leave an already-bold 太字
+   showing nothing while it is held. One step further from the ground in each scheme.
+
+   §12.2 rejected a background *at rest* because it would put "pressable" and "currently on" on one
+   axis. This is only while the finger is down, so that collision does not arise — pressability at
+   rest is carried by the glyph or label itself now that §12.2's ring is gone everywhere (2026-09-19),
+   plus the group divider on the mark toolbar — and `active` still carries state either way.
+
+   Disabled controls are outside this by construction and stay that way: they carry
+   `pointer-events-none`, and a disabled <button> never matches `:active`. */
+@media (hover: none) {
+  .toolbar-button:active,
+  .dropdown-item:active,
+  .link-bubble-open:active,
+  .prose .link-card-head button:active,
+  .prose .embed-head button:active {
+    background-color: #d4d4d8; /* zinc-300 */
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .toolbar-button:active,
+  .dropdown-item:active,
+  .link-bubble-open:active,
+  .prose .link-card-head button:active,
+  .prose .embed-head button:active {
+    background-color: #52525b; /* zinc-600 */
   }
 }
 
@@ -256,12 +577,14 @@ body {
    4px are not worth what they cost below.
 
    **Height for every button, width only where it is free.** Width is the dimension that has run
-   out: the toolbar already wraps, and a row it gains is 42px off a phone screen whose visible area
-   is 319px once the software keyboard is up (docs/embed-requirements.md, 2026-09-02), while the
-   height costs 16px per row once. Measured 2026-09-09: widening the 24px marks (B/I/S/A/引用) to
-   32px takes 390px and 393px from two rows to three, and 28px does it at 375px — so they keep
-   their width and take the height alone. The undo/redo pair is the exception, in its own rule
-   below.
+   out: the toolbar wraps (393px and below are two rows, 412px is one — measured 2026-09-15), and a
+   row it gains is 42px off a phone screen whose visible area is 319px once the software keyboard is
+   up (docs/embed-requirements.md, 2026-09-02), while the height costs 16px per row once. Measured
+   2026-09-09, against the arrangement of the time: widening the 24px marks (B/I/S/A/引用) to 32px
+   took 390px and 393px from two rows to three, and 28px did it at 375px — so they keep their width
+   and take the height alone. Those thresholds are not re-measured since the insert controls left
+   this row (§12.5); the decision they support is unaffected. The undo/redo pair is the exception,
+   in its own rule below.
 
    `min-height`, so nothing has to be re-centred: a `<button>` centres its own content, and the
    `inline-flex items-center` ones (the image label in Toolbar.tsx) centre theirs. Anything that is
@@ -289,28 +612,30 @@ body {
   .prose .link-card-head button {
     min-height: 40px;
   }
-  /* Undo and redo, and only those two, at the full 40px in both directions. Measured 2026-09-09
-     with the pair in place: the toolbar is two rows at 375px and above and three at 360px and
-     320px, and 40px wide is what those numbers are measured at — the pair's own width is not what
-     decides the row. It is not free for their neighbours: with the pair present, B/I/S/A/引用 can
-     go to 30px at 390px and above but 32px takes a row there, and at 375px even 28px does. 40
-     rather than more, so they square against the height rule above. */
-  /* And a gap after the pair, so the two histories and the format controls read as two groups
-     rather than one run of twelve. The row's own gap is 2px, which is what put 「やり直す」 hard
-     against 「大見出し」 — a press aimed at the heading and missed left lands on redo. 6px (8px
-     with the row gap) costs no row at any width: measured 2026-09-09, 4, 6, 8 and 12px all leave
-     the toolbar at its two rows from 375px up and its three at 360px and 320px.
-
-     Inside this block on purpose. The pair is `display: none` on a pointer but still in the DOM,
-     so the sibling selector matches there too — outside, this would open a 6px hole at the left
-     edge of a desktop toolbar whose first button is 「大見出し」. */
-  .toolbar-button-history + :not(.toolbar-button-history) {
-    margin-left: 6px;
-  }
+  /* Undo and redo, full 40px in both directions — originally the only two, back when width was
+     the scarce dimension and every other mark had to stay at 24px to keep the row from wrapping a
+     line early (measured 2026-09-09). §12.11 replaced the wrap with a horizontal scroll, which is
+     what let `.toolbar-button-wide` (below) extend the same 40px to the rest of the strip; this
+     rule is kept distinct from that one only because it also does its own flex centring (next),
+     which the marks don't need. */
   .toolbar-button-history {
     min-width: 40px;
     /* Centred by hand for the reason the round variant is: the icon is a block-level `<svg>`, so
        the width a `min-width` adds all lands to its right unless flex places it. */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Every mark in the scroll strip (§12.11, §12.9's docs/table-requirements.md), now that going
+     wider costs no row — see `.toolbar-button-history` above for why this used to be 24px.
+
+     `display: inline-flex` etc. for the same reason `.toolbar-button-history` and
+     `.toolbar-button-round` carry it: a plain `<button>` does not centre a block/flex child
+     horizontally, so the 16px `min-width` adds all landed to the right of the glyph's own span
+     (measured 8px off-centre, reported 2026-09-17) — the exact failure §12.3 already documents for
+     this same button, just not yet hit on this class. */
+  .toolbar-button-wide {
+    min-width: 40px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -329,6 +654,59 @@ body {
   }
 }
 
+/* The page header's own controls (記事一覧, ＋, 記事の設定, 投稿 — `editor-header-bar`,
+   PostEditor.tsx) drop under the 40px floor above, to 34px (requested 2026-09-20, in full
+   knowledge of the tradeoff the floor's own comment argues for): with `py-2` (8px top and
+   bottom, kept as asked) plus the header's own 1px `border-b`, that puts the header at 51px
+   border-box, not the ~57px a 40px control inside it measured at. `.toolbar-button-round` (＋'s
+   own shape), `.editor-back-link` and `.editor-settings-link` (記事一覧/記事の設定's own circles,
+   a separate pairing from the round variant's) each get the matching `min-width` so none of the
+   three read as a 40×34 stadium instead of a circle. 投稿 isn't a `.toolbar-button` at all —
+   `.editor-publish-button` pins it to the same 34px separately, since its own `py-2` + `text-sm`
+   line-height (36px) would otherwise stay the tallest thing in the row and the header would
+   settle on its height instead of this one's. This is the one surface exempted from "the
+   editor's whole pressable chrome" the floor's own comment claims —
+   editor-narrow-menus.spec.ts §12.3/12k and editor-mobile-toolbar.spec.ts's own 記事一覧/記事の
+   設定 checks all read 34px here, not 40, to match. */
+@media (hover: none) {
+  .editor-header-bar .toolbar-button {
+    min-height: 34px;
+  }
+  .editor-header-bar .toolbar-button-round,
+  .editor-header-bar .editor-back-link,
+  .editor-header-bar .editor-settings-link {
+    min-width: 34px;
+  }
+  .editor-header-bar .editor-publish-button {
+    /* `min-height` alone does nothing here: the button's own `py-2` (16px) plus `text-sm`'s
+       20px line-height already total 36px, past this floor, so the floor was never binding —
+       measured red the first time this shipped. Zeroing the vertical padding is what actually
+       drops it, down to the 20px line height alone; the floor then does bind, and flex centres
+       the line inside the taller box instead of padding doing it. `px-4` (horizontal) stays. */
+    padding-top: 0;
+    padding-bottom: 0;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* A pointer never hits the 34px floor above, so `.editor-header-bar` keeps its `py-2` (8px) and
+   settles on 投稿's own 36px content height — 53px border-box, against SiteHeader's 61px
+   (`py-4` plus `text-lg`'s 28px line-height, `components/SiteHeader.tsx`). The two headers are
+   never on screen together, but a reader moving between 記事一覧 and the editor felt the jump
+   (requested 2026-09-21). +4px top and bottom, not a `py-3` swap on the element itself, because
+   that class is shared with the touch block above — raising it there would drag the tuned 51px
+   touch height up with it and desync the pixel budget that comment argues for. Measured
+   61px/61px in e2e/editor-sticky-header.spec.ts. */
+@media (hover: hover) {
+  .editor-header-bar {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+}
+
 /* Undo and redo are a touch control and nothing else, so they are drawn only where the pointer
    has no `Mod-z` behind it (§12.4). Stated as "hide where there is hover" rather than "show where
    there is not", so the buttons are in the markup at every width and one query decides whether
@@ -339,6 +717,209 @@ body {
    and a mouse reports it, keeps its keyboard, and keeps the toolbar it already had. */
 @media (hover: hover) {
   .toolbar-button-history {
+    display: none;
+  }
+  /* The H3/B divider (Toolbar.tsx): stands in for the resting-state ring §12.2 removed on touch,
+     where there is no `hover:bg-zinc-100` to mark a button's edges. A pointer still has that, so
+     the divider would be a bare visual addition with no problem behind it — same "hide where there
+     is hover" idiom as the pair above. */
+  .toolbar-mark-divider {
+    display: none;
+  }
+}
+
+/* The phone's arrangement of the editor's chrome (docs/table-requirements.md §12.5): the format
+   controls are a bar at the bottom of the screen, and the insert controls are behind a ＋ in the
+   page header.
+
+   **Why the bottom.** The toolbar used to pin under the page header, which put it at the opposite
+   end of the screen from the caret while the author typed, and took its rows out of a visible area
+   that is 319px once the software keyboard is up. At the bottom it sits where the thumb and the
+   caret already are, and the keyboard carries it rather than covering it.
+
+   Stated as a media query over markup that is the same at every width — the §12.4 idiom. Both
+   copies of the insert group are in the DOM and one of them is painted; a `matchMedia` read in
+   React would render one way and correct itself, which is the hydration mismatch §12.1 avoided. */
+@media (hover: none) {
+  .editor-toolbar-bar {
+    position: fixed;
+    inset-inline: 0;
+    top: auto;
+    /* 0 until a keyboard opens. On iOS the inset is measured (useKeyboardInset.ts); on Android the
+       layout viewport itself shrinks (`interactiveWidget: 'resizes-content'` in
+       app/admin/posts/layout.tsx) and the measurement comes out at ~0, so the two never stack. */
+    bottom: var(--editor-kb-inset, 0px);
+    /* Level with the page header and below the drop overlay and every dropdown panel (z-50), which
+       is the same contract the sticky arrangement had — see components/PostEditor.tsx. */
+    z-index: 40;
+    border-top: 1px solid #d4d4d8; /* zinc-300 */
+    border-bottom: none;
+    border-radius: 0;
+    /* The container's own `px-2` (pointer's left inset) stacks with the first `wide` mark's own
+       centring gap (measured 2026-09-18: the button's box starts at the container edge, but its
+       glyph sits ~10.7px in, since `.toolbar-button-wide` centres a 40px box around content
+       narrower than that) — together an 18.7px gap before H2 that reads as more than every other
+       button gets. Zeroed here so the first glyph gets the same clearance every other one does. */
+    padding-left: 0;
+  }
+  /* The row scrolls sideways instead of wrapping (§12.11): `flex-wrap: wrap` is `.toolbar-scroll`'s
+     own Tailwind class on a pointer (today's behaviour, unchanged), overridden to a single
+     non-wrapping strip here. Undo/redo sit last in this same strip (Toolbar.tsx, superseding
+     §12.11's pinned placement, 2026-09-18) rather than outside it, on the frequency argument: the
+     marks ahead of them in the row are reached far more often, so they get the space at rest
+     instead of it going to a pair used rarely enough that a scroll to reach it is an acceptable
+     cost — unmeasured on both sides, but note's own mobile toolbar makes the same call, undo/redo
+     at the scroll strip's far end.
+
+     The mask is a static fade at the visible right edge, not a function of scroll position — it
+     still shows once a scroll has reached the true end, which is a known simplification (requested
+     as "just a fade," not a scroll-position-aware one) rather than a claim that more content always
+     follows. `-webkit-` for Safari, which does not yet ship the unprefixed property. */
+  .toolbar-scroll {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+  }
+  /* The post ends above the bar rather than behind it. The height is the measured one for the
+     reason the variable exists: this row wraps at 320px. */
+  .ProseMirror {
+    padding-bottom: var(--editor-toolbar-h);
+  }
+  /* The one box still hanging off the bar opens upward here, because the bar's own bottom edge is
+     the screen's: `top-full` would put it under the keyboard. §12.11 removed the other
+     (`.dropdown-panel-up`, the list dropdown's) along with the dropdown itself — 箇条書き/番号付き
+     are two direct toggles now, not a trigger with a panel. */
+  .editor-toast {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  /* The ＋ menu's rows are a list, not a row of chips: each control fills the panel and its
+     content starts at the left edge, so the four read as one column with one left margin. Without
+     this each takes its own width and the §12.2 ring draws four staggered boxes (seen on screen
+     2026-09-15). The rule lives here rather than on the components because the same controls are a
+     wrapping row of icons on a pointer, which is the shape they were written for. */
+  .insert-menu-rows > *,
+  .insert-menu-rows .toolbar-button {
+    width: 100%;
+  }
+  .insert-menu-rows .toolbar-button {
+    justify-content: flex-start;
+  }
+  /* 囲み枠・表's chevron sits at the row's trailing edge, settings-row style, rather than right
+     after the label (screenshot-compared 2026-09-20, trailing edge picked) — a fixed scan
+     position regardless of label length, and closer to the "settings row" reading the chevron
+     rule above this one already names. `:has(.chevron-icon)` reaches only ToolbarDropdown's own
+     trigger+chevron wrapper span, not 引用/リンク's icon+label spans, which carry the same
+     `gap-1`/`gap-3` classes but no chevron to key off. */
+  .insert-menu-rows .toolbar-button > span:has(.chevron-icon) {
+    width: 100%;
+    justify-content: space-between;
+  }
+  /* 囲み枠・表 measured a fraction of a px against every plain row's own height
+     (`getBoundingClientRect`, not eyeballed) — both are `min-height: …` (2026-09-20: 44px, was
+     40px) and neither has padding, border or margin, so the two should already match. They only
+     wrap their `ToolbarButton` in a `relative flex` div (`ToolbarDropdown.tsx`, the row that
+     would also hold its own floating panel on a pointer), and it's that extra flex box, not any
+     of this rule's own properties, that resolves to a fractional height (`scrollHeight` reads the
+     integer figure, `offsetHeight`/`getBoundingClientRect` round up a hair — a sub-pixel
+     remainder from the wrapper's own flex sizing) even at an integer device pixel ratio. An
+     explicit `height` on the wrapper (not `min-height`, which leaves the flex algorithm to size
+     it and reproduces the same remainder) sidesteps that calculation instead of chasing the
+     rounding — **and has to move in lockstep with `.insert-menu-rows .toolbar-button`'s own
+     `min-height` above, which this rule does not read from.** Left at the old 2.5rem (40px) after
+     that rule went to 44px (2026-09-20): 囲み枠/表's wrapper clamped to exactly 40px while the
+     button inside it still asked for 44px via its own `min-height`, which a `flex` parent with no
+     `overflow: hidden` does not clip — the button overflowed its own wrapper by 4px, reported as
+     "囲み枠/表 look shifted down" against the other rows, which have no such wrapper to disagree
+     with. Kept in rem, not px, so a future rem-based type-scale change moves both together. */
+  .insert-menu-rows > * {
+    height: 2.75rem;
+  }
+
+  /* The way out is the arrow alone (§12.6). `min-width` pairs with `.toolbar-button`'s
+     `min-height` for the same reason `.toolbar-button-history` and the card head's icons need the
+     pairing — the icon is a block-level <svg>, so the width `min-width` adds all lands to its
+     right unless flex places it.
+
+     Round: the arrow shape already reads as "back" on its own. `border-radius` overrides
+     `.toolbar-button`'s `rounded` at equal specificity by coming later in the cascade. */
+  .autosave-status-full {
+    display: none;
+  }
+  .autosave-status-compact {
+    display: inline-block;
+  }
+  .editor-back-link {
+    min-width: 40px;
+    justify-content: center;
+    border-radius: 9999px;
+  }
+  /* ＋ and 記事の設定's gear (§12.8): `round` (ToolbarButton) already gives ＋ its `rounded-full`. */
+  .editor-settings-link {
+    min-width: 40px;
+    justify-content: center;
+    border-radius: 9999px;
+  }
+  /* Without a ring, the 40px box itself is invisible — what is on screen is a 16px glyph adrift in
+     12px of unmarked padding on every side, so the group's `gap-2` (8px) reads as roughly 32px of
+     visible blank space between ＋ and the gear (reported 2026-09-17). Negative margin claws 4px of
+     that back for this one seam without touching the others — the settings-to-separator and
+     separator-to-投稿 gaps still have a drawn line or a filled button to mark them, which this pair
+     does not. */
+  .insert-menu {
+    margin-right: -4px;
+  }
+}
+
+@media (hover: none) and (prefers-color-scheme: dark) {
+  .editor-toolbar-bar {
+    border-top-color: #3f3f46; /* zinc-700 */
+  }
+}
+
+/* §12.4's idiom, named. Where one control is written twice — once for a pointer, once for touch —
+   both copies are in the DOM at every width and one of these two classes says which surface a copy
+   belongs to. The alternative is a `matchMedia` read in React, which renders one way and corrects
+   itself: a hydration mismatch.
+
+   **The marker carries the gate; the shape class carries the styling.** Before this pair the
+   `display: none` lived on each copy's own class (`.toolbar-insert`, `.list-buttons`, …), which
+   left the surface invisible at the point it is read — `<span className='list-dropdown contents'>`
+   in Toolbar.tsx says which *shape* it is and nothing about which surface paints it. The shape
+   classes are all still there and still cited (docs/table-requirements.md §12.11, the specs); what
+   moved is the one declaration.
+
+   **Unlayered, so it beats the `display: contents` these copies wear.** `@import 'tailwindcss'`
+   puts `contents` in `@layer utilities` and every rule in this file is outside any layer, so an
+   unlayered single class wins on layer order without needing specificity — which is why neither
+   selector below repeats itself or reaches through an ancestor. (`.editor-toolbar-bar
+   .toolbar-insert` used to, on the belief that specificity was what settled it.)
+
+   Only the pairs wear these. A control that is simply absent on one surface (`.editor-tooltip`,
+   `.toolbar-button-history`, `.editor-help-button`) has no twin to be confused with, and the header
+   badges reveal with a positive `display` over a Tailwind `hidden` rather than hiding — a marker
+   that only asserts `display: none` cannot state either, and marking everything would mark
+   nothing. */
+@media (hover: none) {
+  .pointer-only {
+    display: none;
+  }
+}
+@media (hover: hover) {
+  .touch-only {
+    display: none;
+  }
+}
+
+/* The ＋ and its panel are a touch control and nothing else: a pointer keeps the insert group in
+   the toolbar, where it has always been. Stated as "hide where there is hover" for the same reason
+   the history pair is. */
+@media (hover: hover) {
+  .autosave-status-compact {
     display: none;
   }
 }
@@ -467,7 +1048,12 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
    the outline back in by exactly the inflation markCut adds (CUT_INFLATE), landing it on the
    block's real edge while the box itself covers the selection ring outside it. */
 .block-drag-cut {
-  position: fixed;
+  /* `absolute`, where the indicator and the ghost are `fixed`: those two answer to the pointer and
+     the viewport, while this one speaks for one block and has to stay on it. Drawn in document
+     coordinates it moves with the page for free, so a mid-drag autoscroll cannot slide it off the
+     block it marks — which is what `fixed` did, by one frame's worth of scroll each time (measured
+     2026-09-11: 5px at full speed, 20px at 8x CPU throttling, against a 4px inflation). */
+  position: absolute;
   z-index: 39;
   display: none;
   pointer-events: none;
@@ -705,14 +1291,20 @@ body.link-menu-open .table-toolbar {
 /* Editor-only chrome: the image's bubble menu (ImageBubble.tsx), fitted into the picture's own
    top-right corner rather than floating above the block.
 
-   **The transform is what places it**, on both axes; floating-ui only solves the picture's
-   top-left corner (`top-start`, `offset: 0`). Its `top-end` would have solved x from this menu's
-   own width, which is one React render behind whenever the button set changes; `100%` here
-   resolves against the menu's current width at paint time and cannot be stale. `translateY(100%)`
-   is the same trick vertically — the menu is placed above the picture and pushed down by its own
-   height, so its top edge lands on the picture's. `--anchor-width` is the picture box's width,
-   written by `fitMenuToPicture` from the live box; the fallback keeps a menu that somehow has no
-   anchor width at the left edge rather than off-screen.
+   **The transform is what places it**, on both axes; floating-ui only solves the BLOCK's top-left
+   corner (`top-start`, `offset: 0`). Its `top-end` would have solved x from this menu's own width,
+   which is one React render behind whenever the button set changes; `100%` here resolves against
+   the menu's current width at paint time and cannot be stale. `translateY(100%)` is the same trick
+   vertically — the menu is pushed down by its own height so its top edge lands on the anchor's.
+
+   Three properties, all written by `fitMenuToPicture` from the live boxes: `--anchor-width` is the
+   picture's width, and `--anchor-left`/`--anchor-top` are its offset inside the block. They carry
+   the whole journey from the block's corner to the picture's, and they are on this side of the
+   line deliberately — the plugin captures its reference ONCE, when the paste selects the image and
+   the bitmap has not loaded, so anything measured from the picture there is a `0x0` box at the
+   middle of the column (ImageBubble.tsx says what that cost). These resolve at paint instead, on
+   every render. The fallbacks keep a menu that somehow has no anchor at the block's own corner
+   rather than off-screen.
 
    Square, and hard-bordered. Two of its corners meet the picture's own edges, so rounding them
    would open a gap and read as dropped on top rather than fitted in. The border is `--foreground`
@@ -724,7 +1316,10 @@ body.link-menu-open .table-toolbar {
    and padding are overridden here rather than parameterised, since this is the only menu that
    wants a segmented row. These rules are unlayered and so outrank those utilities. */
 .image-bubble {
-  transform: translate(calc(var(--anchor-width, 100%) - 100%), 100%);
+  transform: translate(
+    calc(var(--anchor-left, 0px) + var(--anchor-width, 100%) - 100%),
+    calc(var(--anchor-top, 0px) + 100%)
+  );
   border: 1px solid var(--foreground);
   border-radius: 0;
   padding: 0;
@@ -737,7 +1332,11 @@ body.link-menu-open .table-toolbar {
    the 8px gap that `offset: 0` left out. `fitMenuToPicture` in ImageBubble.tsx sets this class,
    after React has committed, because the width it compares against is the menu's own. */
 .image-bubble.is-outside {
-  transform: translateY(-8px);
+  /* Above the picture rather than in it, so the y-trick of the base rule is dropped and an 8px gap
+     takes its place. The x and y offsets stay: the anchor is the column-wide block, so without
+     `--anchor-left` the menu would sit out in the empty column beside a narrow picture instead of
+     over it. */
+  transform: translate(var(--anchor-left, 0px), calc(var(--anchor-top, 0px) - 8px));
 }
 .image-bubble .toolbar-button {
   border-radius: 0;

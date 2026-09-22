@@ -59,7 +59,7 @@ export function ThumbnailField({ value, onChange, body }: Props) {
           into — the state lives in React and this input is its only route into
           the FormData that useAutosave and the publish action both read. */}
       <input type='hidden' name='thumbnail' value={value} />
-      <div className='flex items-start gap-3'>
+      <div className='flex items-center gap-3'>
         {shown ? (
           // A plain <img>, and `@next/next/no-img-element` is silenced rather
           // than obeyed. The same image appears on four surfaces, and one of
@@ -79,7 +79,16 @@ export function ThumbnailField({ value, onChange, body }: Props) {
             なし
           </div>
         )}
-        <div className='space-y-1'>
+        {/* The state first, then the controls (requested 2026-09-21): the words describe the
+            picture beside them, and read as the buttons' own caption when they came after. */}
+        <div className='space-y-1.5'>
+          <p className='text-xs text-zinc-500 dark:text-zinc-400'>
+            {value !== ''
+              ? '指定した画像'
+              : auto
+                ? '本文の最初の画像（自動）'
+                : '本文の最初の画像が自動で入ります'}
+          </p>
           <div className='flex gap-2'>
             {/* type='button' is load-bearing: this sits inside PostEditor's one
                 big <form>, and a button without it defaults to submit — which
@@ -88,25 +97,18 @@ export function ThumbnailField({ value, onChange, body }: Props) {
               type='button'
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+              className='thumbnail-field-button rounded border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
               {uploading ? 'アップロード中…' : value ? '変更' : '画像を選ぶ'}
             </button>
             {value !== '' && (
               <button
                 type='button'
                 onClick={() => onChange('')}
-                className='rounded border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                className='thumbnail-field-button rounded border border-zinc-300 px-3 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
                 解除
               </button>
             )}
           </div>
-          <p className='text-xs text-zinc-500 dark:text-zinc-400'>
-            {value !== ''
-              ? 'この記事用に指定した画像です。'
-              : auto
-                ? '本文の最初の画像を自動で使用中。'
-                : '未設定。本文に画像を入れると自動で使われます。'}
-          </p>
         </div>
       </div>
       {/* No `name`, so an untouched picker contributes nothing to the form. */}

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import matter from 'gray-matter';
+import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 
 const ROOT = process.cwd();
@@ -23,7 +23,7 @@ function main(): void {
     return;
   }
 
-  const db = new Database(DB_PATH);
+  const db = openDb(DB_PATH);
   const insert = db.prepare(
     `INSERT INTO posts (slug, title, date, description, category, tags, draft, body, created_at, updated_at)
      VALUES (@slug, @title, @date, @description, @category, @tags, @draft, @body, @now, @now)

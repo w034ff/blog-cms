@@ -1,7 +1,6 @@
 export type PostFrontmatter = {
   title: string;
   date: string;
-  description: string;
   tags: string[];
   category: string;
   draft: boolean;
@@ -9,10 +8,6 @@ export type PostFrontmatter = {
   // chose none. Not the image a reader sees — that is `resolveThumbnail`
   // (lib/thumbnail.ts), which falls back to the body's first upload.
   thumbnail: string;
-  // Excluded from the home/tag/category listings and the RSS feed; still
-  // reachable at its own `/posts/<slug>` URL. The slug's opacity is the only
-  // access control — there is no separate auth check.
-  unlisted: boolean;
   // Refreshed on every publish/update/unpublish (`commitPost`), UTC ISO. Shown
   // publicly (date-only) only when it names a different calendar day than
   // `date` — a same-day value is noise, not information (docs/cms-features.md,
@@ -28,6 +23,12 @@ export type Post = PostFrontmatter & {
   // the (deliberately not-yet-tightened) column, but in practice always set.
   slug: string | null;
   body: string;
+  // Excluded from the home/tag/category listings and the RSS feed; still reachable at its own
+  // `/posts/<slug>` URL by anyone who has it. Read-only now: the editor's control was retired
+  // 2026-09-21 and nothing writes the column (docs/cms-features.md「非公開限定URL投稿」), so it is
+  // false on every row. Kept on Post, and off PostFrontmatter and so off DraftContent, because
+  // the listing filters it drives are what a revival would reuse.
+  unlisted: boolean;
 };
 
 // The editable content of a post, minus its identity (slug), visibility (draft)

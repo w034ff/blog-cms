@@ -18,7 +18,6 @@ import type { DraftContent } from '@/lib/types';
 // stays lenient so partial work is never lost.
 const contentSchema = z.object({
   title: z.string().min(1),
-  description: z.string(),
   category: z.string().min(1),
   tags: z.array(z.string()),
   body: z.string(),
@@ -28,9 +27,6 @@ const contentSchema = z.object({
   // whole publish over one would be the wrong trade. `isUploadPath` is what
   // keeps an off-site URL out of `<img src>` and `og:image`.
   thumbnail: z.string().transform((value) => (isUploadPath(value) ? value : '')),
-  // Excluded from the home/tag/category listings and the RSS feed; still reachable at its own
-  // /posts/<slug> URL (docs/cms-features.md, 非公開限定URL投稿).
-  unlisted: z.boolean(),
 });
 
 export type PostFormState = {
@@ -63,19 +59,21 @@ function parseId(formData: FormData): number | null {
 function parseContent(formData: FormData): DraftContent | null {
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
-    description: field(formData, 'description'),
     category: field(formData, 'category') || DEFAULT_CATEGORY,
     tags: parseTags(field(formData, 'tags')),
     body: field(formData, 'body'),
     thumbnail: field(formData, 'thumbnail'),
-    // A checkbox is absent from FormData entirely when unchecked, so `field()`
-    // (which reads only string values) returns '' either way; 'on' is the
-    // browser's default value for a checked box with no explicit `value`.
-    unlisted: field(formData, 'unlisted') === 'on',
   });
   return parsed.success ? parsed.data : null;
 }
 
+// Measured inert on this site, and kept for the same reason `force-dynamic` is (docs/cms-features.md
+// §7.1): `revalidatePath` reaches `fetch()`'s Data Cache, which nothing here uses, and the browser's
+// Client Cache, which holds nothing because `staleTimes.dynamic` defaults to 0 and every route is
+// dynamic. A/B'd 2026-09-14 against a production build — with this body and without it, a just-
+// published edit is visible on /admin, / and /posts/[slug] reached by <Link> alone
+// (e2e/revalidate-client-cache.spec.ts). It is the invalidation hook a module-scope cache would
+// need, so it stays where the four call sites already are.
 function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }

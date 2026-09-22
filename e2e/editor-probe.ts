@@ -165,6 +165,27 @@ export function settle(page: Page): Promise<void> {
   return page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
 }
 
+// Wait until the caret is at the start of its textblock, asked of **the editor's own selection**.
+//
+// A native `Home` moves the DOM selection; ProseMirror learns about it through `selectionchange` on
+// a 20ms debounce (DOMObserver.flushSoon), and a key pressed inside that window bypasses every
+// keymap while the browser's native edit mutates the DOM — re-parsing that mutation is what nested
+// the following block inside a callout.
+//
+// **Polling the DOM's offset does not close that window, and this is why** (measured 2026-09-11).
+// While the editor's state still holds the old position, the sync can go the other way: ProseMirror
+// writes its own selection back onto the DOM and `Home` is simply undone. The DOM poll sees the 0
+// that existed for those few milliseconds, passes, and the following wait makes the bounce *more*
+// likely rather than less — `editor-callout-boundary.spec.ts`'s head-of-callout case failed about
+// half the time on an idle machine, at every commit it has ever had.
+//
+// Asked of the editor there is no window at all: once `state.selection` reads 0, the flush has
+// happened and nothing is left to write back. The old page-side 50ms tail is gone with the race it
+// was guarding.
+export async function caretAtLineStart(page: Page): Promise<void> {
+  await expect.poll(() => caret(page)).toMatch(/@0$/);
+}
+
 // Press `key` repeatedly (settling between presses) until the caret reaches `wantCaret` (a value
 // from caret()), or the budget runs out. Returns the caret where it stopped, so a test can assert
 // convergence: `expect(await pressKeyUntil(page, 'Backspace', 'bbb@3')).toBe('bbb@3')`. A handler

@@ -2,6 +2,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 
 // Applies every not-yet-applied migration in drizzle/ to the DB.
@@ -42,7 +43,7 @@ function readLedger(db: Database.Database): LedgerRow[] {
 }
 
 function main(): void {
-  const sqlite = new Database(DB_PATH);
+  const sqlite = openDb(DB_PATH);
   try {
     const before = readLedger(sqlite).length;
     migrate(drizzle(sqlite), { migrationsFolder: MIGRATIONS_DIR });

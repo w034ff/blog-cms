@@ -12,6 +12,15 @@ const DB_PATH = process.env.BLOG_DB_PATH
   : path.join(process.cwd(), 'data', 'blog.db');
 const DB_DIR = path.dirname(DB_PATH);
 
+// How long a statement waits for a write lock before giving up. SQLite's default
+// is 0, which turns any overlap into an immediate SQLITE_BUSY: WAL lets readers
+// and one writer coexist, but it does not let two writers overlap, and the
+// scripts that write (seed, migrate-db, migrate-content) run as their own
+// process against the same file. Without this, a script's write is enough to
+// make a concurrent autosave fail outright instead of waiting the few
+// milliseconds those writes actually take.
+const BUSY_TIMEOUT_MS = 5000;
+
 type Schema = typeof schema;
 export type AppDatabase = BetterSQLite3Database<Schema>;
 
@@ -20,6 +29,7 @@ function createDb(): AppDatabase {
   const sqlite = new Database(DB_PATH);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
+  sqlite.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
   return drizzle({ client: sqlite, schema });
 }
 

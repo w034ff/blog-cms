@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getSchema } from '@tiptap/core';
-import { TableKit } from '@tiptap/extension-table';
-import StarterKit from '@tiptap/starter-kit';
-import { Slice, type Node as PMNode, type Schema } from '@tiptap/pm/model';
-import { Callout } from './callout-extension';
+import { Slice, type Node as PMNode } from '@tiptap/pm/model';
+import { schema } from './test-schema';
 import {
   flattenClosedCallouts,
   repairIncomingSlice,
@@ -11,18 +8,6 @@ import {
 } from './callout-slice-guard';
 import { flattenClosedDetails, unwrapHalfSelectedDetails } from './details-slice-guard';
 import { dropOpenWrappers } from './slice-placement';
-import {
-  MarkdownDetails,
-  MarkdownDetailsContent,
-  MarkdownDetailsSummary,
-} from './details-extension';
-import {
-  Document,
-  FootnoteDefinition,
-  FootnoteReference,
-  FootnoteSection,
-} from './footnote-extension';
-import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
 
 // What the two box guards do to a slice on its way into the editor, pinned shape by shape.
 //
@@ -37,22 +22,8 @@ import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
 // under CDP — and the paste half only reaches these functions through a real clipboard, so a unit
 // test over `doc.slice()` is the instrument that covers both. The schema is the one PostEditor
 // actually builds, for the reason `details-title-slice.test.ts` gives: what these functions read is
-// node types and open depths, and a schema written to suit the test would prove nothing.
-const schema: Schema = getSchema([
-  StarterKit.configure({ document: false }),
-  Document,
-  TableKit.configure({ tableCell: false, tableHeader: false }),
-  ParagraphTableCell,
-  ParagraphTableHeader,
-  FootnoteReference,
-  FootnoteDefinition,
-  FootnoteSection,
-  Callout,
-  MarkdownDetails,
-  MarkdownDetailsSummary,
-  MarkdownDetailsContent,
-]);
-
+// node types and open depths, and a schema written to suit the test would prove nothing —
+// `test-schema.ts` builds it from `postEditorExtensions` itself.
 const p = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
 const callout = (...children: PMNode[]) => schema.nodes.callout.create(null, children);
 const details = (...children: PMNode[]) => schema.nodes.details.create(null, children);

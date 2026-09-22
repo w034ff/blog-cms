@@ -8,7 +8,6 @@ function post(overrides: Partial<Post> = {}): Post {
     slug: 'abc123',
     title: 'Title',
     date: '2026-09-04T00:00:00.000Z',
-    description: 'Description',
     category: 'uncategorized',
     tags: [],
     draft: false,
@@ -32,7 +31,7 @@ describe('wrapCdata', () => {
 
 describe('buildRssFeed', () => {
   it('does not corrupt the XML when title/description contain ]]>', () => {
-    const xml = buildRssFeed([post({ title: 'a ]]> b', description: 'c ]]> d' })]);
+    const xml = buildRssFeed([post({ title: 'a ]]> b', body: 'c ]]> d' })]);
     expect(xml).toContain('<title><![CDATA[a ]]]]><![CDATA[> b]]></title>');
     expect(xml).toContain('<description><![CDATA[c ]]]]><![CDATA[> d]]></description>');
   });

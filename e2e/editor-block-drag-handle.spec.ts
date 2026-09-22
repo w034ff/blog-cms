@@ -1081,7 +1081,7 @@ test('clicking a footnote reference to select it starts no native drag', async (
 // `.ProseMirror-selectednode` hides the badge (globals.css), so the badge showing IS the unringed
 // case, not a condition of its own.
 //
-// 390x220, already in public/uploads — the same fixture e2e/image-layout.spec.ts measures.
+// 390x220, already in data/uploads — the same fixture e2e/image-layout.spec.ts measures.
 const UNRINGED_IMAGE =
   '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 
@@ -1280,9 +1280,22 @@ test('a plain re-press on a ringed link card or embed keeps it selected', async 
     const x = box.x + box.width / 2;
     const y = box.y + box.height - 8;
 
-    await page.mouse.click(x, y);
-    await expect(target).toHaveClass(/ProseMirror-selectednode/);
+    // The first press is setup — it is the second one that this test is about. A just-loaded
+    // embed swallows a first click without making the NodeSelection: measured 2026-09-12 in
+    // `e2e/editor-embed.spec.ts`'s openSandbox (red at 0/50/100/200ms after load, green from
+    // 500ms, the node never replaced and the class never set), and reproduced here 2026-09-13 at
+    // 1 run in 4 with this spec run alone. Waiting on the frame's own box — which is all the
+    // setup above does — is far too early for it. So press until the ring is on, rather than
+    // waiting a measured-once number of milliseconds and hoping the next machine is no slower.
+    // On the ordinary path this clicks exactly once: poll checks after the first call.
+    await expect
+      .poll(async () => {
+        await page.mouse.click(x, y);
+        return target.getAttribute('class');
+      })
+      .toMatch(/ProseMirror-selectednode/);
 
+    // And the claim: a plain re-press on the ring keeps it, rather than dropping to a TextSelection.
     await page.mouse.click(x, y);
     await expect(target).toHaveClass(/ProseMirror-selectednode/);
     expect(await selectionType()).toBe('NodeSelection');
@@ -1470,12 +1483,23 @@ test('the source block shows as cut only while the drop would move it', async ({
   if (!handleBox || !quoteBox) throw new Error('missing bounding box');
   // The mark is a `position: fixed` box on <body>, not a class on the block (block-drag-handle.ts
   // says why), so it is read as geometry: shown, and covering the block it speaks for.
+  // Read against the block it speaks for, in the same frame. The page autoscrolls during this drag,
+  // so `quoteBox` above — taken before the drag — is a different coordinate frame by the time the
+  // veil exists, and comparing the two was this spec failing on a loaded machine while the veil was
+  // correct (a 3-shard run, 2026-09-11). Live on both sides it also states the inflation exactly
+  // instead of "covers it somewhere".
   const cut = () =>
     page.evaluate(() => {
       const el = document.querySelector('.block-drag-cut') as HTMLElement | null;
       if (!el || el.style.display === 'none') return null;
-      const r = el.getBoundingClientRect();
-      return { top: r.top, left: r.left, bottom: r.bottom, right: r.right };
+      const v = el.getBoundingClientRect();
+      const q = document.querySelector('.ProseMirror blockquote')!.getBoundingClientRect();
+      return {
+        top: q.top - v.top,
+        bottom: v.bottom - q.bottom,
+        left: q.left - v.left,
+        right: v.right - q.right,
+      };
     });
   const lineShown = () =>
     page.evaluate(() => {
@@ -1496,13 +1520,12 @@ test('the source block shows as cut only while the drop would move it', async ({
   expect(await lineShown()).toBe(true);
   const veil = await cut();
   expect(veil).not.toBeNull();
-  // It speaks for the dragged block, so it covers that block's box and no other — the ring included
-  // (it is drawn a few px outside, which is what the box's inflation is for).
+  // It speaks for the dragged block, so it covers that block's box and no other — the ring included,
+  // which is what `CUT_INFLATE` (block-drag-handle.ts) is for. Exact on every side, and the same at
+  // any frame rate: the veil is drawn in document coordinates, so a mid-drag autoscroll carries it
+  // with the block rather than sliding it off by a frame's worth of scroll.
   if (!veil) throw new Error('unreachable');
-  expect(veil.top).toBeLessThan(quoteBox.y);
-  expect(veil.left).toBeLessThan(quoteBox.x);
-  expect(veil.bottom).toBeGreaterThan(quoteBox.y + quoteBox.height);
-  expect(veil.right).toBeGreaterThan(quoteBox.x + quoteBox.width);
+  expect([veil.top, veil.bottom, veil.left, veil.right]).toEqual([4, 4, 4, 4]);
 
   // End the session while it is showing — the mark must not survive the drag.
   await page.keyboard.press('Escape');

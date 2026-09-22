@@ -29,24 +29,20 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     slug: 'slug',
     title: 'Title',
     date: '2026-01-01',
-    description: '',
     category: 'uncategorized',
     tags: [],
     draft: true,
     body: 'body',
     thumbnail: '',
-    unlisted: false,
     ...overrides,
   });
 }
 
 const content: DraftContent = {
   title: 'Edited',
-  description: 'desc',
   category: 'cat',
   tags: ['a', 'b'],
   thumbnail: '',
-  unlisted: false,
   body: 'edited body',
 };
 
@@ -93,6 +89,24 @@ describe('autosavePost', () => {
     const r = row(id);
     expect(r?.title).toBe('Keep'); // not overwritten with whitespace
     expect(r?.body).toBe('edited body'); // other fields still updated
+  });
+
+  // The same guard on the published branch, where the title to keep is the working copy's. An
+  // author who retitles a published post and then clears the field to retype must not have the
+  // unpublished title silently replaced by the live one.
+  it('keeps the working copy’s title when the incoming title is blank on a published post', () => {
+    const id = seed({ slug: 'pub-blank', draft: false, title: 'Live' });
+    autosavePost(id, { ...content, title: 'Renamed' }); // an unpublished retitle
+    autosavePost(id, { ...content, title: '   ' }); // cleared to retype
+    const r = row(id);
+    expect(r?.draftContent?.title).toBe('Renamed'); // not reverted to 'Live'
+    expect(r?.title).toBe('Live'); // the live column is still frozen
+  });
+
+  it('falls back to the live title when a published post has no working copy yet', () => {
+    const id = seed({ slug: 'pub-first', draft: false, title: 'Live' });
+    autosavePost(id, { ...content, title: '   ' });
+    expect(row(id)?.draftContent?.title).toBe('Live');
   });
 
   it('is a no-op when the row does not exist', () => {

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
-import { loadMarkdown, selectAcross } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, selectAcross } from './editor-authoring';
 
 // Table cells are paragraph-only (components/editor/table-extensions.ts): markdown cannot
 // store block structure inside a cell — the GFM pipe form holds one line of inline content,
@@ -41,7 +41,7 @@ test('block markdown shortcuts stay literal text inside a cell and round-trip', 
   // literal cell text come back intact (previously the fence flattened and a stray
   // serializer artifact appeared after the table).
   await page.getByLabel('タイトル').fill('セル入れ子ガード');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
   await expect(editor).toBeVisible();
   await expect(editor.locator('table')).toHaveCount(1);

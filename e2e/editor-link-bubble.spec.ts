@@ -1,6 +1,6 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
-import { loadMarkdown, selectInside, setRange } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, selectInside, setRange } from './editor-authoring';
 
 // The link card (components/editor/LinkBubble.tsx, docs/link-requirements.md §5.5): the editor's
 // only link UI. It answers two measured holes — there was no way to make an internal link at all
@@ -389,10 +389,20 @@ test('the card is not seen collapsing on the way out', async ({ page }) => {
   //
   // Sampled per frame from inside the page, because that is the only place the intermediate state
   // exists: it is gone long before any assertion could be evaluated over the protocol.
+  //
+  // **Throttled, because at full speed this cannot fail.** The show/hide pair a departure produces
+  // is identical either way — measured 2026-09-11, `shouldShow` is asked and answers `true` about
+  // the link the caret has not left yet on every departure — and what a slow frame changes is only
+  // whether that answer reaches a paint. Unthrottled, this spec passed for three weeks while the
+  // display card was being repainted over the link every time, and what finally exposed it was a
+  // 3-shard run putting three Chromes on one machine. 8x is where it became reliable; the rate is
+  // restored before the assertions so nothing after it is slow.
   await openEditor(page);
   await setRange(page, IN_LINK);
   await card(page).getByRole('button', { name: '編集' }).click();
   await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toBeVisible();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 8 });
   const samples = page.evaluate(async () => {
     const seen: string[] = [];
     for (let i = 0; i < 30; i++) {
@@ -408,6 +418,7 @@ test('the card is not seen collapsing on the way out', async ({ page }) => {
     .first()
     .click({ position: { x: 300, y: 8 } });
   const seen = await samples;
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
   expect(seen).not.toContain('display');
   // The window has to contain the departure itself, or the assertion above is about nothing: a
   // sampler that ran out before `click()` dispatched its mousedown would see the open field for
@@ -852,7 +863,7 @@ test('the URL field survives an autosave', async ({ page }) => {
   await card(page).getByRole('button', { name: '編集' }).click();
   const field = card(page).getByRole('textbox', { name: 'リンク先' });
   await field.fill('https://slowly-typed.example');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await expect(field).toHaveValue('https://slowly-typed.example');
 });
 

@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectAutosaved, expectPublished } from './editor-authoring';
+import { gotoPublished } from './published-post';
 
 // The image caption, on both surfaces (docs/cms-features.md「画像キャプション」).
 //
@@ -173,13 +175,11 @@ test('the caption survives publish and reads the same on the public page', async
   const editorGap = await captionGap(page, '.ProseMirror img', '.ProseMirror p.image-caption');
 
   await page.getByLabel('タイトル').fill('キャプション付きの画像');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
+  await expectPublished(page);
+  await gotoPublished(page);
 
-  await page.goto(href!);
   const figcaption = page.locator('.prose figure.image-figure > figcaption');
   await expect(figcaption).toHaveText('図1 キャプション');
   await expect(page.locator('.prose figure.image-figure > img')).toBeVisible();

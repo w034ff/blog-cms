@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectAutosaved, expectPublished } from './editor-authoring';
+import { gotoPublished } from './published-post';
 
 // The copy button is injected client-side (components/CodeCopyButtons.tsx) into each code block
 // on the public post page. Guards: the button appears, shows "Copied!" feedback, and copies the
@@ -18,11 +20,10 @@ test('the public code block copy button copies the code with newlines', async ({
   await page.keyboard.press('Enter');
   await page.keyboard.type('const b = 2;');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await expectPublished(page);
+  await gotoPublished(page);
 
   const button = page.locator('.code-copy-btn');
   await expect(button).toBeVisible(); // injected after mount
@@ -51,11 +52,10 @@ test('a click just outside the visible copy button still copies (enlarged hit ar
   await page.keyboard.type('```ts ');
   await page.keyboard.type('const a = 1;');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await expectPublished(page);
+  await gotoPublished(page);
 
   const button = page.locator('.code-copy-btn');
   await expect(button).toBeVisible();
@@ -79,11 +79,10 @@ async function publishCodeBlock(page: Page, withFilename: boolean) {
     await block.locator('.code-block-filename').fill('index.ts');
     await block.locator('.code-block-filename').blur();
   }
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  await page.goto(href!);
+  await expectPublished(page);
+  await gotoPublished(page);
   await expect(page.locator('.code-copy-btn')).toBeVisible();
 }
 

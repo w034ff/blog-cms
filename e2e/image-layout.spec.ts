@@ -5,7 +5,7 @@ import { loadMarkdown } from './editor-authoring';
 // Both facts are geometry: the DOM, the transaction and the saved markdown are identical whether
 // the picture is centred or not, so only a rendered measurement can hold them.
 
-// 390x220 and 768x403, both already in public/uploads. The pair is the point — one is clearly
+// 390x220 and 768x403, both already in data/uploads. The pair is the point — one is clearly
 // narrower than the 50rem column and the other nearly fills it, and every claim below is about
 // the difference between them. A single image measures nothing here.
 const NARROW = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
@@ -17,6 +17,19 @@ async function openWithBothImages(page: Page): Promise<void> {
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `![](${NARROW})\n\n本文\n\n![](${WIDE})\n\n後の段落\n`);
   await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
+  // Present is not loaded, and every claim here is a measured box: an `<img>` that has not
+  // decoded yet is 0 wide, so the wide one reads as narrow and "fills the column" fails. Waited
+  // on `naturalWidth` for the same reason e2e/editor-link-card.spec.ts's rowShapes does — the src
+  // attribute is exactly as asserted either way.
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('.ProseMirror img')
+          .evaluateAll((imgs) => imgs.every((img) => (img as HTMLImageElement).naturalWidth > 0)),
+      { timeout: 20_000 },
+    )
+    .toBe(true);
 }
 
 // An `<img>` is inline by default, so `margin-inline: auto` alone does nothing — the `display`

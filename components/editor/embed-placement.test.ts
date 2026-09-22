@@ -1,26 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { getSchema } from '@tiptap/core';
-import { TableKit } from '@tiptap/extension-table';
-import StarterKit from '@tiptap/starter-kit';
 import type { Slice } from '@tiptap/pm/model';
-import type { Schema } from '@tiptap/pm/model';
-import { NodeSelection, TextSelection } from '@tiptap/pm/state';
-import { Callout } from './callout-extension';
 import { titleAcceptsSlice } from './details-slice-guard';
-import {
-  MarkdownDetails,
-  MarkdownDetailsContent,
-  MarkdownDetailsSummary,
-} from './details-extension';
-import {
-  Document,
-  FootnoteDefinition,
-  FootnoteReference,
-  FootnoteSection,
-} from './footnote-extension';
-import { Embed } from './embed-extension';
 import { pasteIntoCellRefused, tableDropRefusal } from './table-cell-rules';
-import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
+import { docOf, nodes, nodeSlice, para, rangeSlice, tableFixture, text } from './test-schema';
 
 // docs/embed-requirements.md §5 and §12's first item. §5 decided that **no new slice guard is
 // needed** for the embed — the accordion title's `titleAcceptsSlice` and the table cell's
@@ -40,43 +22,21 @@ import { ParagraphTableCell, ParagraphTableHeader } from './table-extensions';
 // The slices are taken from real selections rather than built by hand, and their open depths are
 // asserted before they are used: a hand-built triple that happens to agree with the gesture proves
 // nothing about the gesture.
-const schema: Schema = getSchema([
-  StarterKit.configure({ document: false }),
-  Document,
-  TableKit.configure({ tableCell: false, tableHeader: false }),
-  ParagraphTableCell,
-  ParagraphTableHeader,
-  FootnoteReference,
-  FootnoteDefinition,
-  FootnoteSection,
-  Callout,
-  MarkdownDetails,
-  MarkdownDetailsSummary,
-  MarkdownDetailsContent,
-  Embed,
-]);
-
-const { details, detailsSummary, detailsContent, paragraph, embed, table, tableRow, tableCell } =
-  schema.nodes;
+const { details, detailsSummary, detailsContent, embed } = nodes;
 
 const HREF = 'https://www.youtube.com/watch?v=hDPybQwAuVo';
-const para = (value: string) => paragraph.create(null, value ? schema.text(value) : null);
 
 // doc(paragraph[0..6], embed[6..7], paragraph[7..13]) — the reachable document: an embed with a
 // paragraph on each side, which is what `<url>` on its own line becomes once it is made an embed.
-const doc = schema.topNodeType.create(null, [
-  para('前の段落'),
-  embed.create({ href: HREF }),
-  para('後の段落'),
-]);
+const doc = docOf(para('前の段落'), embed.create({ href: HREF }), para('後の段落'));
 
 // What the block drag handle produces: the whole node, closed on both sides. `DRAGGABLE_TYPES`
 // carries `embed` (§5), so this is the slice a drag of one really hands the guards.
-const wholeEmbedSlice = (): Slice => NodeSelection.create(doc, 6).content();
+const wholeEmbedSlice = (): Slice => nodeSlice(doc, 6);
 
 // The cross-edge copy: from inside the paragraph above, past the embed, into the one below. The
 // shape a selection sweeping past an embed produces — open on both sides, three children.
-const acrossEmbedSlice = (): Slice => TextSelection.create(doc, 3, 9).content();
+const acrossEmbedSlice = (): Slice => rangeSlice(doc, 3, 9);
 
 describe('the fixtures are the shapes the gestures really produce', () => {
   it('the drag handle slice is one closed embed', () => {
@@ -113,7 +73,7 @@ describe('the embed is a block node, so the schema itself refuses it in a title'
     // …while the accordion around a legal title builds fine, so the refusal above is the title's.
     expect(() =>
       details.createChecked(null, [
-        detailsSummary.createChecked(null, schema.text('タイトル')),
+        detailsSummary.createChecked(null, text('タイトル')),
         detailsContent.createChecked(null, para('本文')),
       ]),
     ).not.toThrow();
@@ -132,22 +92,12 @@ describe('titleAcceptsSlice — the accordion title, paste and drop', () => {
   it('still accepts an ordinary in-paragraph text copy', () => {
     // The negative control: the gesture the guard must not take away. Without it, a rule that
     // refused every slice would pass everything above.
-    expect(titleAcceptsSlice(TextSelection.create(doc, 2, 5).content())).toBe(true);
+    expect(titleAcceptsSlice(rangeSlice(doc, 2, 5))).toBe(true);
   });
 });
 
 describe('table cells — paste and drop', () => {
-  // A caret inside a body cell, resolved from a real document: the cell rules walk ancestors, so a
-  // hand-built position would not exercise them.
-  const withTable = schema.topNodeType.create(null, [
-    table.create(null, [
-      tableRow.create(null, [
-        tableCell.create(null, para('セルの中身')),
-        tableCell.create(null, para('二つ目')),
-      ]),
-    ]),
-  ]);
-  const $inCell = withTable.resolve(withTable.content.size - 'セルの中身'.length - 6);
+  const { $inCell } = tableFixture();
 
   it('the caret used by these tests really is inside a cell', () => {
     expect($inCell.node($inCell.depth - 1).type.name).toBe('tableCell');
@@ -165,6 +115,6 @@ describe('table cells — paste and drop', () => {
   });
 
   it('still accepts an ordinary paragraph paste into a cell', () => {
-    expect(pasteIntoCellRefused($inCell, TextSelection.create(doc, 2, 5).content())).toBe(false);
+    expect(pasteIntoCellRefused($inCell, rangeSlice(doc, 2, 5))).toBe(false);
   });
 });

@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import {
+  closePostSettings,
+  expectAutosaved,
+  expectPublished,
+  loadMarkdown,
+  openPostSettings,
+} from './editor-authoring';
+import { publishedPath } from './published-post';
 
 // The post's card image, end to end: the editor's bubble menu, the column it writes, the
 // body-derived fallback, and the four surfaces that show the result
@@ -41,12 +48,10 @@ const UPLOAD_SRC = /^\/uploads\/[0-9a-f]+\.png$/;
 async function publish(page: Page, title: string, source: string): Promise<string> {
   await page.getByLabel('タイトル').fill(title);
   if (source !== '') await loadMarkdown(page, source);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  await expectPublished(page);
+  return publishedPath(page);
 }
 
 // The explicit half. There are two routes to a choice — the bubble menu marks an image already in
@@ -56,11 +61,15 @@ async function publish(page: Page, title: string, source: string): Promise<strin
 test('the bubble menu sets an explicit thumbnail that survives a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.locator('.ProseMirror').click();
-
+  // The drawer is modal (PostSettingsPanel.tsx): its own backdrop catches a click into the body
+  // and closes the drawer rather than letting it through, so each visibility check on the panel's
+  // own status text needs it open and each body/title interaction needs it closed first.
+  await openPostSettings(page);
   // Nothing chosen and nothing in the body: the field says so rather than showing a stale box.
-  await expect(page.getByText('未設定。本文に画像を入れると自動で使われます。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像が自動で入ります', { exact: true })).toBeVisible();
+  await closePostSettings(page);
 
+  await page.locator('.ProseMirror').click();
   await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-thumb.png',
     mimeType: 'image/png',
@@ -71,13 +80,16 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
   await page.locator('.ProseMirror img').click();
   await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
 
+  // A hidden input still reports its value regardless of the panel's own visibility.
   const preview = page.locator('input[name="thumbnail"]');
   await expect(preview).toHaveValue(UPLOAD_SRC);
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await openPostSettings(page);
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
+  await closePostSettings(page);
 
   const chosen = await preview.inputValue();
   await page.getByLabel('タイトル').fill('サムネイル指定');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   // The round trip is the claim: autosave snapshots the form, so a field that displays correctly
   // but is not in the FormData saves an empty column and only a reload reveals it.
@@ -93,8 +105,8 @@ test('the bubble menu sets an explicit thumbnail that survives a reload', async 
 test('解除 drops back to the body’s first image', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.locator('.ProseMirror').click();
 
+  await page.locator('.ProseMirror').click();
   await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-body-1.png',
     mimeType: 'image/png',
@@ -110,21 +122,28 @@ test('解除 drops back to the body’s first image', async ({ page }) => {
   await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
   const bodyImages = page.locator('.ProseMirror img');
 
-  // With nothing chosen, the body's first image is already what the card would use.
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  // With nothing chosen, the body's first image is already what the card would use. The panel is
+  // modal (PostSettingsPanel.tsx), so it opens only for the checks that need it visible and closes
+  // again before the next body/bubble interaction, which its own backdrop would otherwise block.
+  await openPostSettings(page);
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
+  await closePostSettings(page);
 
   await bodyImages.nth(1).click();
   await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await openPostSettings(page);
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
   const secondSrc = await bodyImages.nth(1).getAttribute('src');
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(secondSrc ?? '');
 
   // `exact`, because the bubble menu's own toggle now reads 「サムネイルを解除」 when the image
-  // it is on is the chosen one, and an accessible name matches by substring by default.
+  // it is on is the chosen one, and an accessible name matches by substring by default — this
+  // plain 「解除」 is ThumbnailField's own button, inside the panel, still open from the check
+  // just above.
   await page.getByRole('button', { name: '解除', exact: true }).click();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
 });
 
 // A marked image is a body reference, not an independent choice — deleting it from the body (via
@@ -153,13 +172,16 @@ test('deleting the marked image clears the thumbnail back to the fallback', asyn
 
   await bodyImages.nth(1).click();
   await imageBubble(page).getByRole('button', { name: 'サムネイルに設定', exact: true }).click();
+  // A hidden input still reports its value regardless of the panel's own visibility.
   await expect(page.locator('input[name="thumbnail"]')).not.toHaveValue('');
 
   await bodyImages.nth(1).click();
   await imageBubble(page).getByRole('button', { name: '削除' }).click();
   await expect(page.locator('.ProseMirror img')).toHaveCount(1);
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue('');
-  await expect(page.getByText('本文の最初の画像を自動で使用中。')).toBeVisible();
+  // The panel is modal (PostSettingsPanel.tsx), so this status text needs it open to be visible.
+  await openPostSettings(page);
+  await expect(page.getByText('本文の最初の画像（自動）', { exact: true })).toBeVisible();
 });
 
 // The other route, and the one thing that can quietly undo it. A picture chosen through
@@ -174,8 +196,8 @@ test('deleting the marked image clears the thumbnail back to the fallback', asyn
 test('a picked thumbnail outside the body survives body edits and a reload', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  await page.locator('.ProseMirror').click();
 
+  await page.locator('.ProseMirror').click();
   await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-body-1.png',
     mimeType: 'image/png',
@@ -184,6 +206,9 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   await expect(page.locator('.ProseMirror img')).toHaveCount(1, { timeout: 20_000 });
   const bodySrc = await page.locator('.ProseMirror img').getAttribute('src');
 
+  // thumbnail-picker is ThumbnailField's own input, inside the panel — unlike image-picker above,
+  // this one needs the modal drawer (PostSettingsPanel.tsx) open to reach it.
+  await openPostSettings(page);
   await page.getByTestId('thumbnail-picker').setInputFiles({
     name: 'e2e-card.png',
     mimeType: 'image/png',
@@ -191,9 +216,10 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   });
   const chosenField = page.locator('input[name="thumbnail"]');
   await expect(chosenField).toHaveValue(UPLOAD_SRC, { timeout: 20_000 });
-  await expect(page.getByText('この記事用に指定した画像です。')).toBeVisible();
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
   const chosen = await chosenField.inputValue();
   expect(chosen).not.toBe(bodySrc);
+  await closePostSettings(page);
 
   // The body changes and the choice does not.
   await clickPastLastImage(page);
@@ -202,7 +228,7 @@ test('a picked thumbnail outside the body survives body edits and a reload', asy
   await expect(chosenField).toHaveValue(chosen);
 
   await page.getByLabel('タイトル').fill('別枠のサムネイル');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await expect(page.locator('input[name="thumbnail"]')).toHaveValue(chosen);
@@ -246,7 +272,7 @@ test('an explicit thumbnail reaches the list, the admin list, the card and og:im
   expect(chosen).not.toBe(firstSrc);
   // Let the autosave the thumbnail click armed settle before publish, so publish's own wait for
   // 保存済み isn't racing a save already in flight (the same separation test 1 above keeps).
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   const href = await publish(page, 'サムネイル公開', '');
   const slug = href.slice('/posts/'.length);

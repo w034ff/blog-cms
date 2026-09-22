@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectAutosaved } from './editor-authoring';
 import Database from 'better-sqlite3';
 import { TEST_DB_PATH } from './constants';
 
@@ -61,7 +62,7 @@ async function writeFragmentPost(page: Page): Promise<number> {
   await page.locator('.ProseMirror').click();
   await page.keyboard.type(`## ${HEADING}\n`);
   await page.keyboard.type(`[断片](${READABLE})`);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
   return Number(/\/admin\/posts\/(\d+)\/edit/.exec(page.url())?.[1]);
 }
@@ -102,7 +103,7 @@ test('the next unrelated edit carries the rewrite with it (15c)', async ({ page 
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('追記');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   const after = storedBody(id);
   expect(after).toContain('追記');

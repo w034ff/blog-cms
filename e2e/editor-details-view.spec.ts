@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { markdown, docString } from './editor-probe';
+import { gotoPublished } from './published-post';
 
 // The accordion's editor chrome (docs/accordion-requirements.md §5.1, §7.3, §8.2): the toggle's
 // Japanese label, the untitled placeholder, and the rule that folding is a view action — it must
@@ -154,11 +155,10 @@ test('an untitled accordion keeps its title row in both DOM shapes', async ({ pa
   expect(inEditor[0].rowHeight).toBe(inEditor[1].rowHeight);
   expect(inEditor[0].markerBelowRow).toBeLessThanOrEqual(0);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('link', { name: '表示' }).click();
-  await page.waitForURL(/\/posts\//);
+  await expectPublished(page);
+  await gotoPublished(page);
 
   const published = page.locator('article details');
   await expect(published).toHaveCount(2);
@@ -183,12 +183,11 @@ test('the published page folds and unfolds', async ({ page }) => {
 
   await page.getByLabel('タイトル').fill('accordion-public');
   await loadMarkdown(page, '<details>\n<summary>詳細</summary>\n\n畳まれた本文\n\n</details>\n');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
-  await page.getByRole('link', { name: '表示' }).click();
-  await page.waitForURL(/\/posts\//);
+  await gotoPublished(page);
 
   const details = page.locator('article details');
   await expect(details).toHaveCount(1);

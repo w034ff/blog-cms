@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
 import { formatBytes } from './format-bytes.mts';
 
-// Grace-period garbage collector for public/uploads. Uploads are written the
+// Grace-period garbage collector for data/uploads. Uploads are written the
 // moment an image is pasted/dropped — before the post is saved — so a file can
 // be on disk while still unreferenced. We delete a file only when it is BOTH
 // unreferenced AND older than the grace window, so a just-uploaded-not-yet-saved
@@ -13,7 +13,7 @@ import { formatBytes } from './format-bytes.mts';
 //   node scripts/gc-uploads.mts --delete        # remove orphans
 //   node scripts/gc-uploads.mts --grace-hours=48
 const ROOT = process.cwd();
-const UPLOAD_DIR = path.join(ROOT, 'public', 'uploads');
+const UPLOAD_DIR = path.join(ROOT, 'data', 'uploads');
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
 // Uploads live next to the app, but the DB may not — see scripts/db-path.mts.
 // Getting this wrong here means sweeping against an empty reference set.

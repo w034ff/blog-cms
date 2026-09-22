@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { caret, docString } from './editor-probe';
+import { caret, caretAtLineStart, docString } from './editor-probe';
 import { caretAtStartOf } from './editor-authoring';
 
 // A keyboard `Home` moves the caret natively: the DOM selection updates at once, but ProseMirror
@@ -7,12 +7,8 @@ import { caretAtStartOf } from './editor-authoring';
 // (DOMObserver.flushSoon). A Backspace inside that window bypasses every ProseMirror keymap (the
 // internal selection still sits at the old spot, so no handler matches) and the browser's native
 // edit mutates the DOM; re-parsing that mutation nests the following block *inside* the callout.
-// So: wait for the DOM caret, then let a page-side 50ms timer outlast the pending flush — same
-// event loop, so it provably fires after the already-scheduled 20ms flush timer.
-async function caretAtLineStart(page: Page): Promise<void> {
-  await expect.poll(() => page.evaluate(() => window.getSelection()?.anchorOffset ?? -1)).toBe(0);
-  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
-}
+// The wait is `caretAtLineStart` in editor-probe.ts, which asks the editor rather than the DOM —
+// see there for why the DOM's offset cannot answer this.
 
 // The same 20ms selectionchange debounce (DOMObserver.flushSoon) that caretAtLineStart guards, but
 // after a native ArrowUp/End move whose settled offset is line-dependent — there's no fixed value
@@ -107,7 +103,11 @@ test('Backspace on an empty line after a callout deletes that line', async ({ pa
   await page.keyboard.press('Enter');
   await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
   await page.keyboard.press('ArrowLeft'); // into the empty line above
-  await caretAtLineStart(page); // same native-selection-sync race as Home, above
+  // The same native-selection-sync race as Home, above — but `caretAtLineStart` cannot be the
+  // wait here: the caret was already at a `@0` (the start of '次の段落') before the arrow, so its
+  // predicate is true before the move and the wait passes without anything having happened. The
+  // empty line is the one landing place whose block is empty, so the whole caret names it.
+  await expect.poll(() => caret(page)).toBe('@0');
 
   const callout = editor.locator('div.markdown-alert.markdown-alert-note');
   // `p:not(.markdown-alert-title)` excludes the callout's own non-editable title chip (also a
@@ -411,22 +411,33 @@ test('Enter on an empty line at the head of a callout splits in place, not exits
   await page.getByRole('button', { name: '囲み枠' }).click();
   await page.getByRole('button', { name: '情報', exact: true }).click();
 
-  // Put an empty line *above* the body text: type "本文", Home to its start, Enter to open a blank
-  // paragraph ahead of it. Each step is gated on the settled ProseMirror tree (docString) rather
-  // than DOM <p> counts; caretAtLineStart waits out Home's 20ms selectionchange debounce so the
-  // Enter can't fire on a stale (end-of-line) selection.
+  // Put an empty line *above* the body text: type "本文", put the caret at the callout's own start,
+  // Enter to open a blank paragraph ahead of it. Gated on the settled ProseMirror tree (docString)
+  // rather than DOM <p> counts.
+  //
+  // **Placed through the editor rather than by `Home`**, which is what `caretAtStartOf` exists for
+  // and what line 242 of this file already did. A Home sent inside the selection-sync window that
+  // follows typing is discarded — ProseMirror re-asserts its own end-of-line selection onto the DOM
+  // — and no amount of waiting produces the caret, in the DOM or in the editor: measured
+  // 2026-09-12, the move failed to stick about one run in five. Home is setup here and not the
+  // subject; the subject is what Enter does from the head of a callout.
   await page.keyboard.type('本文');
-  await page.keyboard.press('Home');
-  await caretAtLineStart(page);
+  await caretAtStartOf(page, 'callout');
   await page.keyboard.press('Enter');
   await expect
     .poll(() => docString(page))
     .toBe('doc(callout(paragraph, paragraph("本文")), paragraph)');
 
-  // Land the caret inside that leading blank (ArrowLeft crosses the boundary). `@0` on an empty
-  // line confirms the state the guard governs.
-  await caretSettled(page); // let the Enter's selection sync flush, or the arrow is swallowed
-  await page.keyboard.press('ArrowLeft');
+  // Land the caret inside that leading blank. **Placed through the editor**, for the reason the
+  // Home above it was: `caretSettled`'s 70ms was measured on an idle machine (3/3 green there),
+  // and a full serial run outlasts it — the ArrowLeft is swallowed by the window that follows the
+  // Enter and the caret never leaves '本文'. Measured 2026-09-13: red in both full runs, at this
+  // line, while the case is green run alone (4/4) and run as a file (11/11). The arrow is setup
+  // here; the subject is what Enter does from an empty line at the callout's head.
+  //
+  // After the Enter above, the callout's inner start *is* that blank line. `@0` on an empty block
+  // still confirms the state the guard governs.
+  await caretAtStartOf(page, 'callout');
   await expect.poll(() => caret(page)).toBe('@0');
 
   // Enter on that *leading* (non-trailing) empty line must NOT exit: split in place, callout stays

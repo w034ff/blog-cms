@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 
-// The format toolbar is sticky (PostEditor wraps it in `sticky top-0`) so it stays
-// reachable when editing far down a long post. Fill the editor past a screenful,
-// scroll down, and assert the toolbar is still in the viewport, pinned near the top.
-test('the format toolbar stays pinned when scrolling a long post', async ({ page }) => {
+// The frame's header is sticky (PostEditor wraps it in `sticky top-0`) so both of its
+// rows — the publish controls and the format toolbar — stay reachable when editing far
+// down a long post. Fill the editor past a screenful, scroll down, and assert both are
+// still in the viewport, pinned near the top.
+test('the sticky header stays pinned when scrolling a long post', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 600 });
   await page.goto('/admin/posts/new');
 
@@ -26,8 +27,17 @@ test('the format toolbar stays pinned when scrolling a long post', async ({ page
       const box = await heading.boundingBox();
       return box?.y ?? -1;
     })
-    .toBeLessThan(80); // pinned near the top rather than scrolled off
+    // Pinned near the top rather than scrolled off. Measured at 63 with the publish row
+    // above the toolbar inside the same sticky header (63 rather than 47 since 8948d8b's
+    // `py-3` matched the header's height to SiteHeader's touch floor); the bound is that
+    // plus slack, not a round number, so a row that grows tall enough to push the toolbar
+    // down is caught.
+    .toBeLessThan(76);
   await expect(heading).toBeInViewport();
+
+  // The publish controls ride the same pinned header. They used to sit below the whole
+  // post, which is what made them unreachable from here.
+  await expect(page.getByRole('button', { name: '投稿' })).toBeInViewport();
 
   // Not just visible — the toolbar's dropdowns must still open over the editor
   // content and be clickable while pinned (guards the sticky stacking context: a

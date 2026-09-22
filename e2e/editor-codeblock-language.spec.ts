@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectAutosaved, expectPublished } from './editor-authoring';
 
 // The code block NodeView (components/editor/code-block-extension.ts) surfaces the block's
 // `language` (a <select>) and `filename` (a text field) in the editor. Browser-only — the
@@ -123,7 +124,7 @@ test('the code block language survives a save + reload (markdown round-trip)', a
 
   // Autosave commits the draft (URL flips to /admin/posts/<id>/edit) and stores the
   // block as a ```python fence; reloading re-parses that markdown back into the editor.
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   const reloaded = page.locator('.ProseMirror .code-block-lang');
@@ -147,7 +148,7 @@ test('the filename survives a save + reload (```lang:filename round-trip)', asyn
   await filename.blur(); // commits on change → stored as ```ts:index.ts
   await expect(filename).toHaveValue('index.ts');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   await expect(page.locator('.ProseMirror .code-block-filename')).toHaveValue('index.ts');
@@ -181,7 +182,7 @@ test('a filename typed with whitespace is normalized in place and survives a rel
   // shape of the bug — a field showing a name the document doesn't hold.
   await expect(filename).toHaveValue('myfile.ts');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   // The regression: ```ts:my file.ts re-parses as `language-ts:my` (markdown-it keeps only the
@@ -209,7 +210,7 @@ test('a filename typed with a backtick is normalized and the fence still parses'
   await filename.blur();
   await expect(filename).toHaveValue('ab.ts');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   // Worse than truncation before the fix: a backtick is illegal in a backtick fence's info
@@ -239,9 +240,9 @@ test('the header controls keep their values across a form-action save (投稿/�
   // header <input>/<select> are detached from that form (form attr → non-existent id), so
   // their displayed values must survive — regression: they used to blank in place while the
   // node's attrs stayed intact (no ProseMirror transaction fired to re-sync the NodeView).
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
   await expect(block.locator('.code-block-filename')).toHaveValue('index.ts');
   await expect(block.locator('.code-block-lang')).toHaveValue('ts');
@@ -422,7 +423,7 @@ test('the diff toggle and language survive a save + reload (```diff_lang round-t
   await page.keyboard.press('Enter');
   await page.keyboard.type('+new');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   const block = page.locator('.ProseMirror .code-block');

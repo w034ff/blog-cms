@@ -15,19 +15,17 @@ beforeEach(() => {
 });
 
 describe('generateUniqueSlug', () => {
-  it('returns a 20-char lowercase hex slug', () => {
-    slugExistsMock.mockReturnValue(false);
-    expect(generateUniqueSlug()).toMatch(/^[0-9a-f]{20}$/);
-  });
-
-  it('retries until it finds an unused slug', () => {
+  // The shape of the slug is not asserted: `randomBytes(10).toString('hex')` is the whole of it,
+  // and nothing in the repo reads the length back — the routes match `[0-9a-f]+`.
+  it('retries with a fresh slug until it finds an unused one', () => {
     slugExistsMock.mockReturnValueOnce(true).mockReturnValueOnce(true).mockReturnValue(false);
-    expect(generateUniqueSlug()).toMatch(/^[0-9a-f]{20}$/);
+    const slug = generateUniqueSlug();
     expect(slugExistsMock).toHaveBeenCalledTimes(3);
-  });
-
-  it('produces a different slug on each call', () => {
-    slugExistsMock.mockReturnValue(false);
-    expect(generateUniqueSlug()).not.toBe(generateUniqueSlug());
+    // **Fresh, not merely retried.** A slug hoisted out of the loop would keep this function asking
+    // about the same taken value forever, which is a hang rather than a wrong answer — so the two
+    // calls it was asked about have to differ from each other.
+    const asked = slugExistsMock.mock.calls.map(([value]) => value);
+    expect(new Set(asked).size).toBe(asked.length);
+    expect(asked).toContain(slug);
   });
 });

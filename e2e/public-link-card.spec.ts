@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { publishedPath } from './published-post';
 
 // The link card on the *published* page (docs/link-card-requirements.md §6, criteria 1c/2a–2e).
 //
@@ -17,7 +18,11 @@ import { loadMarkdown } from './editor-authoring';
 // `second-post` is seeded from the real data/blog.db copy (e2e/prepare-db.mts).
 const TARGET_SLUG = 'second-post';
 const TARGET_TITLE = 'React Server Components を学ぶよ';
-const TARGET_DESCRIPTION = 'Next.js App Router の中核機能 RSC についてのメモ。';
+// A phrase from the opening of that post's body, not a stored field: a post has no description
+// field, and the card reads lib/excerpt.ts's excerpt of the body (docs/cms-features.md
+// 「説明文の自動抽出」). A substring, because the excerpt's exact shape is lib/excerpt.test.ts's
+// claim — this spec only shows the real resolveCard delivers it.
+const TARGET_DESCRIPTION = 'サーバー側でレンダリングされる React コンポーネント';
 
 const BLUE_LIGHT = 'rgb(9, 105, 218)'; // #0969da — the `.prose a` colour this must not inherit
 
@@ -29,13 +34,11 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await page.getByLabel('タイトル').fill(title);
   await loadMarkdown(page, source);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  return publishedPath(page);
 }
 
 test('a published card resolves against the real posts table (1c/2a)', async ({ page }) => {
@@ -51,7 +54,7 @@ test('a published card resolves against the real posts table (1c/2a)', async ({ 
   // The title is in neither the body nor the stylesheet — it can only have come through
   // resolveCard → getPostBySlug, which nothing else in the suite runs.
   await expect(card.locator('.link-card-title')).toHaveText(TARGET_TITLE);
-  await expect(card.locator('.link-card-description')).toHaveText(TARGET_DESCRIPTION);
+  await expect(card.locator('.link-card-description')).toContainText(TARGET_DESCRIPTION);
   await expect(card).toHaveAttribute('href', `/posts/${TARGET_SLUG}`);
   // Title and description are the whole card — the target's date was dropped 2026-08-15
   // (lib/rehype-link-card.ts carries the reason). Asserted rather than assumed because

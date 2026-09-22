@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
+import { publishedPath } from './published-post';
 
 // The published footnote preview (docs/footnote-popover-requirements.md §8). Every criterion in
 // that list is a decision made somewhere in §3-§6, so this file is arranged the way the decisions
@@ -41,12 +42,10 @@ test.beforeAll(async ({ browser }) => {
   await page.getByLabel('タイトル').fill('Footnote popover spec');
   await loadMarkdown(page, SOURCE);
   await expect(page.locator('.ProseMirror div[data-footnote-def]')).toHaveCount(3);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  postHref = href!;
+  await expectPublished(page);
+  postHref = await publishedPath(page);
   await context.close();
 });
 

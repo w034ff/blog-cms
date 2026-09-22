@@ -5,7 +5,10 @@ import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+// Runtime data, beside the DB — not `public/`, whose static handler only serves what was
+// on disk when the server booted. `app/uploads/[name]/route.ts` serves these back and
+// holds the measurement; `scripts/gc-uploads.mts` sweeps the same directory.
+const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
 
 export async function POST(req: NextRequest) {
   const session = await getOptionalSession();

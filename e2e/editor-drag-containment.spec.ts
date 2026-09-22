@@ -22,13 +22,21 @@ import {
 //
 // The body is destroyed and the fragment lands in the field with its newlines flattened.
 //
-// All four fields are covered rather than the reported one: they are exposed by *being outside the
-// editor*, not by anything of their own, so a test naming only タイトル would keep passing if the
-// guard were narrowed to it. Same machinery as the other drop guards; see e2e/native-drag.ts, which
-// also owns the fixture and the selection this file and codeblock-header-drop-guard.spec.ts both
-// start from.
+// **Only タイトル is exercised here now — カテゴリ・タグ・説明 dropped 2026-09-21, when 記事の設定
+// became a modal drawer (PostSettingsPanel.tsx, docs/editor-requirements.md §12.22).** A drag is one
+// continuous mouse gesture (select in the body → mousedown in the body → move → drop on the field),
+// and those three fields are mounted `hidden` unless the panel is open, at which point its backdrop
+// blocks the body outright — there is no moment where the body is a legal drag source and the field
+// is a legal drop target at once. Confirmed technically unreachable, not merely hard to script, and
+// the same is true of a real drag: an author can no longer produce this failure on these three
+// fields either. タイトル is untouched by this — it was never inside the panel — and still needs
+// the guard exactly as before. `useDragContainment` itself is left covering all four regardless:
+// defense in depth for a future non-modal reversion or another reachable path, even though only one
+// of the four can be driven end-to-end from here. Same machinery as the other drop guards; see
+// e2e/native-drag.ts, which also owns the fixture and the selection this file and
+// codeblock-header-drop-guard.spec.ts both start from.
 
-const FIELDS = ['タイトル', 'カテゴリ', 'タグ（カンマ区切り）', '説明'] as const;
+const FIELDS = ['タイトル'] as const;
 
 async function openEditor(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');

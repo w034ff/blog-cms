@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
 import { shot } from './editor-probe';
 import {
   stubX,
@@ -10,6 +10,7 @@ import {
   X_TALL_HEIGHT,
   X_TALL_ID,
 } from './x-embed-stub';
+import { publishedPath } from './published-post';
 
 // The X embed on the *published* page (docs/embed-requirements.md §10.5, §10.6) — basis X5 and X6.
 //
@@ -28,12 +29,10 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.getByLabel('タイトル').fill(title);
   await loadMarkdown(page, source);
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  return href!;
+  await expectPublished(page);
+  return publishedPath(page);
 }
 
 const ref = (url: string) => `<div class="embed" data-href="${url}"></div>`;
@@ -45,7 +44,11 @@ const frameHeight = async (page: Page) =>
   Math.round((await page.locator('#post-body .embed-x .embed-frame').boundingBox())!.height);
 
 test('the box stops at the width the post can use, on the left rail (§10.9)', async ({ page }) => {
-  const href = await publish(page, 'Public X embed width', `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`);
+  const href = await publish(
+    page,
+    'Public X embed width',
+    `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`,
+  );
   await stubX(page);
   await page.goto(href);
   await expect(box(page)).toHaveCount(1);
@@ -77,7 +80,11 @@ test('a post takes the height its iframe reports (§10.5)', async ({ page }) => 
 // on the page is served from the same origin, so the origin check says "an X frame" where the
 // question is "THIS X frame". The box is now answered only by the frame inside it.
 test('a frame answering under another box’s embedId is ignored (X11)', async ({ page }) => {
-  const href = await publish(page, 'Public X impersonation', `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`);
+  const href = await publish(
+    page,
+    'Public X impersonation',
+    `前。\n\n${ref(X_RESIZE_URL)}\n\n後。\n`,
+  );
   await stubX(page);
   await page.goto(href);
   await expect.poll(() => frameHeight(page), { timeout: 15_000 }).toBe(X_HEIGHT);

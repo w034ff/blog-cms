@@ -8,7 +8,7 @@ import { loadMarkdown } from './editor-authoring';
 // width is wrong only on screen — the DOM, the transaction and the saved markdown are all
 // identical either way.
 
-// 390x220, already in public/uploads. A real box to anchor against: the 1x1 PNGs the other specs
+// 390x220, already in data/uploads. A real box to anchor against: the 1x1 PNGs the other specs
 // upload would sit inside `shift`'s own 8px padding and make every offset below meaningless.
 const UPLOAD_IMAGE =
   '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
@@ -147,7 +147,7 @@ test('a picture narrower than the menu keeps the menu above it, uncovered', asyn
 // widths was fitted into a corner it could not hold. 120x24 is inside the band and shorter than the
 // menu, so a wrong answer covers it whole.
 //
-// Built and pasted here rather than referenced by hash: `public/uploads` is git-ignored, so a
+// Built and pasted here rather than referenced by hash: `data/uploads` is git-ignored, so a
 // fixture only this spec needs has to arrive the way a screenshot does. Shared with 22s below,
 // which needs the same thing at a different size.
 function solidPng(w: number, h: number): Buffer {

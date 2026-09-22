@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { deletePostAction } from '@/app/actions/posts';
+import { logout } from '@/app/actions/auth';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 
@@ -35,7 +36,24 @@ export default async function AdminHome() {
 
   return (
     <section>
-      <h1 className='mb-6 text-2xl font-bold tracking-tight'>記事一覧</h1>
+      {/* Both live on this row rather than in a nav band over every admin screen
+          (app/admin/layout.tsx says why). The list is the hub both belong to — and it keeps
+          the empty-state sentence below, which names 「新規記事」, pointing at something on the
+          same screen. No サイトを見る: SiteHeader's own 「Tech Blog」 is above this row and goes
+          to the same place (app/admin/(list)/layout.tsx). */}
+      <div className='mb-6 flex items-center justify-between gap-4'>
+        <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
+        <div className='flex items-center gap-4 text-sm'>
+          <Link href='/admin/posts/new' className='font-medium hover:underline'>
+            新規記事
+          </Link>
+          <form action={logout}>
+            <button type='submit' className='text-zinc-500 hover:underline dark:text-zinc-400'>
+              ログアウト
+            </button>
+          </form>
+        </div>
+      </div>
       {posts.length === 0 ? (
         <p className='text-zinc-500 dark:text-zinc-400'>
           記事がありません。「新規記事」から作成できます。
@@ -71,14 +89,23 @@ export default async function AdminHome() {
                         下書き
                       </span>
                     )}
-                    {post.unlisted && (
-                      <span className='rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
-                        限定公開
+                    {/* Only ever on a published row — a draft's autosave writes the live columns,
+                        so draft_content stays null (lib/posts.ts listAllPosts). It is here rather
+                        than only in the editor because forgetting happens days later: inside the
+                        editor the same state is the publish button being pressable, which you
+                        have to be in the editor to see. Sky, so it reads apart from 下書き's amber. */}
+                    {post.hasPendingEdits && (
+                      <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                        未公開の変更
                       </span>
                     )}
                   </div>
+                  {/* No slug. It is a 20-hex random string (lib/slug.ts) that names nothing a
+                      reader of this list is looking for, and it was the widest thing on the
+                      line — the title it sits under is what identifies the row. Reaching the
+                      public URL is the 表示 link's job now. */}
                   <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
-                    {post.slug} · {formatPostDate(post.date) || '未公開'}
+                    {formatPostDate(post.date) || '未公開'}
                     {hasVisibleUpdate(post.date, post.updatedAt) && (
                       <> (更新: {formatPostDate(post.updatedAt)})</>
                     )}{' '}
@@ -86,12 +113,34 @@ export default async function AdminHome() {
                   </div>
                 </div>
               </div>
-              <form action={deletePostAction}>
-                <input type='hidden' name='id' value={post.id} />
-                <button type='submit' className='text-sm text-red-600 hover:underline'>
-                  削除
-                </button>
-              </form>
+              <div className='flex shrink-0 items-center gap-4'>
+                {/* Moved off the editor's pinned publish row, where it was a same-tab navigation
+                    out of a mounted editor. Every row has a slug from the moment autosave created
+                    it (lib/db/schema.ts), drafts included, and the address now answers the author
+                    for a draft too — app/(site)/posts/[slug]/page.tsx serves one to a request
+                    carrying this session. So one word covers both: the action is the same, and it
+                    can no longer land on a 404.
+
+                    Not 表示 / プレビュー. That split was worth having only while a draft's link
+                    was a trap; with the preview in place the two labels would differ just to say
+                    ahead of time what the destination says on arrival (its 下書きのプレビュー
+                    banner), and the row already carries the state — the 下書き badge above. (Not
+                    the date column: `date` is stamped at first publish and never cleared, so a
+                    post taken back to a draft still shows one.) */}
+                {post.slug && (
+                  <a
+                    href={`/posts/${post.slug}`}
+                    className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+                    表示
+                  </a>
+                )}
+                <form action={deletePostAction}>
+                  <input type='hidden' name='id' value={post.id} />
+                  <button type='submit' className='text-sm text-red-600 hover:underline'>
+                    削除
+                  </button>
+                </form>
+              </div>
             </li>
           ))}
         </ul>

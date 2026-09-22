@@ -91,17 +91,40 @@ test('a pause of its own closes the group, with no autosave in reach (14b)', asy
   });
 
   await page.keyboard.type('見て');
+  await settle(page);
+
+  // **The two halves of `before + 2`, asked separately, because the end state cannot tell them
+  // apart.** This line has failed twice — 2026-08-27 and 2026-09-11, the second time in a 3-shard
+  // run — and both times all it could say was "expected 2, received 1", which fits a first run that
+  // never became its own group just as well as a pause that failed to split one. Neither reproduced
+  // on demand, so what is added here is the ability to say which, not another second of waiting:
+  // widening the wait would remove the only time dependency the case has, and that is a different
+  // claim.
+  //
+  // This half is the precondition: `closeHistory` above held, and the first run landed before the
+  // pause even starts.
+  const afterFirst = await historyState(page);
+  expect(afterFirst.undoDepth, 'the first run is its own group before the pause').toBe(before + 1);
+
   // 1500, not 1000. The pause has to clear two clocks — `newGroupDelay` (500) for the split this
   // case is about, and the autosave debounce (800) for the assertion below that autosave tried.
   // At 1000 the second of those had 200ms of margin, which is the shape docs/link-requirements.md
   // §5.5.10 paid for once. Blocking the route means there is no upper bound to trade against, so
-  // the margin is free: take it. (This file failed here once, on 2026-08-27, and did not reproduce
-  // in six repeats; the trace was gone by then. Widening is not a diagnosis — it removes the only
-  // time dependency the case has, which is a different claim and the honest one.)
+  // the margin is free: take it.
   await page.waitForTimeout(1500);
   // Autosave reached for the network during the pause and was refused: the pause is a real one by
   // its own clock, and nothing it did could have reached the editor.
   expect(saveAttempts).toBeGreaterThan(0);
+
+  // And this half is the pause itself, measured on the clock `prosemirror-history` actually groups
+  // on rather than on the wall. `prevTime` is when it last saw a transaction, and the next one
+  // starts a new group only if it arrives more than `newGroupDelay` (500) after that — so a
+  // keystroke whose transaction lands late shortens this gap without shortening `waitForTimeout`.
+  // A lower bound, since the run below can only be later than this reading: if it holds, the real
+  // gap holds too.
+  const gap = (await page.evaluate(() => Date.now())) - afterFirst.prevTime;
+  expect(gap, 'the pause exceeds newGroupDelay by history\u2019s own clock').toBeGreaterThan(500);
+
   await page.keyboard.type(` ${URL_TEXT} `);
   await settle(page);
   expect(await docString(page)).toBe(`doc(paragraph("見て ", link("${URL_TEXT}"), " "))`);

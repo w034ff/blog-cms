@@ -72,7 +72,7 @@ http://localhost:3001 で起動する（3001 なのは、3000 を別のローカ
 | `npm run db:backup`          | `VACUUM INTO` でスナップショットを取得（`data/backups/`）                                          |
 | `npm run db:seed`            | 管理者ユーザーの作成                                                                               |
 | `npm run db:migrate-content` | `content/posts/*.mdx` の取り込み                                                                   |
-| `npm run gc:uploads`         | 未参照の `public/uploads` を掃除（既定はドライラン。`-- --delete` で実削除）                       |
+| `npm run gc:uploads`         | 未参照の `data/uploads` を掃除（既定はドライラン。`-- --delete` で実削除）                         |
 | `npm run fix:glued-images`   | 過去の書き出しバグで画像行に貼り付いた記法を修復（既定で DB を書き換えるので `-- --dry-run` から） |
 
 ## テスト

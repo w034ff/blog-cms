@@ -2,7 +2,7 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 
 // The editor's two floating menus on a phone (docs/link-requirements.md §5.5.19,
-// docs/table-requirements.md §12).
+// docs/editor-requirements.md §12).
 //
 // Browser-only, and not merely because the editor is: what broke here is a box wider than the
 // screen, which nothing about the markup or the class list states. Both menus are placed by
@@ -46,7 +46,7 @@ async function margins(page: Page, selector: string): Promise<{ smallest: number
 
 // The toolbar's height in buttons: 1 while it is on one line, ~2 once `flex-wrap` has taken over.
 // A ratio rather than a pixel height, so a change in the button's own padding does not read as a
-// wrap (docs/table-requirements.md §12, §12.1).
+// wrap (docs/editor-requirements.md §12, §12.1).
 async function toolbarRows(page: Page): Promise<number> {
   return page
     .locator('.table-toolbar')
@@ -341,14 +341,15 @@ test.describe('on an emulated phone at 360px', () => {
     expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 
-  test('every toolbar button is outlined, and the outline costs no width (12j)', async ({
-    page,
-  }) => {
-    // Without hover there is no `hover:bg-zinc-100`, so the buttons are bare text in a row and
-    // nothing shows where one ends (§12.2). Both halves are asserted here because they are one
-    // decision: a `border` would draw the same line and take the row back to two lines, which is
-    // the width §12.1 had just bought — so what is pinned is an inset shadow, and the row staying
-    // on one line is how a border would be caught.
+  test('no toolbar button rings anywhere, on touch or on a pointer (12j)', async ({ page }) => {
+    // §12.2 drew an inset ring here from 2026-08-22 — without hover there is no
+    // `hover:bg-zinc-100`, so a bare-glyph row had nothing to show where one button ended and the
+    // next began. §12.12 (2026-09-18) dropped it from the main format row first (compared against
+    // note and Google Docs' mobile toolbars, both borderless — a glyph plus a divider between
+    // groups instead); 2026-09-19 dropped it from everywhere else too (the table toolbar, the ＋
+    // drawer's rows, and every other `ToolbarButton` consumer), superseding this test's own name.
+    // What marks a control's edge now is the glyph/label itself, `:active`'s momentary tint
+    // (§12.7), and `.toolbar-mark-divider` between the main row's two groups.
     await openEditor(page);
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -358,21 +359,29 @@ test.describe('on an emulated phone at 360px', () => {
       .locator('.table-toolbar button')
       .evaluateAll((els) => els.map((el) => getComputedStyle(el).boxShadow));
     expect(shadows.length).toBeGreaterThan(4);
-    expect(shadows.every((s) => s.includes('inset'))).toBe(true);
-    // The main toolbar takes the same rule from the same class, which is the point of putting it
-    // on `ToolbarButton` rather than on this menu — and every control there, not just the ones
-    // that are `<button>`s. 画像 is a `<label>` around a hidden file input, styled by hand to look
-    // like the buttons beside it, and it was the one control in the row left without an outline
-    // (§12.2). Asserted by tag, so a future control that copies the same shape has to opt in too.
-    const main = await page.locator('.sticky .toolbar-button').evaluateAll((els) =>
-      els.map((el) => ({
-        tag: el.tagName,
-        ring: getComputedStyle(el).boxShadow.includes('inset'),
-      })),
-    );
+    expect(shadows.every((s) => !s.includes('inset'))).toBe(true);
+
+    const outlines = (selector: string) =>
+      page.locator(selector).evaluateAll((els) =>
+        els.map((el) => ({
+          tag: el.tagName,
+          ring: getComputedStyle(el).boxShadow.includes('inset'),
+        })),
+      );
+    const main = await outlines('.editor-toolbar-bar .toolbar-scroll .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
-    expect(main.every((c) => c.ring)).toBe(true);
-    expect(main.some((c) => c.tag === 'LABEL')).toBe(true);
+    expect(main.every((c) => !c.ring)).toBe(true);
+
+    // …and every control in the ＋ menu, not just the ones that are `<button>`s — none of them
+    // ring, including 画像 (a `<label>` around a hidden file input, styled by hand to look like the
+    // buttons beside it), asserted by tag so a future control that copies the same shape is still
+    // caught by this check.
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const inserts = await outlines('[data-testid="insert-menu-panel"] .toolbar-button');
+    expect(inserts.length).toBeGreaterThan(2);
+    expect(inserts.every((c) => !c.ring)).toBe(true);
+    expect(inserts.some((c) => c.tag === 'LABEL')).toBe(true);
+    await page.keyboard.press('Escape');
 
     expect(await toolbarRows(page)).toBeLessThan(1.5);
     expect((await margins(page, '.table-toolbar')).smallest).toBeGreaterThanOrEqual(EDGE);
@@ -394,24 +403,53 @@ test.describe('on an emulated phone at 360px', () => {
       );
 
     await openEditor(page);
-    const main = await shortest(page, '.sticky .toolbar-button');
+    // `.editor-toolbar-bar`, not `.sticky`: under `hover: none` this bar is fixed to the bottom of
+    // the screen and is not a sticky box at all (§12.5).
+    // `:visible` because the insert group's pointer copy is in this bar too and unpainted — its
+    // boxes are 0×0 here, and it is the ＋'s copy below that carries those four controls (§12.5).
+    const main = await shortest(page, '.editor-toolbar-bar .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
     expect(Math.min(...main.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+
+    // The ＋ in the page header — chrome that exists only under `hover: none`, so this file is the
+    // only place the floor can be measured on it (§12.5). The header is the one exemption from
+    // `FLOOR`: `.editor-header-bar` (app/globals.css) drops its own `.toolbar-button`s to 34px so
+    // the header fits in 50px (requested 2026-09-20, the tradeoff argued through at the time).
+    const HEADER_FLOOR = 34;
+    const plus = await shortest(page, '.insert-menu .toolbar-button');
+    expect(plus).toHaveLength(1);
+    expect(plus[0].h).toBeGreaterThanOrEqual(HEADER_FLOOR);
+    // The insert controls the ＋ opens are the drawer's own rows, not the header — back to FLOOR.
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const inserts = await shortest(page, '[data-testid="insert-menu-panel"] .toolbar-button');
+    expect(inserts.length).toBeGreaterThan(2);
+    expect(Math.min(...inserts.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+    await page.keyboard.press('Escape');
 
     // Undo and redo take the floor in both directions (§12.4): they are the one pair whose width
     // costs no row, and squares are what they are drawn as. Asserted here rather than in
     // editor-history-buttons.spec.ts because it is this file that runs under `hover: none`.
-    const history = await shortest(page, '.sticky .toolbar-button-history');
+    const history = await shortest(page, '.editor-toolbar-bar .toolbar-button-history:visible');
     expect(history).toHaveLength(2);
     expect(Math.min(...history.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
 
     // A dropdown's rows are not `.toolbar-button` — they take the height from their own class, and
     // §12.2 deliberately leaves them out of the ring, so the two rules have to be checked apart.
-    await page.getByRole('button', { name: 'リスト' }).click();
+    // リスト would have been this dropdown, but on touch (this file runs under `hover: none` here,
+    // per the note above) it is two direct toggles instead (§12.11) — 囲み枠, reached through the
+    // ＋ opened above, is still a dropdown on touch too.
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    await page
+      .getByTestId('insert-menu-panel')
+      .getByRole('button', { name: '囲み枠', exact: true })
+      .click();
     const items = await shortest(page, '.dropdown-item');
     expect(items.length).toBeGreaterThan(1);
     expect(Math.min(...items.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
+    // The sheet's backdrop (§12.18) blocks the press it used to let through — a real modal, not
+    // the old small anchored panel — so it needs an explicit close before the next press lands.
     await page.keyboard.press('Escape');
+    await page.locator('.ProseMirror').click();
 
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -530,8 +568,9 @@ test.describe('in the width band where the card grows into the edge', () => {
   });
 });
 
-// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx), not the floating
-// menus above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
+// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx; リスト is a pointer
+// control only since §12.11, which gave touch two direct toggles instead), not the floating menus
+// above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
 // which assumes room on both sides — true while the toolbar fits one line, but it wraps
 // (`flex-wrap`), and which row a trigger lands in is a function of viewport width. The table picker
 // is the widest panel here (an 8×8 grid), so it is the one that first reaches an edge: measured, the

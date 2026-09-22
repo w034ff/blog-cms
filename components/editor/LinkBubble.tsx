@@ -317,6 +317,21 @@ export function LinkBubble({
   // Escape closes the card while the caret stays put; without this it would come straight back on
   // the next transaction. Cleared as soon as the caret leaves the link, so it never sticks.
   const dismissedRef = useRef(false);
+  // The link the press below has already decided the card is leaving, kept as its range.
+  //
+  // `signal('hide')` acts on that decision synchronously, but the caret has not moved yet — so a
+  // transaction landing before it does asks `shouldShow` about the link the caret is *still* in,
+  // which answers "show" and paints the display card back over the link the author has just left.
+  // That is §5.5.15's flash again, one frame of it, and it happens on every departure: measured
+  // 2026-09-11, the show/hide pair is identical at 1x and at 8x CPU throttling, and only the slow
+  // frame makes it visible. It reached the suite as a shard-only failure of
+  // `e2e/editor-link-bubble.spec.ts`'s 「the card is not seen collapsing on the way out」.
+  //
+  // A range of its own rather than another `dismissedRef` writer: that flag's other writers —
+  // Escape, blur, the card's own click — are not about one link, and Escape's dismissal in
+  // particular is meant to outlast a move. This one is about exactly the link being left, so a
+  // caret that lands in a *different* link still gets its card.
+  const leavingRef = useRef<{ from: number; to: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // The card element itself, so its size can be watched (see the ResizeObserver below).
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -473,10 +488,18 @@ export function LinkBubble({
   // *before* the caret and not `getMarkRange` on its own.
   const shouldShow = useCallback(() => {
     if (editingRef.current) return true;
-    if (!linkAtCaret(editor)) {
+    const link = linkAtCaret(editor);
+    if (!link) {
       dismissedRef.current = false;
+      leavingRef.current = null;
       return false;
     }
+    // Still the link the press said we were leaving, which means the caret's own transaction has
+    // not arrived yet. Answering "show" here is what repaints the card over it for a frame.
+    const leaving = leavingRef.current;
+    if (leaving && leaving.from === link.from && leaving.to === link.to) return false;
+    // A different link: the decision was not about this one, so it stops applying.
+    leavingRef.current = null;
     return !dismissedRef.current;
   }, [editor]);
 
@@ -550,7 +573,11 @@ export function LinkBubble({
       const staying = target instanceof Node && anchor?.contains(target);
       const inDocument = target instanceof Node && editor.view.dom.contains(target);
       abandonField();
-      if (inDocument && !staying) signal('hide');
+      if (inDocument && !staying) {
+        // Captured before the caret moves — after it, there is nothing left to name.
+        leavingRef.current = linkAtCaret(editor);
+        signal('hide');
+      }
     };
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
@@ -1370,8 +1397,9 @@ export function LinkBubble({
             {/* One button, and it is 適用 rather than 保存 (2026-08-17). Nothing here is saved: it
                 writes the edit into the document, and the post reaches the database on its own a
                 moment later. This UI already spends the word 保存 on that — `PostEditor`'s
-                indicator reads 保存済み ✓ / 未保存… / 保存に失敗 — so a card button reading 保存
-                named the wrong layer, and named it while the indicator beside it still said 未保存….
+                indicator reads 保存済み ✓ / 保存中… / 保存に失敗 — so a card button reading 保存
+                named the wrong layer, and named it while the indicator beside it was still saying
+                the save had not happened.
 
                 The cancel button is gone. It was 取り消し with a ✕ for a few hours, and the ✕ could
                 not be told from the display card's 解除, which removes the link — the one misread
@@ -1477,7 +1505,7 @@ export function LinkBubble({
             )}
           </div>
           <span
-            className='mx-1 h-5 w-px self-center bg-zinc-200 dark:bg-zinc-600'
+            className='mx-1 h-5 w-px self-center bg-zinc-300 dark:bg-zinc-600'
             aria-hidden='true'
           />
           <ToolbarButton round title='コピー' onClick={copyHref}>

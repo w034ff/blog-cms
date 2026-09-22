@@ -11,8 +11,17 @@ type PostRow = typeof posts.$inferSelect;
 
 // A post as seen in the editor: the live (published) version plus its private
 // working copy of pending edits, if any. draftContent is non-null only for a
-// published post with unpublished changes.
-export type PostForEdit = Post & { draftContent: DraftContent | null };
+// published post with unpublished changes, and `hasPendingEdits` says whether that copy differs
+// from what is public — see hasUnpublishedEdits, which is why the two are not the same question.
+export type PostForEdit = Post & {
+  draftContent: DraftContent | null;
+  hasPendingEdits: boolean;
+};
+
+// What the admin list needs beyond a Post: whether a published post is carrying edits readers
+// cannot see yet. Narrowed the same way PostForEdit is, and for the same reason — the public
+// surfaces have no use for it, and Post reaches every one of them.
+export type AdminPost = Post & { hasPendingEdits: boolean };
 
 function toPost(row: PostRow): Post {
   return {
@@ -20,7 +29,6 @@ function toPost(row: PostRow): Post {
     slug: row.slug,
     title: row.title,
     date: row.date,
-    description: row.description,
     category: row.category,
     tags: tagsSchema.parse(row.tags),
     draft: row.draft,
@@ -47,9 +55,81 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
   return toPost(row);
 }
 
-export async function listAllPosts(): Promise<Post[]> {
+// The complement of the above, and deliberately a second function rather than a flag on it.
+// `getPostBySlug` is what a link card (app/(site)/posts/[slug]/page.tsx's resolveCard) and
+// /api/link-title ask, and both are required to report a draft and an unknown slug identically —
+// docs/link-requirements.md §6.1. Widening that one would leak draft titles into cards; this one
+// can only ever answer for a draft, so no caller of it can be surprised.
+//
+// **It carries no authorization of its own.** The only caller gates on a session first
+// (getOptionalSession in the post page); this just narrows the row set. Naming it for the draft
+// rather than for the viewer is what keeps that honest: a function called "forAuthor" invites the
+// belief that it checks who is asking.
+//
+// A draft's current content is in the live columns — `draft_content` is written only for a
+// *published* post, so there is no working copy to prefer here.
+export async function getDraftBySlug(slug: string): Promise<Post | null> {
+  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  if (!row || !row.draft) return null;
+  return toPost(row);
+}
+
+// `draft_content` is written only for a published post (a draft's edits go straight to the live
+// columns) and cleared by commitPost on both publish and unpublish, so the flag is derived, not
+// stored — and it can never be true on a row the list is badging 下書き. It asks whether the
+// parked copy differs from what is public, not merely whether one exists: see hasUnpublishedEdits.
+//
+// This list is the only place that state can be noticed after the fact. In the editor it is the
+// publish button's own enabled state, which you have to already be in the editor to read.
+export async function listAllPosts(): Promise<AdminPost[]> {
   const rows = db.select().from(posts).orderBy(desc(posts.date)).all();
-  return rows.map(toPost);
+  return rows.map((row) => {
+    const post = toPost(row);
+    return {
+      ...post,
+      hasPendingEdits: hasUnpublishedEdits(
+        post,
+        row.draftContent ? toDraftContent(row.draftContent) : null,
+      ),
+    };
+  });
+}
+
+// The live (public) columns in the shape the working copy is stored in, so the two can be compared
+// — and so the editor can load one or the other without writing the shape out a second time.
+export function liveContent(post: Post): DraftContent {
+  return {
+    title: post.title,
+    category: post.category,
+    tags: post.tags,
+    body: post.body,
+    thumbnail: post.thumbnail,
+  };
+}
+
+// Whether a stored working copy is an unpublished *change*, rather than a copy of what is already
+// public. The two differ because publish and autosave can race: `commitPost` clears draft_content
+// while an autosave started a moment earlier is still in flight, and that save writes the copy
+// back afterwards. Both carry the same form content, so what lands is a working copy identical to
+// the live columns — real as a row, empty as a claim. Keyed on `draft_content !== null` the admin
+// list badged that as 未公開の変更あり, indistinguishable from a genuine pending edit and clearable
+// only by publishing again. Comparing the content answers that case and the genuine one alike, and
+// asks nothing of the write path (where an abort would not help: the request is already sent, and
+// the handler runs whether or not the client is still listening).
+//
+// The comparison is written out field by field on purpose: a field added to DraftContent later
+// needs a line here too, the same obligation `toDraftContent` above carries for its defaults.
+function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boolean {
+  if (draftContent === null) return false;
+  const live = liveContent(post);
+  return (
+    draftContent.title !== live.title ||
+    draftContent.category !== live.category ||
+    draftContent.body !== live.body ||
+    draftContent.thumbnail !== live.thumbnail ||
+    draftContent.tags.length !== live.tags.length ||
+    draftContent.tags.some((tag, index) => tag !== live.tags[index])
+  );
 }
 
 // `draft_content` is JSON, and `$type<DraftContent>()` only asserts its shape — nothing validates
@@ -63,16 +143,15 @@ export async function listAllPosts(): Promise<Post[]> {
 // for `tags` (`tagsSchema … .catch([])`). A field added to DraftContent later needs its default
 // added here too.
 function toDraftContent(stored: DraftContent): DraftContent {
-  return { ...stored, thumbnail: stored.thumbnail ?? '', unlisted: stored.unlisted ?? false };
+  return { ...stored, thumbnail: stored.thumbnail ?? '' };
 }
 
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
   const row = db.select().from(posts).where(eq(posts.id, id)).get();
   if (!row) return null;
-  return {
-    ...toPost(row),
-    draftContent: row.draftContent ? toDraftContent(row.draftContent) : null,
-  };
+  const post = toPost(row);
+  const draftContent = row.draftContent ? toDraftContent(row.draftContent) : null;
+  return { ...post, draftContent, hasPendingEdits: hasUnpublishedEdits(post, draftContent) };
 }
 
 export async function getPostsByTag(tag: string): Promise<Post[]> {

@@ -14,6 +14,8 @@ import {
 import { isOwnPostHref } from '@/lib/link-card-href';
 import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { PostSearchResult } from '@/lib/types';
+import { useBodyScrollLock } from './useBodyScrollLock';
+import { CloseButton } from './CloseButton';
 
 // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md §21):
 // one modal for both a link card and an embed. Two tabs, never a sub-tab choosing between the two
@@ -31,15 +33,30 @@ export function InsertDialog({
   editor,
   at,
   onClose,
+  onCancel,
+  onCommit,
   ownSlug,
 }: {
   editor: Editor;
   // Where the result goes, captured when the slash row ran.
   at: number;
   onClose: () => void;
+  // Cancelled (閉じる, Escape, or the backdrop) rather than committed — PostEditor.tsx uses this
+  // to reopen the ＋ drawer's sheet when this dialog was opened from its own リンク row (mousedown
+  // anywhere in this dialog already closes that sheet as a `useDismiss` side effect, before the
+  // author ever reaches a cancel gesture — see insert-menu-nav.ts). A no-op when the dialog was
+  // opened from the slash menu instead.
+  onCancel: () => void;
+  // A link card or an embed actually landed in the document — PostEditor.tsx uses this to make
+  // sure the drawer sheet stays closed, the same "inserted, done" ending every other row gets.
+  onCommit: () => void;
   // The post open in the editor, so its own address is not offered back to it (§18).
   ownSlug: string;
 }) {
+  // Always locked while mounted — PostEditor.tsx only renders this component while it's open,
+  // unlike InsertMenu.tsx's sheet, which stays mounted and toggles a prop instead.
+  useBodyScrollLock(true);
+
   const [tab, setTab] = useState<'url' | 'posts'>('url');
 
   const [href, setHref] = useState('');
@@ -70,9 +87,20 @@ export function InsertDialog({
   // Closing hands the caret back. Without this the author is left with focus on nothing — the
   // dialog is gone, the editor is not focused, and the next keystroke goes to the document rather
   // than the post (measured 2026-09-02: a second `/` after Escape opened no menu at all).
+  //
+  // A raw `view.dom.focus({ preventScroll: true })`, not `editor.commands.focus()` (reported
+  // 2026-09-20, two tries): the command's own `scrollIntoView: false` option only cancels its
+  // *own* `editor.commands.scrollIntoView()` call — @tiptap/core's `focus` command (index.js)
+  // calls a bare `view.dom.focus()` first, on iOS/Android, unconditionally, regardless of that
+  // option, which is the same native-scroll problem focus-then-run.ts's own `preventScroll`
+  // exists for. `scrollIntoView: false` alone still measured the page landing at `scrollY: 0`.
+  // ProseMirror keeps the model selection through a DOM blur/focus cycle on its own (the same
+  // fact the comment above already leans on), so the raw call is enough — nothing here is
+  // choosing a new position the way `focus(at)` below does.
   const close = () => {
-    editor.commands.focus();
+    editor.view.dom.focus({ preventScroll: true });
     onClose();
+    onCancel();
   };
 
   // `focus(at)`, not `focus()`. The caret has been outside the editor while the author typed, and
@@ -82,11 +110,13 @@ export function InsertDialog({
     if (reference === '') return;
     editor.chain().focus(at).setEmbed(reference).run();
     onClose();
+    onCommit();
   };
   const commitCard = (cardHref: string) => {
     if (cardHref === '') return;
     editor.chain().focus(at).setLinkCard(cardHref).run();
     onClose();
+    onCommit();
   };
 
   // **Closed means gone.** PostEditor renders this only while it is open, so neither the abandoned
@@ -108,9 +138,10 @@ export function InsertDialog({
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       // Stopped, or the editor's own Escape handling runs too — and the last thing a dialog should
-      // do on the way out is move the caret it is about to insert at.
+      // do on the way out is move the caret it is about to insert at. Same raw
+      // `view.dom.focus({ preventScroll: true })` as `close()` above, and for the same reason.
       event.stopPropagation();
-      editor.commands.focus();
+      editor.view.dom.focus({ preventScroll: true });
       onClose();
     };
     document.addEventListener('keydown', onKey, true);
@@ -207,7 +238,14 @@ export function InsertDialog({
 
   return (
     <div
-      className='fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 p-0 sm:items-start sm:p-8'
+      // `z-[55]`, not `z-50`: opened from the ＋ drawer's own リンク row, InsertMenu.tsx's sheet
+      // (also `z-50`) can still be mounted underneath (mousedown inside this dialog closes it as a
+      // `useDismiss` side effect, but not every interaction is a mousedown — `fill()` isn't one).
+      // Equal z-index left paint order to DOM/mount timing, and the sheet — portalled to
+      // `document.body` after this dialog's own position in the tree — won, physically blocking
+      // clicks on 挿入する whenever it fell in the bottom sheet's own screen region (measured
+      // 2026-09-20: a full-height phone dialog's submit button sits inside exactly that region).
+      className='fixed inset-0 z-[55] flex items-stretch justify-center bg-black/40 p-0 sm:items-start sm:p-8'
       // A click on the sheet itself must not reach this — mousedown rather than click for the
       // reason the link card's rows learned the hard way: a control that unmounts on mousedown
       // lets the mouseup fall through to the document.
@@ -226,18 +264,12 @@ export function InsertDialog({
         className='flex h-full w-full flex-col overflow-hidden border-zinc-300 bg-white shadow-xl sm:h-auto sm:max-h-full sm:max-w-lg sm:rounded-lg sm:border dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
-          <h2 id={headingId} className='text-sm font-bold'>
+          <h2 id={headingId} className='text-base font-bold'>
             リンクを挿入
           </h2>
           {/* type='button' everywhere: PostEditor wraps the editor in one <form>, and a
               default-type button inside it submits the post. */}
-          <button
-            type='button'
-            aria-label='閉じる'
-            onClick={close}
-            className='rounded-full border border-zinc-300 px-2 py-0.5 text-sm text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            ×
-          </button>
+          <CloseButton onClick={close} />
         </div>
 
         {/* No sub-tab chooses card vs. embed — only these two, which split how the author starts

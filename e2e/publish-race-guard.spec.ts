@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectAutosaved } from './editor-authoring';
 
 // The third term of `publishDisabled` (components/PostEditor.tsx):
 //
@@ -48,7 +49,7 @@ test('投稿 is refused while a brand-new post’s first autosave is still creat
   await expect(page).not.toHaveURL(/\/admin\/posts\/\d+\/edit$/);
 
   release();
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/edit$/);
   await expect(publish).toBeEnabled();
 

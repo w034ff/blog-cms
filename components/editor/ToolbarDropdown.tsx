@@ -1,10 +1,12 @@
 'use client';
 
 import { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { ToolbarButton } from './ToolbarButton';
 import { useDismiss } from './useDismiss';
 import { ChevronIcon } from './svg/ChevronIcon';
+import { useInsertMenuNav } from './insert-menu-nav';
 
 // How far the panel is kept from the viewport edge by clampPanelToViewport below.
 const VIEWPORT_MARGIN = 8;
@@ -35,6 +37,12 @@ export function ToolbarDropdown({
   panelClass?: string;
   children: (close: () => void) => ReactNode;
 }) {
+  // A drawer row (InsertMenu.tsx) reads a nav here and portals into the sheet's drilldown slot
+  // instead of opening this component's own floating panel — see insert-menu-nav.ts. `open` then
+  // never turns true, so the effects and the panel below stay inert rather than needing a second
+  // `!nav` guard each.
+  const nav = useInsertMenuNav();
+  const isActive = nav !== null && nav.activeTitle === title;
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const panelRef = useRef<HTMLDivElement>(null);
@@ -52,10 +60,7 @@ export function ToolbarDropdown({
   // app/globals.css) — a narrow desktop window or a high zoom level hits the same geometry.
   const [shiftX, setShiftX] = useState(0);
   useLayoutEffect(() => {
-    if (!open) {
-      setShiftX(0);
-      return;
-    }
+    if (!open) return;
     const recompute = () => {
       const trigger = ref.current;
       const panel = panelRef.current;
@@ -99,11 +104,22 @@ export function ToolbarDropdown({
     if (disabled) setOpen(false);
   }
 
+  // The clamp is dropped when the panel closes, for the same reason and in the same place: a
+  // measurement of where the trigger sat last time says nothing about where it will sit next time.
+  // The layout effect above recomputes before the reopened panel is painted, so this is belt and
+  // braces rather than the thing that positions it — but left in that effect it was a setState in
+  // an effect body, which is the anti-pattern the paragraph above is about.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) setShiftX(0);
+  }
+
   return (
     <div ref={ref} className='relative flex'>
       <ToolbarButton
-        onClick={() => setOpen((prev) => !prev)}
-        active={active ?? open}
+        onClick={() => (nav ? nav.activate(title) : setOpen((prev) => !prev))}
+        active={active ?? (nav ? isActive : open)}
         disabled={disabled}
         title={title}
         tooltipHidden={open}>
@@ -124,6 +140,25 @@ export function ToolbarDropdown({
           {children(() => setOpen(false))}
         </div>
       )}
+      {/* The drawer copy of the panel above: portalled into InsertMenu.tsx's drilldown slot rather
+          than rendered here, so its DOM output moves but this component's own fiber — and
+          therefore CalloutMenu's/TableGridMenu's state — does not. Gated on `isActive`, not just
+          `nav`, since every drawer row shares one nav and one slot; only the row that was tapped
+          renders into it.
+
+          `close` here is `nav.deactivate` — back to the row list, not the sheet whole. A
+          *successful pick* additionally calls `nav.closeMenu()` itself (CalloutMenu's `choose`,
+          TableGridMenu's `insert`) so the sheet closes the way 引用/脚注/画像 do (2026-09-20). This
+          `close` stays `deactivate` because it is also what "行数・列数を入力…" calls mid-flow,
+          before a table is actually inserted — closing the sheet there would be premature, and the
+          numeric dialog is portalled independently of it regardless (see TableGridMenu.tsx). */}
+      {isActive &&
+        nav &&
+        nav.portalTarget &&
+        createPortal(
+          children(() => nav.deactivate()),
+          nav.portalTarget,
+        )}
     </div>
   );
 }

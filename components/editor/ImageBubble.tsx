@@ -39,9 +39,21 @@ function selectedImage(editor: Editor): { from: number; src: string } | null {
 // it. The callback's copy covers the one path that reaches here with no render at all — the
 // plugin's `resizeHandler`, where a window resize can shrink a `max-width: 100%` picture under a
 // menu whose width is already settled.
-function fitMenuToPicture(menu: HTMLElement, picture: HTMLElement): void {
+function fitMenuToPicture(menu: HTMLElement, block: HTMLElement, picture: HTMLElement): void {
   const width = picture.getBoundingClientRect().width;
   menu.style.setProperty('--anchor-width', `${width}px`);
+  // Where the picture sits inside the block. floating-ui is anchored to the BLOCK (see
+  // getReferencedVirtualElement), so this is the rest of the journey to the picture's corner, and
+  // it belongs on this side because these properties are re-read at paint while the reference the
+  // plugin captured is not.
+  menu.style.setProperty(
+    '--anchor-left',
+    `${picture.getBoundingClientRect().left - block.getBoundingClientRect().left}px`,
+  );
+  menu.style.setProperty(
+    '--anchor-top',
+    `${picture.getBoundingClientRect().top - block.getBoundingClientRect().top}px`,
+  );
   // `@tiptap/react`'s `syncClassName` assigns `element.className` wholesale, so a class written
   // from the positioning callback would be dropped by the render that follows it. React runs a
   // child's layout effects before its parent's and the menu is the child, so the effect below
@@ -119,33 +131,54 @@ export function ImageBubble({
   );
   // The element the plugin's own `ref` hands back — the portal div the menu renders into.
   const menuRef = useRef<HTMLDivElement | null>(null);
-  // The PICTURE's box, not the block's. `nodeDOM` returns `.image-block`, which is column-wide
-  // (image-extension.ts), so anchoring there would leave the menu floating in the empty column
-  // beside a centred picture rather than on it.
-  const pictureBox = useCallback((): HTMLElement | null => {
+  // `nodeDOM` returns `.image-block`, which is column-wide (image-extension.ts).
+  const blockBox = useCallback((): HTMLElement | null => {
     const image = selectedImage(editor);
     if (!image) return null;
     const block = editor.view.nodeDOM(image.from);
-    if (!(block instanceof HTMLElement)) return null;
-    return block.querySelector<HTMLElement>('.image-box') ?? block;
+    return block instanceof HTMLElement ? block : null;
   }, [editor]);
+  // The picture inside it — narrower than the block whenever the image is narrower than the
+  // column, which is what the empty column beside a centred picture is.
+  const pictureBox = useCallback((): HTMLElement | null => {
+    const block = blockBox();
+    return block ? (block.querySelector<HTMLElement>('.image-box') ?? block) : null;
+  }, [blockBox]);
+  // **The BLOCK is the anchor, not the picture, and that is a correctness fix rather than a
+  // preference** (2026-09-12). The plugin asks for this once — pasting an image selects it, so the
+  // reference is taken while the bitmap is still loading — and it never asks again, because
+  // clicking the picture that is already selected changes no selection. Measured at that moment:
+  // the picture is `0x0` at the middle of the column while the block is already `766` wide at its
+  // final left. `top-start` against a zero-width point put the menu half a picture-width right of
+  // the corner, and it stayed there until an unrelated window resize.
+  //
+  // The block's horizontal box does not depend on the bitmap, so a reference taken early is
+  // already right. Everything that does depend on it — the picture's width and its inset — moves
+  // to the custom properties below, which `fitMenuToPicture` rewrites on every render and which
+  // resolve at paint. That is the half that was already self-healing: `--anchor-width` reached
+  // 220px on its own while the captured rect stayed frozen.
+  //
+  // It also removes the last path that could measure the menu itself, which is what 22f is a
+  // detector for.
   const getReferencedVirtualElement = useCallback(() => {
+    const block = blockBox();
     const picture = pictureBox();
-    if (!picture) return null;
+    if (!block || !picture) return null;
     const menu = menuRef.current;
-    if (menu) fitMenuToPicture(menu, picture);
+    if (menu) fitMenuToPicture(menu, block, picture);
     return {
-      getBoundingClientRect: () => picture.getBoundingClientRect(),
-      contextElement: picture,
+      getBoundingClientRect: () => block.getBoundingClientRect(),
+      contextElement: block,
     };
-  }, [pictureBox]);
+  }, [blockBox, pictureBox]);
   // No dependency array: what this measures is the render itself — the menu's committed width —
   // so it has to run after every one of them, and before paint, which is why it is a layout
   // effect rather than a passive one.
   useLayoutEffect(() => {
     const menu = menuRef.current;
+    const block = blockBox();
     const picture = pictureBox();
-    if (menu && picture) fitMenuToPicture(menu, picture);
+    if (menu && block && picture) fitMenuToPicture(menu, block, picture);
   });
 
   const image = selectedImage(editor);

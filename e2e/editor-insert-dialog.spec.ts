@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import Database from 'better-sqlite3';
-import { BASE_URL, TEST_DB_PATH } from './constants';
-import { loadMarkdown, setRange } from './editor-authoring';
+import { BASE_URL } from './constants';
+import { postSlug } from './published-post';
+import { expectAutosaved, loadMarkdown, setRange } from './editor-authoring';
 import type { Editor } from '@tiptap/react';
 import { markdown, settle } from './editor-probe';
 
@@ -444,7 +444,7 @@ test('Escape and the backdrop close the dialog without inserting (24f)', async (
   await page.keyboard.type('/embed');
   await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
   await expect(dialog(page).getByLabel('URL または埋め込みコード')).toHaveValue('');
-  await page.locator('div[role="dialog"]').press('Escape');
+  await dialog(page).press('Escape');
   await expect(dialog(page)).toHaveCount(0);
 });
 
@@ -526,13 +526,9 @@ test('the URL field refuses this post’s own address (24.7b)', async ({ page })
   await page.getByLabel('タイトル').fill(title);
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('本文');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
-  const id = Number(/\/admin\/posts\/(\d+)\/edit/.exec(page.url())?.[1]);
-  const db = new Database(TEST_DB_PATH, { readonly: true });
-  const row = db.prepare('SELECT slug FROM posts WHERE id = ?').get(id) as { slug: string };
-  db.close();
-  expect(row.slug).toBeTruthy();
+  const slug = await postSlug(page);
 
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
@@ -542,7 +538,7 @@ test('the URL field refuses this post’s own address (24.7b)', async ({ page })
   const field = dialog(page).getByLabel('URL または埋め込みコード');
   const submit = dialog(page).getByRole('button', { name: '挿入する' });
   const status = dialog(page).locator('[role="alert"], [role="status"]');
-  await paste(page, field, `${BASE_URL}/posts/${row.slug}`);
+  await paste(page, field, `${BASE_URL}/posts/${slug}`);
   await expect(status).toHaveText('この記事自身は参照できません');
   await expect(status).toHaveAttribute('role', 'alert');
   await expect(submit).toBeDisabled();

@@ -1,11 +1,16 @@
 // Run the Playwright E2E suite as N independent processes, one per shard.
 //
-// Sharding rather than raising `workers` in playwright.config.ts, because the thing that makes the
-// suite slow is not that any test is slow — measured 2026-09-01: 693 tests, median 1.10s, no
-// dominant file — it is that they run one after another. Splitting into processes keeps each
-// shard's run exactly as it is today (`workers: 1`, `fullyParallel: false`), which is what the
-// drag-select and autosave specs depend on; raising workers inside one process would instead put
-// several of them on one server and one DB copy at the same time.
+// Two levers, and they multiply: `workers: 4` in playwright.config.ts runs four spec files at once
+// on ONE server, and this script runs N of those as independent processes on N servers. What makes
+// the suite slow is not that any test is slow — measured 2026-09-01: 693 tests, median 1.10s, no
+// dominant file — it is that they accumulate one after another, and both levers split that
+// accumulation on the same unit, the file (`fullyParallel: false` keeps a file's tests in order on
+// one worker, which is what the drag-select and autosave specs depend on).
+//
+// Workers are the lever to reach for first: another browser context is roughly 0.3GB against 1.6GB
+// for another `next dev` (measured 2026-09-13), and that cost is what capped this script at three
+// shards. Sharding is what buys a second server, and with it a second DB copy — so it is for the
+// runs that cannot share one, not for parallelism per se.
 //
 // Each shard gets its own port, and every other per-server path is derived from that port in
 // e2e/constants.ts — DB copy, saved session, build dir, tsconfig. So the only thing this script

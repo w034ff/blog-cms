@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { expectAutosaved, expectPublished } from './editor-authoring';
+import { gotoPublished } from './published-post';
 
 // End-to-end over the *public* render path (which no other spec touches): author a
 // `> [!CAUTION]` callout in the editor, publish it, then open the public post and
@@ -20,13 +22,11 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
   await page.keyboard.press('Enter');
   await page.keyboard.type('破壊的操作の前に確認してください。');
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
-  const href = await page.getByRole('link', { name: '表示' }).getAttribute('href');
-  expect(href).toMatch(/^\/posts\/[0-9a-f]+$/);
-  await page.goto(href!);
+  await gotoPublished(page);
 
   // Rendered as a div callout (not a blockquote), marker stripped, title present.
   const alert = page.locator('.markdown-alert.markdown-alert-caution');

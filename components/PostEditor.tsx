@@ -1,17 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
-import { ThumbnailField } from './editor/ThumbnailField';
+import { isTrailingNodeOnlyUpdate } from './editor/trailing-node-extension';
 import { isPublishableUri } from './editor/link-protocols';
 import { Toolbar } from './editor/Toolbar';
 import { TableToolbar } from './editor/TableToolbar';
 import { LinkBubble } from './editor/LinkBubble';
 import { ImageBubble } from './editor/ImageBubble';
 import { InsertDialog } from './editor/InsertDialog';
+import { WritingHelpDialog } from './editor/WritingHelpDialog';
+import { PostSettingsPanel, SETTINGS_PANEL_ID } from './editor/PostSettingsPanel';
 import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
@@ -19,6 +22,14 @@ import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
 import { useDragContainment } from './editor/useDragContainment';
+import { useMeasuredHeight } from './editor/useMeasuredHeight';
+import { useKeyboardInset } from './editor/useKeyboardInset';
+import { InsertMenu } from './editor/InsertMenu';
+import { EditorTooltip } from './editor/EditorTooltip';
+import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
+import { SettingsIcon } from './editor/svg/SettingsIcon';
+import { HelpIcon } from './editor/svg/HelpIcon';
+import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import type { PostFormState } from '@/app/actions/posts';
 
@@ -27,12 +38,10 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  description: string;
   category: string;
   tags: string[];
   body: string;
   thumbnail: string;
-  unlisted: boolean;
 };
 
 type Props = {
@@ -41,6 +50,9 @@ type Props = {
   mode: 'create' | 'edit';
   // Current visibility of the live post: true once it has been published.
   published: boolean;
+  // Whether the post has ever been published — its publish date is set, and stays set through a
+  // return to draft. 記事の設定's 公開 switch exists only then (docs/editor-requirements.md §12.27).
+  everPublished: boolean;
   // Whether the loaded content is a working copy ahead of the published version
   // (a published post with unsaved-to-public edits). Always false in create mode.
   hasPendingEdits: boolean;
@@ -48,30 +60,69 @@ type Props = {
 
 const emptyState: PostFormState = {};
 
-const inputClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
+// The title is the one metadata field that is always on screen, and the only one whose value
+// the reader sees, so it carries the weight the rest of the fields don't — and it is the only
+// one that can lose its label. A placeholder only works where the typed value names its own
+// field, which is true of a lone 24px bold line and false of カテゴリ「開発」 or タグ; those
+// keep their <Field> labels. note and Zenn are both shaped this way (measured 2026-09-11).
+//
+// No `focus:ring`, so the underline carries visible keyboard focus alone: it is 2px and
+// transparent from the start, so focus changes only its colour and never the field's height.
+// zinc-500 both ways is a contrast floor, not a shade preference — placeholder text at this
+// size is WCAG large text (3:1), and zinc-400 reaches only 2.6:1 on either ground.
+const titleClass =
+  'w-full border-b-2 border-transparent bg-transparent px-0 py-2 text-2xl font-bold tracking-tight placeholder:text-zinc-500 hover:border-zinc-200 focus:border-zinc-500 focus:outline-none dark:hover:border-zinc-800 dark:focus:border-zinc-500';
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className='block text-sm'>
-      <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>{label}</span>
-      {children}
-    </label>
-  );
+// How long 保存済み ✓ stays up after a save. Long enough to be read as an answer to the edit
+// just made, short enough that the row is quiet again by the next one.
+const SAVED_NOTICE_MS = 3000;
+
+// Enter in a text field submits the form by activating its first submit button, which here
+// is 投稿/更新. That was survivable while the publish row sat below a screenful of post;
+// with the row pinned in the header, a stray Enter in タイトル publishes. Bound to the
+// metadata wrapper, not the <form>, so Enter inside the editor is untouched.
+function blockImplicitSubmit(event: KeyboardEvent<HTMLDivElement>): void {
+  if (event.key !== 'Enter') return;
+  if (event.target instanceof HTMLInputElement) event.preventDefault();
 }
 
-export function PostEditor({ action, initial, mode, published, hasPendingEdits }: Props) {
+export function PostEditor({
+  action,
+  initial,
+  mode,
+  published,
+  everPublished: initialEverPublished,
+  hasPendingEdits,
+}: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // Markdown source of the body, kept in sync with the editor and mirrored into a
   // hidden input so autosave and publish read it through the form like before.
   const [body, setBody] = useState(initial.body);
   const [title, setTitle] = useState(initial.title);
+  // Controlled, though nothing outside the panel reads them any more — the summary that used to
+  // report カテゴリ and タグ is gone. Kept as-is rather than returned to `defaultValue` because
+  // the form reads the DOM either way (useAutosave snapshots it with `new FormData`), so the
+  // change would buy nothing and 説明 already shows the uncontrolled shape works.
+  const [category, setCategory] = useState(initial.category);
+  const [tags, setTags] = useState(initial.tags.join(', '));
+  // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
+  // down, below the fold on a 600px-tall window, which is the opposite of what folding these
+  // fields away is for. A new post is not left guessing: the category arrives pre-filled
+  // (DEFAULT_CATEGORY) and nothing else above is required to publish.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Where focus returns when 記事の設定 closes (PostSettingsPanel.tsx, §12.29).
+  const settingsToggleRef = useRef<HTMLButtonElement>(null);
+  // ヘルプ (docs/cms-features.md「書き方ヘルプ」). Held here rather than in the button because the
+  // sheet is mounted below, outside the header: the header is `sticky` with its own `z-40`, and a
+  // stacking context is what InsertMenu.tsx's own comment says not to put a full-screen overlay in.
+  const [helpOpen, setHelpOpen] = useState(false);
   // The author's explicit card image ('' = none chosen). Held in React rather
   // than left uncontrolled like the text fields, because the picker writes it
   // and the preview reads it back.
   const [thumbnail, setThumbnail] = useState(initial.thumbnail);
-  // The opaque public slug, only needed to build the 表示 link. Empty in create
-  // mode until publish reports the server-assigned slug; otherwise the row's slug.
+  // The opaque public slug. Nothing on screen shows it — it feeds the link card's
+  // self-reference guard (`editor.storage.linkCard.ownSlug`) and nothing else. Empty in
+  // create mode until publish reports the server-assigned slug; otherwise the row's slug.
   const [slug, setSlug] = useState(initial.slug);
   // The session cookie lapsed mid-edit: autosave/publish return 401. We keep the
   // editor mounted (content intact) and prompt a re-login. Cleared by any
@@ -82,6 +133,21 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const [insertDialogAt, setInsertDialogAt] = useState<number | null>(null);
   // Stable, so the dialog's Escape listener registers once per open instead of once per render.
   const closeInsertDialog = useCallback(() => setInsertDialogAt(null), []);
+  // The ＋ drawer's own open state, lifted out of InsertMenu.tsx: InsertDialog (リンク's picker)
+  // is this component's own sibling of InsertMenu, not its descendant, and needs to reopen the
+  // sheet on cancel — see insert-menu-nav.ts's comment on why that can't go through the nav
+  // context CalloutMenu/TableGridMenu use instead.
+  const [insertMenuOpen, setInsertMenuOpen] = useState(false);
+  // Mirrors `insertMenuOpen` for the `openInsertDialog` event handler below, which registers once
+  // per `editor` change rather than once per render and would otherwise close over a stale value.
+  const insertMenuOpenRef = useRef(insertMenuOpen);
+  useLayoutEffect(() => {
+    insertMenuOpenRef.current = insertMenuOpen;
+  }, [insertMenuOpen]);
+  // Whether the *current* InsertDialog session started from the ＋ drawer's own リンク row, snapshot
+  // at the moment it opened — the same dialog also opens from the slash menu, which never touched
+  // the drawer, so a cancel there must not pop the sheet back open.
+  const insertDialogFromDrawer = useRef(false);
 
   // The post's server identity (row id). Null in create mode until the first
   // autosave (or a publish) materializes the row; from then on edits update it.
@@ -89,6 +155,10 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // Live visibility, and whether the editor holds edits not yet pushed public.
   const [isPublished, setIsPublished] = useState(published);
   const [pendingPublish, setPendingPublish] = useState(hasPendingEdits);
+  const [everPublished, setEverPublished] = useState(initialEverPublished);
+  // Whether 保存済み ✓ is still within its moment on screen, and the save it is answering for.
+  const [savedNoticeShown, setSavedNoticeShown] = useState(false);
+  const [noticedSavedAt, setNoticedSavedAt] = useState<number | null>(null);
 
   // A returned server error (e.g. duplicate slug) shows until the next edit, so
   // it doesn't linger while the user fixes the input.
@@ -98,6 +168,12 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const [handledBody, setHandledBody] = useState(body);
 
   const formRef = useRef<HTMLFormElement>(null);
+  // Publishes the header's measured height on the form, for the toolbar to pin against.
+  const headerRef = useMeasuredHeight<HTMLDivElement>(formRef, '--editor-header-h');
+  // The toolbar's own height, for the padding the post takes under it once the bar is fixed to the
+  // bottom of the screen (app/globals.css, `hover: none`).
+  const toolbarRef = useMeasuredHeight<HTMLDivElement>(formRef, '--editor-toolbar-h');
+  useKeyboardInset(formRef);
   // Refs mirror state the autosave machinery reads outside React's render flow.
   const committedIdRef = useRef<number | null>(committedId);
   // Edit-mode posts already sit at their final URL; only create-mode posts need
@@ -173,6 +249,25 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // the browser's own move deletes the dragged range out of the document).
   useDragContainment(editorRef);
 
+  // Raise 保存済み ✓ when a save lands. `savedAt` is set afresh by the hook on every successful
+  // save (and on a publish, via acceptSaved), so this also re-raises a notice that had already
+  // faded. Adjusted during render rather than in an effect, the same way the action result below
+  // is — an effect here would be a second render just to show it, and the lint rule that forbids
+  // setState in an effect is pointing at exactly that.
+  if (savedAt !== noticedSavedAt) {
+    setNoticedSavedAt(savedAt);
+    setSavedNoticeShown(savedAt !== null);
+  }
+
+  // ...and drop it a moment later. `noticedSavedAt` is a dependency, not just the flag: a save
+  // landing while the notice is still up leaves the flag already true, so keying on the flag
+  // alone would leave the first save's timer running and cut the second notice short.
+  useEffect(() => {
+    if (!savedNoticeShown) return;
+    const timer = setTimeout(() => setSavedNoticeShown(false), SAVED_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [savedNoticeShown, noticedSavedAt]);
+
   // Reset visibility whenever a new action result arrives, per React's "adjust
   // state when a value changes" guidance, not in an effect.
   if (state !== handledState) {
@@ -185,6 +280,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
       setSessionExpired(true);
     } else if (state.saved) {
       setIsPublished(state.saved.published);
+      if (state.saved.published) setEverPublished(true);
       setPendingPublish(false);
       acceptSaved(state.saved.at);
       setSessionExpired(false);
@@ -274,8 +370,11 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         return false;
       },
     },
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor, transaction, appendedTransactions }) => {
+      // The body is synced either way: the document really did change, and this keeps the hidden
+      // input equal to it. Only the "an edit happened" signal is withheld — see the helper.
       setBody(editor.storage.markdown.getMarkdown());
+      if (isTrailingNodeOnlyUpdate(transaction, appendedTransactions)) return;
       markEditedRef.current();
     },
   });
@@ -315,6 +414,13 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   // a keystroke). Setting one in the session worked only because that changes `thumbnail`, and by
   // then the ref is filled. See docs/link-card-requirements.md §22.
   useLayoutEffect(() => {
+    // `react-hooks/immutability` reads this as mutating a value a hook returned. `editor` is a
+    // TipTap Editor, not React state, and `editor.storage` is the extension-owned box TipTap
+    // provides for exactly this — writing to it is the mechanism, not a way around one. It is also
+    // the whole point of §22's shape: the alternative, `editor.view.dispatch`, put a transaction in
+    // here that ran TrailingNode's appendTransaction at publish time and flipped a freshly
+    // published post back to published-pending. Scoped to the line so the rule keeps working everywhere else.
+    // eslint-disable-next-line react-hooks/immutability
     if (editor) editor.storage.thumbnailHighlight.path = thumbnail;
   }, [editor, thumbnail]);
 
@@ -330,6 +436,7 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
     const dom = live.view.dom;
     const open = (event: Event) => {
       const detail = (event as CustomEvent<InsertDialogDetail>).detail;
+      insertDialogFromDrawer.current = insertMenuOpenRef.current;
       setInsertDialogAt(detail.at);
     };
     dom.addEventListener(INSERT_DIALOG_EVENT, open);
@@ -357,23 +464,56 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
   const publishDisabled =
     pending || (isPublished && !pendingPublish) || (!hasIdentity && autosaveState === 'saving');
 
-  const publishStatus = isPublished
+  // Publish state is not written out in words any more (2026-09-13). The publish button already
+  // encodes all three, and it is the control the author is looking at: solid and pressable means
+  // there is something unpublished, dim (disabled:opacity-50) means the live post is current, and
+  // 更新中… means the request is in flight. 未公開の変更あり / 公開済み（最新） / 未公開 each
+  // restated one of those in small text beside 保存済み, where the two read as one run of status.
+  // `disabled` is a real attribute rather than a colour, so assistive tech still gets the state.
+  //
+  // It survives as data-publish-state on the header bar, which is what the E2E suite waits on.
+  const publishState = isPublished
     ? pendingPublish
-      ? { text: '未公開の変更あり', className: 'text-amber-600' }
-      : { text: '公開済み（最新）', className: 'text-green-600' }
-    : { text: '未公開', className: 'text-zinc-400' };
+      ? 'published-pending'
+      : 'published-current'
+    : 'draft';
 
-  // No 'saving' row: on a local CMS the save round-trip is a blink, so it would
-  // flash imperceptibly and says no more than '未保存…' (both mean "not yet
-  // persisted"). The 'saving' state still exists internally to gate publish and
-  // serialize saves — it just isn't surfaced. A save in flight reads as '未保存…'
-  // because `unsaved` stays true until the save succeeds.
+  // The autosave state as the header reports it, which is not the hook's own: a save in flight is
+  // 'unsaved' here because `unsaved` stays true until it succeeds, and 'idle' means nothing has
+  // been saved yet this session. It does NOT follow the notice below out of sight — the fade is
+  // presentation, and this is what the E2E suite waits on (e2e/editor-authoring.ts).
+  const autosaveDisplayState =
+    autosaveState === 'failed'
+      ? 'failed'
+      : unsaved
+        ? 'unsaved'
+        : savedAt !== null
+          ? 'saved'
+          : 'idle';
+
+  // One row for "not persisted yet", covering both the debounce and the request: on a local CMS
+  // the round-trip is a blink, so a separate 保存中 row would flash imperceptibly and say no more
+  // than this one. The hook's 'saving' state still exists to gate publish and serialize saves; it
+  // just isn't surfaced, and `unsaved` stays true until the save succeeds.
+  //
+  // Worded 保存中…, not 未保存…, though for most of its life (the 800ms debounce) nothing is being
+  // saved yet. The author cannot tell queued from in-flight and has no use for the difference,
+  // and in a system with no save button 未保存 reads as a fault to be fixed rather than as work
+  // being looked after. It also matches 更新中… / 公開中… beside it. The state's own name stays
+  // `unsaved` — that one is read by tests and by the beforeunload guard, where "not persisted" is
+  // exactly the claim being made.
+  //
+  // 保存済み ✓ is the one that goes away. It is a confirmation — "that landed" — and `savedAt`
+  // never returns to null, so left alone it became the row's permanent furniture after the first
+  // save of the session and stopped marking anything. 保存中… reappears on every edit, so the
+  // evidence that autosave is alive is still on screen whenever it is the question. 保存に失敗
+  // does not fade: absence has to keep meaning "nothing is wrong".
   let autosaveStatus: { text: string; className: string } | null = null;
   if (autosaveState === 'failed') {
     autosaveStatus = { text: '保存に失敗', className: 'text-red-600' };
   } else if (unsaved) {
-    autosaveStatus = { text: '未保存…', className: 'text-zinc-500' };
-  } else if (savedAt !== null) {
+    autosaveStatus = { text: '保存中…', className: 'text-zinc-500' };
+  } else if (savedAt !== null && savedNoticeShown) {
     autosaveStatus = { text: '保存済み ✓', className: 'text-green-600' };
   }
 
@@ -390,143 +530,341 @@ export function PostEditor({ action, initial, mode, published, hasPendingEdits }
         cancelPendingAutosave();
       }}
       className='space-y-5'>
-      {sessionExpired && (
-        <div
-          role='alert'
-          className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
-          セッションが切れました。
-          <a
-            href='/login'
-            target='_blank'
-            rel='noopener noreferrer'
-            className='mx-1 font-medium underline underline-offset-2'>
-            別タブで再ログイン
-          </a>
-          してください。編集内容は保持されています。
-        </div>
-      )}
-      <div className='grid gap-4 sm:grid-cols-2'>
-        <Field label='タイトル'>
-          <input
-            name='title'
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            required
-            className={inputClass}
-          />
-        </Field>
-        <Field label='カテゴリ'>
-          <input name='category' defaultValue={initial.category} className={inputClass} />
-        </Field>
-        <Field label='タグ（カンマ区切り）'>
-          <input name='tags' defaultValue={initial.tags.join(', ')} className={inputClass} />
-        </Field>
-        <Field label='説明'>
-          <input name='description' defaultValue={initial.description} className={inputClass} />
-        </Field>
-        <ThumbnailField value={thumbnail} onChange={applyThumbnail} body={body} />
-        <div className='block text-sm'>
-          <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>公開範囲</span>
-          <label className='mt-2 flex items-center gap-2'>
-            <input
-              type='checkbox'
-              name='unlisted'
-              defaultChecked={initial.unlisted}
-              className='h-4 w-4 rounded border-zinc-300 accent-violet-600 dark:border-zinc-700'
-            />
-            <span>限定公開にする</span>
-          </label>
-        </div>
-      </div>
+      {/* The editor's own header bar: the way out, the autosave state, the post's settings and
+          publish. It is a direct child of the <form>, and both facts are load-bearing.
 
-      <div className='space-y-2'>
-        {/* The frame must NOT be overflow-hidden: that would make the sticky toolbar
-            below pin to the frame instead of the viewport. Its rounded corners are
-            preserved by rounding the toolbar's top and the editor content sits within
-            px padding, so nothing squares off the border. */}
-        <div className='rounded border border-zinc-300 dark:border-zinc-700'>
-          {editor && (
-            // Toolbar as the frame's sticky header: top-0 pins it to the viewport top
-            // (SiteHeader scrolls away, so no offset) so the controls stay reachable
-            // when editing far down a long post. The opaque bg hides content scrolling
-            // beneath; rounded-t matches the frame's corners and border-b (same weight
-            // as the frame) divides the header from the content. z-30 sits above the
-            // editor but below the drop overlay (z-50); its own dropdowns (z-50) still
-            // open over the content.
-            <div className='sticky top-0 z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
-              <Toolbar editor={editor} uploading={uploading} onImageChange={handleImageChange} />
-              {/* Refusal notices hang off the sticky header (which is a containing block for them),
-                  so they stay in view over the content — see EditorToast. */}
-              {notice && <EditorToast message={notice} />}
+          The form, because useAutosave reads the live DOM with `new FormData(form)` and these
+          are the form's submit buttons — a layout wrapping the form could host neither them nor
+          the state this row reports.
+
+          A *direct* child, because `position: sticky` pins only while the parent's box is on
+          screen. The row used to sit in the metadata wrapper below, whose box ends at the
+          settings panel; pinned there it would come unstuck the moment the panel scrolled past,
+          which is the exact scroll position where 更新 has to still be reachable. The form's box
+          spans the whole editor, so here it holds to the end of the post.
+
+          It is above the toolbar (z-40 over z-30) and below the drop overlay and the toolbar's
+          own dropdowns (z-50). The background is opaque for the same reason the toolbar's is:
+          the post scrolls underneath it.
+
+          The bar spans the window while its contents stay in the column — `-mx-4` cancels
+          PageMain's padding and `px-4` puts it back inside, with `mx-auto max-w-site` on the row
+          within. `-mt-8` cancels the other half of that padding: PageMain's `py-8` is spacing for
+          a page that starts with content, and this one starts with chrome, which belongs against
+          the top of the screen. The bottom half of the `py-8` is left alone. That is SiteHeader's shape, and it is why app/admin/posts/layout.tsx hands this
+          screen a bare PageMain: the column is applied below, around everything else.
+
+          data-publish-state / data-autosave-state ride this element, and only this one — the
+          suite queries them unqualified (`page.locator('[data-autosave-state]')`), so a second
+          copy anywhere in the tree fails on strict mode rather than on the claim. */}
+      <div
+        ref={headerRef}
+        data-publish-state={publishState}
+        data-autosave-state={autosaveDisplayState}
+        // `editor-header-bar` (app/globals.css) scopes the header's own `.toolbar-button` height
+        // to 34px, under the app-wide 40px floor (requested 2026-09-20) — see that rule's own
+        // comment for the tradeoff (editor-narrow-menus.spec.ts §12.3/12k updated to match).
+        className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
+        <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
+          {/* **Icon alone on both surfaces** (docs/editor-requirements.md §12.6), with the name in
+              `aria-label` and an `EditorTooltip` on hover. It was words on a pointer and an arrow on
+              touch until 2026-09-21, written as the §12.4 two-span pair; the pair is gone now, and
+              with it the media query that painted one half.
+
+              **The header is chrome, and now it is one kind of chrome**: three icons and the one
+              button that publishes. The mixed row is what made this worth changing — ヘルプ arrived
+              as a glyph beside two words, and aligning on words would have meant labelling a `?`.
+
+              `-mx-1` cancels the padding the hover background needs, keeping the glyph flush with
+              the title's left edge below it. `aria-label` rather than visible text: there is no
+              visible text left, and the tooltip is `aria-hidden` (it echoes a name AT already has).
+              WCAG 2.5.3 does not apply where nothing is painted. */}
+          <Link
+            href='/admin'
+            aria-label='記事一覧'
+            // `<a>` is natively draggable in Chrome; a touch-drag that starts here otherwise fires
+            // `dragstart` and the browser cancels the pointer sequence (`pointercancel`) before
+            // `pointerup`/`click` — the same class of hijack useImageUpload's drag guard exists
+            // for, just on a link instead of an image.
+            onDragStart={(event) => event.preventDefault()}
+            className='toolbar-button editor-back-link group/tt relative -mx-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+            <ArrowLeftIcon />
+            <EditorTooltip label='記事一覧' />
+          </Link>
+          {/* On the left, with the autosave state, because it is the same kind of thing: this end
+              of the bar says what is true about the post, the other end says what can be done to
+              it. A chip is a state, not a control. Ahead of the autosave state rather than after
+              it — see there.
+ */}
+          {/* Last in this group, so nothing sits to its right but empty space. It is the only
+              item on the bar whose width changes — 保存中… / 保存済み ✓ / 保存に失敗 differ, and
+              it leaves entirely when it goes quiet — and it changes on every edit. Anything after
+              it would be nudged sideways each time. Reserving a width instead would mean picking
+              the widest of the three strings as a constant, which stops being right the moment
+              the font does. */}
+          {autosaveStatus &&
+            (autosaveState === 'failed' ? (
+              // Kept full-width at every size: rare, and the one state where losing the words to
+              // save 40px of header would cost more than the 40px is worth.
+              <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+                {autosaveStatus.text}
+              </span>
+            ) : (
+              <>
+                <span
+                  className={`autosave-status-full text-xs ${autosaveStatus.className}`}
+                  aria-live='polite'>
+                  {autosaveStatus.text}
+                </span>
+                {/* Touch copy, 保存済み only: gated on `unsaved` rather than the hook's own
+                    `autosaveState === 'saving'` (line 634's branch already ruled out 'failed') —
+                    `unsaved` is what `autosaveStatus.text` above is keyed on too, and it stays true
+                    for the whole debounce-plus-request window, where the hook's 'saving' covers a
+                    narrower slice (measured 2026-09-18: keying on it left this span never
+                    rendering — `autosaveState` had already moved on by the time `unsaved` cleared).
+                    保存中… fires on every edit, and the full-text span above already covers what
+                    it is for — evidence autosave is alive — on a pointer. On touch that reassurance
+                    isn't worth a glyph on screen for the whole time an author is typing; 保存に失敗
+                    still interrupts above either way, so silence here still means "nothing is
+                    wrong". `aria-label` keeps the full word for a screen reader. */}
+                {!unsaved && (
+                  <span
+                    className='autosave-status-compact hidden text-xs text-green-600'
+                    aria-live='polite'
+                    aria-label={autosaveStatus.text}>
+                    ✓
+                  </span>
+                )}
+              </>
+            ))}
+          <span className='ml-auto flex flex-wrap items-center gap-2'>
+            {/* 囲み枠・表・リンク・画像 on a phone; hidden entirely on a pointer, where they stay
+                in the toolbar (docs/editor-requirements.md §12.5). `editor &&` is the one condition
+                in this bar, and it is required: the bar itself is deliberately outside that gate
+                so that publish survives an editor that fails to mount (see the comment above),
+                while these controls are commands on the editor and cannot. */}
+            {editor && (
+              <InsertMenu
+                editor={editor}
+                uploading={uploading}
+                onImageChange={handleImageChange}
+                open={insertMenuOpen}
+                onOpenChange={setInsertMenuOpen}
+              />
+            )}
+            {/* ヘルプ — the input rules, the slash menu and the keys, in one sheet
+                (docs/cms-features.md「書き方ヘルプ」§2). On the pointer side only
+                (`editor-help-button`, app/globals.css): every row it holds is either a key or
+                something typed, and it is a second opinion on the toolbar's tooltips, which do not
+                exist under `hover: none` either. No touch twin, so it hides by its own class rather
+                than wearing `.pointer-only` — that marker pair is for a control written twice.
+
+                No `editor &&` gate, unlike the ＋ above: this sheet is content about the editor
+                rather than a command on one, so it still answers when the editor failed to mount.
+                `aria-haspopup` says a dialog is what opens, and the icon is `aria-hidden`, so the
+                label has to be on the button itself. */}
+            <button
+              type='button'
+              aria-label='ヘルプ'
+              aria-haspopup='dialog'
+              onClick={() => setHelpOpen(true)}
+              className='editor-help-button toolbar-button group/tt relative inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              <HelpIcon />
+              <EditorTooltip label='ヘルプ' />
+            </button>
+            {/* A gear on both surfaces now (docs/editor-requirements.md §12.8) — not the §12.6
+                arrow's reasoning (this glyph is not a universal convention the way "back" is), but
+                the §12.1 test applied the other way: a bare ⋮ would read as "more", an overflow menu
+                of loose actions, when what this opens is one named group (カテゴリ・タグ・サムネイル). A gear is specific to "settings" without a label; an overflow glyph is not.
+                The word survives as `aria-label` and as the tooltip, and `aria-expanded` still says
+                whether the panel is open — which is the part a glyph could never carry. */}
+            <button
+              type='button'
+              ref={settingsToggleRef}
+              aria-expanded={settingsOpen}
+              aria-controls={SETTINGS_PANEL_ID}
+              aria-label='記事の設定'
+              onClick={() => setSettingsOpen((open) => !open)}
+              // `bg-zinc-200`/`dark:bg-zinc-700` while open, ToolbarButton's own `active` fill
+              // (ToolbarButton.tsx) rather than a bespoke treatment — this button predates that
+              // component and never picked up its states, so 記事の設定 was the one toggle in the
+              // header with no visible sign of being open beyond `aria-expanded` (requested
+              // 2026-09-21).
+              className={`toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 ${settingsOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}>
+              <SettingsIcon />
+              <EditorTooltip label='記事の設定' />
+            </button>
+            {/* A rule, not a gap: 記事の設定 is a toggle sitting next to the one button that
+                publishes. Zenn separates the same two the same way. `aria-hidden` because it divides nothing a screen reader needs —
+                the button's own name and state already say what it is. */}
+            <span aria-hidden='true' className='h-5 w-px bg-zinc-300 dark:bg-zinc-600' />
+            {/* The form's first submit button, which is what an Enter pressed in a metadata field
+                would activate — hence blockImplicitSubmit on the wrapper those fields live in.
+                The other submit button, 記事の設定's 公開 switch, sits in the drawer later in the
+                form, so "first" is a property of this bar being the form's first child, not of the
+                order of two buttons. */}
+            <button
+              type='submit'
+              name='intent'
+              value='publish'
+              disabled={publishDisabled}
+              // `editor-publish-button` (app/globals.css, touch only): 投稿 isn't a `.toolbar-button`
+              // and its `py-2` sizing (36px, text-sm's own line-height) was the tallest thing in
+              // the header once every other control dropped to 34px — this pins it to match on a
+              // phone, leaving the desktop `py-2` shape alone (requested 2026-09-20).
+              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              {publishLabel}
+            </button>
+          </span>
+        </div>
+        {/* Inside the pinned bar rather than below it, so a refused publish is readable from
+            wherever the author clicked 投稿. It grows the bar, and the toolbar's offset is
+            measured rather than written down precisely so that it follows. */}
+        {state.error && errorVisible && (
+          <p className='mx-auto max-w-site px-1 pt-1 text-sm text-red-600'>{state.error}</p>
+        )}
+      </div>
+      <SiteColumn>
+        <div className='space-y-5'>
+          {/* Below the header, not above it: the bar is the chrome and belongs at the top of the
+          screen. This notice therefore scrolls away with the post — acceptable because it is not
+          the only thing saying so (a save under an expired session fails, and 保存に失敗 stays
+          up in the bar that does not scroll). */}
+          {sessionExpired && (
+            <div
+              role='alert'
+              className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
+              セッションが切れました。
+              <a
+                href='/login'
+                target='_blank'
+                rel='noopener noreferrer'
+                className='mx-1 font-medium underline underline-offset-2'>
+                別タブで再ログイン
+              </a>
+              してください。編集内容は保持されています。
             </div>
           )}
-          {editor ? (
-            <EditorContent editor={editor} />
-          ) : (
-            <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
-          )}
-        </div>
-        {editor && <TableToolbar editor={editor} />}
-        {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
-            are BubbleMenus that portal themselves to <body> — neither renders here. */}
-        {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
-        {editor && (
-          <ImageBubble editor={editor} thumbnail={thumbnail} onSetThumbnail={applyThumbnail} />
-        )}
-        {/* Mounted only while it is open, so closing throws the dialog's state away rather than
-            leaving it for the next open to clear. */}
-        {editor && insertDialogAt !== null && (
-          <InsertDialog
-            editor={editor}
-            at={insertDialogAt}
-            onClose={closeInsertDialog}
-            ownSlug={slug}
+          {/* The title and the post's settings. Keeps blockImplicitSubmit: the guard belongs to the
+          fields, and the buttons moving up to the header changed nothing about it — it cancels
+          Enter on an <input>, and every input is still in here. */}
+          <div className='space-y-3' onKeyDown={blockImplicitSubmit}>
+            {/* No <Field>: the label is the placeholder (titleClass says why). aria-label is not
+            optional decoration — a placeholder is not an accessible name (it is inconsistently
+            exposed, and gone the moment there is a value). It repeats the placeholder verbatim
+            rather than shortening to タイトル so that the name a voice-control user speaks is the
+            text they can see (WCAG 2.5.3). The 49 `getByLabel('タイトル')` calls across 26 specs
+            still resolve against it: Playwright's getByLabel reads aria-label, and matches a
+            substring unless given `exact`. */}
+            <input
+              name='title'
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              required
+              placeholder='記事タイトル'
+              aria-label='記事タイトル'
+              className={titleClass}
+            />
+          </div>
+
+          {/* A modal now, not an inline panel (PostSettingsPanel.tsx says why): opened while
+          scrolled deep into a long post, the panel used to render below the title and the author
+          had to scroll back up to reach it. `aria-controls` still ties the toggle to this by id.
+          A sibling of the `space-y-3` wrapper above, not a child inside it, because it is not
+          really one of the title's own fields — the component's `!mb-0` (PostSettingsPanel.tsx's
+          own comment) is what actually keeps it safe from `space-y-*`'s margin wherever it ends
+          up mounted, this placement included. */}
+          <PostSettingsPanel
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            category={category}
+            onCategoryChange={setCategory}
+            tags={tags}
+            onTagsChange={setTags}
+            thumbnail={thumbnail}
+            onThumbnailChange={applyThumbnail}
+            body={body}
+            isPublished={isPublished}
+            everPublished={everPublished}
+            publishToggleDisabled={pending || (!hasIdentity && autosaveState === 'saving')}
+            error={state.error && errorVisible ? state.error : null}
+            returnFocusRef={settingsToggleRef}
           />
-        )}
-      </div>
+
+          <div className='space-y-2'>
+            {/* The frame must NOT be overflow-hidden: that would make the toolbar below pin to the
+            frame instead of the viewport. Its rounded corners are preserved by rounding the
+            toolbar's top and the editor content sits within px padding, so nothing squares off
+            the border. */}
+            <div className='rounded border border-zinc-300 dark:border-zinc-700'>
+              {/* The frame's sticky header: the format toolbar, and nothing else now that publish
+              lives in the page header above. `top-(--editor-header-h)` pins it under that bar
+              instead of at the viewport top — the height is measured, not written down, because
+              the bar wraps at narrow widths (components/editor/useMeasuredHeight.ts; the
+              first-paint fallback is in app/globals.css). The opaque bg hides content scrolling
+              beneath; rounded-t matches the frame's corners, and border-b (same weight as the
+              frame) divides it from the content. z-30 sits above the editor and below the page
+              header (z-40) and the drop overlay (z-50); the toolbar's own dropdowns (z-50) still
+              open over the content.
+
+              The whole thing is inside `editor &&`, which publish never was and must never be —
+              the body travels in a hidden input, so an editor that fails to mount must not take
+              publishing with it. That is why those buttons are in the page header, outside this
+              frame entirely. */}
+              {editor && (
+                <div
+                  ref={toolbarRef}
+                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
+                  <Toolbar
+                    editor={editor}
+                    uploading={uploading}
+                    onImageChange={handleImageChange}
+                  />
+                  {/* Refusal notices hang off the sticky header (which is a containing block for them),
+                  so they stay in view over the content — see EditorToast. On a phone this box is at
+                  the bottom of the screen, so the toast flips to sit above it; app/globals.css. */}
+                  {notice && <EditorToast message={notice} />}
+                </div>
+              )}
+              {editor ? (
+                <EditorContent editor={editor} />
+              ) : (
+                <div className='px-4 py-3 text-sm text-zinc-400'>エディタを読み込み中…</div>
+              )}
+            </div>
+            {editor && <TableToolbar editor={editor} />}
+            {/* The link card (docs/link-requirements.md §5.5). Sibling of the table toolbar because both
+            are BubbleMenus that portal themselves to <body> — neither renders here. */}
+            {editor && <LinkBubble editor={editor} onNotice={showNotice} ownSlug={slug} />}
+            {editor && (
+              <ImageBubble editor={editor} thumbnail={thumbnail} onSetThumbnail={applyThumbnail} />
+            )}
+            {/* Mounted only while it is open, so closing throws the dialog's state away rather than
+            leaving it for the next open to clear. */}
+            {editor && insertDialogAt !== null && (
+              <InsertDialog
+                editor={editor}
+                at={insertDialogAt}
+                onClose={closeInsertDialog}
+                onCancel={() => {
+                  if (insertDialogFromDrawer.current) setInsertMenuOpen(true);
+                }}
+                onCommit={() => setInsertMenuOpen(false)}
+                ownSlug={slug}
+              />
+            )}
+            {/* Mounted here, not in the header: the header is `sticky` with its own `z-40`, which
+                makes it a stacking context — a `fixed` overlay inside it is compared within that
+                stack instead of against the page (InsertMenu.tsx's own comment). */}
+            {helpOpen && <WritingHelpDialog onClose={() => setHelpOpen(false)} />}
+          </div>
+        </div>
+      </SiteColumn>
 
       <input type='hidden' name='body' value={body} />
       {/* The row identity once it exists (blank for a brand-new post, so publish
           takes the create-and-publish path). */}
       <input type='hidden' name='id' value={committedId ?? ''} />
-
-      {state.error && errorVisible && <p className='text-sm text-red-600'>{state.error}</p>}
-
-      <div className='flex items-center gap-3'>
-        <button
-          type='submit'
-          name='intent'
-          value='publish'
-          disabled={publishDisabled}
-          className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-          {publishLabel}
-        </button>
-        {isPublished && (
-          <button
-            type='submit'
-            name='intent'
-            value='unpublish'
-            disabled={pending}
-            className='rounded border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
-            下書きに戻す
-          </button>
-        )}
-        {isPublished && slug && (
-          <a
-            href={`/posts/${slug}`}
-            className='text-xs text-zinc-600 underline underline-offset-2 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'>
-            表示
-          </a>
-        )}
-        <span className={`text-xs ${publishStatus.className}`} aria-live='polite'>
-          {publishStatus.text}
-        </span>
-        {autosaveStatus && (
-          <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
-            {autosaveStatus.text}
-          </span>
-        )}
-      </div>
 
       {dragging && <DropOverlay />}
     </form>

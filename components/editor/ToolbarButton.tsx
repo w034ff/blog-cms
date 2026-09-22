@@ -5,24 +5,34 @@ import { EditorTooltip } from './EditorTooltip';
 
 // Client-only component (the toolbar mounts after the client editor exists), so
 // navigator is available; the guard just keeps any SSR pass from throwing.
-function isMac(): boolean {
+// Exported for WritingHelpDialog, which prints the same keys in a list and must
+// make the same ⌘/Ctrl choice — a second copy of this would be a second answer.
+export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iP(hone|ad|od)/.test(navigator.platform);
 }
 
-// TipTap keymap token ("Mod-Shift-s") → a human tooltip label. "Mod" is the
-// platform command key: ⌘ on macOS, Ctrl elsewhere. Mac joins glyphs (⌘⇧S);
-// other platforms use "+" (Ctrl+Shift+S).
-function formatShortcut(token: string, mac: boolean): string {
-  return token
-    .split('-')
-    .map((part) => {
-      if (part === 'Mod') return mac ? '⌘' : 'Ctrl';
-      if (part === 'Alt') return mac ? '⌥' : 'Alt';
-      if (part === 'Shift') return mac ? '⇧' : 'Shift';
-      return part.toUpperCase();
-    })
-    .join(mac ? '' : '+');
+// TipTap keymap token ("Mod-Shift-s") → the keys a reader presses, one per element. "Mod" is the
+// platform command key: ⌘ on macOS, Ctrl elsewhere. Split out from formatShortcut below for
+// WritingHelpDialog, which draws a cap per key and so needs the parts rather than the joined line.
+export function shortcutParts(token: string, mac: boolean): string[] {
+  return token.split('-').map((part) => {
+    if (part === 'Mod') return mac ? '⌘' : 'Ctrl';
+    if (part === 'Alt') return mac ? '⌥' : 'Alt';
+    if (part === 'Shift') return mac ? '⇧' : 'Shift';
+    // A named key keeps its own spelling — `Enter` reads as shouting once uppercased, and the
+    // uppercase is only there to make a single letter look like a key cap (`ariaKeyshortcuts`
+    // below already draws the same line).
+    return part.length === 1 ? part.toUpperCase() : part;
+  });
+}
+
+// The same keys as one label, for the tooltip. Mac joins glyphs (⌘⇧S); other platforms use "+"
+// (Ctrl+Shift+S) — **which is also what decides how many caps the help sheet draws**: the separator
+// is the platform saying where one key ends, so a surface that splits on it is splitting where the
+// platform already does.
+export function formatShortcut(token: string, mac: boolean): string {
+  return shortcutParts(token, mac).join(mac ? '' : '+');
 }
 
 // Same token in the ARIA-mandated form (proper modifier names, "+"-joined), so
@@ -54,6 +64,7 @@ export function ToolbarButton({
   accent,
   round,
   historyControl,
+  wide,
   children,
 }: {
   onClick: () => void;
@@ -90,11 +101,17 @@ export function ToolbarButton({
   // sit in a floating card rather than in a row of the toolbar (LinkBubble). The square
   // hover fill reads as a segmented control when only three buttons share a card.
   round?: boolean;
-  // Marks the undo/redo pair, which takes a wider touch target than the rest of the row
-  // (app/globals.css's `hover: none` block). Only these two, and only because their presence
-  // has already cost the toolbar a row at every phone width — so the width is free where it
-  // is not free for their neighbours (measured 2026-09-09).
+  // Marks the undo/redo pair for a 40px touch width, same as `wide` below — kept as its own prop
+  // because it also switches the button to manual flex centring (`.toolbar-button-history`,
+  // app/globals.css), which `wide`'s targets don't need: they already centre their own content in
+  // a span. Originally the only two given the width, because their presence had already cost the
+  // toolbar a row at every phone width (measured 2026-09-09) — since superseded by §12.11's
+  // horizontal scroll, which is what let `wide` extend the same width to the rest of the row.
   historyControl?: boolean;
+  // 40px touch width instead of the 24px a mark's own content computes to (`.toolbar-button-wide`,
+  // `hover: none`). Safe now that the row scrolls instead of wrapping (§12.11) — before that, width
+  // was the scarce dimension and only the history pair got it (see `historyControl`).
+  wide?: boolean;
   children: ReactNode;
 }) {
   const tone = destructive
@@ -105,6 +122,7 @@ export function ToolbarButton({
   const mac = isMac();
   const shortcutLabel = shortcut ? formatShortcut(shortcut, mac) : undefined;
   const hasTip = Boolean(title || shortcutLabel) && !tooltipHidden;
+
   return (
     // `group/tt relative` anchors the custom tooltip below the button. The native
     // `title` attribute is intentionally dropped (it renders near the cursor with
@@ -123,7 +141,7 @@ export function ToolbarButton({
       // second hook the height needs: a circle has to grow in both dimensions.
       className={`toolbar-button group/tt relative text-xs ${
         historyControl ? 'toolbar-button-history ' : ''
-      }${
+      }${wide ? 'toolbar-button-wide ' : ''}${
         round
           ? 'toolbar-button-round rounded-full p-1.5'
           : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`

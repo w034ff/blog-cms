@@ -1,32 +1,22 @@
-import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
-import { logout } from '@/app/actions/auth';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await verifySession();
+  // The second of two independent refusals, not the only one. `proxy.ts` (Next 16's middleware
+  // file, matcher `/admin/:path*`) already redirects an unauthenticated request to /login, so
+  // removing this call changes no response while that stands — measured 2026-09-12, by removing
+  // each in turn: the suite stays green until BOTH are gone. It stays because one edge check is
+  // not where authorization should end, and being the sole layout between these routes and the
+  // root is what lets it cover routes not written yet. `cache`d in lib/dal.ts, so a page that
+  // needs the session again pays nothing.
+  //
+  // It deliberately renders no shell. The two surfaces below it want different ones and a nested
+  // layout cannot take a parent's chrome back off: 記事一覧 keeps SiteHeader (app/admin/(list)),
+  // the editor screens carry only their own way back (app/admin/posts). Each therefore brings its
+  // own PageMain/SiteColumn (components/PageShell.tsx), which is two call sites rather than two
+  // copies of the geometry. Splitting /admin across two top-level groups would have
+  // made the shells implicit again at the cost of writing this file twice, and a forgotten shell
+  // is a full-bleed page you see at once.
+  await verifySession();
 
-  return (
-    <div className='mx-auto w-full max-w-site'>
-      <div className='mb-8 flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800'>
-        <nav className='flex items-center gap-4'>
-          <Link href='/admin' className='font-bold tracking-tight'>
-            管理
-          </Link>
-          <Link href='/admin/posts/new' className='text-sm hover:underline'>
-            新規記事
-          </Link>
-          <Link href='/' className='text-sm hover:underline'>
-            サイトを見る
-          </Link>
-        </nav>
-        <form action={logout} className='flex items-center gap-3 text-sm'>
-          <span className='text-zinc-500 dark:text-zinc-400'>{session.username}</span>
-          <button type='submit' className='hover:underline'>
-            ログアウト
-          </button>
-        </form>
-      </div>
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }

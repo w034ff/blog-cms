@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { docString } from './editor-probe';
-import { loadMarkdown, selectAcross, selectInside } from './editor-authoring';
+import { expectAutosaved, loadMarkdown, selectAcross, selectInside } from './editor-authoring';
 
 // Drives the toolbar's callout-insert menu (CalloutMenu): open the dropdown, pick a
 // type, and confirm it drops a real callout node — a `div.markdown-alert` whose label is
@@ -52,7 +52,7 @@ test('a callout survives a reload — markdown parses back into the node', async
 
   // Wait for autosave to persist the markdown (it also swaps the URL to the edit page),
   // then reload so the editor rebuilds from the stored source.
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
   await page.reload();
 
   const callout = page.locator('.ProseMirror div.markdown-alert.markdown-alert-warning');

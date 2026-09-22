@@ -4,7 +4,7 @@ export function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
       viewBox='0 0 24 24'
-      className={`block h-3 w-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+      className={`chevron-icon block h-3 w-3 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
       fill='none'
       stroke='currentColor'
       strokeWidth={2}

@@ -580,8 +580,13 @@ function createDragController(view: EditorView): DragController {
     const rect = dom.getBoundingClientRect();
     const el = ensureVeil();
     el.style.display = 'block';
-    el.style.top = `${rect.top - CUT_INFLATE}px`;
-    el.style.left = `${rect.left - CUT_INFLATE}px`;
+    // Document coordinates, not the viewport's (`position: absolute` in globals.css). `updateTarget`
+    // already re-runs on `scroll`, but a scroll event lands after the scroll it reports, so a veil
+    // pinned to the viewport is always one frame's worth of scroll behind the block it covers —
+    // absorbed by CUT_INFLATE at full speed and not on a slow frame (measured 2026-09-11: 5px
+    // against 20px at 8x throttling). Placed in the document it simply moves with the block.
+    el.style.top = `${rect.top + window.scrollY - CUT_INFLATE}px`;
+    el.style.left = `${rect.left + window.scrollX - CUT_INFLATE}px`;
     el.style.width = `${rect.width + CUT_INFLATE * 2}px`;
     el.style.height = `${rect.height + CUT_INFLATE * 2}px`;
   }

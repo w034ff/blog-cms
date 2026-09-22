@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, loadMarkdown } from './editor-authoring';
 
 // How the editor says which image is the post's thumbnail (docs/link-card-requirements.md §22).
 //
@@ -214,7 +214,7 @@ test('the badge is still on the marked image after a reload', async ({ page }) =
     .getByRole('button', { name: 'サムネイルに設定', exact: true })
     .click();
   await page.getByLabel('タイトル').fill('バッジの再読込');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
 
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();

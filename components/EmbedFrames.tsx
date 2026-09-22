@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { embedFallbackAnchor } from '@/lib/embed-fallback';
 import {
+  EMBED_DWELL_MS,
   EMBED_SILENCE_MS,
   EMBED_VISIBLE_THRESHOLD,
   gistAsk,
@@ -161,23 +162,52 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     };
     window.addEventListener('message', onMessage);
 
+    // **Crossing the viewport is not being seen** (2026-09-11). A reader landing on `#heading` is
+    // carried past everything above the anchor, and the box above the landing point is intersecting
+    // for only ~156ms while that scroll runs — which armed its clock and, eight seconds later,
+    // replaced a post the reader never looked at with a link. That is the misfire X6 exists to
+    // prevent, and whether it happened was a race between the scroll and this observer's first
+    // callback, so it went both ways on the same code. A box now has to stay for `EMBED_DWELL_MS`
+    // before it counts, which settles the race rather than tuning it.
+    const dwells = new Map<string, number>();
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
           const box = entry.target;
           if (!(box instanceof HTMLElement)) continue;
           const id = box.dataset.embedId;
-          // Once seen is enough — the clock runs from the first time the reader could have been
-          // looking at it, and a box scrolled past and back is not a second chance to fail.
-          observer.unobserve(box);
+          if (!id) continue;
+          if (!entry.isIntersecting) {
+            // Carried off before it had been there long enough. The box stays observed, because
+            // nothing has been decided about it yet — a reader who scrolls back to it must still
+            // start its clock.
+            const dwell = dwells.get(id);
+            if (dwell !== undefined) {
+              window.clearTimeout(dwell);
+              dwells.delete(id);
+            }
+            continue;
+          }
           // `answered` is checked because the two are not ordered: an embed visible at first paint
           // can report its height before this callback ever runs, and arming a clock for it would
           // replace a working post eight seconds later.
-          if (!id || !boxes.has(id) || answered.has(id) || timers.has(id)) continue;
-          timers.set(
+          if (!boxes.has(id) || answered.has(id) || timers.has(id) || dwells.has(id)) continue;
+          dwells.set(
             id,
-            window.setTimeout(() => fallBack(id), EMBED_SILENCE_MS),
+            window.setTimeout(() => {
+              dwells.delete(id);
+              // Dwelt on once is enough — a box the reader has read and scrolled past is not a
+              // second chance to fail — so this is where the observer lets go of it.
+              observer.unobserve(box);
+              // Re-asked rather than carried down from above: `EMBED_DWELL_MS` has passed since,
+              // and a `resize` arriving inside that window is exactly what should call this off.
+              if (!boxes.has(id) || answered.has(id) || timers.has(id)) return;
+              timers.set(
+                id,
+                window.setTimeout(() => fallBack(id), EMBED_SILENCE_MS),
+              );
+            }, EMBED_DWELL_MS),
           );
         }
       },
@@ -190,6 +220,7 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       asked.forEach(({ iframe, onLoad }) => iframe.removeEventListener('load', onLoad));
       observer.disconnect();
       timers.forEach((timer) => window.clearTimeout(timer));
+      dwells.forEach((dwell) => window.clearTimeout(dwell));
     };
   }, [targetId]);
 
