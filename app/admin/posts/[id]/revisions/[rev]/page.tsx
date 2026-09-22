@@ -4,10 +4,10 @@ import { notFound } from 'next/navigation';
 import { restoreRevisionAction } from '@/app/actions/revisions';
 import { PostArticle } from '@/components/PostArticle';
 import { RevisionDiffView } from '@/components/RevisionDiffView';
+import { HEADER_ICON_LINK, RevisionHeaderBar } from '@/components/RevisionHeaderBar';
 import { EditorTooltip } from '@/components/editor/EditorTooltip';
-import { HistoryIcon } from '@/components/editor/svg/HistoryIcon';
+import { ArrowLeftIcon } from '@/components/editor/svg/ArrowLeftIcon';
 import { PencilIcon } from '@/components/editor/svg/PencilIcon';
-import { PENDING_EDITS_KIND, REVISION_KINDS } from '@/components/revision-kinds';
 import { getPostForEdit, liveContent, type PostForEdit } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
@@ -29,11 +29,12 @@ type Version = {
   content: DraftContent;
   // The button's words: what pressing it does. Restoring the live version is discarding.
   action: string;
+  // The 差分 view's words, in the same act's terms (§9): the sentence over the diff, and what it
+  // says instead when pressing would change nothing.
+  diffLead: string;
+  unchanged: string;
   // Only `live` can be a no-op: with no pending edits there is nothing to discard.
   restorable: boolean;
-  // The kind's colour, as the history list's badge shows it; empty for a live version with
-  // nothing pending, which is no kind of revision.
-  accent: string;
 };
 
 function versionOf(post: PostForEdit, rev: string): Version | null {
@@ -42,9 +43,12 @@ function versionOf(post: PostForEdit, rev: string): Version | null {
     return {
       target: 'live',
       content: liveContent(post),
-      action: '未公開の変更を破棄',
+      // Not 未公開の変更を破棄: at 156px it put the header on two lines up to ~455px wide. What is
+      // discarded is said by the 差分 view's sentence; 破棄する alone would read as deleting the post.
+      action: '変更を破棄',
+      diffLead: '未公開の変更を破棄すると、次のように変わります。',
+      unchanged: '破棄しても何も変わりません。',
       restorable: post.hasPendingEdits,
-      accent: post.hasPendingEdits ? PENDING_EDITS_KIND.accent : '',
     };
   }
   const revisionId = Number(rev);
@@ -54,15 +58,11 @@ function versionOf(post: PostForEdit, rev: string): Version | null {
     target: revision.id,
     content: revision.content,
     action: '復元する',
+    diffLead: '復元すると、次のように変わります。',
+    unchanged: '復元しても何も変わりません。',
     restorable: true,
-    accent: REVISION_KINDS[revision.reason].accent,
   };
 }
-
-// The header's icon links, in the editor header's own shape (PostEditor.tsx's 記事一覧 and
-// 記事の設定 controls): the same classes give them the same size on a pointer and on touch.
-const ICON_LINK =
-  'toolbar-button group/tt relative inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800';
 
 // A revision drawn as the post would read (§5), under a header in place of the site's: the
 // preview is a step in editing, so it wears the editor's chrome — pinned, so 本文 / 差分 and the
@@ -83,10 +83,15 @@ export default async function RevisionPreviewPage({
   if (!version) notFound();
 
   const shown: Post = { ...post, ...version.content };
-  // What the editor opens with: the working copy when there is one. The 差分 view compares the
-  // version against it (§9).
+  // What the editor opens with: the working copy when there is one. The 差分 view runs from it to
+  // the version — what pressing the button would change (§9).
   const current = post.draftContent ?? liveContent(post);
-  const showDiff = (await searchParams).view === 'diff';
+  // 差分 is the default: the question a preview is opened with is whether to press the button, and
+  // the diff answers it where the rendered body does not (§9). 本文 is `?view=body`.
+  const showDiff = (await searchParams).view !== 'body';
+  // Computed on both views: the button reads it too. Restoring a version the editor already holds
+  // would change nothing, so the button stays in place but cannot be pressed.
+  const diff = diffRevision(current, version.content);
   const { html, toc } = showDiff
     ? { html: '', toc: [] }
     : await renderMdxToHtml(shown.body, { resolveCard });
@@ -94,64 +99,59 @@ export default async function RevisionPreviewPage({
 
   return (
     <>
-      <div className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 mb-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
-        <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-2'>
-          {/* The two ways out, as the editor's header shows its own: icons named by aria-label
-              and the editor's tooltip. The first sits where the editor's ← does. */}
-          <Link
-            href={`/admin/posts/${post.id}/revisions`}
-            aria-label='リビジョン履歴'
-            className={`${ICON_LINK} editor-back-link -mx-1`}>
-            <HistoryIcon />
-            <EditorTooltip label='リビジョン履歴' />
-          </Link>
-          <Link
-            href={`/admin/posts/${post.id}/edit`}
-            aria-label='編集に戻る'
-            className={`${ICON_LINK} editor-settings-link`}>
-            <PencilIcon />
-            <EditorTooltip label='編集に戻る' />
-          </Link>
-          {/* The kind rides a short bar in its list colour, no words: the author picked this
-              version from a list that named it. */}
-          <span className='flex items-center gap-2 text-sm font-semibold'>
-            {version.accent && (
-              <span aria-hidden='true' className={`h-4 border-l-4 ${version.accent}`} />
-            )}
-            プレビュー
-          </span>
-          {/* 本文 / 差分: the same version read two ways. Links, since each is its own URL. */}
-          <nav
-            aria-label='表示'
-            className='flex overflow-hidden rounded border border-zinc-300 text-sm dark:border-zinc-700'>
-            {(['body', 'diff'] as const).map((view) => {
-              const active = (view === 'diff') === showDiff;
-              return (
-                <Link
-                  key={view}
-                  href={view === 'diff' ? `${base}?view=diff` : base}
-                  aria-current={active ? 'page' : undefined}
-                  className={`px-2 py-0.5 ${active ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
-                  {view === 'diff' ? '差分' : '本文'}
-                </Link>
-              );
-            })}
-          </nav>
-          {/* Restores without asking: what it replaces is kept as a revision first, so the
+      <RevisionHeaderBar>
+        {/* The two ways out, as the editor's header shows its own: icons named by aria-label
+              and the editor's tooltip. The first is the editor's ←, in its place: one step back, to the
+              list this version was opened from. */}
+        <Link
+          href={`/admin/posts/${post.id}/revisions`}
+          aria-label='リビジョン履歴'
+          className={`${HEADER_ICON_LINK} editor-back-link -mx-1`}>
+          <ArrowLeftIcon />
+          <EditorTooltip label='リビジョン履歴' />
+        </Link>
+        <Link
+          href={`/admin/posts/${post.id}/edit`}
+          aria-label='編集に戻る'
+          className={`${HEADER_ICON_LINK} editor-settings-link`}>
+          <PencilIcon />
+          <EditorTooltip label='編集に戻る' />
+        </Link>
+        {/* No page name, as neither the editor's header nor the history's has one: the ← and
+            差分 / 本文 say what page this is. No kind and no time either — the author picked this
+            version from a list that named it. */}
+        {/* 本文 / 差分: the same version read two ways. Links, since each is its own URL. */}
+        <nav
+          aria-label='表示'
+          className='flex overflow-hidden rounded border border-zinc-300 text-sm dark:border-zinc-700'>
+          {(['diff', 'body'] as const).map((view) => {
+            const active = (view === 'diff') === showDiff;
+            return (
+              <Link
+                key={view}
+                href={view === 'diff' ? base : `${base}?view=body`}
+                aria-current={active ? 'page' : undefined}
+                className={`px-2 py-0.5 ${active ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
+                {view === 'diff' ? '差分' : '本文'}
+              </Link>
+            );
+          })}
+        </nav>
+        {/* Restores without asking: what it replaces is kept as a revision first, so the
               restore can itself be undone from the same list (§2). The editor's 投稿 shape. */}
-          {version.restorable && (
-            <form action={restoreRevisionAction} className='ml-auto'>
-              <input type='hidden' name='postId' value={post.id} />
-              <input type='hidden' name='revision' value={version.target} />
-              <button
-                type='submit'
-                className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
-                {version.action}
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
+        {version.restorable && (
+          <form action={restoreRevisionAction} className='ml-auto'>
+            <input type='hidden' name='postId' value={post.id} />
+            <input type='hidden' name='revision' value={version.target} />
+            <button
+              type='submit'
+              disabled={diff.identical}
+              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              {version.action}
+            </button>
+          </form>
+        )}
+      </RevisionHeaderBar>
       <PostArticle
         post={shown}
         html={html}
@@ -160,7 +160,7 @@ export default async function RevisionPreviewPage({
         body={
           showDiff ? (
             <div id='revision-diff'>
-              <RevisionDiffView diff={diffRevision(version.content, current)} />
+              <RevisionDiffView diff={diff} lead={version.diffLead} unchanged={version.unchanged} />
             </div>
           ) : undefined
         }

@@ -53,8 +53,8 @@ test('a previous published version can be restored, without publishing it (row 9
   await openHistory(page);
   await page.getByRole('link', { name: /以前の公開記事/ }).click();
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/revisions\/\d+$/);
-  await expect(page.locator('#post-body')).toContainText('最初の本文');
-  await expect(page.locator('#post-body')).not.toContainText('追記');
+  // Opens on 差分: the update is what restoring would take away.
+  await expect(page.locator('#revision-diff del')).toContainText('追記');
 
   await page.getByRole('button', { name: '復元する', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${editPath}$`));
@@ -62,6 +62,13 @@ test('a previous published version can be restored, without publishing it (row 9
   await expect(editor(page)).not.toContainText('追記');
   // Restored into the working copy, not published: the live post still carries the update.
   await expectPublishPending(page);
+
+  // The editor now holds that version, so restoring it again would change nothing (rows 15-16).
+  await openHistory(page);
+  await expect(page.getByRole('link', { name: /以前の公開記事/ })).toContainText('編集中と同じ');
+  await expect(page.getByRole('link', { name: /公開中の記事/ })).not.toContainText('編集中と同じ');
+  await page.getByRole('link', { name: /以前の公開記事/ }).click();
+  await expect(page.getByRole('button', { name: '復元する', exact: true })).toBeDisabled();
 });
 
 test('リビジョン履歴 cannot be pressed while an edit is unsaved (row 10)', async ({ page }) => {
@@ -90,8 +97,7 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
   const liveRow = page.getByRole('link', { name: /公開中の記事/ });
   await expect(liveRow.getByText('未公開の変更', { exact: true })).toBeVisible();
   await liveRow.click();
-  await expect(page.locator('#post-body')).not.toContainText('未公開の追記');
-  await page.getByRole('button', { name: '未公開の変更を破棄' }).click();
+  await page.getByRole('button', { name: '変更を破棄', exact: true }).click();
 
   await expect(page).toHaveURL(new RegExp(`${editPath}$`));
   await expectPublished(page);
@@ -103,7 +109,7 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
   await expect(page.getByRole('link', { name: /復元する前/ })).toBeVisible();
 });
 
-test('the 差分 view shows what the editor holds beyond the version (row 13)', async ({ page }) => {
+test('the 差分 view shows what pressing the button would take away (row 13)', async ({ page }) => {
   const editPath = await newPost(page, `E2E revision diff ${Date.now()}`, '公開した本文');
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
@@ -111,14 +117,19 @@ test('the 差分 view shows what the editor holds beyond the version (row 13)', 
 
   await openHistory(page);
   await page.getByRole('link', { name: /公開中の記事/ }).click();
-  await page.getByRole('link', { name: '差分', exact: true }).click();
-  await expect(page).toHaveURL(/[?&]view=diff/);
+  // 差分 is where the preview opens.
+  await expect(page).toHaveURL(/\/revisions\/live$/);
   const diff = page.locator('#revision-diff');
-  await expect(diff.locator('ins')).toContainText('未公開の追記');
+  await expect(diff.locator('del')).toContainText('未公開の追記');
   await expect(page.locator('#post-body')).toHaveCount(0);
 
   await page.getByRole('link', { name: '本文', exact: true }).click();
+  await expect(page).toHaveURL(/[?&]view=body/);
   await expect(page.locator('#post-body')).toContainText('公開した本文');
+  await expect(page.locator('#post-body')).not.toContainText('未公開の追記');
+
+  await page.getByRole('link', { name: '差分', exact: true }).click();
+  await expect(diff.locator('del')).toContainText('未公開の追記');
 });
 
 test.describe('with no session', () => {
@@ -151,6 +162,7 @@ test.describe('with no session', () => {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);
       await expect(page.locator('#post-body')).toHaveCount(0);
+      await expect(page.locator('#revision-diff')).toHaveCount(0);
     }
   });
 });

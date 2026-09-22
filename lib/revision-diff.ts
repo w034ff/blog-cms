@@ -11,8 +11,8 @@ export type Segment = { kind: 'same' | 'removed' | 'added'; text: string };
 export type DiffBlock =
   // Unchanged lines kept for context around a change.
   | { kind: 'context'; lines: string[] }
-  // Unchanged lines folded away.
-  | { kind: 'collapsed'; count: number }
+  // Unchanged lines folded away, kept so the fold can be opened.
+  | { kind: 'collapsed'; lines: string[] }
   // One changed stretch: the lines as they were and as they are, each with the characters that
   // differ marked. Either side is empty for a pure insertion or deletion.
   | { kind: 'change'; before: Segment[]; after: Segment[] };
@@ -68,7 +68,7 @@ function contextBlocks(lines: string[], first: boolean, last: boolean): DiffBloc
   if (lines.length <= head + tail + 1) return [{ kind: 'context', lines }];
   const blocks: DiffBlock[] = [];
   if (head > 0) blocks.push({ kind: 'context', lines: lines.slice(0, head) });
-  blocks.push({ kind: 'collapsed', count: lines.length - head - tail });
+  blocks.push({ kind: 'collapsed', lines: lines.slice(head, lines.length - tail) });
   if (tail > 0) blocks.push({ kind: 'context', lines: lines.slice(lines.length - tail) });
   return blocks;
 }

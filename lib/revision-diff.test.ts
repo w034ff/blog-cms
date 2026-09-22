@@ -52,14 +52,20 @@ describe('diffBody', () => {
     const before = [...lines(10), 'old', ...lines(10, 'tail')].join('\n');
     const after = [...lines(10), 'new', ...lines(10, 'tail')].join('\n');
     const blocks = diffBody(before, after);
-    expect(blocks[0]).toEqual({ kind: 'collapsed', count: 10 - DIFF_CONTEXT_LINES });
+    expect(blocks[0]).toEqual({
+      kind: 'collapsed',
+      lines: lines(10).slice(0, -DIFF_CONTEXT_LINES),
+    });
     expect(blocks[1]).toEqual({ kind: 'context', lines: lines(10).slice(-DIFF_CONTEXT_LINES) });
     expect(blocks[2]?.kind).toBe('change');
     expect(blocks[3]).toEqual({
       kind: 'context',
       lines: lines(10, 'tail').slice(0, DIFF_CONTEXT_LINES),
     });
-    expect(blocks[4]).toEqual({ kind: 'collapsed', count: 10 - DIFF_CONTEXT_LINES });
+    expect(blocks[4]).toEqual({
+      kind: 'collapsed',
+      lines: lines(10, 'tail').slice(DIFF_CONTEXT_LINES),
+    });
   });
 
   it('keeps a short unchanged run between two changes whole', () => {

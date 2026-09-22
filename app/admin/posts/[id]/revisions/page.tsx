@@ -2,12 +2,17 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { SiteColumn } from '@/components/PageShell';
+import { HEADER_ICON_LINK, RevisionHeaderBar } from '@/components/RevisionHeaderBar';
+import { ArrowLeftIcon } from '@/components/editor/svg/ArrowLeftIcon';
 import { formatRevisionTime } from '@/lib/format';
 import type { DraftContent } from '@/lib/types';
 import { getPostForEdit, liveContent } from '@/lib/posts';
 import { listRevisions } from '@/lib/revisions';
 import { PENDING_EDITS_KIND, REVISION_KINDS, type RevisionKind } from '@/components/revision-kinds';
+import { CheckIcon } from '@/components/editor/svg/CheckIcon';
 import { ChevronRightIcon } from '@/components/editor/svg/ChevronRightIcon';
+import { EditorTooltip } from '@/components/editor/EditorTooltip';
+import { diffRevision } from '@/lib/revision-diff';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,14 +21,16 @@ export const metadata: Metadata = { title: 'リビジョン履歴' };
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs';
 
 // One row: the live post or a revision. The padding is the row's, not the box's, so the dividers
-// and the hover background both run to the box's edges; `overflow-hidden` on the box keeps that
-// background inside its rounded corners. Both open a preview, so both end in › — the only sign a
+// and the hover background both run to the box's edges; the box rounds its end rows' corners to
+// keep that background inside its own. Not `overflow-hidden` on the box: that cut off the
+// 編集中と同じ tooltip, which hangs below the row. Both open a preview, so both end in › — the only sign a
 // row goes anywhere on a touch screen, where there is no hover.
 function Row({
   href,
   heading,
   badge,
   title,
+  current,
 }: {
   href: string;
   heading: string;
@@ -31,6 +38,10 @@ function Row({
   // Shown only where it differs from the title in the editor now: titles rarely change between
   // versions, and on every row it would identify none of them.
   title: string | null;
+  // The content is what the editor holds now: restoring it would change nothing, which the
+  // preview says with a disabled button — this says it before the row is opened. An icon, not a
+  // badge, so it reads apart from the kind; the words ride along for a screen reader and a pointer.
+  current: boolean;
 }) {
   return (
     <Link
@@ -43,7 +54,14 @@ function Row({
           {title.trim() || '（無題）'}
         </span>
       )}
-      <span className='ml-auto shrink-0 pl-2 text-zinc-400'>
+      <span className='ml-auto flex shrink-0 items-center gap-2 pl-2 text-zinc-400'>
+        {current && (
+          <span className='group/tt relative text-sky-600 dark:text-sky-400'>
+            <CheckIcon />
+            <span className='sr-only'>編集中と同じ</span>
+            <EditorTooltip label='編集中と同じ' />
+          </span>
+        )}
         <ChevronRightIcon />
       </span>
     </Link>
@@ -61,62 +79,75 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
   // What the editor opens with: the working copy when there is one.
   const current = post.draftContent ?? liveContent(post);
   const revisions = listRevisions(post.id);
+  // The preview's own test for a disabled 復元する, so the mark and the button cannot disagree —
+  // over a CRLF body a publish left behind, say.
+  const isCurrent = (content: DraftContent) => diffRevision(current, content).identical;
   const differingTitle = (content: DraftContent) =>
     content.title !== current.title ? content.title : null;
 
   return (
-    <SiteColumn>
-      <div className='flex items-center justify-between gap-4'>
-        <h1 className='min-w-0 truncate text-2xl font-bold tracking-tight'>リビジョン履歴</h1>
-        <Link href={`/admin/posts/${post.id}/edit`} className='shrink-0 text-sm hover:underline'>
-          編集に戻る
+    <>
+      {/* The editor's header, as the preview wears it: the way back is the editor's ←, in its
+          place, since this page is opened from the editor and nowhere else. */}
+      <RevisionHeaderBar>
+        <Link
+          href={`/admin/posts/${post.id}/edit`}
+          aria-label='編集に戻る'
+          className={`${HEADER_ICON_LINK} editor-back-link -mx-1`}>
+          <ArrowLeftIcon />
+          <EditorTooltip label='編集に戻る' />
         </Link>
-      </div>
-      {/* Which post, since nothing else on the page says it once titles stop differing. */}
-      <p className='mt-1 truncate text-sm text-zinc-600 dark:text-zinc-400'>
-        {current.title.trim() || '（無題）'}
-      </p>
+      </RevisionHeaderBar>
+      <SiteColumn>
+        <h1 className='min-w-0 truncate text-2xl font-bold tracking-tight'>リビジョン履歴</h1>
+        {/* Which post, since nothing else on the page says it once titles stop differing. */}
+        <p className='mt-1 truncate text-sm text-zinc-600 dark:text-zinc-400'>
+          {current.title.trim() || '（無題）'}
+        </p>
 
-      {/* The live version is the post's own row, not a revision (§4) — the present, not a point
+        {/* The live version is the post's own row, not a revision (§4) — the present, not a point
           in the past, so it stands apart from the list. It is also how pending edits are
           discarded. A draft has none. */}
-      {!post.draft && (
-        <section className='mt-6' aria-label='公開中の記事'>
-          <div className='overflow-hidden rounded border border-zinc-200 dark:border-zinc-800'>
-            <Row
-              href={previewHref('live')}
-              heading='公開中の記事'
-              // The same badge 記事一覧 gives the same state (app/admin/(list)/page.tsx).
-              badge={post.hasPendingEdits ? PENDING_EDITS_KIND : null}
-              title={differingTitle(liveContent(post))}
-            />
-          </div>
-        </section>
-      )}
-
-      <section className='mt-6'>
-        <h2 className='text-sm font-bold'>過去のリビジョン</h2>
-        {revisions.length === 0 ? (
-          <p className='mt-2 text-sm text-zinc-500 dark:text-zinc-400'>
-            リビジョンはまだありません。
-          </p>
-        ) : (
-          <ul
-            className='mt-2 divide-y divide-zinc-200 overflow-hidden rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'
-            aria-label='リビジョンの一覧'>
-            {revisions.map((revision) => (
-              <li key={revision.id}>
-                <Row
-                  href={previewHref(revision.id)}
-                  heading={formatRevisionTime(revision.createdAt)}
-                  badge={REVISION_KINDS[revision.reason]}
-                  title={differingTitle(revision.content)}
-                />
-              </li>
-            ))}
-          </ul>
+        {!post.draft && (
+          <section className='mt-6' aria-label='公開中の記事'>
+            <div className='rounded border border-zinc-200 dark:border-zinc-800 [&>a]:rounded'>
+              <Row
+                href={previewHref('live')}
+                heading='公開中の記事'
+                // The same badge 記事一覧 gives the same state (app/admin/(list)/page.tsx).
+                badge={post.hasPendingEdits ? PENDING_EDITS_KIND : null}
+                title={differingTitle(liveContent(post))}
+                current={isCurrent(liveContent(post))}
+              />
+            </div>
+          </section>
         )}
-      </section>
-    </SiteColumn>
+
+        <section className='mt-6'>
+          <h2 className='text-sm font-bold'>過去のリビジョン</h2>
+          {revisions.length === 0 ? (
+            <p className='mt-2 text-sm text-zinc-500 dark:text-zinc-400'>
+              リビジョンはまだありません。
+            </p>
+          ) : (
+            <ul
+              className='mt-2 divide-y divide-zinc-200 rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 [&>li:first-child>a]:rounded-t [&>li:last-child>a]:rounded-b'
+              aria-label='リビジョンの一覧'>
+              {revisions.map((revision) => (
+                <li key={revision.id}>
+                  <Row
+                    href={previewHref(revision.id)}
+                    heading={formatRevisionTime(revision.createdAt)}
+                    badge={REVISION_KINDS[revision.reason]}
+                    title={differingTitle(revision.content)}
+                    current={isCurrent(revision.content)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </SiteColumn>
+    </>
   );
 }
