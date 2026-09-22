@@ -67,10 +67,6 @@ export function useAutosave({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const retryRef = useRef(false);
-  // True until this mount's first successful save: that save tells the server an editing session
-  // began, so it keeps what it overwrites as a revision (docs/revision-requirements.md §3). Held
-  // across a failed save, which overwrote nothing.
-  const sessionStartRef = useRef(true);
   // Holds the autosave routine (published from an effect below) so the timer,
   // Ctrl/⌘+S flush, and mid-flight retry can invoke it without a stale closure.
   const autosaveRef = useRef<() => Promise<void>>(async () => {});
@@ -93,9 +89,7 @@ export function useAutosave({
     try {
       const content = readDraftContent(form);
       const payload =
-        committedIdRef.current === null
-          ? { content }
-          : { id: committedIdRef.current, content, sessionStart: sessionStartRef.current };
+        committedIdRef.current === null ? { content } : { id: committedIdRef.current, content };
       const res = await fetch('/api/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,8 +124,6 @@ export function useAutosave({
         onCreated(data.id, typeof data.slug === 'string' ? data.slug : '');
       }
       ok = true;
-      // Also cleared by the save that created the row: there was nothing before it to keep.
-      sessionStartRef.current = false;
       setAutosaveState('saved');
       setSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now());
       onSessionExpired(false);

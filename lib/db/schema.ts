@@ -123,9 +123,9 @@ export const postRevisions = sqliteTable('post_revisions', {
   postId: integer('post_id').notNull(),
   // Epoch milliseconds, like `loginAttempts.lastFailureAt`; the history page formats it as JST.
   createdAt: integer('created_at').notNull(),
-  // What was about to be lost when this was taken (§3): a published version being replaced, the
-  // stored content an editing session was about to overwrite, or what a restore replaced.
-  reason: text('reason', { enum: ['publish', 'session', 'restore'] }).notNull(),
+  // What was about to be lost when this was taken (§3): a published version being replaced, or
+  // what a restore replaced.
+  reason: text('reason', { enum: ['publish', 'restore'] }).notNull(),
   // A DraftContent, newlines normalized to LF. Read through `normalizeDraftContent`, for the same
   // reason `draft_content` is: `$type` asserts the shape of rows written before a field existed.
   content: text('content', { mode: 'json' }).$type<DraftContent>().notNull(),

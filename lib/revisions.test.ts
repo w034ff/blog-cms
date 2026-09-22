@@ -68,96 +68,80 @@ describe('publish revisions (§8 row 1)', () => {
   });
 });
 
-describe('session revisions (§8 row 2)', () => {
-  it('keeps what a session’s first save overwrites, for a draft', () => {
-    const id = seed({ draft: true, body: 'opened' });
-    autosavePost(id, content({ body: 'typed' }), { sessionStart: true });
-    expect(reasonsAndBodies(id)).toEqual([['session', 'opened']]);
-    expect(row(id).body).toBe('typed');
-  });
-
-  it('keeps the working copy a session’s first save overwrites, for a published post', () => {
-    const id = seed({ draft: false });
-    autosavePost(id, content({ body: 'pending' }));
-    autosavePost(id, content({ body: 'next session' }), { sessionStart: true });
-    expect(reasonsAndBodies(id)).toEqual([['session', 'pending']]);
-  });
-
-  it('keeps nothing without the flag', () => {
-    const id = seed({ draft: true });
-    autosavePost(id, content({ body: 'typed' }));
-    expect(listRevisions(id)).toEqual([]);
-  });
-
-  it('keeps nothing for a published post with no working copy — its live version is still there', () => {
-    const id = seed({ draft: false });
-    autosavePost(id, content({ body: 'typed' }), { sessionStart: true });
-    expect(listRevisions(id)).toEqual([]);
+describe('autosave keeps no revisions (§8 row 2)', () => {
+  it('overwrites a draft and a published post’s working copy without keeping either', () => {
+    const draft = seed({ draft: true });
+    autosavePost(draft, content({ body: 'typed' }));
+    autosavePost(draft, content({ body: 'typed again' }));
+    const published = seed({ draft: false });
+    autosavePost(published, content({ body: 'pending' }));
+    autosavePost(published, content({ body: 'pending again' }));
+    expect(listRevisions(draft)).toEqual([]);
+    expect(listRevisions(published)).toEqual([]);
   });
 });
 
 describe('dedupe (§8 row 3)', () => {
-  it('skips content the newest revision of the same pool already holds, CRLF included', () => {
+  it('skips content the newest revision of the same reason already holds, CRLF included', () => {
     const id = seed({ draft: true });
-    expect(recordRevision(id, 'session', content({ body: 'a\nb' }))).toBe(true);
+    expect(recordRevision(id, 'restore', content({ body: 'a\nb' }))).toBe(true);
     expect(recordRevision(id, 'restore', content({ body: 'a\r\nb' }))).toBe(false);
     expect(listRevisions(id)).toHaveLength(1);
   });
 
-  it('compares within a pool only, so a published version is not left to the session pool', () => {
+  it('compares within a reason only, so a published version is always kept as one', () => {
     const id = seed({ draft: true });
-    recordRevision(id, 'session', content({ body: 'same' }));
+    recordRevision(id, 'restore', content({ body: 'same' }));
     expect(recordRevision(id, 'publish', content({ body: 'same' }))).toBe(true);
   });
 
   it('stores the body with LF', () => {
     const id = seed({ draft: true });
-    recordRevision(id, 'session', content({ body: 'a\r\nb' }));
+    recordRevision(id, 'restore', content({ body: 'a\r\nb' }));
     expect(listRevisions(id)[0].content.body).toBe('a\nb');
   });
 });
 
 describe('retention (§8 row 4)', () => {
-  it('keeps REVISION_KEEP per pool, dropping the oldest', () => {
+  it('keeps REVISION_KEEP per reason, dropping the oldest', () => {
     const id = seed({ draft: true });
     const extra = 2;
-    for (let i = 0; i < REVISION_KEEP.other + extra; i += 1) {
-      recordRevision(id, i % 2 === 0 ? 'session' : 'restore', content({ body: `other ${i}` }));
+    for (const reason of ['publish', 'restore'] as const) {
+      for (let i = 0; i < REVISION_KEEP[reason] + extra; i += 1) {
+        recordRevision(id, reason, content({ body: `${reason} ${i}` }));
+      }
     }
-    for (let i = 0; i < REVISION_KEEP.publish + extra; i += 1) {
-      recordRevision(id, 'publish', content({ body: `publish ${i}` }));
+    for (const reason of ['publish', 'restore'] as const) {
+      const kept = listRevisions(id).filter((revision) => revision.reason === reason);
+      expect(kept).toHaveLength(REVISION_KEEP[reason]);
+      expect(kept.at(-1)?.content.body).toBe(`${reason} ${extra}`);
     }
-    const revisions = listRevisions(id);
-    const other = revisions.filter((revision) => revision.reason !== 'publish');
-    const published = revisions.filter((revision) => revision.reason === 'publish');
-    expect(other).toHaveLength(REVISION_KEEP.other);
-    expect(published).toHaveLength(REVISION_KEEP.publish);
-    expect(other.at(-1)?.content.body).toBe(`other ${extra}`);
-    expect(published.at(-1)?.content.body).toBe(`publish ${extra}`);
   });
 
   it('counts each post on its own', () => {
     const a = seed({ draft: true });
     const b = seed({ draft: true });
-    for (let i = 0; i < REVISION_KEEP.other; i += 1) {
-      recordRevision(a, 'session', content({ body: `a ${i}` }));
+    for (let i = 0; i < REVISION_KEEP.restore; i += 1) {
+      recordRevision(a, 'restore', content({ body: `a ${i}` }));
     }
-    recordRevision(b, 'session', content({ body: 'b' }));
-    expect(listRevisions(a)).toHaveLength(REVISION_KEEP.other);
+    recordRevision(b, 'restore', content({ body: 'b' }));
+    expect(listRevisions(a)).toHaveLength(REVISION_KEEP.restore);
     expect(listRevisions(b)).toHaveLength(1);
   });
 });
 
 describe('restore (§8 rows 5-6)', () => {
   it('writes a revision to a draft’s live columns and keeps what it replaced', () => {
-    const id = seed({ draft: true, body: 'old' });
-    autosavePost(id, content({ body: 'new' }), { sessionStart: true });
-    const [opened] = listRevisions(id);
-    expect(restoreRevision(id, opened.id)).toBe(true);
+    // A post published once and taken back to a draft: the published version is its revision.
+    const id = seed({ draft: false, body: 'old' });
+    commitPost(id, content({ body: 'new' }), true, '2026-01-01T00:00:00.000Z');
+    const [published] = listRevisions(id);
+    expect(restoreRevision(id, published.id)).toBe(true);
     expect(row(id).body).toBe('old');
+    expect(row(id).draft).toBe(true);
     expect(reasonsAndBodies(id)).toEqual([
       ['restore', 'new'],
-      ['session', 'old'],
+      ['publish', 'old'],
     ]);
   });
 
@@ -192,7 +176,7 @@ describe('restore (§8 rows 5-6)', () => {
   it('refuses a draft’s live version, another post’s revision, and a missing post', () => {
     const draft = seed({ draft: true });
     const other = seed({ draft: true });
-    recordRevision(other, 'session', content({ body: 'elsewhere' }));
+    recordRevision(other, 'publish', content({ body: 'elsewhere' }));
     const [foreign] = listRevisions(other);
     expect(restoreRevision(draft, 'live')).toBe(false);
     expect(restoreRevision(draft, foreign.id)).toBe(false);
@@ -205,8 +189,8 @@ describe('delete (§8 row 7)', () => {
   it('removes a post’s revisions with it and leaves other posts’ alone', () => {
     const doomed = seed({ draft: true });
     const kept = seed({ draft: true });
-    recordRevision(doomed, 'session', content({ body: 'x' }));
-    recordRevision(kept, 'session', content({ body: 'y' }));
+    recordRevision(doomed, 'publish', content({ body: 'x' }));
+    recordRevision(kept, 'publish', content({ body: 'y' }));
     deletePost(doomed);
     expect(listRevisions(doomed)).toEqual([]);
     expect(listRevisions(kept)).toHaveLength(1);

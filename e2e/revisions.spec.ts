@@ -7,9 +7,8 @@ import {
 } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 
-// docs/revision-requirements.md §8, rows 9-12: the wiring only a browser shows — the session flag
-// autosave sends, the 履歴 entry's gate, the preview route, and the restore's trip back into a
-// freshly mounted editor. What gets kept and pruned is lib/revisions.test.ts's.
+// docs/revision-requirements.md §8, rows 9-12: the wiring only a browser shows — the リビジョン履歴
+// entry's gate, the preview route, and the restore's trip back into a freshly mounted editor. What gets kept and pruned is lib/revisions.test.ts's.
 
 const editor = (page: Page) => page.locator('.ProseMirror');
 
@@ -37,32 +36,38 @@ async function appendInNewSession(page: Page, editPath: string, text: string): P
 
 async function openHistory(page: Page): Promise<void> {
   await openPostSettings(page);
-  await page.getByRole('button', { name: '履歴', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '履歴' })).toBeVisible();
+  await page.getByRole('button', { name: 'リビジョン履歴' }).click();
+  await expect(page.getByRole('heading', { name: 'リビジョン履歴' })).toBeVisible();
 }
 
-test('a session’s opening version survives a reload and can be restored (row 9)', async ({
+test('a previous published version can be restored, without publishing it (row 9)', async ({
   page,
 }) => {
   const editPath = await newPost(page, `E2E revision ${Date.now()}`, '最初の本文');
+  await page.getByRole('button', { name: '投稿' }).click();
+  await expectPublished(page);
   await appendInNewSession(page, editPath, ' 追記');
+  await page.getByRole('button', { name: '更新' }).click();
+  await expectPublished(page);
 
   await openHistory(page);
-  await page.getByRole('link', { name: /編集を始める前/ }).click();
-  await expect(page.getByRole('status')).toContainText('履歴のプレビュー');
+  await page.getByRole('link', { name: /以前の公開記事/ }).click();
+  await expect(page.getByRole('status')).toContainText('リビジョンのプレビュー');
   await expect(page.locator('#post-body')).toContainText('最初の本文');
   await expect(page.locator('#post-body')).not.toContainText('追記');
 
-  await page.getByRole('button', { name: 'この版に戻す' }).click();
+  await page.getByRole('button', { name: '復元する', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${editPath}$`));
   await expect(editor(page)).toContainText('最初の本文');
   await expect(editor(page)).not.toContainText('追記');
+  // Restored into the working copy, not published: the live post still carries the update.
+  await expectPublishPending(page);
 });
 
-test('履歴 cannot be pressed while an edit is unsaved (row 10)', async ({ page }) => {
+test('リビジョン履歴 cannot be pressed while an edit is unsaved (row 10)', async ({ page }) => {
   await newPost(page, `E2E revision gate ${Date.now()}`, '本文');
   await openPostSettings(page);
-  const history = page.getByRole('button', { name: '履歴', exact: true });
+  const history = page.getByRole('button', { name: 'リビジョン履歴' });
   await expect(history).toBeEnabled();
 
   // A field in the drawer arms autosave like the body does, and keeps the drawer open to watch.
@@ -81,9 +86,12 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
   await expectPublishPending(page);
 
   await openHistory(page);
-  await page.getByRole('link', { name: /公開中の版/ }).click();
+  // The same badge 記事一覧 uses marks the row while there is something to discard.
+  const liveRow = page.getByRole('link', { name: /公開中の記事/ });
+  await expect(liveRow.getByText('未公開の変更', { exact: true })).toBeVisible();
+  await liveRow.click();
   await expect(page.locator('#post-body')).not.toContainText('未公開の追記');
-  await page.getByRole('button', { name: 'この版に戻す' }).click();
+  await page.getByRole('button', { name: '未公開の変更を破棄' }).click();
 
   await expect(page).toHaveURL(new RegExp(`${editPath}$`));
   await expectPublished(page);
@@ -92,7 +100,7 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
 
   // What was discarded is itself a revision, so the discard can be undone.
   await openHistory(page);
-  await expect(page.getByRole('link', { name: /戻す前/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /復元する前/ })).toBeVisible();
 });
 
 test.describe('with no session', () => {
@@ -113,7 +121,7 @@ test.describe('with no session', () => {
       await expectPublished(author);
 
       await openHistory(author);
-      const href = await author.getByRole('link', { name: /以前の公開版/ }).getAttribute('href');
+      const href = await author.getByRole('link', { name: /以前の公開記事/ }).getAttribute('href');
       expect(href).toMatch(/^\/posts\/[0-9a-f]+\?rev=\d+$/);
       revisionHref = href as string;
       publicPath = revisionHref.split('?')[0];
@@ -125,7 +133,7 @@ test.describe('with no session', () => {
       const response = await page.goto(path);
       expect(response?.status()).toBe(200);
       await expect(page.locator('#post-body')).toContainText('二回目');
-      await expect(page.getByText('履歴のプレビュー')).toHaveCount(0);
+      await expect(page.getByText('リビジョンのプレビュー')).toHaveCount(0);
     }
   });
 });

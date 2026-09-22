@@ -67,26 +67,13 @@ export function deletePost(id: number): void {
 //    publishes. A non-null draft_content is how the editor knows there are
 //    "unpublished changes".
 // No-op if the post no longer exists (e.g. deleted in another tab).
-//
-// `sessionStart` marks the first save of an editing session, which keeps what it is about to
-// overwrite as a `session` revision (docs/revision-requirements.md §3) — the version the author
-// opened, which is what an undo history lost to a reload can no longer bring back. A published post
-// with no working copy overwrites nothing: its live version stays in the row.
-export function autosavePost(
-  id: number,
-  content: DraftContent,
-  { sessionStart = false }: { sessionStart?: boolean } = {},
-): void {
-  db.transaction(() => writeAutosave(id, content, sessionStart));
-}
-
-function writeAutosave(id: number, content: DraftContent, sessionStart: boolean): void {
-  const row = db.select().from(posts).where(eq(posts.id, id)).get();
+export function autosavePost(id: number, content: DraftContent): void {
+  const row = db
+    .select({ draft: posts.draft, title: posts.title, draftContent: posts.draftContent })
+    .from(posts)
+    .where(eq(posts.id, id))
+    .get();
   if (!row) return;
-  if (sessionStart) {
-    const overwritten = row.draft ? liveContentOfRow(row) : row.draftContent;
-    if (overwritten) recordRevision(id, 'session', overwritten);
-  }
   const normalized = { ...content, body: normalizeNewlines(content.body) };
   // Never let autosave wipe an existing title. The title field is briefly empty
   // whenever the author clears it to retype; if a debounced autosave fires in

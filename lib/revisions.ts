@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { postRevisions, posts } from '@/lib/db/schema';
 import { normalizeDraftContent, normalizeNewlines, sameDraftContent } from '@/lib/draft-content';
@@ -19,10 +19,9 @@ export type Revision = {
   content: DraftContent;
 };
 
-// How many revisions a post keeps, per pool (§4). Two pools so that the `session` revisions every
-// editing session adds cannot push out the published versions, which are fewer and the ones most
-// worth finding later.
-export const REVISION_KEEP = { publish: 5, other: 5 } as const;
+// How many revisions a post keeps, per reason (§4). Counted apart so that trying several restores
+// in a row cannot push out the published versions, which are the ones most worth finding later.
+export const REVISION_KEEP: Record<RevisionReason, number> = { publish: 5, restore: 3 };
 
 type PostRow = typeof posts.$inferSelect;
 type RevisionRow = typeof postRevisions.$inferSelect;
@@ -43,19 +42,12 @@ function toRevision(row: RevisionRow): Revision {
   return { ...row, content: normalizeDraftContent(row.content) };
 }
 
-// Which pool a reason counts against. Everything but `publish` shares one.
-function inPool(reason: RevisionReason) {
-  return reason === 'publish'
-    ? eq(postRevisions.reason, 'publish')
-    : ne(postRevisions.reason, 'publish');
-}
-
-// Keep `content` as a revision of the post, unless the newest revision in the same pool already
+// Keep `content` as a revision of the post, unless the newest revision of the same reason already
 // holds the same thing (§3). Returns whether a row was added.
 //
 // Newlines are normalized before the comparison, not only before the insert: publish arrives
-// through a form as CRLF, and without this a `publish` revision and the `session` one after it
-// would differ by line endings alone.
+// through a form as CRLF, while autosave (which a restore replaces) keeps LF, and without this two
+// revisions of the same text would differ by line endings alone.
 //
 // Pruning happens here, in the same statement group as the insert, so there is no background job
 // to schedule and no moment at which a post holds more than its allowance.
@@ -68,7 +60,7 @@ export function recordRevision(
   const latest = db
     .select()
     .from(postRevisions)
-    .where(and(eq(postRevisions.postId, postId), inPool(reason)))
+    .where(and(eq(postRevisions.postId, postId), eq(postRevisions.reason, reason)))
     .orderBy(desc(postRevisions.id))
     .get();
   if (latest && sameDraftContent(normalizeDraftContent(latest.content), normalized)) return false;
@@ -78,14 +70,13 @@ export function recordRevision(
     .run();
 
   // Ordered by id rather than created_at: two revisions can share a millisecond, an id cannot.
-  const keep = reason === 'publish' ? REVISION_KEEP.publish : REVISION_KEEP.other;
   const stale = db
     .select({ id: postRevisions.id })
     .from(postRevisions)
-    .where(and(eq(postRevisions.postId, postId), inPool(reason)))
+    .where(and(eq(postRevisions.postId, postId), eq(postRevisions.reason, reason)))
     .orderBy(desc(postRevisions.id))
     .all()
-    .slice(keep)
+    .slice(REVISION_KEEP[reason])
     .map((row) => row.id);
   if (stale.length > 0) {
     db.delete(postRevisions).where(inArray(postRevisions.id, stale)).run();

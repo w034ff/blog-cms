@@ -8,6 +8,7 @@ import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
+import { ChevronRightIcon } from './svg/ChevronRightIcon';
 
 // A drawer that slides in from the right, modal like the phone's own ＋ sheet
 // (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
@@ -333,18 +334,24 @@ export function PostSettingsPanel({
               )}
             </div>
           )}
-          {/* 履歴 (docs/revision-requirements.md §5). A button that navigates rather than a link,
-          because it has to be disableable: an in-app navigation gets no beforeunload guard, so
-          while edits are unsaved this is the only thing stopping them from being left behind.
-          Also how pending edits are discarded — the history lists 公開中の版 first. */}
+          {/* リビジョン履歴 (docs/revision-requirements.md §5). A bordered full-width row with a
+          trailing › because it leaves the screen — the fields above act in place. No section
+          heading: the row's own words are the name, and a heading over it would say them twice.
+
+          A button that navigates rather than a link, because it has to be disableable: an in-app
+          navigation gets no beforeunload guard, so while edits are unsaved this is the only thing
+          stopping them from being left behind. Also how pending edits are discarded — the history
+          lists 公開中の記事 first. 40px tall at every width: the drawer's other rows are that on
+          touch, and a row this wide gains nothing from being shorter on a pointer. */}
           {historyHref !== null && (
             <div className='border-t border-zinc-300 pt-4 dark:border-zinc-700'>
               <button
                 type='button'
                 disabled={historyDisabled}
                 onClick={() => router.push(historyHref)}
-                className='text-sm font-medium hover:underline disabled:opacity-50 disabled:hover:no-underline'>
-                履歴
+                className='flex min-h-10 w-full items-center justify-between gap-2 rounded border border-zinc-300 px-3 text-left text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                リビジョン履歴
+                <ChevronRightIcon />
               </button>
             </div>
           )}

@@ -12,7 +12,7 @@ describe('referencedInDb', () => {
     ).run();
     db.prepare(
       `INSERT INTO post_revisions (post_id, created_at, reason, content)
-       VALUES (1, 0, 'session', '{"body":"![](/uploads/only-in-revision.png)"}')`,
+       VALUES (1, 0, 'publish', '{"body":"![](/uploads/only-in-revision.png)"}')`,
     ).run();
     expect([...referencedInDb(db)].sort()).toEqual([
       'body.png',

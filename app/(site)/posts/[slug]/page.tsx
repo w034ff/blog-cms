@@ -115,7 +115,10 @@ type RevisionView = {
   target: number | 'live';
   // What the banner names the version as.
   label: string;
-  // Whether 「この版に戻す」 would change anything. Only `live` can be a no-op: it is one when
+  // The button's words: what pressing it does. Restoring the live version is discarding pending
+  // edits, so on that one it says so.
+  action: string;
+  // Whether the button would change anything. Only `live` can be a no-op: it is one when
   // there are no pending edits to discard.
   restorable: boolean;
 };
@@ -130,7 +133,12 @@ async function revisionView(
     const forEdit = await getPostForEdit(post.id);
     return {
       post,
-      view: { target: 'live', label: '公開中の版', restorable: forEdit?.hasPendingEdits ?? false },
+      view: {
+        target: 'live',
+        label: '公開中の記事',
+        action: '未公開の変更を破棄',
+        restorable: forEdit?.hasPendingEdits ?? false,
+      },
     };
   }
   const revisionId = Number(rev);
@@ -138,7 +146,12 @@ async function revisionView(
   if (!revision) return 'not-found';
   return {
     post: { ...post, ...revision.content },
-    view: { target: revision.id, label: formatRevisionTime(revision.createdAt), restorable: true },
+    view: {
+      target: revision.id,
+      label: formatRevisionTime(revision.createdAt),
+      action: '復元する',
+      restorable: true,
+    },
   };
 }
 
@@ -156,7 +169,7 @@ export async function generateMetadata({
   const revision = await revisionView(post, (await searchParams).rev);
   if (revision !== null) {
     const title = revision === 'not-found' ? post.title : revision.post.title;
-    return { title: `[履歴] ${title}`, robots: { index: false, follow: false } };
+    return { title: `[リビジョン] ${title}`, robots: { index: false, follow: false } };
   }
   // A preview says so in the tab, because the page it is previewing will look identical there.
   if (preview) {
@@ -236,13 +249,13 @@ export default async function PostPage({
           role='status'
           className='mx-auto mb-6 flex max-w-site flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-sky-400 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-100'>
           <span>
-            <b className='font-semibold'>履歴のプレビュー</b> · {revision.view.label}
+            <b className='font-semibold'>リビジョンのプレビュー</b> · {revision.view.label}
           </span>
           <div className='flex shrink-0 items-center gap-4'>
             <Link
               href={`/admin/posts/${post.id}/revisions`}
               className='font-medium underline underline-offset-2'>
-              履歴に戻る
+              リビジョン履歴に戻る
             </Link>
             {/* Restores without asking: what it replaces is kept as a revision first, so the
                 restore can itself be undone from the same list (§2). */}
@@ -253,7 +266,7 @@ export default async function PostPage({
                 <button
                   type='submit'
                   className='rounded bg-sky-700 px-3 py-1 font-medium text-white hover:bg-sky-800 dark:bg-sky-600 dark:hover:bg-sky-500'>
-                  この版に戻す
+                  {revision.view.action}
                 </button>
               </form>
             )}
