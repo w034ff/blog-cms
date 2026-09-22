@@ -5,28 +5,15 @@ import { SiteColumn } from '@/components/PageShell';
 import { formatRevisionTime } from '@/lib/format';
 import type { DraftContent } from '@/lib/types';
 import { getPostForEdit, liveContent } from '@/lib/posts';
-import { listRevisions, type RevisionReason } from '@/lib/revisions';
+import { listRevisions } from '@/lib/revisions';
+import { PENDING_EDITS_KIND, REVISION_KINDS, type RevisionKind } from '@/components/revision-kinds';
 import { ChevronRightIcon } from '@/components/editor/svg/ChevronRightIcon';
 
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'リビジョン履歴' };
 
-// What each revision was taken ahead of (docs/revision-requirements.md §3), worded as the moment
-// the author would remember rather than as the mechanism, and coloured so the two read apart at a
-// glance: a version readers saw in green, the safety copy a restore left in grey.
-const REASONS: Record<RevisionReason, { label: string; className: string }> = {
-  publish: {
-    label: '以前の公開記事',
-    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
-  },
-  restore: {
-    label: '復元する前',
-    className: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
-  },
-};
-
-const BADGE = 'shrink-0 rounded px-1.5 py-0.5 text-xs';
+const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs';
 
 // One row: the live post or a revision. The padding is the row's, not the box's, so the dividers
 // and the hover background both run to the box's edges; `overflow-hidden` on the box keeps that
@@ -40,7 +27,7 @@ function Row({
 }: {
   href: string;
   heading: string;
-  badge: { label: string; className: string } | null;
+  badge: RevisionKind | null;
   // Shown only where it differs from the title in the editor now: titles rarely change between
   // versions, and on every row it would identify none of them.
   title: string | null;
@@ -50,7 +37,7 @@ function Row({
       href={href}
       className='flex min-w-0 items-center gap-2 px-3 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900'>
       <span className='shrink-0 font-medium'>{heading}</span>
-      {badge && <span className={`${BADGE} ${badge.className}`}>{badge.label}</span>}
+      {badge && <span className={`${BADGE_CLASS} ${badge.badge}`}>{badge.label}</span>}
       {title !== null && (
         <span className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
           {title.trim() || '（無題）'}
@@ -70,7 +57,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post || post.slug === null) notFound();
-  const previewHref = (rev: number | 'live') => `/posts/${post.slug}?rev=${rev}`;
+  const previewHref = (rev: number | 'live') => `/admin/posts/${post.id}/revisions/${rev}`;
   // What the editor opens with: the working copy when there is one.
   const current = post.draftContent ?? liveContent(post);
   const revisions = listRevisions(post.id);
@@ -100,14 +87,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
               href={previewHref('live')}
               heading='公開中の記事'
               // The same badge 記事一覧 gives the same state (app/admin/(list)/page.tsx).
-              badge={
-                post.hasPendingEdits
-                  ? {
-                      label: '未公開の変更',
-                      className: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300',
-                    }
-                  : null
-              }
+              badge={post.hasPendingEdits ? PENDING_EDITS_KIND : null}
               title={differingTitle(liveContent(post))}
             />
           </div>
@@ -129,7 +109,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
                 <Row
                   href={previewHref(revision.id)}
                   heading={formatRevisionTime(revision.createdAt)}
-                  badge={REASONS[revision.reason]}
+                  badge={REVISION_KINDS[revision.reason]}
                   title={differingTitle(revision.content)}
                 />
               </li>

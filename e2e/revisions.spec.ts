@@ -52,7 +52,7 @@ test('a previous published version can be restored, without publishing it (row 9
 
   await openHistory(page);
   await page.getByRole('link', { name: /以前の公開記事/ }).click();
-  await expect(page.getByRole('status')).toContainText('リビジョンのプレビュー');
+  await expect(page).toHaveURL(/\/admin\/posts\/\d+\/revisions\/\d+$/);
   await expect(page.locator('#post-body')).toContainText('最初の本文');
   await expect(page.locator('#post-body')).not.toContainText('追記');
 
@@ -124,13 +124,12 @@ test('the 差分 view shows what the editor holds beyond the version (row 13)', 
 test.describe('with no session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test('?rev= is ignored and the live post is served (row 12)', async ({ page, browser }) => {
+  test('a revision preview answers only a signed-in author (row 12)', async ({ page, browser }) => {
     const authed = await browser.newContext({ storageState: STORAGE_STATE });
-    let publicPath: string;
-    let revisionHref: string;
+    let previewPaths: string[];
     try {
       const author = await authed.newPage();
-      const editPath = await newPost(author, `E2E revision public ${Date.now()}`, '公開中の本文');
+      const editPath = await newPost(author, `E2E revision gate ${Date.now()}`, '公開中の本文');
       await author.getByRole('button', { name: '投稿' }).click();
       await expectPublished(author);
       // An update is what keeps the previous published version as a revision.
@@ -140,18 +139,18 @@ test.describe('with no session', () => {
 
       await openHistory(author);
       const href = await author.getByRole('link', { name: /以前の公開記事/ }).getAttribute('href');
-      expect(href).toMatch(/^\/posts\/[0-9a-f]+\?rev=\d+$/);
-      revisionHref = href as string;
-      publicPath = revisionHref.split('?')[0];
+      expect(href).toMatch(/^\/admin\/posts\/\d+\/revisions\/\d+$/);
+      previewPaths = [href as string, (href as string).replace(/\d+$/, 'live')];
     } finally {
       await authed.close();
     }
 
-    for (const path of [revisionHref, `${publicPath}?rev=live`]) {
-      const response = await page.goto(path);
-      expect(response?.status()).toBe(200);
-      await expect(page.locator('#post-body')).toContainText('二回目');
-      await expect(page.getByText('リビジョンのプレビュー')).toHaveCount(0);
+    // The admin layout's gate: a request with no session is sent to sign in, and nothing of the
+    // post — neither the old version nor the live one — is drawn on the way.
+    for (const path of previewPaths) {
+      await page.goto(path);
+      await expect(page).toHaveURL(/\/login/);
+      await expect(page.locator('#post-body')).toHaveCount(0);
     }
   });
 });

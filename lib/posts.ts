@@ -57,7 +57,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 }
 
 // The complement of the above, and deliberately a second function rather than a flag on it.
-// `getPostBySlug` is what a link card (app/(site)/posts/[slug]/page.tsx's resolveCard) and
+// `getPostBySlug` is what a link card (lib/resolve-card.ts's resolveCard) and
 // /api/link-title ask, and both are required to report a draft and an unknown slug identically —
 // docs/link-requirements.md §6.1. Widening that one would leak draft titles into cards; this one
 // can only ever answer for a draft, so no caller of it can be surprised.

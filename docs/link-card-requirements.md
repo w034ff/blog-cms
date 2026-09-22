@@ -809,7 +809,7 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 
 ### 14.8 公開側
 
-**`lib/render.ts` は動かない。** §6 の注入がそのままで、パイプラインは DB も表も知らない。分岐は `app/posts/[slug]/page.tsx` の `resolveCard` が持つ — `/posts/` で始まれば `getPostBySlug`、絶対 URL なら `link_previews` を引く。**取得はしない**（§14.1）。
+**`lib/render.ts` は動かない。** §6 の注入がそのままで、パイプラインは DB も表も知らない。分岐は `lib/resolve-card.ts` の `resolveCard` が持つ — `/posts/` で始まれば `getPostBySlug`、絶対 URL なら `link_previews` を引く。**取得はしない**（§14.1）。
 
 **ホスト名は resolver ではなく解決段が出す**（2026-08-18、実装時の変更）。`CardTarget` は `title` / `description` / `thumbnail` のままで、`cardElement` は自分が検証した href から `externalCardHost` で引く。resolver に持たせる形（`domain` を足す）で設計していたが、それは**参照が指す先とカードが名乗る出所という、食い違いうる 2 つの値**を作る。同じ 1 回のパースから両方を出せば食い違いようがない。`thumbnail` は両方が埋めるが、作り方が違う — 内部カードは `resolveThumbnail`（`/uploads/…`）、外部カードは `linkImageSrc`（署名付きの `/api/link-image?…`）。**同一オリジンであることだけが共通で、それがここで効く唯一の性質である。**
 
@@ -1080,7 +1080,7 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 ### 17.2 機構
 
 - **`resolveThumbnail` は広げない。** あの関数の答えは `og:image` にもなり、形は `scripts/gc-uploads.mts` の `UPLOAD_REF` と対になった `/uploads/…` に絞ってある（`lib/thumbnail.ts`）。そこから `/link-card-placeholder.svg` を返させると、アップロードの掃除に対する契約が壊れる。 マークはカードの調度であって記事の画像ではないので、決めるのは 1 つ上の層である。
-- **決めるのは `lib/link-card-image.ts` の 1 本で、両面がそれを呼ぶ。** 公開側は `app/posts/[slug]/page.tsx` の `resolveCard`、エディタ側は NodeView の `lookupCard` で、どちらも `internalCardImage(resolveThumbnail の答え)` を通る。§13 と §16.4 は、この 2 面が絵について別々に決めたときに何が起きるかの記録である（同じ画像が違う箱で描かれ、キャッシュ命中のカードだけ絵を失った）。外部側は `externalCardImage` で、こちらは `null` を `null` のまま返す — 片方だけが分岐を持つことを型で見えるようにするためである。
+- **決めるのは `lib/link-card-image.ts` の 1 本で、両面がそれを呼ぶ。** 公開側は `lib/resolve-card.ts` の `resolveCard`、エディタ側は NodeView の `lookupCard` で、どちらも `internalCardImage(resolveThumbnail の答え)` を通る。§13 と §16.4 は、この 2 面が絵について別々に決めたときに何が起きるかの記録である（同じ画像が違う箱で描かれ、キャッシュ命中のカードだけ絵を失った）。外部側は `externalCardImage` で、こちらは `null` を `null` のまま返す — 片方だけが分岐を持つことを型で見えるようにするためである。
 - **運ぶのは `{ src, placeholder }` で、`src` から後で見分けはしない。** カードはこの絵を写真とは違う描き方をする（下記）ので、`src` を定数と比べて描き分ける形にすると、ファイル名を変えた日に静かに写真の描き方へ戻る。
 - **`<img>` は class を 2 つ持つ。** `link-card-image link-card-placeholder` で、2 つ目だけが `object-fit: contain`・内側の余白・地色を足す。`cardElement`（`lib/rehype-link-card.ts`）と NodeView の `setImage` が同じ 2 つを書く。NodeView 側は毎回 `className` を代入し直す — 同じ `<img>` を使い回すので、マークのカードが写真のカードに変わったとき class が残ると、写真が地色の上に縮小して乗る。
 - **枠は写真とまったく同じである。** 幅 `--link-card-image-width`、高さはカードいっぱい、三辺が枠線に接する（§15・§16.3）。**変えるのは埋め方だけ** — `cover` で切るのではなく `contain` で収める。
@@ -1167,7 +1167,7 @@ og:description だけを見ると 4 件、`name="description"` に落とすと 6
 ### 18.3 却下した案
 
 - **行は出して押せなくする**（`{タイトル}（この記事）` と書いた不活性な行）— 却下（2026-08-22、著者の判断）。最初はこの形で実装したが、押せない行を並べることはピッカーの目的（押せるものを並べる）に反する。避けたかったのは「一致する記事がありません」という嘘の 1 点だけで、それは候補が 0 件になった場面の文言で塞げる（§18.2）。
-- **公開側でも拒む**（`app/posts/[slug]/page.tsx` の `resolveCard` が自参照に `null` を返せば、§6.1 の素のリンクに落ちる）— **保留**。求められているのは「作れないこと」であって、保存済みの本文の見え方を黙って変えることではない。入口 4 が編集画面でそれを見せ、直すのは著者である。必要になれば 1 行で足せるが、そのときは `e2e/public-link-card.spec.ts` に自参照の題材が無いことから始める。
+- **公開側でも拒む**（`lib/resolve-card.ts` の `resolveCard` が自参照に `null` を返せば、§6.1 の素のリンクに落ちる）— **保留**。求められているのは「作れないこと」であって、保存済みの本文の見え方を黙って変えることではない。入口 4 が編集画面でそれを見せ、直すのは著者である。必要になれば 1 行で足せるが、そのときは `e2e/public-link-card.spec.ts` に自参照の題材が無いことから始める。
 - **記事 ID で判定する** — 貼り付けられた URL が持っているのは slug だけで、ID を照らすには `/api/posts/search` の答えに ID を足して突き合わせることになる。入口 2 と 3 は slug しか手にしていない。
 - **カードを消す・リンクに書き戻す** — 著者が書いたものを黙って別物にすることになる。§4.2 が「保存するのは参照だけ」と決めているのと同じ理由で、判断は著者に残す。
 
