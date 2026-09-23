@@ -3,17 +3,16 @@ import { asc, eq } from 'drizzle-orm';
 import {
   TAG_NAME_MAX_LENGTH,
   normalizeTagName,
-  tagSearchKey,
   tagSlug,
   tagSlugProblem,
 } from '@/lib/content';
 import { db } from '@/lib/db';
-import { postRevisions, posts, tags } from '@/lib/db/schema';
-import type { DraftContent, Tag } from '@/lib/types';
+import { postRevisions, posts, tagAliases, tags } from '@/lib/db/schema';
+import type { DictionaryTag, DraftContent, Tag } from '@/lib/types';
 
 // The tag dictionary (docs/editor-requirements.md §12.33). Posts refer to tags by slug; this module
-// is where a slug becomes a name, where a new tag is admitted, and where a tag is renamed or
-// removed.
+// is where a slug becomes a name, where an alias becomes the slug it stands for, where a new tag is
+// admitted, and where a tag is renamed, moved, merged or removed.
 
 // In identifier order: the identifier is what an author types and what the lists lead with, and a
 // display name's capitals would otherwise sort ahead of every lowercase one.
@@ -23,6 +22,34 @@ export function listTags(): Tag[] {
 
 export function tagNames(): Map<string, string> {
   return new Map(listTags().map((tag) => [tag.slug, tag.name]));
+}
+
+// Every alias, to the identifier of the tag it stands for.
+export function aliasTargets(): Map<string, string> {
+  return new Map(
+    db
+      .select({ alias: tagAliases.alias, slug: tags.slug })
+      .from(tagAliases)
+      .innerJoin(tags, eq(tagAliases.tagId, tags.id))
+      .all()
+      .map((row) => [row.alias, row.slug]),
+  );
+}
+
+// The tags with their aliases, for the editor's field and /admin/tags.
+export function listDictionary(): DictionaryTag[] {
+  const byTag = new Map<string, string[]>();
+  for (const [alias, slug] of [...aliasTargets()].sort(([a], [b]) => a.localeCompare(b))) {
+    byTag.set(slug, [...(byTag.get(slug) ?? []), alias]);
+  }
+  return listTags().map((tag) => ({ ...tag, aliases: byTag.get(tag.slug) ?? [] }));
+}
+
+// The identifier a word stands for: itself when it is a tag's, the tag's when it is an alias, null
+// when it is neither.
+export function resolveTagSlug(word: string): string | null {
+  if (tagNames().has(word)) return word;
+  return aliasTargets().get(word) ?? null;
 }
 
 // `slugs` as the entries a surface draws, dropping any the dictionary does not have. `names` is
@@ -37,13 +64,19 @@ export function resolveTags(
   });
 }
 
-// The slugs of `slugs` that are in the dictionary, first occurrence kept, order kept. What the
-// write paths store: a slug the dictionary does not have reached them from a tab that outlived a
-// deletion, or from a crafted request, and is dropped rather than refused — the same trade the
-// thumbnail makes — so it can never be why a save fails.
+// `slugs` as the write paths store them: each alias replaced by its tag's identifier (a post never
+// holds an alias), then each identifier once, order kept. A word that is neither reached them from
+// a tab that outlived a deletion, or from a crafted request, and is dropped rather than refused —
+// the same trade the thumbnail makes — so it can never be why a save fails.
 export function knownTagSlugs(slugs: readonly string[]): string[] {
   const names = tagNames();
-  return [...new Set(slugs)].filter((slug) => names.has(slug));
+  const aliases = aliasTargets();
+  const resolved = slugs.flatMap((slug) => {
+    if (names.has(slug)) return [slug];
+    const target = aliases.get(slug);
+    return target === undefined ? [] : [target];
+  });
+  return [...new Set(resolved)];
 }
 
 export type TagResult = { ok: true; tag: Tag; created: boolean } | { ok: false; error: string };
@@ -68,10 +101,12 @@ export function createTag(raw: string): TagResult {
   if (problem !== null) return { ok: false, error: problem };
   const slug = tagSlug(checked.name);
 
+  // An alias is the tag it stands for, so typing `next` where it is `nextjs`'s gets `nextjs`.
+  const resolved = resolveTagSlug(slug) ?? slug;
   const existing = db
     .select({ slug: tags.slug, name: tags.name })
     .from(tags)
-    .where(eq(tags.slug, slug))
+    .where(eq(tags.slug, resolved))
     .get();
   if (existing) return { ok: true, tag: existing, created: false };
   const sameName = db
@@ -94,13 +129,16 @@ export function renameTag(slug: string, raw: string): TagResult {
   if (!checked.ok) return checked;
   const current = db.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
   if (!current) return { ok: false, error: 'タグが見つかりません。' };
-  // Compared the way the editor's search compares (`tagSearchKey`), against other tags' slugs and
-  // names both: `REACT` or `Re.act` next to an existing `react` would be two tags a reader cannot
-  // tell apart, and typing either would find the other one.
-  const key = tagSearchKey(checked.name);
-  const clash = listTags().find(
-    (tag) => tag.slug !== slug && (tag.slug === key || tagSearchKey(tag.name) === key),
-  );
+  // Compared with case and width folded (NFKC, lowercase), against other tags' identifiers, names
+  // and aliases: `REACT` beside an existing `react` would be two tags a reader cannot tell apart.
+  // Symbols are kept in the comparison. Stripping them, as the editor's search does, made `C#` and
+  // `C++` the same as the tag `c` and refused both (2026-09-24) — names a reader tells apart at a
+  // glance. The price is that `Re.act` is allowed beside `react`, which nobody sets on purpose.
+  const key = normalizeTagName(checked.name).toLowerCase();
+  const fold = (text: string) => normalizeTagName(text).toLowerCase();
+  const clash =
+    listTags().some((tag) => tag.slug !== slug && (tag.slug === key || fold(tag.name) === key)) ||
+    [...aliasTargets()].some(([alias, owner]) => owner !== slug && alias === key);
   if (clash) {
     return { ok: false, error: `「${checked.name}」という名前のタグは既にあります。` };
   }
@@ -160,6 +198,7 @@ export function deleteTag(slug: string): boolean {
     const found = tx.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
     if (!found) return false;
     replaceTagInPosts(tx, slug, null);
+    tx.delete(tagAliases).where(eq(tagAliases.tagId, found.id)).run();
     tx.delete(tags).where(eq(tags.id, found.id)).run();
     return true;
   });
@@ -170,12 +209,15 @@ export type SlugChangeResult =
   | { ok: false; error: string };
 
 // Give a tag another identifier, under the same rules as a new one (`tagSlugProblem`). Every post
-// holding the old identifier is rewritten to the new one. When the new identifier is already a tag,
-// this is a merge: the posts move onto that tag (a post holding both keeps one), and the old tag
-// goes — which is how two spellings that both made it into the dictionary become one. A display
-// name that was never changed from the old identifier follows it; one that was, stays.
+// holding the old identifier is rewritten to the new one, and the old identifier stays behind as an
+// alias of the tag — so /tags/<old> redirects, and the old word typed in the editor finds the tag
+// instead of offering to make it again. A display name never changed from the old identifier
+// follows it; one that was, stays.
 //
-// The old /tags/<identifier> URL stops answering; nothing redirects it.
+// When the new identifier names another tag — as its identifier or as one of its aliases — this is
+// a merge: the posts move onto that tag (a post holding both keeps one), this tag's identifier and
+// aliases become that tag's aliases, and this tag goes. When it names one of this tag's own
+// aliases, the two swap: the alias becomes the identifier, the identifier an alias.
 export function changeTagSlug(from: string, raw: string): SlugChangeResult {
   const problem = tagSlugProblem(raw);
   if (problem !== null) return { ok: false, error: problem };
@@ -186,12 +228,17 @@ export function changeTagSlug(from: string, raw: string): SlugChangeResult {
   return db.transaction((tx): SlugChangeResult => {
     const source = tx.select().from(tags).where(eq(tags.slug, from)).get();
     if (!source) return { ok: false, error: 'タグが見つかりません。' };
-    const target = tx.select().from(tags).where(eq(tags.slug, to)).get();
+    const alias = tx.select().from(tagAliases).where(eq(tagAliases.alias, to)).get();
+    const target = alias
+      ? tx.select().from(tags).where(eq(tags.id, alias.tagId)).get()
+      : tx.select().from(tags).where(eq(tags.slug, to)).get();
 
-    if (target) {
-      replaceTagInPosts(tx, from, to);
+    if (target && target.id !== source.id) {
+      replaceTagInPosts(tx, from, target.slug);
+      tx.update(tagAliases).set({ tagId: target.id }).where(eq(tagAliases.tagId, source.id)).run();
+      tx.insert(tagAliases).values({ alias: from, tagId: target.id }).run();
       tx.delete(tags).where(eq(tags.id, source.id)).run();
-      return { ok: true, slug: to, merged: true };
+      return { ok: true, slug: target.slug, merged: true };
     }
     // A display name never changed from the old identifier follows it — unless another tag already
     // shows that name, which is refused before anything is rewritten.
@@ -203,8 +250,10 @@ export function changeTagSlug(from: string, raw: string): SlugChangeResult {
       .all()
       .some((row) => row.id !== source.id);
     if (nameTaken) return { ok: false, error: `「${name}」という名前のタグは既にあります。` };
+    if (alias) tx.delete(tagAliases).where(eq(tagAliases.alias, to)).run();
     replaceTagInPosts(tx, from, to);
     tx.update(tags).set({ slug: to, name }).where(eq(tags.id, source.id)).run();
+    tx.insert(tagAliases).values({ alias: from, tagId: source.id }).run();
     return { ok: true, slug: to, merged: false };
   });
 }
@@ -226,7 +275,8 @@ export function updateTag(from: string, rawName: string, rawTo: string): UpdateR
   }
   const current = listTags().find((tag) => tag.slug === from);
   if (!current) return { ok: false, error: 'タグが見つかりません。' };
-  const merging = moving && listTags().some((tag) => tag.slug === to);
+  const owner = moving ? resolveTagSlug(to) : null;
+  const merging = owner !== null && owner !== from;
 
   if (!merging && normalizeTagName(rawName) !== current.name) {
     const renamed = renameTag(from, rawName);
@@ -235,6 +285,27 @@ export function updateTag(from: string, rawName: string, rawTo: string): UpdateR
   if (!moving) return { ok: true, slug: from };
   const changed = changeTagSlug(from, rawTo);
   return changed.ok ? { ok: true, slug: changed.slug } : changed;
+}
+
+export type AliasResult = { ok: true; alias: string } | { ok: false; error: string };
+
+// Add a word that stands for a tag, under the rules an identifier follows. One word names one tag:
+// a word that is already a tag's identifier or any tag's alias is refused.
+export function addAlias(slug: string, raw: string): AliasResult {
+  const problem = tagSlugProblem(raw);
+  if (problem !== null) return { ok: false, error: problem };
+  const alias = tagSlug(raw);
+  if (alias === '') return { ok: false, error: '別名を入力してください。' };
+  const tag = db.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
+  if (!tag) return { ok: false, error: 'タグが見つかりません。' };
+  if (resolveTagSlug(alias) !== null)
+    return { ok: false, error: `「${alias}」は既に使われています。` };
+  db.insert(tagAliases).values({ alias, tagId: tag.id }).run();
+  return { ok: true, alias };
+}
+
+export function removeAlias(alias: string): boolean {
+  return db.delete(tagAliases).where(eq(tagAliases.alias, alias)).run().changes > 0;
 }
 
 // How many posts carry each tag, drafts and pending edits included — what /admin/tags shows so a

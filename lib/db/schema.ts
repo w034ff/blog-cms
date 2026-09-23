@@ -146,3 +146,16 @@ export const tags = sqliteTable('tags', {
     .notNull()
     .default(sql`CURRENT_TIMESTAMP`),
 });
+
+// Other identifiers that stand for a tag (docs/editor-requirements.md §12.33) — `next` for
+// `nextjs`, as Zenn keeps them. An alias is never stored in a post: choosing one in the editor
+// stores the tag's own identifier, and /tags/<alias> redirects to /tags/<identifier>. One word
+// names one tag, so an alias is unique here and never equal to any tag's identifier (lib/tags.ts
+// checks the second; this key the first). Recorded automatically when an identifier is changed or
+// merged away, so the old word keeps leading to the tag; added by hand in /admin/tags.
+export const tagAliases = sqliteTable('tag_aliases', {
+  alias: text('alias').primaryKey(),
+  tagId: integer('tag_id')
+    .notNull()
+    .references(() => tags.id, { onDelete: 'cascade' }),
+});

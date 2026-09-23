@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { CategoryId } from '@/lib/content';
-import type { Tag } from '@/lib/types';
+import type { DictionaryTag } from '@/lib/types';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
@@ -59,7 +59,7 @@ type Props = {
   // (a published post with unsaved-to-public edits). Always false in create mode.
   hasPendingEdits: boolean;
   // The tag dictionary (lib/tags.ts), for 記事の設定's タグ field to pick from.
-  tagDictionary: Tag[];
+  tagDictionary: DictionaryTag[];
 };
 
 const emptyState: PostFormState = {};

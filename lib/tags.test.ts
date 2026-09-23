@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { postRevisions, posts, tags } from '@/lib/db/schema';
+import { postRevisions, posts, tagAliases, tags } from '@/lib/db/schema';
 import { db } from '@/lib/db';
 import {
+  addAlias,
+  aliasTargets,
   changeTagSlug,
   createTag,
   updateTag,
   deleteTag,
   knownTagSlugs,
+  listDictionary,
   listTags,
+  removeAlias,
   renameTag,
   resolveTags,
   tagUsage,
@@ -23,6 +27,7 @@ vi.mock('@/lib/db', async () => {
 });
 
 beforeEach(() => {
+  db.delete(tagAliases).run();
   db.delete(postRevisions).run();
   db.delete(posts).run();
   db.delete(tags).run();
@@ -101,17 +106,23 @@ describe('renameTag', () => {
   });
 
   // Display names may carry symbols; what they may not do is read as another tag.
-  it.each([['REACT'], ['Re.act']])(
-    'refuses %j, which the editor would read as the tag react',
-    (name) => {
-      createTag('react');
-      createTag('Vue');
-      expect(renameTag('vue', name)).toEqual({
-        ok: false,
-        error: `「${name}」という名前のタグは既にあります。`,
-      });
-    },
-  );
+  it.each([['REACT'], ['ＲＥＡＣＴ']])('refuses %j, which reads as the tag react', (name) => {
+    createTag('react');
+    createTag('Vue');
+    expect(renameTag('vue', name)).toEqual({
+      ok: false,
+      error: `「${name.normalize('NFKC')}」という名前のタグは既にあります。`,
+    });
+  });
+
+  // Symbols count: stripped, `C#` and `C++` would both be the tag `c`.
+  it('allows C# and C++ beside the tag c', () => {
+    createTag('c');
+    createTag('csharp');
+    createTag('cpp');
+    expect(renameTag('csharp', 'C#').ok).toBe(true);
+    expect(renameTag('cpp', 'C++').ok).toBe(true);
+  });
 
   it('allows a rename that only changes its own case', () => {
     createTag('nextjs');
@@ -271,6 +282,89 @@ describe('updateTag', () => {
       error: TAG_SYMBOL_MESSAGE,
     });
     expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+});
+
+describe('aliases', () => {
+  it('are added under the identifier rules, one word to one tag', () => {
+    createTag('nextjs');
+    createTag('react');
+    expect(addAlias('nextjs', 'Next')).toEqual({ ok: true, alias: 'next' });
+    expect(addAlias('react', 'next')).toEqual({
+      ok: false,
+      error: '「next」は既に使われています。',
+    });
+    expect(addAlias('react', 'nextjs')).toEqual({
+      ok: false,
+      error: '「nextjs」は既に使われています。',
+    });
+    expect(addAlias('react', 'react.js')).toEqual({ ok: false, error: TAG_SYMBOL_MESSAGE });
+    expect(listDictionary()).toEqual([
+      { slug: 'nextjs', name: 'nextjs', aliases: ['next'] },
+      { slug: 'react', name: 'react', aliases: [] },
+    ]);
+    expect(removeAlias('next')).toBe(true);
+    expect(aliasTargets()).toEqual(new Map());
+  });
+
+  // A post never holds an alias: the write paths store the tag's identifier.
+  it('are stored as the identifier they stand for, once per post', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    expect(knownTagSlugs(['next', 'nextjs', 'gone'])).toEqual(['nextjs']);
+  });
+
+  it('resolve a new tag typed as one to the tag itself', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    expect(createTag('Next')).toEqual({
+      ok: true,
+      tag: { slug: 'nextjs', name: 'nextjs' },
+      created: false,
+    });
+  });
+
+  it('keep an identifier that was changed, so the old word still leads to the tag', () => {
+    createTag('nextj');
+    changeTagSlug('nextj', 'nextjs');
+    expect(aliasTargets()).toEqual(new Map([['nextj', 'nextjs']]));
+  });
+
+  it('carry a merged tag and its own aliases over to the tag it merged into', () => {
+    createTag('next');
+    createTag('nextjs');
+    addAlias('next', 'nxt');
+    changeTagSlug('next', 'nextjs');
+    expect(listDictionary()).toEqual([
+      { slug: 'nextjs', name: 'nextjs', aliases: ['next', 'nxt'] },
+    ]);
+  });
+
+  // Naming another tag's alias is naming that tag.
+  it('make a change to another tag’s alias a merge into that tag', () => {
+    createTag('go');
+    addAlias('go', 'golang');
+    createTag('gol');
+    const id = seedPost(['gol']);
+    expect(changeTagSlug('gol', 'golang')).toEqual({ ok: true, slug: 'go', merged: true });
+    expect(db.select().from(posts).where(eq(posts.id, id)).get()?.tags).toEqual(['go']);
+    expect(listDictionary()).toEqual([{ slug: 'go', name: 'go', aliases: ['gol', 'golang'] }]);
+  });
+
+  it('swap with the identifier when a tag is given one of its own', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    const id = seedPost(['nextjs']);
+    expect(changeTagSlug('nextjs', 'next')).toEqual({ ok: true, slug: 'next', merged: false });
+    expect(db.select().from(posts).where(eq(posts.id, id)).get()?.tags).toEqual(['next']);
+    expect(listDictionary()).toEqual([{ slug: 'next', name: 'next', aliases: ['nextjs'] }]);
+  });
+
+  it('go with their tag when it is deleted', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    deleteTag('nextjs');
+    expect(aliasTargets()).toEqual(new Map());
   });
 });
 

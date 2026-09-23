@@ -5,7 +5,7 @@ import type { RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { CATEGORIES, type CategoryId } from '@/lib/content';
-import type { Tag } from '@/lib/types';
+import type { DictionaryTag } from '@/lib/types';
 import { TagField } from './TagField';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
@@ -93,7 +93,7 @@ type Props = {
   onCategoryChange: (value: CategoryId) => void;
   tags: string[];
   onTagsChange: (value: string[]) => void;
-  tagDictionary: Tag[];
+  tagDictionary: DictionaryTag[];
   thumbnail: string;
   onThumbnailChange: (value: string) => void;
   body: string;

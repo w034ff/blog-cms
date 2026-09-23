@@ -1,7 +1,7 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getPostsByTag } from '@/lib/posts';
-import { tagNames } from '@/lib/tags';
+import { aliasTargets, tagNames } from '@/lib/tags';
 import { PostCard } from '@/components/PostCard';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 
@@ -26,7 +26,13 @@ export default async function TagPage({ params }: { params: Promise<Params> }) {
   const { tag } = await params;
   const slug = decodeURIComponent(tag);
   const name = tagNames().get(slug);
-  if (name === undefined) notFound();
+  if (name === undefined) {
+    // An alias leads to its tag's own page, so each tag has one URL. 307 rather than 308: an alias
+    // can be taken off in /admin/tags, and a browser keeps a permanent redirect after it is gone.
+    const target = aliasTargets().get(slug);
+    if (target !== undefined) redirect(`/tags/${encodeURIComponent(target)}`);
+    notFound();
+  }
   const posts = await getPostsByTag(slug);
   if (posts.length === 0) notFound();
   return (

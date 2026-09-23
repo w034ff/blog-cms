@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
 import { DEFAULT_CATEGORY } from '@/lib/content';
-import { listTags } from '@/lib/tags';
+import { listDictionary } from '@/lib/tags';
 
 // The h1 that used to say this is gone — the editor's own title field says which post this
 // is, and a heading repeating the screen's purpose was one more band between the top of the
@@ -34,7 +34,7 @@ export default function NewPostPage() {
         published={false}
         everPublished={false}
         hasPendingEdits={false}
-        tagDictionary={listTags()}
+        tagDictionary={listDictionary()}
       />
     </section>
   );

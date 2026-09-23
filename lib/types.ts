@@ -23,6 +23,12 @@ export type Tag = {
   name: string;
 };
 
+// A tag with the other identifiers that stand for it (lib/tags.ts), for the two screens that let
+// an author reach it by one of them: the editor's tag field and /admin/tags.
+export type DictionaryTag = Tag & {
+  aliases: string[];
+};
+
 export type Post = PostFrontmatter & {
   // `tags` resolved against the dictionary, for the surfaces that draw them. Not part of
   // PostFrontmatter, and so not of DraftContent: a name is the dictionary's, not the post's, and a

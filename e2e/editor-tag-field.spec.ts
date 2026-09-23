@@ -47,10 +47,11 @@ test('a dictionary tag is found by part of its name, whatever the case, and is n
   await tagCombobox(page).press('Enter');
   await expect(tagsField(page)).toHaveValue('react');
 
-  // Chosen once, it leaves the list — and with nothing else matching, the list does not open.
+  // Chosen once, it leaves the list, and nothing offers to make it again. Other tags may still
+  // match — `rsc` is shown as React Server Components — so the list itself is not asked about.
   await tagCombobox(page).fill('react');
-  await expect(listbox(page)).toBeHidden();
-  await expect(tagCombobox(page)).toHaveAttribute('aria-expanded', 'false');
+  await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toHaveCount(0);
+  await expect(createRow(page)).toHaveCount(0);
 });
 
 test('a name the dictionary lacks is added only through its own row, and stays added', async ({
@@ -94,9 +95,10 @@ test('a name with a symbol is refused as it is typed, and the tag it was reachin
   await expect(tagsField(page)).toHaveValue('nextjs');
   await expect(refusal).toHaveCount(0);
 
-  // With nothing to offer, the refusal alone: no row, and Enter adds nothing. Not `C#` — its key
-  // `c` finds `rsc`, which is offered like any other match.
-  await tagCombobox(page).fill('q++');
+  // With nothing to offer, the refusal alone: no row, and Enter adds nothing. Text no tag in the
+  // real dictionary contains (the seeded DB is a copy of it): `C#`'s key `c` finds `rsc`, and a
+  // lone `q` finds `sql`.
+  await tagCombobox(page).fill('qz#');
   await expect(refusal).toBeVisible();
   await expect(listbox(page)).toBeHidden();
   await tagCombobox(page).press('Enter');

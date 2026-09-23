@@ -3,7 +3,7 @@
 import { useId, useMemo, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { MAX_TAGS, normalizeTagName, tagSearchKey, tagSlug, tagSlugProblem } from '@/lib/content';
-import type { Tag } from '@/lib/types';
+import type { DictionaryTag, Tag } from '@/lib/types';
 import { CloseIcon } from './svg/CloseIcon';
 
 // タグ as chips picked from the dictionary (docs/editor-requirements.md §12.33). Typing filters the
@@ -18,32 +18,49 @@ import { CloseIcon } from './svg/CloseIcon';
 
 const MAX_OPTIONS = 8;
 
-type Option = { kind: 'existing'; tag: Tag } | { kind: 'create'; name: string };
+type Option = { kind: 'existing'; tag: DictionaryTag } | { kind: 'create'; name: string };
 
 // Existing tags are found by `tagSearchKey`, so typing `Next.js` still offers `nextjs`: the text
 // with symbols cannot become a tag of its own, and the tag it was reaching for is the answer.
-function matches(dictionary: readonly Tag[], selected: readonly string[], query: string): Option[] {
+function matches(
+  dictionary: readonly DictionaryTag[],
+  selected: readonly string[],
+  query: string,
+): Option[] {
   const name = normalizeTagName(query);
   const needle = tagSearchKey(name);
   if (needle === '') return [];
   const keyOf = (tag: Tag) => tagSearchKey(tag.name);
+  // An alias finds its tag like the tag's own names do, and the row is the tag's own: the post will
+  // carry the identifier, never the alias, so the row shows what the chip will say. An arrow row
+  // (`nxt → nextjs`) was tried the same day and dropped as one more thing to read.
+  const hit = (tag: DictionaryTag) =>
+    keyOf(tag).includes(needle) ||
+    tag.slug.includes(needle) ||
+    tag.aliases.some((alias) => alias.includes(needle));
+  const starts = (tag: DictionaryTag) =>
+    keyOf(tag).startsWith(needle) ||
+    tag.slug.startsWith(needle) ||
+    tag.aliases.some((alias) => alias.startsWith(needle));
   const found = dictionary
     .filter((tag) => !selected.includes(tag.slug))
-    .filter((tag) => keyOf(tag).includes(needle) || tag.slug.includes(needle))
-    .sort(
-      (a, b) =>
-        Number(!keyOf(a).startsWith(needle)) - Number(!keyOf(b).startsWith(needle)) ||
-        a.name.localeCompare(b.name),
+    .filter(hit)
+    .map((tag): Option => ({ kind: 'existing', tag }))
+    .sort((a, b) =>
+      a.kind === 'existing' && b.kind === 'existing'
+        ? Number(!starts(a.tag)) - Number(!starts(b.tag)) || a.tag.slug.localeCompare(b.tag.slug)
+        : 0,
     )
-    .slice(0, MAX_OPTIONS)
-    .map((tag): Option => ({ kind: 'existing', tag }));
+    .slice(0, MAX_OPTIONS);
   // Offered for any text that can be a tag (no symbols — `tagSlug` is '' otherwise) unless the
-  // dictionary already has that very tag, selected or not: the server would answer with it anyway
-  // (lib/tags.ts `createTag`), and a row promising a new one would be a lie. Not hidden while the
-  // text is the start of an existing tag — that was tried the same day, and it left `go` beside
-  // `golang` impossible to make here. The row is quieted instead (below).
+  // dictionary already has that very tag, by identifier, alias or name, selected or not: the server
+  // would answer with it anyway (lib/tags.ts `createTag`), and a row promising a new one would be a
+  // lie. Not hidden while the text is the start of an existing tag — that was tried the same day,
+  // and it left `go` beside `golang` impossible to make here. The row is quieted instead (below).
   const slug = tagSlug(name);
-  const exists = dictionary.some((tag) => tag.slug === slug || tag.name === name);
+  const exists = dictionary.some(
+    (tag) => tag.slug === slug || tag.aliases.includes(slug) || tag.name === name,
+  );
   return slug === '' || exists ? found : [...found, { kind: 'create', name }];
 }
 
@@ -54,7 +71,7 @@ export function TagField({
 }: {
   value: string[];
   onChange: (value: string[]) => void;
-  dictionary: Tag[];
+  dictionary: DictionaryTag[];
 }) {
   const labelId = useId();
   const listId = useId();
@@ -109,7 +126,9 @@ export function TagField({
         return;
       }
       setDictionary((current) =>
-        current.some((known) => known.slug === tag.slug) ? current : [...current, tag],
+        current.some((known) => known.slug === tag.slug)
+          ? current
+          : [...current, { ...tag, aliases: [] }],
       );
       add(tag.slug);
     } catch {
