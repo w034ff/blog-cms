@@ -1,4 +1,5 @@
 import { diffChars, diffLines } from 'diff';
+import { categoryLabel } from '@/lib/content';
 import { normalizeNewlines } from '@/lib/draft-content';
 import type { DraftContent } from '@/lib/types';
 
@@ -115,7 +116,7 @@ export function diffBody(beforeBody: string, afterBody: string): DiffBlock[] {
 export function diffFields(before: DraftContent, after: DraftContent): FieldChange[] {
   const fields: [string, string, string][] = [
     ['タイトル', before.title, after.title],
-    ['カテゴリ', before.category, after.category],
+    ['カテゴリ', categoryLabel(before.category), categoryLabel(after.category)],
     ['タグ', before.tags.join(', '), after.tags.join(', ')],
     ['サムネイル', before.thumbnail, after.thumbnail],
   ];

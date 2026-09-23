@@ -3,6 +3,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
+import { normalizeCategory } from '../lib/content.ts';
 
 const ROOT = process.cwd();
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
@@ -48,7 +49,7 @@ function main(): void {
       title: fm.title,
       date: fm.date,
       description: fm.description ?? '',
-      category: fm.category ?? 'uncategorized',
+      category: normalizeCategory(fm.category),
       tags: JSON.stringify(Array.isArray(fm.tags) ? fm.tags : []),
       draft: fm.draft ? 1 : 0,
       body: parsed.content.trim(),

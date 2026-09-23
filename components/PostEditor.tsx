@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import type { CategoryId } from '@/lib/content';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
@@ -38,7 +39,7 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  category: string;
+  category: CategoryId;
   tags: string[];
   body: string;
   thumbnail: string;

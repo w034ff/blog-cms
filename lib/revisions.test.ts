@@ -21,7 +21,7 @@ beforeEach(() => {
 function content(overrides: Partial<DraftContent> = {}): DraftContent {
   return {
     title: 'Title',
-    category: 'cat',
+    category: 'blog',
     tags: ['a'],
     thumbnail: '',
     body: 'body',

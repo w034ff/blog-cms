@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { DEFAULT_CATEGORY, parseTags } from '@/lib/content';
+import { DEFAULT_CATEGORY, isCategoryId, parseTags, type CategoryId } from '@/lib/content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
@@ -18,7 +18,8 @@ import type { DraftContent } from '@/lib/types';
 // stays lenient so partial work is never lost.
 const contentSchema = z.object({
   title: z.string().min(1),
-  category: z.string().min(1),
+  // Refused rather than normalized: an id off the list reaches here only from a crafted form.
+  category: z.custom<CategoryId>(isCategoryId),
   tags: z.array(z.string()),
   body: z.string(),
   // Not strict, unlike its neighbours here: an unusable path normalizes to ''

@@ -8,7 +8,7 @@ function post(overrides: Partial<Post> = {}): Post {
     slug: 'abc123',
     title: 'Title',
     date: '2026-09-04T00:00:00.000Z',
-    category: 'uncategorized',
+    category: 'tech',
     tags: [],
     draft: false,
     body: '',

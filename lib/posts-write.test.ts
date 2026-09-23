@@ -29,7 +29,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     slug: 'slug',
     title: 'Title',
     date: '2026-01-01',
-    category: 'uncategorized',
+    category: 'tech',
     tags: [],
     draft: true,
     body: 'body',
@@ -40,7 +40,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
 
 const content: DraftContent = {
   title: 'Edited',
-  category: 'cat',
+  category: 'blog',
   tags: ['a', 'b'],
   thumbnail: '',
   body: 'edited body',

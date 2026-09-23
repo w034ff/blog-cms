@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { parseTags } from '@/lib/content';
+import { normalizeCategory, parseTags } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 const AUTOSAVE_DELAY_MS = 800;
@@ -21,7 +21,7 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
   };
   return {
     title: get('title'),
-    category: get('category'),
+    category: normalizeCategory(get('category')),
     tags: parseTags(get('tags')),
     body: get('body'),
     thumbnail: get('thumbnail'),

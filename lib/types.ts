@@ -1,8 +1,10 @@
+import type { CategoryId } from '@/lib/content';
+
 export type PostFrontmatter = {
   title: string;
   date: string;
   tags: string[];
-  category: string;
+  category: CategoryId;
   draft: boolean;
   // The card image the author chose, as a `/uploads/<name>` path; '' when they
   // chose none. Not the image a reader sees — that is `resolveThumbnail`
@@ -47,7 +49,7 @@ export type TagCount = {
 };
 
 export type CategoryCount = {
-  category: string;
+  category: CategoryId;
   count: number;
 };
 
@@ -72,10 +74,7 @@ export type PostSearchResult = {
   // the text it read — so a search still cannot be used to read a post.
   thumbnail: string | null;
   // The post's own category, drawn as the second line of an insert-search row
-  // (§5.2-5). The raw column, not a display name: there is no label map — the
-  // field is free text the author types — so what a row shows is what the
-  // target post's own form holds. `DEFAULT_CATEGORY` is the blank field's
-  // sentinel rather than a category anyone chose, and the row drops the line
-  // instead of printing it.
-  category: string;
+  // (§5.2-5). The id, not the label: the row looks the label up through
+  // `categoryLabel`, the same map every other surface uses.
+  category: CategoryId;
 };

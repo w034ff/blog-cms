@@ -93,7 +93,7 @@ describe('diffBody', () => {
 
 const content = (overrides: Partial<DraftContent> = {}): DraftContent => ({
   title: 'T',
-  category: 'c',
+  category: 'blog',
   tags: ['a'],
   thumbnail: '',
   body: 'body',
@@ -105,6 +105,13 @@ describe('diffFields / diffRevision', () => {
     expect(diffFields(content(), content({ title: 'U', tags: ['a', 'b'] }))).toEqual([
       { label: 'タイトル', before: 'T', after: 'U' },
       { label: 'タグ', before: 'a', after: 'a, b' },
+    ]);
+  });
+
+  // The ids are storage; the page shows what the editor's choices say.
+  it('shows a category change by its labels', () => {
+    expect(diffFields(content(), content({ category: 'tech' }))).toEqual([
+      { label: 'カテゴリ', before: 'ブログ', after: '技術記事' },
     ]);
   });
 

@@ -12,7 +12,7 @@ import {
   type CardImage,
 } from '@/lib/link-card-image';
 import { isOwnPostHref } from '@/lib/link-card-href';
-import { DEFAULT_CATEGORY } from '@/lib/content';
+import { categoryLabel } from '@/lib/content';
 import type { PostSearchResult } from '@/lib/types';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
@@ -527,9 +527,9 @@ function SearchResultRow({ post, onPick }: { post: PostSearchResult; onPick: () 
               </span>
             )}
           </span>
-          {post.category !== DEFAULT_CATEGORY && (
-            <span className='block truncate text-zinc-500 dark:text-zinc-400'>{post.category}</span>
-          )}
+          <span className='block truncate text-zinc-500 dark:text-zinc-400'>
+            {categoryLabel(post.category)}
+          </span>
         </span>
       </button>
     </li>

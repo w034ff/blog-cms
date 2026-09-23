@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { Post } from '@/lib/types';
 import type { TocEntry } from '@/lib/render';
+import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { EmbedFrames } from '@/components/EmbedFrames';
@@ -75,7 +76,7 @@ export function PostArticle({
             <Link
               href={`/categories/${encodeURIComponent(post.category)}`}
               className='hover:underline'>
-              {post.category}
+              {categoryLabel(post.category)}
             </Link>
           </div>
           {post.tags.length > 0 && (

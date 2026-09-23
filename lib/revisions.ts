@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { normalizeCategory } from '@/lib/content';
 import { db } from '@/lib/db';
 import { postRevisions, posts } from '@/lib/db/schema';
 import { normalizeDraftContent, normalizeNewlines, sameDraftContent } from '@/lib/draft-content';
@@ -31,7 +32,7 @@ type RevisionRow = typeof postRevisions.$inferSelect;
 export function liveContentOfRow(row: PostRow): DraftContent {
   return {
     title: row.title,
-    category: row.category,
+    category: normalizeCategory(row.category),
     tags: Array.isArray(row.tags) ? row.tags.filter((tag) => typeof tag === 'string') : [],
     body: row.body,
     thumbnail: row.thumbnail,

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Post } from '@/lib/types';
+import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
@@ -38,7 +39,7 @@ export function PostCard({ post }: Props) {
           <Link
             href={`/categories/${encodeURIComponent(post.category)}`}
             className='hover:underline'>
-            {post.category}
+            {categoryLabel(post.category)}
           </Link>
         </div>
         {/* Clamped by lines, not by EXCERPT_MAX_CHARS: that length is shared with the meta

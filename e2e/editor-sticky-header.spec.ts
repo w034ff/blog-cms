@@ -406,7 +406,7 @@ test.describe('記事の設定 focus', () => {
     await expect(drawer).toBeVisible();
     await expect(page.locator('.ProseMirror')).toBeFocused();
 
-    await page.getByLabel('カテゴリ').click();
+    await page.getByLabel('タグ（カンマ区切り）').click();
     await page.keyboard.press('Escape');
     await expect(drawer).toBeHidden();
     await expect(gear).toBeFocused();

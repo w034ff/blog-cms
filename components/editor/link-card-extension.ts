@@ -9,7 +9,7 @@ import {
   type CardImage,
 } from '@/lib/link-card-image';
 import { resolveInsertTarget, SELF_REFERENCE_NOTE } from '@/lib/insert-target';
-import { DEFAULT_CATEGORY } from '@/lib/content';
+import { categoryLabel } from '@/lib/content';
 import {
   BACK_SHAPES,
   buildIcon,
@@ -936,14 +936,10 @@ function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElemen
     head.appendChild(badge);
   }
   text.appendChild(head);
-  // Dropped when it is the blank field's sentinel: `DEFAULT_CATEGORY` is what a post with no
-  // category has, so printing it would put "uncategorized" under most of the list and say nothing.
-  if (post.category !== DEFAULT_CATEGORY) {
-    const category = document.createElement('span');
-    category.className = 'link-card-result-category';
-    category.textContent = post.category;
-    text.appendChild(category);
-  }
+  const category = document.createElement('span');
+  category.className = 'link-card-result-category';
+  category.textContent = categoryLabel(post.category);
+  text.appendChild(category);
 
   el.append(resultImage(internalCardImage(post.thumbnail)), text);
   el.addEventListener('click', onPick);

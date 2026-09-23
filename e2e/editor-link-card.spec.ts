@@ -4,9 +4,11 @@ import { BASE_URL, TEST_DB_PATH } from './constants';
 import { postSlug } from './published-post';
 import {
   closeHistory,
+  closePostSettings,
   collapseToEnd,
   expectAutosaved,
   loadMarkdown,
+  openPostSettings,
   selectInside,
   setRange,
 } from './editor-authoring';
@@ -1086,17 +1088,20 @@ test('every insert-search row carries a picture, and they are all one height (20
   expect([...new Set(rows.map((row) => row.height))]).toHaveLength(1);
 });
 
-test('a draft row wears a badge and drops the empty category, and its name is unchanged (20b, 20c)', async ({
+test('a draft row wears a badge and names its category by label, and its name is unchanged (20b, 20c)', async ({
   page,
 }) => {
   // A draft is made here rather than seeded, for 4h's reason — and it is also the one post whose
-  // category is certain: a row created by autosave carries `DEFAULT_CATEGORY`, which is the case
-  // §20 drops the line for. Asserting that against whatever the seeded DB happens to hold would
-  // pass while showing nothing.
+  // category is certain. It is filed under ブログ, not left at the default, so the two rows below
+  // carry different labels: with both on 技術記事, a row that printed the default whatever the post
+  // held would pass.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  const draftTitle = `未分類の下書き ${Date.now()}`;
+  const draftTitle = `ブログの下書き ${Date.now()}`;
   await page.getByLabel('タイトル').fill(draftTitle);
+  await openPostSettings(page);
+  await page.getByRole('radio', { name: 'ブログ' }).check();
+  await closePostSettings(page);
   await expectAutosaved(page);
 
   await openPickerOnNewPost(page);
@@ -1104,7 +1109,7 @@ test('a draft row wears a badge and drops the empty category, and its name is un
   await expect(page.locator('.link-card-result')).toHaveCount(1);
   const [draftRow] = await rowShapes(page);
   expect(draftRow.badge).toBe('未公開');
-  expect(draftRow.category).toBeNull();
+  expect(draftRow.category).toBe('ブログ');
   // The name is the title plus the draft note and nothing else — not the category, not the picture.
   // `getByRole('button', { name })` is a full-string match, and the rows above are asked for that
   // way by twelve other tests in this file.
@@ -1113,8 +1118,7 @@ test('a draft row wears a badge and drops the empty category, and its name is un
     page.locator('.link-card-results').getByRole('button', { name: `${draftTitle}（未公開）` }),
   ).toBeVisible();
 
-  // And the other half: a published post in a real category draws it, so the rule above is a rule
-  // about `uncategorized` rather than about the line never appearing.
+  // And the other half: the seeded post is in the other category and draws that label.
   await page.locator('.link-card-search').fill(CARD_TITLE);
   // **Waiting for one row does not say it is the NEW one.** Both queries return exactly one, the
   // search is asynchronous, and a count that is already right is reached without anything having
@@ -1128,7 +1132,7 @@ test('a draft row wears a badge and drops the empty category, and its name is un
   await expect(page.locator('.link-card-result')).toHaveCount(1);
   const [publishedRow] = await rowShapes(page);
   expect(publishedRow.badge).toBeNull();
-  expect(publishedRow.category).toBe('tech-notes');
+  expect(publishedRow.category).toBe('技術記事');
 });
 
 // §20 の 20f. The gutter the card holds open for its own picture must not be held open by the

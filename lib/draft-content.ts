@@ -1,3 +1,4 @@
+import { normalizeCategory } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 // The pieces of DraftContent handling that more than one table needs: `posts.draft_content` and
@@ -21,10 +22,18 @@ export function normalizeNewlines(body: string): string {
 // showing 「なし」 while its label claimed an image had been chosen, with the body fallback skipped,
 // because `undefined === ''` is false.
 //
+// `category` is the same hazard from the other side: the field was always there, but its values
+// were free text until 2026-09-23. drizzle/0008 moved the stored ones onto the fixed list; this
+// catches whatever it could not see.
+//
 // Normalized at the read rather than at each consumer. A field added to DraftContent later needs
 // its default added here too.
 export function normalizeDraftContent(stored: DraftContent): DraftContent {
-  return { ...stored, thumbnail: stored.thumbnail ?? '' };
+  return {
+    ...stored,
+    category: normalizeCategory(stored.category),
+    thumbnail: stored.thumbnail ?? '',
+  };
 }
 
 // Whether two contents are the same post as an author would see it. Written out field by field on

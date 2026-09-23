@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { deletePostAction } from '@/app/actions/posts';
 import { logout } from '@/app/actions/auth';
+import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 
@@ -109,7 +110,7 @@ export default async function AdminHome() {
                     {hasVisibleUpdate(post.date, post.updatedAt) && (
                       <> (更新: {formatPostDate(post.updatedAt)})</>
                     )}{' '}
-                    · {post.category}
+                    · {categoryLabel(post.category)}
                   </div>
                 </div>
               </div>

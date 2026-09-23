@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
+import { categoryLabel } from '@/lib/content';
 import { getAllCategories } from '@/lib/posts';
 
 export const metadata: Metadata = {
@@ -22,7 +23,8 @@ export default async function CategoriesIndexPage() {
               <Link
                 href={`/categories/${encodeURIComponent(category)}`}
                 className='inline-block hover:underline'>
-                {category} <span className='text-zinc-500 dark:text-zinc-400'>({count})</span>
+                {categoryLabel(category)}{' '}
+                <span className='text-zinc-500 dark:text-zinc-400'>({count})</span>
               </Link>
             </li>
           ))}

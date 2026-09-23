@@ -1,6 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
+import { CATEGORIES, normalizeCategory, type CategoryId } from '@/lib/content';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
@@ -30,7 +31,7 @@ function toPost(row: PostRow): Post {
     slug: row.slug,
     title: row.title,
     date: row.date,
-    category: row.category,
+    category: normalizeCategory(row.category),
     tags: tagsSchema.parse(row.tags),
     draft: row.draft,
     body: row.body,
@@ -134,7 +135,7 @@ export async function getPostsByTag(tag: string): Promise<Post[]> {
   return all.filter((post) => post.tags.includes(tag));
 }
 
-export async function getPostsByCategory(category: string): Promise<Post[]> {
+export async function getPostsByCategory(category: CategoryId): Promise<Post[]> {
   const rows = db
     .select()
     .from(posts)
@@ -144,17 +145,12 @@ export async function getPostsByCategory(category: string): Promise<Post[]> {
   return rows.map(toPost);
 }
 
-// Tally one facet of the published posts, most frequent first with ties broken by name.
-// The tag and category listings differ only in what each post contributes — a tag array
-// versus its single category — and in what their result rows are called, so `valuesOf`
-// covers the first and the caller's own `map` the second. The ordering is the part worth
-// keeping in one place: it was written out twice, so a change to the tiebreak could land
-// on one listing and not the other.
-function countFacet(list: Post[], valuesOf: (post: Post) => readonly string[]): [string, number][] {
+// Tally the tags of the published posts, most frequent first with ties broken by name.
+function countTags(list: Post[]): [string, number][] {
   const counts = new Map<string, number>();
   for (const post of list) {
-    for (const value of valuesOf(post)) {
-      counts.set(value, (counts.get(value) ?? 0) + 1);
+    for (const tag of post.tags) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
     }
   }
   return Array.from(counts.entries()).sort(
@@ -163,11 +159,16 @@ function countFacet(list: Post[], valuesOf: (post: Post) => readonly string[]): 
 }
 
 export async function getAllTags(): Promise<TagCount[]> {
-  const counted = countFacet(await getAllPosts(), (post) => post.tags);
+  const counted = countTags(await getAllPosts());
   return counted.map(([tag, count]) => ({ tag, count }));
 }
 
+// In CATEGORIES' order rather than by count: the list is fixed and short, so its own order is the
+// one a reader learns. A category with no published post is left out — its page would be a 404.
 export async function getAllCategories(): Promise<CategoryCount[]> {
-  const counted = countFacet(await getAllPosts(), (post) => [post.category]);
-  return counted.map(([category, count]) => ({ category, count }));
+  const published = await getAllPosts();
+  return CATEGORIES.map(({ id }) => ({
+    category: id,
+    count: published.filter((post) => post.category === id).length,
+  })).filter(({ count }) => count > 0);
 }

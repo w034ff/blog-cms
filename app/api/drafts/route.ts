@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { DEFAULT_CATEGORY } from '@/lib/content';
+import { normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
 import { isUploadPath } from '@/lib/thumbnail';
@@ -16,7 +16,9 @@ const autosaveSchema = z.object({
   id: z.number().int().optional(),
   content: z.object({
     title: z.string().catch(''),
-    category: z.string().catch(''),
+    // Off-list values (a form that lost the field, an old tab) save under the default rather than
+    // failing the save — the same trade `thumbnail` below makes.
+    category: z.unknown().transform(normalizeCategory),
     tags: z.array(z.string()).catch([]),
     body: z.string().catch(''),
     // Normalized rather than rejected, so a bad value can never be the reason a
@@ -67,7 +69,6 @@ export async function POST(req: NextRequest) {
   const newId = createPost({
     slug,
     ...content,
-    category: content.category || DEFAULT_CATEGORY,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,

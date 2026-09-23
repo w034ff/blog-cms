@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 export const posts = sqliteTable('posts', {
@@ -16,7 +15,10 @@ export const posts = sqliteTable('posts', {
   title: text('title').notNull(),
   date: text('date').notNull(),
   description: text('description').notNull().default(''),
-  category: text('category').notNull().default(DEFAULT_CATEGORY),
+  // One of CATEGORIES' ids (lib/content.ts). The DDL default is the free-text era's sentinel and
+  // is never used — every insert writes the column — but moving it would make drizzle-kit rebuild
+  // this table, which is the path that aborts midway here. Reads normalize anything off the list.
+  category: text('category').notNull().default('uncategorized'),
   tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default([]),
   draft: integer('draft', { mode: 'boolean' }).notNull().default(false),
   body: text('body').notNull().default(''),

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { CATEGORIES, type CategoryId } from '@/lib/content';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
@@ -51,11 +52,55 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+// カテゴリ as one button per entry of the fixed list (§12.32): every choice in sight, one press to
+// change. Real radios under the buttons, not a `<select>` and not buttons with state of their own —
+// the form reads `category` off the DOM like every other field here, and a radio group gets the
+// arrow-key movement and the checked state a screen reader announces without any code for them.
+// `aria-labelledby` rather than a wrapping `<label>`: a label associates with one control, and
+// here there are as many as the list is long.
+//
+// Each radio is laid transparently over its whole button rather than `sr-only`: clipped to a
+// pixel, it sat under its own label, so a press reached the label and not the control — the
+// browser forwards that, but a test driving the radio itself found the label in the way.
+function CategoryField({
+  value,
+  onChange,
+}: {
+  value: CategoryId;
+  onChange: (value: CategoryId) => void;
+}) {
+  const labelId = useId();
+  return (
+    <div className='text-sm'>
+      <span id={labelId} className='mb-1 block text-zinc-600 dark:text-zinc-400'>
+        カテゴリ
+      </span>
+      <div role='radiogroup' aria-labelledby={labelId} className='flex gap-2'>
+        {CATEGORIES.map(({ id, label }) => (
+          <label
+            key={id}
+            className='relative flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-zinc-700 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-900 has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-100 dark:has-[:checked]:text-zinc-900'>
+            <input
+              type='radio'
+              name='category'
+              value={id}
+              checked={value === id}
+              onChange={() => onChange(id)}
+              className='absolute inset-0 cursor-pointer appearance-none opacity-0'
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
-  category: string;
-  onCategoryChange: (value: string) => void;
+  category: CategoryId;
+  onCategoryChange: (value: CategoryId) => void;
   tags: string;
   onTagsChange: (value: string) => void;
   thumbnail: string;
@@ -259,14 +304,7 @@ export function PostSettingsPanel({
           state (chosen / picked from the body / none) is worth seeing the moment the drawer opens
           (requested 2026-09-21). */}
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          <Field label='カテゴリ'>
-            <input
-              name='category'
-              value={category}
-              onChange={(event) => onCategoryChange(event.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <CategoryField value={category} onChange={onCategoryChange} />
           <Field label='タグ（カンマ区切り）'>
             <input
               name='tags'
