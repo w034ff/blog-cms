@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
 import { listTags, tagUsage } from '@/lib/tags';
-import { NewTagForm, TagRow } from './TagForms';
+import { NewTagForm, TagTable } from './TagForms';
 
 export const metadata: Metadata = { title: 'タグ' };
 
@@ -15,36 +15,27 @@ export const dynamic = 'force-dynamic';
 export default async function AdminTagsPage() {
   await verifySession();
   const tags = listTags();
-  const usage = tagUsage();
-  const slugs = tags.map((tag) => tag.slug);
+  const usage = Object.fromEntries(tagUsage());
 
   return (
     <section>
-      <div className='mb-6 flex items-center justify-between gap-4'>
+      <div className='mb-2 flex items-center justify-between gap-4'>
         <h1 className='text-2xl font-bold tracking-tight'>タグ</h1>
         <Link href='/admin' className='text-sm hover:underline'>
           記事一覧
         </Link>
       </div>
-      <p className='mb-4 text-sm text-zinc-600 dark:text-zinc-400'>
-        表示名は、記事やタグページで読者に見える名前です。識別子は、エディタでタグを付けるときに入力する語で、タグページの
-        URL にも使われます。
+      <p className='mb-6 text-sm text-zinc-500 dark:text-zinc-400'>
+        識別子はエディタで入力する語で、URL にも使われます。表示名は読者に見える名前です。
       </p>
       <NewTagForm />
-      {tags.length === 0 ? (
-        <p className='mt-6 text-zinc-500 dark:text-zinc-400'>タグはまだありません。</p>
-      ) : (
-        <ul className='mt-6 divide-y divide-zinc-200 dark:divide-zinc-800'>
-          {tags.map((tag) => (
-            <TagRow
-              key={`${tag.slug}:${tag.name}`}
-              tag={tag}
-              usage={usage.get(tag.slug) ?? 0}
-              slugs={slugs}
-            />
-          ))}
-        </ul>
-      )}
+      <div className='mt-8'>
+        {tags.length === 0 ? (
+          <p className='text-zinc-500 dark:text-zinc-400'>タグはまだありません。</p>
+        ) : (
+          <TagTable tags={tags} usage={usage} />
+        )}
+      </div>
     </section>
   );
 }

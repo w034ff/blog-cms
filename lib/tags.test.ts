@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import {
   changeTagSlug,
   createTag,
+  updateTag,
   deleteTag,
   knownTagSlugs,
   listTags,
@@ -229,6 +230,47 @@ describe('changeTagSlug', () => {
 
   it('refuses a tag that is not there', () => {
     expect(changeTagSlug('missing', 'x')).toEqual({ ok: false, error: 'タグが見つかりません。' });
+  });
+});
+
+describe('updateTag', () => {
+  it('sets a display name and leaves the identifier', () => {
+    createTag('nextjs');
+    expect(updateTag('nextjs', 'Next.js', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  it('changes both at once, keeping the name that was set', () => {
+    createTag('nextj');
+    seedPost(['nextj']);
+    expect(updateTag('nextj', 'Next.js', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+    expect(db.select().from(posts).get()?.tags).toEqual(['nextjs']);
+  });
+
+  it('lets an unchanged name follow a changed identifier', () => {
+    createTag('nextj');
+    expect(updateTag('nextj', 'nextj', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+
+  // A merge takes the target's name; the one sent (a disabled field sends none) is not applied.
+  it('merges into an existing identifier without renaming either tag', () => {
+    createTag('next');
+    createTag('nextjs');
+    renameTag('nextjs', 'Next.js');
+    expect(updateTag('next', '', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  // The identifier is checked before the name is touched, so a refusal leaves the tag as it was.
+  it('changes nothing when the new identifier is refused', () => {
+    createTag('nextjs');
+    expect(updateTag('nextjs', 'Next.js', 'next.js')).toEqual({
+      ok: false,
+      error: TAG_SYMBOL_MESSAGE,
+    });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
   });
 });
 

@@ -14,8 +14,15 @@ import {
 // the three copies rewritten, `updatedAt` untouched — are lib/tags.test.ts. The tags here are made
 // by the spec: the seeded ones are shared with every other spec running against the same DB.
 
-const row = (page: Page, slug: string) =>
-  page.locator('li').filter({ has: page.getByLabel(`「${slug}」の表示名`) });
+// Opens a tag's row for editing and returns its two fields. One row is open at a time, so the
+// labels are unambiguous — `exact`, since the add form's 新しいタグの識別子 contains 識別子.
+async function edit(page: Page, slug: string) {
+  await page.getByRole('button', { name: `「${slug}」を編集` }).click();
+  return {
+    slug: page.getByLabel('識別子', { exact: true }),
+    name: page.getByLabel('表示名', { exact: true }),
+  };
+}
 
 async function tagsOf(page: Page, editPath: string): Promise<string> {
   await page.goto(editPath);
@@ -33,10 +40,11 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   const other = `b${stamp}`;
   // A display name may carry what an identifier may not — spaces here, as `Next.js` would a dot.
   const shown = `E2E 管理 ${stamp}`;
+  const editButton = (slug: string) => page.getByRole('button', { name: `「${slug}」を編集` });
   const add = async (slug: string) => {
     await page.getByLabel('新しいタグの識別子').fill(slug);
     await page.getByRole('button', { name: '追加', exact: true }).click();
-    await expect(page.getByLabel(`「${slug}」の表示名`)).toBeVisible();
+    await expect(editButton(slug)).toBeVisible();
   };
 
   await page.goto('/admin/tags');
@@ -64,12 +72,14 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await expectPublished(page);
   const editPath = new URL(page.url()).pathname;
 
-  // A display name: the tag page keeps its URL and takes the name, and the editor's list shows
-  // it beside the identifier, which is still what the chip says.
+  // A display name: the row shows it beside the identifier, the tag page keeps its URL and takes
+  // the name, and the editor's list shows it beside the identifier.
   await page.goto('/admin/tags');
-  await page.getByLabel(`「${first}」の表示名`).fill(shown);
-  await row(page, first).getByRole('button', { name: '保存' }).click();
-  await expect(page.getByLabel(`「${first}」の表示名`)).toHaveValue(shown);
+  let fields = await edit(page, first);
+  await fields.name.fill(shown);
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(fields.name).toHaveCount(0);
+  await expect(page.locator('li').filter({ has: editButton(first) })).toContainText(shown);
   await page.goto(`/tags/${first}`);
   await expect(page.getByRole('heading', { level: 1 })).toContainText(`#${shown}`);
   await page.goto('/admin/posts/new');
@@ -77,31 +87,37 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await tagCombobox(page).fill(first);
   await expect(page.getByRole('option', { name: `${first} ${shown}` })).toBeVisible();
 
-  // A new identifier: the post follows it, the display name stays, and the old URL is gone.
+  // A new identifier: the note says what happens before it is sent, the post follows it, the
+  // display name stays, and the old URL is gone.
   await page.goto('/admin/tags');
-  await page.getByRole('button', { name: `「${first}」の識別子を変更` }).click();
-  await page.getByLabel(`「${first}」の新しい識別子`).fill(moved);
-  await page.getByRole('button', { name: '識別子を変更（1 件の記事）' }).click();
-  await expect(page.getByLabel(`「${moved}」の表示名`)).toHaveValue(shown);
+  fields = await edit(page, first);
+  await fields.slug.fill(moved);
+  await expect(page.getByText(`URL が /tags/${moved} に変わります。`)).toBeVisible();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(editButton(moved)).toBeVisible();
+  await expect(page.locator('li').filter({ has: editButton(moved) })).toContainText(shown);
   expect((await page.goto(`/tags/${first}`))?.status()).toBe(404);
   await page.goto(`/tags/${moved}`);
   await expect(page.getByRole('heading', { level: 1 })).toContainText(`#${shown}`);
   expect(await tagsOf(page, editPath)).toBe(moved);
 
-  // An identifier that is already a tag: the button says merge, and the post moves onto it.
+  // An identifier that is already a tag: the note and the button both say merge, and the post
+  // moves onto it.
   await page.goto('/admin/tags');
   await add(other);
-  await page.getByRole('button', { name: `「${moved}」の識別子を変更` }).click();
-  await page.getByLabel(`「${moved}」の新しい識別子`).fill(other);
-  await page.getByRole('button', { name: `「${other}」に統合（1 件の記事）` }).click();
-  await expect(page.getByLabel(`「${moved}」の表示名`)).toHaveCount(0);
+  fields = await edit(page, moved);
+  await fields.slug.fill(other);
+  await expect(page.getByText(`${other} に統合され、このタグは削除されます。`)).toBeVisible();
+  await page.getByRole('button', { name: '統合して保存' }).click();
+  await expect(editButton(moved)).toHaveCount(0);
   expect(await tagsOf(page, editPath)).toBe(other);
 
   // Deleted: a tag in use asks once more, naming the count, and then leaves the post.
   await page.goto('/admin/tags');
-  await row(page, other).getByRole('button', { name: '削除', exact: true }).click();
-  await row(page, other).getByRole('button', { name: '1 件の記事から外して削除' }).click();
-  await expect(page.getByLabel(`「${other}」の表示名`)).toHaveCount(0);
+  await edit(page, other);
+  await page.getByRole('button', { name: '削除', exact: true }).click();
+  await page.getByRole('button', { name: '1 件の記事から外して削除' }).click();
+  await expect(editButton(other)).toHaveCount(0);
   expect((await page.goto(`/tags/${other}`))?.status()).toBe(404);
   expect(await tagsOf(page, editPath)).toBe('');
 });

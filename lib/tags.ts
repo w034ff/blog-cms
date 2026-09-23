@@ -209,6 +209,34 @@ export function changeTagSlug(from: string, raw: string): SlugChangeResult {
   });
 }
 
+export type UpdateResult = { ok: true; slug: string } | { ok: false; error: string };
+
+// /admin/tags' one 保存 for a tag: a display name and an identifier, either or both changed. The
+// identifier is checked first, so a refused one changes nothing. A merge (the identifier names a
+// tag that exists) takes that tag's display name, so the name sent with it is not applied.
+// Otherwise the name is set first, and `changeTagSlug` then keeps it — a name the form sent
+// unchanged that still equals the old identifier follows the identifier, as it would alone.
+export function updateTag(from: string, rawName: string, rawTo: string): UpdateResult {
+  const to = tagSlug(rawTo);
+  const moving = normalizeTagName(rawTo).toLowerCase() !== from;
+  if (moving) {
+    const problem = tagSlugProblem(rawTo);
+    if (problem !== null) return { ok: false, error: problem };
+    if (to === '') return { ok: false, error: '識別子を入力してください。' };
+  }
+  const current = listTags().find((tag) => tag.slug === from);
+  if (!current) return { ok: false, error: 'タグが見つかりません。' };
+  const merging = moving && listTags().some((tag) => tag.slug === to);
+
+  if (!merging && normalizeTagName(rawName) !== current.name) {
+    const renamed = renameTag(from, rawName);
+    if (!renamed.ok) return renamed;
+  }
+  if (!moving) return { ok: true, slug: from };
+  const changed = changeTagSlug(from, rawTo);
+  return changed.ok ? { ok: true, slug: changed.slug } : changed;
+}
+
 // How many posts carry each tag, drafts and pending edits included — what /admin/tags shows so a
 // delete is not a guess. A post counts once even when both its live column and its working copy
 // hold the tag.

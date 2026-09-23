@@ -2,35 +2,43 @@
 
 import { useActionState, useId, useState } from 'react';
 import {
-  changeTagSlugAction,
   createTagAction,
   deleteTagAction,
-  renameTagAction,
+  updateTagAction,
   type TagFormState,
 } from '@/app/actions/tags';
-import { TAG_NAME_MAX_LENGTH, tagSlug, tagSlugProblem } from '@/lib/content';
+import { TAG_NAME_MAX_LENGTH, normalizeTagName, tagSlug, tagSlugProblem } from '@/lib/content';
 import type { Tag } from '@/lib/types';
 
 const inputClass =
-  'min-w-0 flex-1 rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
-const buttonClass =
+  'w-full min-w-0 rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
+const secondaryButtonClass =
   'shrink-0 rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
-const linkButtonClass = 'shrink-0 text-sm hover:underline disabled:opacity-50';
-const fieldLabelClass = 'text-xs text-zinc-500 dark:text-zinc-400';
+const primaryButtonClass =
+  'shrink-0 rounded bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300';
+// One grey for everything secondary on this page (`zinc-500`, `zinc-400` in dark) and the body
+// colour for the rest: shades picked one by one had made five greys that meant nothing apart. A
+// row's data — identifier, display name, count — is all body colour, the identifier alone a little
+// heavier as the row's key; the column headings and each row's 編集, repeated down the right edge,
+// stay grey so the data reads before the chrome.
+//
+// One grid for the header and every row, so the columns line up down the page.
+const columnsClass =
+  'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3.5rem_3.5rem] items-center gap-x-4';
 
 const initialState: TagFormState = {};
 
 function ErrorLine({ message }: { message: string | undefined | null }) {
   if (!message) return null;
   return (
-    <p role='alert' className='mt-1 text-xs text-red-600 dark:text-red-400'>
+    <p role='alert' className='mt-2 text-xs text-red-600 dark:text-red-400'>
       {message}
     </p>
   );
 }
 
 // A new tag is typed as its identifier, the same as in the editor; its display name starts out
-// the same and is changed in its row afterwards.
+// the same and is changed from its row afterwards.
 export function NewTagForm() {
   const [state, action, pending] = useActionState(createTagAction, initialState);
   const [name, setName] = useState('');
@@ -42,7 +50,7 @@ export function NewTagForm() {
   }
   const problem = tagSlugProblem(name);
   return (
-    <form action={action}>
+    <form action={action} className='max-w-md'>
       <div className='flex gap-2'>
         <input
           name='name'
@@ -56,7 +64,7 @@ export function NewTagForm() {
         <button
           type='submit'
           disabled={pending || name.trim() === '' || problem !== null}
-          className={buttonClass}>
+          className={secondaryButtonClass}>
           追加
         </button>
       </div>
@@ -65,154 +73,212 @@ export function NewTagForm() {
   );
 }
 
-// Keyed by slug and name (page.tsx), so a saved rename, or a changed identifier, remounts the row.
-//
-// One tag, as two labelled lines: 表示名, the name readers see, editable in place; and 識別子, what
-// the editor takes and the URL uses, changed only through its own 変更 — which rewrites every post
-// holding it, or merges it into the tag it names when that already exists. The count and 削除 sit
-// in fixed-width columns so every name field is the same width down the list.
-export function TagRow({
+// The dictionary as a read-only table — identifier, display name, how many posts carry it — with
+// one row open for editing at a time. Every field, save button and 削除 used to sit open on every
+// row at once, which is what made the page read as clutter (2026-09-23).
+export function TagTable({
+  tags,
+  usage,
+}: {
+  tags: Tag[];
+  // Posts per identifier, drafts and pending edits included (lib/tags.ts `tagUsage`).
+  usage: Record<string, number>;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const slugs = tags.map((tag) => tag.slug);
+  return (
+    <div>
+      <div
+        className={`${columnsClass} border-b border-zinc-200 pb-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400`}>
+        <span>識別子</span>
+        <span>表示名</span>
+        <span className='text-right'>記事</span>
+        <span />
+      </div>
+      <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
+        {tags.map((tag) => (
+          <TagRow
+            // Keyed by both, so a saved change remounts the row with the server's values.
+            key={`${tag.slug}:${tag.name}`}
+            tag={tag}
+            usage={usage[tag.slug] ?? 0}
+            slugs={slugs}
+            open={open === tag.slug}
+            onOpen={() => setOpen(tag.slug)}
+            onClose={() => setOpen(null)}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function TagRow({
   tag,
   usage,
   slugs,
+  open,
+  onOpen,
+  onClose,
 }: {
   tag: Tag;
   usage: number;
-  // Every identifier in the dictionary, to tell a change from a merge before it is sent.
   slugs: string[];
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
 }) {
-  const [renameState, rename, renaming] = useActionState(renameTagAction, initialState);
-  const [slugState, changeSlug, changingSlug] = useActionState(changeTagSlugAction, initialState);
-  const [deleteState, remove, removing] = useActionState(deleteTagAction, initialState);
-  const [name, setName] = useState(tag.name);
-  const [editingSlug, setEditingSlug] = useState(false);
-  const [to, setTo] = useState(tag.slug);
-  const [confirming, setConfirming] = useState(false);
-  const slugId = useId();
+  return (
+    <li className='py-3'>
+      <div className={columnsClass}>
+        <span className='truncate text-sm font-medium'>{tag.slug}</span>
+        {/* Only a display name that differs is shown: the same word twice is the noise this
+            table is meant to be without. */}
+        <span className='truncate text-sm'>{tag.name !== tag.slug ? tag.name : ''}</span>
+        <span className='text-right text-sm tabular-nums'>{usage}</span>
+        <div className='text-right'>
+          {!open && (
+            <button
+              type='button'
+              aria-label={`「${tag.slug}」を編集`}
+              onClick={onOpen}
+              className='text-sm text-zinc-500 hover:underline dark:text-zinc-400'>
+              編集
+            </button>
+          )}
+        </div>
+      </div>
+      {open && <TagEditor tag={tag} usage={usage} slugs={slugs} onClose={onClose} />}
+    </li>
+  );
+}
 
-  const problem = editingSlug ? tagSlugProblem(to) : null;
+// The open row: both names as fields under one 保存, and 削除 set apart on the left. What a
+// changed identifier does to the posts is said under its field before anything is sent, and the
+// button says merge when that is what it will do.
+function TagEditor({
+  tag,
+  usage,
+  slugs,
+  onClose,
+}: {
+  tag: Tag;
+  usage: number;
+  slugs: string[];
+  onClose: () => void;
+}) {
+  const [state, update, saving] = useActionState(async (prev: TagFormState, formData: FormData) => {
+    const next = await updateTagAction(prev, formData);
+    if (next.at) onClose();
+    return next;
+  }, initialState);
+  const [deleteState, remove, removing] = useActionState(deleteTagAction, initialState);
+  const [to, setTo] = useState(tag.slug);
+  const [name, setName] = useState(tag.name);
+  const [confirming, setConfirming] = useState(false);
+  const formId = useId();
+  const slugFieldId = useId();
+  const nameFieldId = useId();
+
+  const moving = normalizeTagName(to).toLowerCase() !== tag.slug;
+  const problem = moving ? tagSlugProblem(to) : null;
   const target = tagSlug(to);
-  const merging = target !== tag.slug && slugs.includes(target);
+  const merging = moving && slugs.includes(target);
+  const unchanged = !moving && normalizeTagName(name) === tag.name;
   const posts = `${usage} 件の記事`;
 
   return (
-    <li className='py-3'>
-      <div className='grid grid-cols-[auto_minmax(0,1fr)_3rem_2.5rem] items-center gap-x-3 gap-y-2'>
-        <span className={fieldLabelClass}>表示名</span>
-        <form action={rename} className='flex min-w-0 gap-2'>
-          <input type='hidden' name='slug' value={tag.slug} />
+    <div className='mt-3 rounded border border-zinc-200 p-4 dark:border-zinc-800'>
+      {/* The delete form below cannot sit inside this one — a form nested in a form is dropped
+          by the parser — so 保存, placed beside キャンセル down there, names this form by id. */}
+      <form id={formId} action={update} className='grid gap-4 sm:grid-cols-2'>
+        <input type='hidden' name='slug' value={tag.slug} />
+        <div>
+          <label htmlFor={slugFieldId} className='mb-1 block text-xs font-bold'>
+            識別子
+          </label>
           <input
-            name='name'
-            aria-label={`「${tag.slug}」の表示名`}
+            id={slugFieldId}
+            name='to'
             maxLength={TAG_NAME_MAX_LENGTH}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
+            value={to}
+            onChange={(event) => setTo(event.target.value)}
             className={inputClass}
           />
-          <button
-            type='submit'
-            disabled={renaming || name.trim() === '' || name === tag.name}
-            className={buttonClass}>
-            保存
-          </button>
-        </form>
-        <span className='text-right text-sm text-zinc-500 dark:text-zinc-400'>{usage} 件</span>
-        <div className='text-right'>
-          {usage > 0 ? (
+          {/* Only what a change will do that the author could not take for granted — the posts
+              following the identifier they already expect; the URL moving, they may not. What the
+              field is, the page's own first line says. */}
+          {moving && (
+            <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
+              {merging
+                ? `${target} に統合され、このタグは削除されます。`
+                : `URL が /tags/${target} に変わります。`}
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor={nameFieldId} className='mb-1 block text-xs font-bold'>
+            表示名
+          </label>
+          <input
+            id={nameFieldId}
+            name='name'
+            maxLength={TAG_NAME_MAX_LENGTH}
+            value={name}
+            disabled={merging}
+            onChange={(event) => setName(event.target.value)}
+            className={`${inputClass} disabled:opacity-50`}
+          />
+          {merging && (
+            <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
+              統合先の表示名を使います。
+            </p>
+          )}
+        </div>
+      </form>
+      <ErrorLine message={problem ?? state.error ?? deleteState.error} />
+      <div className='mt-4 flex flex-wrap items-center justify-between gap-3'>
+        <form action={remove} className='flex items-center gap-3'>
+          <input type='hidden' name='slug' value={tag.slug} />
+          {usage > 0 && !confirming ? (
             <button
               type='button'
-              aria-expanded={confirming}
               onClick={() => setConfirming(true)}
-              className='text-sm text-red-600 hover:underline'>
+              className='text-sm text-red-600 hover:underline dark:text-red-400'>
               削除
             </button>
           ) : (
-            <form action={remove}>
-              <input type='hidden' name='slug' value={tag.slug} />
+            <>
               <button
                 type='submit'
                 disabled={removing}
-                className='text-sm text-red-600 hover:underline disabled:opacity-50'>
-                削除
+                className='text-sm text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+                {usage > 0 ? `${posts}から外して削除` : '削除'}
               </button>
-            </form>
+              {confirming && (
+                <button
+                  type='button'
+                  onClick={() => setConfirming(false)}
+                  className='text-sm text-zinc-500 hover:underline dark:text-zinc-400'>
+                  やめる
+                </button>
+              )}
+            </>
           )}
-        </div>
-
-        <span id={slugId} className={fieldLabelClass}>
-          識別子
-        </span>
-        {editingSlug ? (
-          <form
-            action={changeSlug}
-            className='col-span-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2'>
-            <input type='hidden' name='slug' value={tag.slug} />
-            <input
-              name='to'
-              aria-label={`「${tag.slug}」の新しい識別子`}
-              maxLength={TAG_NAME_MAX_LENGTH}
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
-              className={`${inputClass} basis-40`}
-            />
-            <button
-              type='submit'
-              disabled={changingSlug || problem !== null || target === '' || target === tag.slug}
-              className={`${linkButtonClass} text-red-600`}>
-              {merging ? `「${target}」に統合（${posts}）` : `識別子を変更（${posts}）`}
-            </button>
-            <button
-              type='button'
-              onClick={() => {
-                setEditingSlug(false);
-                setTo(tag.slug);
-              }}
-              className={`${linkButtonClass} text-zinc-600 dark:text-zinc-400`}>
-              やめる
-            </button>
-          </form>
-        ) : (
-          <div className='col-span-3 flex min-w-0 items-center gap-3'>
-            <span className='truncate text-sm'>{tag.slug}</span>
-            <button
-              type='button'
-              aria-label={`「${tag.slug}」の識別子を変更`}
-              onClick={() => setEditingSlug(true)}
-              className={`${linkButtonClass} text-zinc-600 dark:text-zinc-400`}>
-              変更
-            </button>
-          </div>
-        )}
-      </div>
-
-      {editingSlug && (
-        <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
-          {merging
-            ? `このタグの記事は「${target}」に付け替わり、このタグは消えます。`
-            : 'このタグの記事はすべて新しい識別子に付け替わります。'}
-          今のタグページの URL は使えなくなります。
-        </p>
-      )}
-      {confirming && (
-        <form action={remove} className='mt-2 flex items-center justify-end gap-4 text-sm'>
-          <input type='hidden' name='slug' value={tag.slug} />
+        </form>
+        <div className='flex gap-2'>
+          <button type='button' onClick={onClose} className={secondaryButtonClass}>
+            キャンセル
+          </button>
           <button
             type='submit'
-            disabled={removing}
-            className='text-red-600 hover:underline disabled:opacity-50'>
-            {posts}から外して削除
+            form={formId}
+            disabled={saving || unchanged || problem !== null || target === ''}
+            className={primaryButtonClass}>
+            {merging ? '統合して保存' : '保存'}
           </button>
-          <button
-            type='button'
-            onClick={() => setConfirming(false)}
-            className='text-zinc-600 hover:underline dark:text-zinc-400'>
-            やめる
-          </button>
-        </form>
-      )}
-      <ErrorLine message={renameState.error} />
-      <ErrorLine message={problem ?? slugState.error} />
-      <ErrorLine message={deleteState.error} />
-    </li>
+        </div>
+      </div>
+    </div>
   );
 }
