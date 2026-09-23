@@ -34,8 +34,12 @@ export function categoryLabel(id: CategoryId): string {
 // How many tags a post can carry. Enforced by the editor's field and refused at publish.
 export const MAX_TAGS = 5;
 
-// Longest tag name the dictionary accepts — a tag is a word or two, and the name is drawn as a chip.
+// Longest display name /admin/tags accepts — what readers see, which may be a phrase.
 export const TAG_NAME_MAX_LENGTH = 40;
+
+// Longest identifier: what an author types and what the editor draws as a chip. Zenn's limit for a
+// topic (`validateTopicLength`, 18), and what keeps any one chip inside the drawer's width.
+export const TAG_SLUG_MAX_LENGTH = 18;
 
 // A tag name as the dictionary stores it: NFKC (so a full-width `Ｒｅａｃｔ` is `React`), trimmed,
 // and with runs of whitespace collapsed to one space. Case is kept — the name is for display.
@@ -43,21 +47,40 @@ export function normalizeTagName(raw: string): string {
   return raw.normalize('NFKC').trim().replace(/\s+/g, ' ');
 }
 
-// The slug a new tag gets from its name (docs/editor-requirements.md §12.33): the normalized name,
-// lowercased, with whitespace turned into `-` and the characters that would break a URL path
-// segment or the form's comma-separated field removed. So `Next.js` and `next.js` are one tag, and
-// `React Server Components` is `react-server-components`. '' when nothing usable is left, which the
-// caller refuses. Only new tags go through this; the ones backfilled by drizzle/0010 kept the value
-// they were already stored under.
+// Half-width symbols and the space (docs/editor-requirements.md §12.33) — Zenn's own rule for
+// topics, `validateInvalidTopicLetters` in zenn-editor's packages/zenn-model/src/utils.ts, the same
+// character class. A tag written with none of them has one spelling: `Next.js`, `next.js` and
+// `next-js` can only be written `nextjs`. Checked after NFKC, so a full-width `＃` or `　` counts.
+const TAG_SYMBOLS = /[ -/:-@[-`{-~]/;
+
+export const TAG_SYMBOL_MESSAGE = 'タグに記号やスペースは使えません。';
+
+export function hasTagSymbols(name: string): boolean {
+  return TAG_SYMBOLS.test(normalizeTagName(name));
+}
+
+// Why typed text cannot be an identifier, or null when it can. Shared by the editor, which says it
+// as the text is typed, and the server, which refuses with the same words.
+export function tagSlugProblem(name: string): string | null {
+  if (hasTagSymbols(name)) return TAG_SYMBOL_MESSAGE;
+  if ([...normalizeTagName(name)].length > TAG_SLUG_MAX_LENGTH) {
+    return `タグは ${TAG_SLUG_MAX_LENGTH} 文字まで入力できます。`;
+  }
+  return null;
+}
+
+// The identifier a new tag gets from what was typed: the normalized text, lowercased, so `NextJS`
+// and `nextjs` are one tag. '' when that is empty or has a problem (`tagSlugProblem`) — a symbol is
+// refused rather than stripped, since stripping would make `C#` the tag `c`. Only new identifiers
+// go through this; the ones backfilled by drizzle/0010 kept the value they were already stored under.
 export function tagSlug(name: string): string {
-  const slug = normalizeTagName(name)
-    .toLowerCase()
-    .replace(/[,/?#%\\]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-|-$/g, '');
-  // `.` and `..` are path segments a URL resolves away, not a tag page.
-  return /^\.+$/.test(slug) ? '' : slug;
+  return tagSlugProblem(name) === null ? normalizeTagName(name).toLowerCase() : '';
+}
+
+// What the editor's search compares: lowercased with the symbols dropped, so typing `Next.js`
+// still finds `nextjs` — the tag the author is being steered to.
+export function tagSearchKey(text: string): string {
+  return normalizeTagName(text).toLowerCase().replace(new RegExp(TAG_SYMBOLS.source, 'g'), '');
 }
 
 // Parse the comma-separated tags field into slugs: trim each entry, drop empties and repeats, so

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { verifySession } from '@/lib/dal';
-import { createTag, deleteTag, renameTag } from '@/lib/tags';
+import { changeTagSlug, createTag, deleteTag, renameTag } from '@/lib/tags';
 
 // /admin/tags (docs/editor-requirements.md §12.33). Each action answers the form it came from:
 // `error` for a refusal the author has to read, `at` to tell one success from the next.
@@ -48,6 +48,17 @@ export async function deleteTagAction(
 ): Promise<TagFormState> {
   await verifySession();
   if (!deleteTag(field(formData, 'slug'))) return { error: 'タグが見つかりません。' };
+  revalidateTags();
+  return { at: Date.now() };
+}
+
+export async function changeTagSlugAction(
+  _prev: TagFormState,
+  formData: FormData,
+): Promise<TagFormState> {
+  await verifySession();
+  const result = changeTagSlug(field(formData, 'slug'), field(formData, 'to'));
+  if (!result.ok) return { error: result.error };
   revalidateTags();
   return { at: Date.now() };
 }

@@ -5,8 +5,11 @@ import {
   categoryLabel,
   isCategoryId,
   normalizeCategory,
+  hasTagSymbols,
   parseTags,
+  tagSearchKey,
   tagSlug,
+  tagSlugProblem,
 } from '@/lib/content';
 
 describe('categories', () => {
@@ -36,17 +39,44 @@ describe('categories', () => {
 
 describe('tagSlug', () => {
   it.each([
-    ['Next.js', 'next.js'],
-    ['React Server Components', 'react-server-components'],
+    ['NextJS', 'nextjs'],
     ['  ｒｅａｃｔ  ', 'react'],
-    ['C#', 'c'],
-    ['a, b / c?d%e', 'a-b-cde'],
     ['設計', '設計'],
-    ['- a -', 'a'],
+    ['csharp', 'csharp'],
     ['', ''],
-    ['..', ''],
   ])('%j → %j', (name, slug) => {
     expect(tagSlug(name)).toBe(slug);
+  });
+
+  // Refused, not stripped: stripped, `C#` would be the tag `c`.
+  it.each([
+    ['Next.js'],
+    ['next-js'],
+    ['C#'],
+    ['C++'],
+    ['react server'],
+    ['a_b'],
+    ['ｃ＃'],
+    ['設計　メモ'],
+  ])('refuses %j', (name) => {
+    expect(hasTagSymbols(name)).toBe(true);
+    expect(tagSlug(name)).toBe('');
+  });
+});
+
+describe('tagSlugProblem', () => {
+  it('allows 18 characters and refuses 19, counted as characters', () => {
+    expect(tagSlugProblem('a'.repeat(18))).toBeNull();
+    expect(tagSlugProblem('設'.repeat(18))).toBeNull();
+    expect(tagSlugProblem('a'.repeat(19))).toBe('タグは 18 文字まで入力できます。');
+    expect(tagSlug('a'.repeat(19))).toBe('');
+  });
+});
+
+describe('tagSearchKey', () => {
+  it('drops the symbols a slug cannot carry, so the tag they were reaching for is found', () => {
+    expect(tagSearchKey('Next.js')).toBe('nextjs');
+    expect(tagSearchKey(' React Server ')).toBe('reactserver');
   });
 });
 

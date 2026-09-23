@@ -14,6 +14,8 @@ import {
 // nextjs, react, rsc. What only a browser answers is here — the keys, the list, the chips and the
 // round trip through the form; the dictionary's own rules are lib/tags.test.ts.
 
+// Options are matched on their identifier alone: one whose display name differs carries it after
+// the identifier, and the seeded DB is the real one, whose names can be changed at any time.
 const listbox = (page: Page) => page.getByRole('listbox', { name: 'タグ' });
 const createRow = (page: Page) =>
   listbox(page).getByRole('option', { name: /を新しいタグとして追加$/ });
@@ -30,14 +32,17 @@ test('a dictionary tag is found by part of its name, whatever the case, and is n
   page,
 }) => {
   await newPostWithSettings(page, `E2E tag pick ${Date.now()}`);
-  // Part of the name finds it, and the typed text is still offered as a tag of its own — `rea` is
-  // not `react`.
+  // Part of the name finds it, and the typed text is still offered as a tag of its own, last — even
+  // when it is the start of a tag, or `go` beside `golang` could not be made here.
   await tagCombobox(page).fill('rea');
-  await expect(listbox(page).getByRole('option', { name: 'react', exact: true })).toBeVisible();
+  await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toBeVisible();
   await expect(createRow(page)).toHaveText('「rea」を新しいタグとして追加');
+  await expect(listbox(page).getByRole('option').last()).toHaveText(
+    '「rea」を新しいタグとして追加',
+  );
   // The whole name in another case is the tag itself, so the row offering to add it is gone.
   await tagCombobox(page).fill('REACT');
-  await expect(listbox(page).getByRole('option', { name: 'react', exact: true })).toBeVisible();
+  await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toBeVisible();
   await expect(createRow(page)).toHaveCount(0);
   await tagCombobox(page).press('Enter');
   await expect(tagsField(page)).toHaveValue('react');
@@ -52,12 +57,13 @@ test('a name the dictionary lacks is added only through its own row, and stays a
   page,
 }) => {
   await newPostWithSettings(page, `E2E tag create ${Date.now()}`);
-  const name = `E2E 新タグ ${Date.now()}`;
+  // Typed with capitals: the identifier, and so the chip, is lowercase. 14 characters of 18.
+  const name = `N${Date.now()}`;
   await tagCombobox(page).fill(name);
   await expect(createRow(page)).toHaveText(`「${name}」を新しいタグとして追加`);
   await createRow(page).click();
-  await expect(page.getByRole('button', { name: `「${name}」を外す` })).toBeVisible();
-  const slug = name.toLowerCase().replaceAll(' ', '-');
+  const slug = name.toLowerCase();
+  await expect(page.getByRole('button', { name: `「${slug}」を外す` })).toBeVisible();
   await expect(tagsField(page)).toHaveValue(slug);
   await expectAutosaved(page);
 
@@ -65,14 +71,36 @@ test('a name the dictionary lacks is added only through its own row, and stays a
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await openPostSettings(page);
-  await expect(page.getByRole('button', { name: `「${name}」を外す` })).toBeVisible();
+  await expect(page.getByRole('button', { name: `「${slug}」を外す` })).toBeVisible();
   // Now a dictionary tag like any other: typing it offers it, not a second one.
   await closePostSettings(page);
   await page.goto('/admin/posts/new');
   await openPostSettings(page);
   await tagCombobox(page).fill(name.toUpperCase());
-  await expect(listbox(page).getByRole('option', { name, exact: true })).toBeVisible();
+  await expect(listbox(page).getByRole('option', { name: slug, exact: true })).toBeVisible();
   await expect(createRow(page)).toHaveCount(0);
+});
+
+test('a name with a symbol is refused as it is typed, and the tag it was reaching for is offered', async ({
+  page,
+}) => {
+  await newPostWithSettings(page, `E2E tag symbols ${Date.now()}`);
+  const refusal = page.getByRole('alert').filter({ hasText: '記号やスペース' });
+  await tagCombobox(page).fill('Next.js');
+  await expect(refusal).toHaveText('タグに記号やスペースは使えません。');
+  await expect(listbox(page).getByRole('option', { name: /^nextjs\b/ })).toBeVisible();
+  await expect(createRow(page)).toHaveCount(0);
+  await tagCombobox(page).press('Enter');
+  await expect(tagsField(page)).toHaveValue('nextjs');
+  await expect(refusal).toHaveCount(0);
+
+  // With nothing to offer, the refusal alone: no row, and Enter adds nothing. Not `C#` — its key
+  // `c` finds `rsc`, which is offered like any other match.
+  await tagCombobox(page).fill('q++');
+  await expect(refusal).toBeVisible();
+  await expect(listbox(page)).toBeHidden();
+  await tagCombobox(page).press('Enter');
+  await expect(tagsField(page)).toHaveValue('nextjs');
 });
 
 test('Escape closes the list and keeps the drawer; the next Escape closes the drawer', async ({
@@ -140,10 +168,10 @@ test('a sixth tag is refused as it is typed, and the refusal goes when the text 
   await expect(limit).toBeVisible();
   await page.getByRole('button', { name: '「mdx」を外す' }).click();
   await expect(limit).toHaveCount(0);
-  // Pressing × took focus out of the box, which shuts the list; typing again opens it. Something
-  // other than the `n` already there: filling the same value changes nothing, so React reports no
-  // change and nothing opens.
-  await tagCombobox(page).fill('ne');
+  // Pressing × took focus out of the box, which shuts the list; typing again opens it — `md`, for
+  // the tag just taken back. Something other than the `n` already there: filling the same value
+  // changes nothing, so React reports no change and nothing opens.
+  await tagCombobox(page).fill('md');
   await expect(listbox(page)).toBeVisible();
 });
 
@@ -157,7 +185,7 @@ test('an Enter that confirms an IME composition chooses nothing', async ({ page 
   // would pass either way, the assertions below landing before the add's fetch did (measured).
   const client = await page.context().newCDPSession(page);
   await client.send('Input.imeSetComposition', { text: 'rs', selectionStart: 2, selectionEnd: 2 });
-  await expect(listbox(page).getByRole('option', { name: 'rsc', exact: true })).toBeVisible();
+  await expect(listbox(page).getByRole('option', { name: /^rsc\b/ })).toBeVisible();
   await client.send('Input.dispatchKeyEvent', {
     type: 'keyDown',
     key: 'Enter',

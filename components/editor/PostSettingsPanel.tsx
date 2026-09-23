@@ -62,7 +62,7 @@ function CategoryField({
   const labelId = useId();
   return (
     <div className='text-sm'>
-      <span id={labelId} className='mb-1 block text-zinc-600 dark:text-zinc-400'>
+      <span id={labelId} className='mb-1 block font-bold'>
         カテゴリ
       </span>
       <div role='radiogroup' aria-labelledby={labelId} className='flex gap-2'>
@@ -316,9 +316,9 @@ export function PostSettingsPanel({
           投稿 alone. From then on, off and on again restore the post as it was dated. */}
           {everPublished && (
             <div className='space-y-2 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
-              {/* A section heading, a step below the drawer title (18px) and a step above the field
-              labels (カテゴリ・タグ・サムネイル, 14px grey) — this is the one control here that acts
-              the moment it is pressed. */}
+              {/* A heading a step below the drawer title, and the same as every field's own
+              name above it (サムネイル・カテゴリ・タグ, 14px bold — matched 2026-09-23 so the
+              drawer has one kind of label; grey is left to the notes under a field). */}
               <h3 className='text-sm font-bold'>公開状態</h3>
               <div className='flex items-center gap-3'>
                 {/* Named 公開, not by the heading: "公開状態, on" leaves the direction open, and
