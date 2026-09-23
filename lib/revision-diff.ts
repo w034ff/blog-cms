@@ -112,12 +112,19 @@ export function diffBody(beforeBody: string, afterBody: string): DiffBlock[] {
   );
 }
 
-// The fields besides the body, listed only where they differ.
-export function diffFields(before: DraftContent, after: DraftContent): FieldChange[] {
+// The fields besides the body, listed only where they differ. Tags are compared as slugs and shown
+// by name: `tagNames` is the dictionary (lib/tags.ts), passed in so this stays a pure function, and a
+// slug it lacks shows as itself.
+export function diffFields(
+  before: DraftContent,
+  after: DraftContent,
+  tagNames: ReadonlyMap<string, string> = new Map(),
+): FieldChange[] {
+  const named = (slugs: string[]) => slugs.map((slug) => tagNames.get(slug) ?? slug).join(', ');
   const fields: [string, string, string][] = [
     ['タイトル', before.title, after.title],
     ['カテゴリ', categoryLabel(before.category), categoryLabel(after.category)],
-    ['タグ', before.tags.join(', '), after.tags.join(', ')],
+    ['タグ', named(before.tags), named(after.tags)],
     ['サムネイル', before.thumbnail, after.thumbnail],
   ];
   return fields
@@ -125,8 +132,12 @@ export function diffFields(before: DraftContent, after: DraftContent): FieldChan
     .map(([label, was, is]) => ({ label, before: was, after: is }));
 }
 
-export function diffRevision(before: DraftContent, after: DraftContent): RevisionDiff {
-  const fields = diffFields(before, after);
+export function diffRevision(
+  before: DraftContent,
+  after: DraftContent,
+  tagNames?: ReadonlyMap<string, string>,
+): RevisionDiff {
+  const fields = diffFields(before, after, tagNames);
   const body = diffBody(before.body, after.body);
   return { fields, body, identical: fields.length === 0 && body.length === 0 };
 }

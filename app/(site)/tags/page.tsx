@@ -17,12 +17,12 @@ export default async function TagsIndexPage() {
         <p className='text-zinc-500 dark:text-zinc-400'>タグはまだありません。</p>
       ) : (
         <ul className='flex flex-wrap gap-2'>
-          {tags.map(({ tag, count }) => (
-            <li key={tag}>
+          {tags.map(({ slug, name, count }) => (
+            <li key={slug}>
               <Link
-                href={`/tags/${encodeURIComponent(tag)}`}
+                href={`/tags/${encodeURIComponent(slug)}`}
                 className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-200 dark:hover:bg-zinc-700'>
-                #{tag} <span className='text-zinc-500 dark:text-zinc-400'>({count})</span>
+                #{name} <span className='text-zinc-500 dark:text-zinc-400'>({count})</span>
               </Link>
             </li>
           ))}

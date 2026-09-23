@@ -5,6 +5,8 @@ import {
   categoryLabel,
   isCategoryId,
   normalizeCategory,
+  parseTags,
+  tagSlug,
 } from '@/lib/content';
 
 describe('categories', () => {
@@ -30,4 +32,27 @@ describe('categories', () => {
       expect(normalizeCategory(value)).toBe(DEFAULT_CATEGORY);
     },
   );
+});
+
+describe('tagSlug', () => {
+  it.each([
+    ['Next.js', 'next.js'],
+    ['React Server Components', 'react-server-components'],
+    ['  ｒｅａｃｔ  ', 'react'],
+    ['C#', 'c'],
+    ['a, b / c?d%e', 'a-b-cde'],
+    ['設計', '設計'],
+    ['- a -', 'a'],
+    ['', ''],
+    ['..', ''],
+  ])('%j → %j', (name, slug) => {
+    expect(tagSlug(name)).toBe(slug);
+  });
+});
+
+describe('parseTags', () => {
+  it('splits, trims and drops empties and repeats', () => {
+    expect(parseTags(' a, b,,a , c ')).toEqual(['a', 'b', 'c']);
+    expect(parseTags('')).toEqual([]);
+  });
 });

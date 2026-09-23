@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
+import { knownTagSlugs } from '@/lib/tags';
 import { isUploadPath } from '@/lib/thumbnail';
 import { generateUniqueSlug } from '@/lib/slug';
 
@@ -19,7 +20,8 @@ const autosaveSchema = z.object({
     // Off-list values (a form that lost the field, an old tab) save under the default rather than
     // failing the save — the same trade `thumbnail` below makes.
     category: z.unknown().transform(normalizeCategory),
-    tags: z.array(z.string()).catch([]),
+    // Only dictionary slugs are stored (lib/tags.ts `knownTagSlugs`).
+    tags: z.array(z.string()).catch([]).transform(knownTagSlugs),
     body: z.string().catch(''),
     // Normalized rather than rejected, so a bad value can never be the reason a
     // draft fails to save. '' is the column's "author chose none" state and the

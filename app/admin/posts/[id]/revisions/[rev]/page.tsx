@@ -13,6 +13,7 @@ import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
 import { diffRevision } from '@/lib/revision-diff';
 import { getRevision } from '@/lib/revisions';
+import { resolveTags, tagNames } from '@/lib/tags';
 import type { DraftContent, Post } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -81,8 +82,14 @@ export default async function RevisionPreviewPage({
   if (!post) notFound();
   const version = versionOf(post, rev);
   if (!version) notFound();
+  const names = tagNames();
 
-  const shown: Post = { ...post, ...version.content };
+  // The version's own tags, named — `post.tagList` is the live column's.
+  const shown: Post = {
+    ...post,
+    ...version.content,
+    tagList: resolveTags(version.content.tags, names),
+  };
   // What the editor opens with: the working copy when there is one. The 差分 view runs from it to
   // the version — what pressing the button would change (§9).
   const current = post.draftContent ?? liveContent(post);
@@ -91,7 +98,7 @@ export default async function RevisionPreviewPage({
   const showDiff = (await searchParams).view !== 'body';
   // Computed on both views: the button reads it too. Restoring a version the editor already holds
   // would change nothing, so the button stays in place but cannot be pressed.
-  const diff = diffRevision(current, version.content);
+  const diff = diffRevision(current, version.content, names);
   const { html, toc } = showDiff
     ? { html: '', toc: [] }
     : await renderMdxToHtml(shown.body, { resolveCard });

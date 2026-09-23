@@ -17,7 +17,17 @@ export type PostFrontmatter = {
   updatedAt: string;
 };
 
+// A dictionary entry (lib/tags.ts): `slug` is what posts store and the URL, `name` is what shows.
+export type Tag = {
+  slug: string;
+  name: string;
+};
+
 export type Post = PostFrontmatter & {
+  // `tags` resolved against the dictionary, for the surfaces that draw them. Not part of
+  // PostFrontmatter, and so not of DraftContent: a name is the dictionary's, not the post's, and a
+  // rename must not read as an unpublished edit.
+  tagList: Tag[];
   // Stable internal id (PK). The editor and admin address posts by this; the
   // public site addresses them by `slug`.
   id: number;
@@ -43,8 +53,7 @@ export type DraftContent = Omit<PostFrontmatter, 'draft' | 'date' | 'updatedAt'>
   body: string;
 };
 
-export type TagCount = {
-  tag: string;
+export type TagCount = Tag & {
   count: number;
 };
 

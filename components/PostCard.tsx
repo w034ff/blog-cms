@@ -51,14 +51,14 @@ export function PostCard({ post }: Props) {
             {excerpt}
           </p>
         )}
-        {post.tags.length > 0 && (
+        {post.tagList.length > 0 && (
           <ul className='mt-3 flex flex-wrap gap-2'>
-            {post.tags.map((tag) => (
-              <li key={tag}>
+            {post.tagList.map(({ slug, name }) => (
+              <li key={slug}>
                 <Link
-                  href={`/tags/${encodeURIComponent(tag)}`}
+                  href={`/tags/${encodeURIComponent(slug)}`}
                   className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
-                  #{tag}
+                  #{name}
                 </Link>
               </li>
             ))}

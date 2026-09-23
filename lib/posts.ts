@@ -5,6 +5,7 @@ import { CATEGORIES, normalizeCategory, type CategoryId } from '@/lib/content';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
+import { resolveTags, tagNames } from '@/lib/tags';
 import type { CategoryCount, DraftContent, Post, TagCount } from '@/lib/types';
 
 const tagsSchema = z.array(z.string()).catch([]);
@@ -25,14 +26,18 @@ export type PostForEdit = Post & {
 // surfaces have no use for it, and Post reaches every one of them.
 export type AdminPost = Post & { hasPendingEdits: boolean };
 
-function toPost(row: PostRow): Post {
+// `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
+// the dictionary does not have is dropped here, so no surface draws a tag whose page is a 404.
+function toPost(row: PostRow, names: ReadonlyMap<string, string>): Post {
+  const tagList = resolveTags(tagsSchema.parse(row.tags), names);
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     date: row.date,
     category: normalizeCategory(row.category),
-    tags: tagsSchema.parse(row.tags),
+    tags: tagList.map((tag) => tag.slug),
+    tagList,
     draft: row.draft,
     body: row.body,
     thumbnail: row.thumbnail,
@@ -48,13 +53,14 @@ export async function getAllPosts(): Promise<Post[]> {
     .where(and(eq(posts.draft, false), eq(posts.unlisted, false)))
     .orderBy(desc(posts.date))
     .all();
-  return rows.map(toPost);
+  const names = tagNames();
+  return rows.map((row) => toPost(row, names));
 }
 
 export async function getPostBySlug(slug: string): Promise<Post | null> {
   const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
   if (!row || row.draft) return null;
-  return toPost(row);
+  return toPost(row, tagNames());
 }
 
 // The complement of the above, and deliberately a second function rather than a flag on it.
@@ -73,7 +79,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 export async function getDraftBySlug(slug: string): Promise<Post | null> {
   const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
   if (!row || !row.draft) return null;
-  return toPost(row);
+  return toPost(row, tagNames());
 }
 
 // `draft_content` is written only for a published post (a draft's edits go straight to the live
@@ -85,8 +91,9 @@ export async function getDraftBySlug(slug: string): Promise<Post | null> {
 // publish button's own enabled state, which you have to already be in the editor to read.
 export async function listAllPosts(): Promise<AdminPost[]> {
   const rows = db.select().from(posts).orderBy(desc(posts.date)).all();
+  const names = tagNames();
   return rows.map((row) => {
-    const post = toPost(row);
+    const post = toPost(row, names);
     return {
       ...post,
       hasPendingEdits: hasUnpublishedEdits(
@@ -125,7 +132,7 @@ function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boo
 export async function getPostForEdit(id: number): Promise<PostForEdit | null> {
   const row = db.select().from(posts).where(eq(posts.id, id)).get();
   if (!row) return null;
-  const post = toPost(row);
+  const post = toPost(row, tagNames());
   const draftContent = row.draftContent ? normalizeDraftContent(row.draftContent) : null;
   return { ...post, draftContent, hasPendingEdits: hasUnpublishedEdits(post, draftContent) };
 }
@@ -142,25 +149,20 @@ export async function getPostsByCategory(category: CategoryId): Promise<Post[]> 
     .where(and(eq(posts.draft, false), eq(posts.unlisted, false), eq(posts.category, category)))
     .orderBy(desc(posts.date))
     .all();
-  return rows.map(toPost);
+  const names = tagNames();
+  return rows.map((row) => toPost(row, names));
 }
 
-// Tally the tags of the published posts, most frequent first with ties broken by name.
-function countTags(list: Post[]): [string, number][] {
-  const counts = new Map<string, number>();
-  for (const post of list) {
-    for (const tag of post.tags) {
-      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+// The tags of the published posts, most frequent first with ties broken by name. Counted from
+// `tagList`, which toPost has already resolved, so a slug the dictionary lacks is not counted.
+export async function getAllTags(): Promise<TagCount[]> {
+  const counts = new Map<string, TagCount>();
+  for (const post of await getAllPosts()) {
+    for (const tag of post.tagList) {
+      counts.set(tag.slug, { ...tag, count: (counts.get(tag.slug)?.count ?? 0) + 1 });
     }
   }
-  return Array.from(counts.entries()).sort(
-    ([aName, aCount], [bName, bCount]) => bCount - aCount || aName.localeCompare(bName),
-  );
-}
-
-export async function getAllTags(): Promise<TagCount[]> {
-  const counted = countTags(await getAllPosts());
-  return counted.map(([tag, count]) => ({ tag, count }));
+  return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 // In CATEGORIES' order rather than by count: the list is fixed and short, so its own order is the

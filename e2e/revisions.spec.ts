@@ -78,7 +78,7 @@ test('リビジョン履歴 cannot be pressed while an edit is unsaved (row 10)'
   await expect(history).toBeEnabled();
 
   // A field in the drawer arms autosave like the body does, and keeps the drawer open to watch.
-  await page.getByLabel('タグ（カンマ区切り）').fill('gate');
+  await page.getByRole('radio', { name: 'ブログ' }).check();
   await expect(history).toBeDisabled();
   await expectAutosaved(page);
   await expect(history).toBeEnabled();

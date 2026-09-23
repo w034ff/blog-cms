@@ -132,3 +132,17 @@ export const postRevisions = sqliteTable('post_revisions', {
   // reason `draft_content` is: `$type` asserts the shape of rows written before a field existed.
   content: text('content', { mode: 'json' }).$type<DraftContent>().notNull(),
 });
+
+// The tag dictionary (docs/editor-requirements.md §12.33). A post's `tags` column, its working
+// copy and its revisions hold slugs from here, never names: `slug` is the URL (`/tags/<slug>`)
+// and is fixed once the tag exists, `name` is what every surface shows and is the part that can be
+// renamed. A tag reaches this table from the editor (typed, then confirmed as new) or from
+// /admin/tags; nothing else creates one.
+export const tags = sqliteTable('tags', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull().unique(),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});

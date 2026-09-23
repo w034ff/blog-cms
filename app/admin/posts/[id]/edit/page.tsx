@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
 import { getPostForEdit, liveContent } from '@/lib/posts';
+import { listTags } from '@/lib/tags';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +36,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
         // `date` is stamped at first publish and never cleared (lib/posts-write.ts).
         everPublished={post.date !== ''}
         hasPendingEdits={post.hasPendingEdits}
+        tagDictionary={listTags()}
       />
     </section>
   );

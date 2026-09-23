@@ -10,6 +10,7 @@ function post(overrides: Partial<Post> = {}): Post {
     date: '2026-09-04T00:00:00.000Z',
     category: 'tech',
     tags: [],
+    tagList: [],
     draft: false,
     body: '',
     thumbnail: '',

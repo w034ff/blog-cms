@@ -48,6 +48,9 @@ export default async function AdminHome() {
           <Link href='/admin/posts/new' className='font-medium hover:underline'>
             新規記事
           </Link>
+          <Link href='/admin/tags' className='hover:underline'>
+            タグ
+          </Link>
           <form action={logout}>
             <button type='submit' className='text-zinc-500 hover:underline dark:text-zinc-400'>
               ログアウト

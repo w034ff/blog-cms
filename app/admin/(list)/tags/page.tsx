@@ -1,0 +1,39 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { verifySession } from '@/lib/dal';
+import { listTags, tagUsage } from '@/lib/tags';
+import { NewTagForm, TagRow } from './TagForms';
+
+export const metadata: Metadata = { title: 'タグ' };
+
+export const dynamic = 'force-dynamic';
+
+// The tag dictionary's own screen (docs/editor-requirements.md §12.33): the editor admits tags as
+// they are written, and this is where they are tidied — renamed, or removed from every post. The
+// slug is not shown: it never changes, so there is nothing to do with it here.
+export default async function AdminTagsPage() {
+  await verifySession();
+  const tags = listTags();
+  const usage = tagUsage();
+
+  return (
+    <section>
+      <div className='mb-6 flex items-center justify-between gap-4'>
+        <h1 className='text-2xl font-bold tracking-tight'>タグ</h1>
+        <Link href='/admin' className='text-sm hover:underline'>
+          記事一覧
+        </Link>
+      </div>
+      <NewTagForm />
+      {tags.length === 0 ? (
+        <p className='mt-6 text-zinc-500 dark:text-zinc-400'>タグはまだありません。</p>
+      ) : (
+        <ul className='mt-6 divide-y divide-zinc-200 dark:divide-zinc-800'>
+          {tags.map((tag) => (
+            <TagRow key={`${tag.slug}:${tag.name}`} tag={tag} usage={usage.get(tag.slug) ?? 0} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}

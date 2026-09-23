@@ -34,6 +34,12 @@ function main(): void {
        body=excluded.body, updated_at=excluded.updated_at`,
   );
 
+  // A post's tags are slugs from the dictionary (docs/editor-requirements.md §12.33), and a slug
+  // the dictionary lacks is dropped when read. The frontmatter values are taken as slugs as they
+  // are — the same rule drizzle/0010 used for the tags already in the DB — and admitted here, so a
+  // fresh clone's import does not lose them.
+  const admitTag = db.prepare(`INSERT OR IGNORE INTO tags (slug, name) VALUES (?, ?)`);
+
   const files = readdirSync(POSTS_DIR).filter((f) => f.endsWith('.mdx'));
   let count = 0;
   for (const file of files) {
@@ -44,13 +50,17 @@ function main(): void {
       console.warn(`Skipping ${file}: missing title/date`);
       continue;
     }
+    const tags = Array.isArray(fm.tags)
+      ? fm.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim() !== '')
+      : [];
+    for (const tag of tags) admitTag.run(tag, tag);
     insert.run({
       slug,
       title: fm.title,
       date: fm.date,
       description: fm.description ?? '',
       category: normalizeCategory(fm.category),
-      tags: JSON.stringify(Array.isArray(fm.tags) ? fm.tags : []),
+      tags: JSON.stringify(tags),
       draft: fm.draft ? 1 : 0,
       body: parsed.content.trim(),
       now: new Date().toISOString(),

@@ -1,10 +1,13 @@
 import { test, expect } from '@playwright/test';
 import {
+  addTag,
   closePostSettings,
   expectAutosaved,
   expectDraft,
   expectPublished,
   openPostSettings,
+  tagCombobox,
+  tagsField,
 } from './editor-authoring';
 
 // 記事の設定 collapses the metadata fields behind a toggle on the editor's pinned bar. Two
@@ -24,7 +27,9 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await openPostSettings(page);
   const blog = page.getByRole('radio', { name: 'ブログ' });
   await blog.check();
-  await page.getByLabel('タグ（カンマ区切り）').fill('tiptap, prosemirror');
+  // Two tags the seeded dictionary has (drizzle/0010 admitted the ones already in use).
+  await addTag(page, 'rea', 'react');
+  await addTag(page, 'rsc');
 
   // The drawer is modal (PostSettingsPanel.tsx): its own backdrop catches a click into the body
   // and closes the drawer rather than letting it through, so the panel has to be closed explicitly
@@ -43,6 +48,7 @@ test('values set inside 記事の設定 survive a publish made while it is close
   // the reload alone reads back what publish stored, not what the page now holds. By selector, not
   // by role: the drawer is closed, and `getByRole` does not see into a hidden subtree.
   await expect(page.locator('input[name="category"][value="blog"]')).toBeChecked();
+  await expect(tagsField(page)).toHaveValue('react,rsc');
 
   // Round-trip through the server: reload the edit page and read the fields back. A payload
   // that dropped them would come back with the default category and no tags.
@@ -50,14 +56,15 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await openPostSettings(page);
   await expect(blog).toBeChecked();
-  await expect(page.getByLabel('タグ（カンマ区切り）')).toHaveValue('tiptap, prosemirror');
+  await expect(tagsField(page)).toHaveValue('react,rsc');
+  await expect(page.getByRole('button', { name: '「react」を外す' })).toBeVisible();
 });
 
 // The publish button sits on the same pinned bar as the metadata fields' own toggle, a keystroke
 // away from them. Enter in one of them would otherwise activate it — the browser's implicit
 // submission picks the form's first submit button, which is 投稿. The guard is bound to two
-// wrappers now, not one: the panel left the block that used to carry it. タグ is the field pressed
-// in the panel: it is a text field, which is what implicit submission starts from.
+// wrappers now, not one: the panel left the block that used to carry it. タグ's text box is the
+// field pressed in the panel: a text field is what implicit submission starts from.
 test('Enter in a metadata field does not publish', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -65,7 +72,7 @@ test('Enter in a metadata field does not publish', async ({ page }) => {
   await page.getByLabel('タイトル').fill('E2E enter guard');
   await page.getByLabel('タイトル').press('Enter');
   await openPostSettings(page);
-  await page.getByLabel('タグ（カンマ区切り）').press('Enter');
+  await tagCombobox(page).press('Enter');
   // And on a カテゴリ button: it is a radio underneath, an input like the rest.
   await page.getByRole('radio', { name: 'ブログ' }).press('Enter');
 

@@ -3,8 +3,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useRouter } from 'next/navigation';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { CATEGORIES, type CategoryId } from '@/lib/content';
+import type { Tag } from '@/lib/types';
+import { TagField } from './TagField';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
@@ -39,18 +41,6 @@ import { ChevronRightIcon } from './svg/ChevronRightIcon';
 // covering the whole screen there is no "outside" left for its outside-press check to catch, so
 // the backdrop gets its own `onClick` instead (InsertMenu's own comment).
 export const SETTINGS_PANEL_ID = 'post-settings-panel';
-
-const inputClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className='block text-sm'>
-      <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>{label}</span>
-      {children}
-    </label>
-  );
-}
 
 // カテゴリ as one button per entry of the fixed list (§12.32): every choice in sight, one press to
 // change. Real radios under the buttons, not a `<select>` and not buttons with state of their own —
@@ -101,8 +91,9 @@ type Props = {
   onClose: () => void;
   category: CategoryId;
   onCategoryChange: (value: CategoryId) => void;
-  tags: string;
-  onTagsChange: (value: string) => void;
+  tags: string[];
+  onTagsChange: (value: string[]) => void;
+  tagDictionary: Tag[];
   thumbnail: string;
   onThumbnailChange: (value: string) => void;
   body: string;
@@ -131,6 +122,7 @@ export function PostSettingsPanel({
   onCategoryChange,
   tags,
   onTagsChange,
+  tagDictionary,
   thumbnail,
   onThumbnailChange,
   body,
@@ -305,14 +297,7 @@ export function PostSettingsPanel({
           (requested 2026-09-21). */}
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
           <CategoryField value={category} onChange={onCategoryChange} />
-          <Field label='タグ（カンマ区切り）'>
-            <input
-              name='tags'
-              value={tags}
-              onChange={(event) => onTagsChange(event.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <TagField value={tags} onChange={onTagsChange} dictionary={tagDictionary} />
           {/* 公開 — the post's visibility as a switch, at the end of the group so it is decided
           after the fields above are checked (docs/editor-requirements.md §12.27). The header keeps
           投稿/更新 as the everyday way to publish; this is where the state is read and where a post

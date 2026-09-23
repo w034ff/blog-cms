@@ -31,11 +31,45 @@ export function categoryLabel(id: CategoryId): string {
   return CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 
-// Parse the comma-separated tags field into clean tag names: trim each entry and
-// drop empties, so stray commas and spaces don't produce ghost tags.
+// How many tags a post can carry. Enforced by the editor's field and refused at publish.
+export const MAX_TAGS = 5;
+
+// Longest tag name the dictionary accepts — a tag is a word or two, and the name is drawn as a chip.
+export const TAG_NAME_MAX_LENGTH = 40;
+
+// A tag name as the dictionary stores it: NFKC (so a full-width `Ｒｅａｃｔ` is `React`), trimmed,
+// and with runs of whitespace collapsed to one space. Case is kept — the name is for display.
+export function normalizeTagName(raw: string): string {
+  return raw.normalize('NFKC').trim().replace(/\s+/g, ' ');
+}
+
+// The slug a new tag gets from its name (docs/editor-requirements.md §12.33): the normalized name,
+// lowercased, with whitespace turned into `-` and the characters that would break a URL path
+// segment or the form's comma-separated field removed. So `Next.js` and `next.js` are one tag, and
+// `React Server Components` is `react-server-components`. '' when nothing usable is left, which the
+// caller refuses. Only new tags go through this; the ones backfilled by drizzle/0010 kept the value
+// they were already stored under.
+export function tagSlug(name: string): string {
+  const slug = normalizeTagName(name)
+    .toLowerCase()
+    .replace(/[,/?#%\\]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '');
+  // `.` and `..` are path segments a URL resolves away, not a tag page.
+  return /^\.+$/.test(slug) ? '' : slug;
+}
+
+// Parse the comma-separated tags field into slugs: trim each entry, drop empties and repeats, so
+// stray commas and spaces don't produce ghost tags. Whether each slug is in the dictionary is the
+// server's question (lib/tags.ts `knownTagSlugs`) — this module is shared with the client.
 export function parseTags(raw: string): string[] {
-  return raw
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0),
+    ),
+  ];
 }

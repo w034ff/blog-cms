@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { posts } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+import { posts, tags } from '@/lib/db/schema';
 import { db } from '@/lib/db';
 import {
   getAllCategories,
@@ -22,7 +23,16 @@ vi.mock('@/lib/db', async () => {
 
 beforeEach(() => {
   db.delete(posts).run();
+  db.delete(tags).run();
 });
+
+// Posts hold dictionary slugs and a slug the dictionary lacks is dropped on read, so every tag a
+// seeded row carries is admitted first, named after itself — except where a test says otherwise.
+function admit(slugs: readonly string[]): void {
+  for (const slug of slugs) {
+    db.insert(tags).values({ slug, name: slug }).onConflictDoNothing().run();
+  }
+}
 
 type SeedOptions = {
   slug?: string | null;
@@ -37,6 +47,7 @@ type SeedOptions = {
 };
 
 function seed(options: SeedOptions = {}): number {
+  admit([...(options.tags ?? []), ...(options.draftContent?.tags ?? [])]);
   return db
     .insert(posts)
     .values({
@@ -341,13 +352,23 @@ describe('getPostsByTag / getPostsByCategory', () => {
 });
 
 describe('getAllTags / getAllCategories', () => {
+  it('reads tags by their dictionary names and drops a slug the dictionary lacks', async () => {
+    seed({ slug: 'a', tags: ['nextjs', 'gone'] });
+    db.update(tags).set({ name: 'Next.js' }).where(eq(tags.slug, 'nextjs')).run();
+    db.delete(tags).where(eq(tags.slug, 'gone')).run();
+    const [post] = await getAllPosts();
+    expect(post.tags).toEqual(['nextjs']);
+    expect(post.tagList).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+    expect(await getAllTags()).toEqual([{ slug: 'nextjs', name: 'Next.js', count: 1 }]);
+  });
+
   it('counts tags across published posts, sorted by count then name', async () => {
     seed({ slug: 'a', tags: ['ts', 'db'] });
     seed({ slug: 'b', tags: ['ts'] });
     seed({ slug: 'c', tags: ['secret'], draft: true });
     expect(await getAllTags()).toEqual([
-      { tag: 'ts', count: 2 },
-      { tag: 'db', count: 1 },
+      { slug: 'ts', name: 'ts', count: 2 },
+      { slug: 'db', name: 'db', count: 1 },
     ]);
   });
 

@@ -64,6 +64,20 @@
       "when": 1790152309733,
       "tag": "0008_fixed_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790156056101,
+      "tag": "0009_tag_dictionary",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790156056738,
+      "tag": "0010_backfill_tag_dictionary",
+      "breakpoints": true
     }
   ]
 }
