@@ -32,20 +32,20 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 ### 3.1 パース方式: AST 走査ではなく行スキャン
 
-**決定**: remark/unified の AST を組んで走査するのではなく、`lib/footnotes.ts` の `incompleteFootnotes`（`lib/footnotes.ts:30`）と同じ「行ベースの正規表現スキャン」で実装する。新規モジュール `lib/reading-time.ts` に `estimateReadingTime(body: string): number` を1つだけ置く（`lib/slug.ts` と同じ、小さく単機能な `lib/*.ts` の流儀）。
+**決定**: remark/unified の AST を組んで走査するのではなく、`lib/footnotes.ts` の `incompleteFootnotes`と同じ「行ベースの正規表現スキャン」で実装する。新規モジュール `lib/reading-time.ts` に `estimateReadingTime(body: string): number` を1つだけ置く（`lib/slug.ts` と同じ、小さく単機能な `lib/*.ts` の流儀）。
 
 **理由**: ホーム・タグ・カテゴリの一覧画面は記事ごとに `renderMdxToHtml`（`lib/render.ts`）を呼んでいない。一覧の読了時間表示のためだけに、記事1件ごとに remark→rehype のフル変換を余分に走らせるのは重い。「詳細ページだけ既存 AST を再利用し、一覧はスキャンで済ます」という案も検討したが、それだと同じ記事で一覧の値（スキャン）と詳細の値（AST）が食い違いうる——同じ記事はどの画面でも同じ「約n分」を出すべきなので（§6）、全画面で共通の軽量関数に統一する。
 
-`lib/footnotes.ts:11-13` がまったく同じ判断をすでに一度書いている:「Deliberately a scan rather than a parse. Pulling markdown-it in here would mean the editor's parser... loading in a server action to answer a yes/no question about two line shapes.」——読了時間もこれと同じ形の問い（この行は地の文か否か）である。
+`lib/footnotes.ts` の冒頭コメントがまったく同じ判断をすでに一度書いている:「Deliberately a scan rather than a parse. Pulling markdown-it in here would mean the editor's parser... loading in a server action to answer a yes/no question about two line shapes.」——読了時間もこれと同じ形の問い（この行は地の文か否か）である。
 
-一覧クエリ側の懸念（`body` 列を追加取得する必要があるか）は解消済み: `getAllPosts`/`listAllPosts`/`getPostBySlug`（`lib/posts.ts:32-51`）はいずれも `db.select()`（列指定なし）で全列を取得しており、`toPost`（`lib/posts.ts:17-30`）が `body: row.body` をそのまま `Post` に渡している。一覧側にクエリ変更は不要——`PostCard` はすでに完全な本文を手にしている。
+一覧クエリ側の懸念（`body` 列を追加取得する必要があるか）は解消済み: `getAllPosts`/`listAllPosts`/`getPostBySlug`（`lib/posts.ts`）はいずれも `db.select()`（列指定なし）で全列を取得しており、`toPost`（`lib/posts.ts`）が `body: row.body` をそのまま `Post` に渡している。一覧側にクエリ変更は不要——`PostCard` はすでに完全な本文を手にしている。
 
 ### 3.2 除外ルールの実装
 
-- フェンス判定は `lib/footnotes.ts:18` の `FENCE`（`` /^ {0,3}(`{3,}|~{3,})/` ``）と同じ形で、フェンス内の行を読み飛ばす。
+- フェンス判定は `lib/footnotes.ts` の `FENCE`（`` /^ {0,3}(`{3,}|~{3,})/` ``）と同じ形で、フェンス内の行を読み飛ばす。
 - `^<div class="(link-card|embed)"[^>]*></div>$` に一致する行は1行まるごと除外する。この形は実装が実際に吐く形そのもの——`components/editor/link-card-extension.ts` の `serializeLinkCard` と `components/editor/embed-extension.ts` の `serializeEmbed` がそれぞれ `` `<div class="link-card" data-href="${escapeHref(href)}"></div>` `` / `` `<div class="embed" data-href="${escapeHref(href)}"></div>` `` を `state.write` している。
-- 脚注参照 `[^label]`（`lib/footnotes.ts:26` の `REFERENCE`）はマッチした部分を文字列から取り除く。定義行 `[^label]: text`（`lib/footnotes.ts:22` の `DEFINITION`）はラベル部分だけ剥がし、本文（`text`）は残す。
-- 改行は `/\r?\n/` で分割する。`\n` 単独ではないのは `lib/footnotes.ts:35-41` と同じ理由——フォーム送信が値の改行を CRLF に書き換える（`docs/editor-pitfalls.md` §16.1）ため、`\r` が行末に残ったままだと後段の正規表現が丸ごと外れる。
+- 脚注参照 `[^label]`（`lib/footnotes.ts` の `REFERENCE`）はマッチした部分を文字列から取り除く。定義行 `[^label]: text`（`lib/footnotes.ts` の `DEFINITION`）はラベル部分だけ剥がし、本文（`text`）は残す。
+- 改行は `/\r?\n/` で分割する。`\n` 単独ではないのは `lib/footnotes.ts` の `incompleteFootnotes` と同じ理由——フォーム送信が値の改行を CRLF に書き換える（`docs/editor-pitfalls.md` §16.1）ため、`\r` が行末に残ったままだと後段の正規表現が丸ごと外れる。
 
 ### 3.3 文字数/単語数から分への換算
 
@@ -139,19 +139,19 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 **注意**（advisorレビューで指摘）: `route.md` が挙げる例の `GET` は引数なしだが、§7で決めた `?all=1` を読むにはリクエストが要る——実際の signature は `export async function GET(request: Request)` とし、`new URL(request.url).searchParams.get('all')` でクエリを読む。引数なしの `GET()` のままでは `?all=1` は実装できない。
 
-`app/sitemap.ts` は存在しない（確認済み）。`app/robots.ts` は存在するが、`siteIndexable`（`lib/site.ts:43`）による許可/拒否ポリシーを返すだけの静的な実装で、投稿を1件もクエリしていない——「全投稿を機械可読に列挙する」既存の前例としては使えず、フィード用のクエリはこの機能で新規に書く。
+`app/sitemap.ts` は存在しない（確認済み）。`app/robots.ts` は存在するが、`siteIndexable`（`lib/site.ts`）による許可/拒否ポリシーを返すだけの静的な実装で、投稿を1件もクエリしていない——「全投稿を機械可読に列挙する」既存の前例としては使えず、フィード用のクエリはこの機能で新規に書く。
 
 ## 3. データソースとサイトメタ情報
 
-- 投稿一覧: `getAllPosts()`（`lib/posts.ts:34-42`）をそのまま使う。すでに `draft=false` かつ `unlisted=false` でフィルタ済み（非公開限定URL投稿 §4 で追加）、`date` 降順。`Post` 型（`lib/types.ts:1-31`）に `title`・`slug`・`date`・`description`・`category`・`tags`・`body` に加えて `unlisted`・`updatedAt`（いずれも2026-09-06追加）も載っているが、このフィードが使うのは前者のみ——`unlisted` は `getAllPosts` のフィルタで既に処理済み、`updatedAt` は§4の決定によりフィードに出さない。追加クエリは不要。
-- サイト起点 URL: `siteOrigin`（`lib/site.ts:33`、`SITE_ORIGIN` 環境変数、既定 `http://localhost:3001`）。`app/layout.tsx:28` の `metadataBase: siteOrigin` と同じ値を使う。
+- 投稿一覧: `getAllPosts()`（`lib/posts.ts`）をそのまま使う。すでに `draft=false` かつ `unlisted=false` でフィルタ済み（非公開限定URL投稿 §4 で追加）、`date` 降順。`Post` 型（`lib/types.ts`）に `title`・`slug`・`date`・`description`・`category`・`tags`・`body` に加えて `unlisted`・`updatedAt`（いずれも2026-09-06追加）も載っているが、このフィードが使うのは前者のみ——`unlisted` は `getAllPosts` のフィルタで既に処理済み、`updatedAt` は§4の決定によりフィードに出さない。追加クエリは不要。
+- サイト起点 URL: `siteOrigin`（`lib/site.ts`、`SITE_ORIGIN` 環境変数、既定 `http://localhost:3001`）。`app/layout.tsx:28` の `metadataBase: siteOrigin` と同じ値を使う。
 - サイト名/概要: `SITE_NAME = 'Tech Blog'`・`SITE_DESCRIPTION = '個人技術ブログ'`（`app/shared-metadata.ts:6-7`）。
 
 ## 4. 各アイテムの内容
 
 **注意**（2026-09-06、advisorレビューで指摘）: 以下の2つは静かにXMLを壊す/読者向けの主要フィールドを汚す経路なので、実装時に必ず塞ぐこと。
 
-- `post.slug` は `string | null` 型（`lib/types.ts:29`、「in practice always set」というコメント付き）。`` `${siteOrigin}/posts/${post.slug}` `` のようにそのまま埋め込むと、万一 `null` の行があった場合 `/posts/null` という URL が `<link>`/`<guid>` にそのまま出力されてしまう——TypeScript はテンプレートリテラルへの `null` 埋め込みを型エラーにしない。**フィード組み立て時に `post.slug !== null` でフィルタする**（`getAllPosts()` が返す行は公開済みで実質必ず slug を持つはずだが、型がそう主張していない以上、実装側で明示的に弾く）。
+- `post.slug` は `string | null` 型（`lib/types.ts` の `Post.slug`、「in practice always set」というコメント付き）。`` `${siteOrigin}/posts/${post.slug}` `` のようにそのまま埋め込むと、万一 `null` の行があった場合 `/posts/null` という URL が `<link>`/`<guid>` にそのまま出力されてしまう——TypeScript はテンプレートリテラルへの `null` 埋め込みを型エラーにしない。**フィード組み立て時に `post.slug !== null` でフィルタする**（`getAllPosts()` が返す行は公開済みで実質必ず slug を持つはずだが、型がそう主張していない以上、実装側で明示的に弾く）。
 - `post.date` が `''`（未公開の sentinel）だと `new Date('').toUTCString()` は例外を投げず、文字列 `"Invalid Date"` を返す——これがそのまま `<pubDate>` に出ると多くのフィードバリデータで検証エラーになる。`getAllPosts()` は `draft=false` のみ返すので理論上 `date` は必ず設定済みだが、同じ理由（型が保証していない）で `date !== ''` をアイテム構築時にもう一度確認する。
 
 - `<title>`: `post.title`
@@ -168,7 +168,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 **決定**: フィードアイテムは `description` のみを載せ、`renderMdxToHtml` によるフルレンダリングは呼ばない。
 
-**理由**: `renderMdxToHtml`（`lib/render.ts:174-183`）は remark→rehype のフルパイプラインで、Shiki によるシンタックスハイライト（`rehype-pretty-code`）を含み、さらに `resolveCard` 経由でリンクカードごとに DB を引く可能性がある——記事1件あたり軽くない処理を、フィードリクエストのたびに直近 N 件ぶん走らせるのは重い。`description` は既に `Post` に載っている値で追加コストがゼロなので、フィードの要約にはそれで十分とする。全文配信（`content:encoded`）は将来検討（§9）。
+**理由**: `renderMdxToHtml`（`lib/render.ts`）は remark→rehype のフルパイプラインで、Shiki によるシンタックスハイライト（`rehype-pretty-code`）を含み、さらに `resolveCard` 経由でリンクカードごとに DB を引く可能性がある——記事1件あたり軽くない処理を、フィードリクエストのたびに直近 N 件ぶん走らせるのは重い。`description` は既に `Post` に載っている値で追加コストがゼロなので、フィードの要約にはそれで十分とする。全文配信（`content:encoded`）は将来検討（§9）。
 
 ## 6. エスケープ・依存ライブラリ
 
@@ -237,7 +237,7 @@ AGENTS.md「Requirements documents」の方針（表とコードを照合する�
 
 実装直後、ユーザーが実際に稼働中のdev serverで `/rss.xml` を開いて出力を貼ってくれたところ、`<link>`/`<guid>` が `https://blog.example.ts.net//posts/f377f7a9a768a5b4d6f2` のように二重スラッシュになっていた。
 
-**原因**: `siteOrigin`（`lib/site.ts:33`）は文字列ではなく `URL` オブジェクト。テンプレートリテラルに直接埋め込む（`` `${siteOrigin}/posts/...` ``）と `.toString()` が呼ばれ、`new URL('https://host').toString()` は末尾スラッシュ付きの `'https://host/'` を返す——そこに `/posts/...` を足すので二重になる。`tsc`・`lib/rss.test.ts`（当時は `siteOrigin` の値を厳密にアサートしていなかった）のどちらも検出できず、サンドボックス環境で `curl` が権限上使えなかったため自動検証もできなかった——**実際にブラウザ/実環境で見るまで気づけなかった不具合**。
+**原因**: `siteOrigin`（`lib/site.ts`）は文字列ではなく `URL` オブジェクト。テンプレートリテラルに直接埋め込む（`` `${siteOrigin}/posts/...` ``）と `.toString()` が呼ばれ、`new URL('https://host').toString()` は末尾スラッシュ付きの `'https://host/'` を返す——そこに `/posts/...` を足すので二重になる。`tsc`・`lib/rss.test.ts`（当時は `siteOrigin` の値を厳密にアサートしていなかった）のどちらも検出できず、サンドボックス環境で `curl` が権限上使えなかったため自動検証もできなかった——**実際にブラウザ/実環境で見るまで気づけなかった不具合**。
 
 **修正**: `siteOrigin` ではなく `siteOrigin.origin`（末尾スラッシュなしの文字列）を使うよう2箇所（アイテムの `<link>`、チャンネルの `<link>`）を変更。`lib/rss.test.ts` に二重スラッシュが出ないことを直接アサートする回帰テストを追加。
 
@@ -270,11 +270,11 @@ AGENTS.md「Requirements documents」の方針（表とコードを照合する�
 
 ## 2. なぜ opaque な slug だけで成立するか
 
-`lib/slug.ts:5-10` のコメントがこの機能を見越して書かれている:
+`lib/slug.ts` の `generateUniqueSlug` のコメントがこの機能を見越して書かれている:
 
 > "Every post's public URL is an auto-assigned opaque slug: 20 hex chars (80 bits of full entropy from crypto.randomBytes — not a UUID, whose fixed version and variant nibbles would waste ~6 bits). Assigned once at row creation and never shown or edited by the author, so the URL is also unguessable (**a forward-looking property for future unlisted posts**)."
 
-`getPostBySlug`（`lib/posts.ts:42-46`）は `draft` 以外に何もフィルタしていない——認証チェックも一切ない。つまり非公開URL投稿の「アクセス制御」の実体は、80bit のエントロピーを持つ slug が第三者に推測不可能であることそのもの。もし slug が連番やタイトル由来だったら、一覧から消しても総当たりや推測で読めてしまい、この機能は成立しない。
+`getPostBySlug`（`lib/posts.ts`）は `draft` 以外に何もフィルタしていない——認証チェックも一切ない。つまり非公開URL投稿の「アクセス制御」の実体は、80bit のエントロピーを持つ slug が第三者に推測不可能であることそのもの。もし slug が連番やタイトル由来だったら、一覧から消しても総当たりや推測で読めてしまい、この機能は成立しない。
 
 ## 3. スキーマ変更
 
@@ -284,7 +284,7 @@ AGENTS.md「Requirements documents」の方針（表とコードを照合する�
 unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 ```
 
-`thumbnail` 列（`lib/db/schema.ts:41`）より後ろ、テーブル定義の最後に置く。理由は `draftContent`・`thumbnail` と同じ制約——このテーブルは drizzle-kit push が壊れており、ALTER TABLE ADD COLUMN として末尾に足す形以外のスキーマ変更は本番 DB に反映できない（`lib/db/schema.ts:32-33`、`:39-40` のコメント）。
+`thumbnail` 列（`lib/db/schema.ts`）より後ろ、テーブル定義の最後に置く。理由は `draftContent`・`thumbnail` と同じ制約——このテーブルは drizzle-kit push が壊れており、ALTER TABLE ADD COLUMN として末尾に足す形以外のスキーマ変更は本番 DB に反映できない（`lib/db/schema.ts` の `draftContent`・`thumbnail` のコメント）。
 
 **実行手順は検証済み**（2026-09-06）。このリポジトリは `drizzle-kit push` を使わず、`scripts/migrate-db.mts:11-16` のコメントに理由がある——`push` は本番DBを直接diffし、SQLiteがその場でALTERできない変更は「テーブル作り直し」(create→copy→drop→rename)にすり替える。`posts` テーブルではユニークインデックスを2回発行して途中で止まる。代わりのワークフローは `lib/db/schema.ts` を編集 → `npx drizzle-kit generate`（`drizzle/NNNN_*.sql` を生成） → 生成されたSQLを目視確認 → `npm run db:backup && npm run db:migrate`。
 
@@ -292,14 +292,14 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 
 ## 4. 一覧クエリの変更
 
-| 関数                                                                                          | ファイル:行               | 変更                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getAllPosts`                                                                                 | `lib/posts.ts:36`         | `.where(eq(posts.draft, false))` → `and(eq(posts.draft, false), eq(posts.unlisted, false))`                                                                                                                                                 |
-| `getPostsByCategory`                                                                          | `lib/posts.ts:85`         | 同様に `eq(posts.unlisted, false)` を `and()` に追加                                                                                                                                                                                        |
-| `getPostsByTag`・`getAllTags`・`getAllCategories`                                             | `lib/posts.ts:77,110,115` | いずれも内部で `getAllPosts()` を呼ぶだけなので変更不要——`getAllPosts` のフィルタをそのまま継承する                                                                                                                                         |
-| `getPostBySlug`                                                                               | `lib/posts.ts:42-46`      | **変更しない**——`draft` 以外のフィルタを持たないことが、直接URLアクセスを成立させている本体（§2）                                                                                                                                           |
-| `listAllPosts`（管理画面）                                                                    | `lib/posts.ts:48-51`      | **変更しない**——`.where()` を持たず全件返す。下書きと同じ「隠さず、印を付ける」方針（`app/api/posts/search/route.ts:35-37` が下書きについて述べる方針を unlisted にも適用する）を踏襲し、一覧はそのまま出して管理画面にバッジを付ける（§6） |
-| `app/api/posts/search/route.ts`（リンクカードの自著記事検索、`:38` で `listAllPosts` を使用） | —                         | **変更しない**——`getOptionalSession`（`:27`）で認証済みの著者本人しか叩けないので、下書きと同様 unlisted も見えたままでよい                                                                                                                 |
+| 関数                                                                                          | ファイル       | 変更                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getAllPosts`                                                                                 | `lib/posts.ts` | `.where(eq(posts.draft, false))` → `and(eq(posts.draft, false), eq(posts.unlisted, false))`                                                                                                                                                 |
+| `getPostsByCategory`                                                                          | `lib/posts.ts` | 同様に `eq(posts.unlisted, false)` を `and()` に追加                                                                                                                                                                                        |
+| `getPostsByTag`・`getAllTags`・`getAllCategories`                                             | `lib/posts.ts` | いずれも内部で `getAllPosts()` を呼ぶだけなので変更不要——`getAllPosts` のフィルタをそのまま継承する                                                                                                                                         |
+| `getPostBySlug`                                                                               | `lib/posts.ts` | **変更しない**——`draft` 以外のフィルタを持たないことが、直接URLアクセスを成立させている本体（§2）                                                                                                                                           |
+| `listAllPosts`（管理画面）                                                                    | `lib/posts.ts` | **変更しない**——`.where()` を持たず全件返す。下書きと同じ「隠さず、印を付ける」方針（`app/api/posts/search/route.ts:35-37` が下書きについて述べる方針を unlisted にも適用する）を踏襲し、一覧はそのまま出して管理画面にバッジを付ける（§6） |
+| `app/api/posts/search/route.ts`（リンクカードの自著記事検索、`:38` で `listAllPosts` を使用） | —              | **変更しない**——`getOptionalSession`（`:27`）で認証済みの著者本人しか叩けないので、下書きと同様 unlisted も見えたままでよい                                                                                                                 |
 
 ## 5. 投稿の作成・保存経路
 
