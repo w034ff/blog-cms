@@ -42,4 +42,4 @@ The E2E suite is **701 of the suite's 759 cases and 86% of its wall clock**, and
 
 # Editor pitfalls (`docs/editor-pitfalls.md`)
 
-**Read it before changing anything under `components/editor/`, or before debugging an editor report.** It records the TipTap / ProseMirror behaviour that cuts across features — gestures that fail without changing the document, isolating edges, hook ordering, bubble-menu timing — each measured once at real cost. It follows the requirements documents' editing rules above, and a finding that is about more than one feature goes there rather than into a feature's own document.
+**Before changing anything under `components/editor/`, or before debugging an editor report, use its headings as the index and read the sections that apply** — not the whole document. It records the TipTap / ProseMirror behaviour that cuts across features — gestures that fail without changing the document, isolating edges, hook ordering, bubble-menu timing — each measured once at real cost. It follows the requirements documents' editing rules above, and a finding that is about more than one feature goes there rather than into a feature's own document.

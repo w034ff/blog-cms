@@ -390,8 +390,11 @@ function handleDropClamped(
 }
 
 // The deletion rule, shared by every gesture that replaces a range. Registered once for the whole
-// editor rather than per node: it reads `isolating` off the schema, so it covers the callout and
-// the code block — the two nodes that claim the boundary — without either having to ask for it.
+// editor rather than per node: it reads `isolating` off the schema, so it covers every node that
+// claims the boundary without any of them having to ask for it — the callout, the code block and the
+// footnote nodes here, and the table, its cells, `details` and `detailsSummary` from @tiptap's own
+// dist. The accordion's pair is the one never measured through this rule
+// (docs/editor-pitfalls.md §6.4).
 //
 // Left at the default priority. Both orderings it depends on come from where it sits in
 // PostEditor's extensions array (ExtensionManager reverses that array before gathering plugins, so

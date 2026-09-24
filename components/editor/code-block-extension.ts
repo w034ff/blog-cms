@@ -264,7 +264,9 @@ function clearEmptyCodeBlock(codeType: NodeType, { state, tr, dispatch }: Comman
 //   • in a list item — the whole `listItem` was lifted, taking the bullet with it:
 //     `- 項目` + fence  →  `項目` + fence, the `bulletList` gone from the document;
 //   • in a blockquote — the code block escaped the quote and became a top-level sibling;
-//   • in an accordion (`details`) — the same escape; neither node is `isolating`.
+//   • in an accordion (`details`) — the same escape. Measured then; the installed
+//     `@tiptap/extension-details` marks both `details` and `detailsSummary` `isolating`, so whether
+//     the lift still escapes there is unmeasured (docs/editor-pitfalls.md §6.4).
 // A code block inside a *callout* was already immune, because prosemirror-transform's `liftTarget`
 // breaks its search loop on an isolating ancestor and the callout is one. So the container alone
 // decided between "nothing happens" and "torn apart", which is not a distinction the author can see.

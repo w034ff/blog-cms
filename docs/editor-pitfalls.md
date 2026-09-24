@@ -94,7 +94,7 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 
 - ファミリーを揃えて上げる。starter-kit の推移的依存は `^` で浮くので、一部だけ固定すると ERESOLVE になる。
 - 古い `package-lock.json` のまま揃えて上げると「Conflicting peer dependency @tiptap/pm」で ERESOLVE になる。`package-lock.json` の `packages` から `@tiptap/*` を外し、`node_modules/@tiptap` を消してから入れ直す（`@tiptap` の部分木だけが再解決される）。依存導入の規則（クールダウン）に従う。
-- `components/editor/clear-nodes-extension.ts` は上流 `src/commands/clearNodes.ts` の写しを持つ（§8.2）。更新のたびに差分を取る。
+- `components/editor/clear-nodes-extension.ts` は上流 `src/commands/clearNodes.ts` の写しを持つ（§8.2）。更新のたびに差分を取り、見出しコメントの版を書き換える（3.31.3 で照合済み）。
 - `isolating` を前提にしたリポジトリのコメントが、インストール版の dist と食い違っている例がある（§6.4）。更新のたびに dist と照合する。
 
 ## 5. ブロックドラッグ
@@ -200,10 +200,7 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 
 ### 6.4 アコーディオンは isolating である（静的に確定、帰結は未測定）
 
-インストール版の `@tiptap/extension-details` は、`details` と `detailsSummary` の両方に `isolating: true` を付けている（静的、2026-09-24、3.31.3）。このリポジトリの次の 2 つのコメントはこれと食い違っていて、古い。
-
-- `isolating-boundary.ts`: 「covers the callout and the code block — the two nodes that claim the boundary」
-- `code-block-extension.ts`: 「in an accordion (`details`) — the same escape; neither node is `isolating`」（測った当時の挙動の記録で、今の版の前提ではない）
+インストール版の `@tiptap/extension-details` は、`details` と `detailsSummary` の両方に `isolating: true` を付けている（静的、2026-09-24、3.31.3）。`isolating-boundary.ts` と `code-block-extension.ts` のコメントは、以前は両ノードを isolating でないとしていた。2026-09-24 に dist に合わせて直した。
 
 **未測定**: 汎用の切り詰め（`clampedDeleteRanges` → 入力、paste、drop、cut、IME、Backspace / Delete / Enter）がアコーディオンのタイトルと本文の縁でも発火しうる。`details-slice-guard.ts` と `slice-guard-composition.test.ts` はスライスの paste / drop しか扱っておらず、素の範囲 Backspace や選択上の入力は扱っていない。`details-extension.ts` の `enterIntoEmptyBody` / `tabIntoBody` / `detailsInputRuleUndoCaret` と衝突する可能性がある。この一帯に触る前に、実ブラウザでタイトルと本文の縁をまたいで Backspace / paste / drop / cut を試す（§6.1 の手順）。
 

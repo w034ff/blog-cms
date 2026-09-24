@@ -3,7 +3,7 @@ import type { RawCommands } from '@tiptap/core';
 import type { ContentMatch, NodeType } from '@tiptap/pm/model';
 import { liftTarget } from '@tiptap/pm/transform';
 
-// Replaces TipTap's own `clearNodes` command (@tiptap/core 3.28.0,
+// Replaces TipTap's own `clearNodes` command (@tiptap/core 3.31.3,
 // `src/commands/clearNodes.ts`), which throws in this document. Everything else about it is kept —
 // this is upstream's body with one expression changed, deliberately, so the diff against a future
 // version stays readable.

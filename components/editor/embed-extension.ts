@@ -528,7 +528,7 @@ export const Embed = Node.create({
         // preview cloned the whole NodeView, iframe included — a clone is a live browsing context,
         // not a picture — and the copy answered under `emb-view-1` from a box of a different width,
         // which shrank the block still sitting in the document (measured 2026-08-24; the clone is
-        // gone now, blankClonedFrames in block-drag-handle.ts, and this is the check that makes the
+        // gone now, previewContent in block-drag-handle.ts, and this is the check that makes the
         // question "did MY frame say it" rather than "did something say it").
         if (!iframe.contentWindow || event.source !== iframe.contentWindow) return;
         // Our own reporter first, because its origin is the string `"null"` rather than an origin
