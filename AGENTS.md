@@ -39,3 +39,7 @@ The E2E suite is **701 of the suite's 759 cases and 86% of its wall clock**, and
 - **The schema comes from `postEditorExtensions`, never a list re-written in the test.** A hand-picked array passes precisely when what PostEditor registers is the thing that changed; `components/editor/draggable-types.test.ts` is where that argument was first made.
 - **The vitest case owns the predicate, the spec owns the wiring.** When both layers are genuinely needed, the spec shows the guard is installed on each route it has to cover — not the predicate's whole table repeated in a browser at 1.8s a row.
 - **Moving a guard between layers moves its acceptance-criterion row too.** The tables in `docs/*-requirements.md` name the file that measures each criterion, so a guard that changes layer leaves that row false until it is updated.
+
+# Editor pitfalls (`docs/editor-pitfalls.md`)
+
+**Read it before changing anything under `components/editor/`, or before debugging an editor report.** It records the TipTap / ProseMirror behaviour that cuts across features — gestures that fail without changing the document, isolating edges, hook ordering, bubble-menu timing — each measured once at real cost. It follows the requirements documents' editing rules above, and a finding that is about more than one feature goes there rather than into a feature's own document.
