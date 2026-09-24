@@ -33,6 +33,11 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
 - `reuseExistingServer: false`: a second run on a taken port fails to bind rather than silently
   testing the other tree's server. `E2E_EXTERNAL_SERVER=1` points the run at a server started by
   hand (how a production build is measured — `e2e/revalidate-client-cache.spec.ts` needs it).
+  Stopping that server is a trap: the process renames itself `next-server`, so
+  `pkill -f "next start -p <port>"` misses it (and can match its own shell). The next `next start`
+  then fails with EADDRINUSE and the spec silently passes against the old build — it happened
+  twice. Find the PID with `ps -eo pid,args | grep "[n]ext-server"`, and read the new server's log
+  for Ready before running.
 - Uploads still write the real `public/uploads` (content-addressed, deduplicated and GC'd), because
   Next serves `public/` statically.
 - System Chrome via `channel: 'chrome'`; no bundled browser is downloaded. `@playwright/test` is
