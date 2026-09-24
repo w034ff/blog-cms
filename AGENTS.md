@@ -28,6 +28,8 @@ These are design records, kept and maintained after the feature ships. They are 
 - **Bold is scarce — about one span per 200 characters** (measured 2026-08-11: the five documents sit at 9.4–13.0% of body characters). Use it for a section's verdict, an inline pseudo-heading (`決定` / `理由` / `機構`), a prohibition, or the lead of a list item. Do not bold a sentence that is already the only claim in its paragraph, and do not bold every row of a table column — a column that is entirely bold marks nothing.
 - **A citation into `node_modules` carries a grep-able identifier, not just a line number** — a function name, a literal expression, a `PluginKey` name. Line numbers into `dist/` rot silently on the next dependency bump, and a bump of the `@tiptap` family is a recurring operation here. Quote the identifier as it appears in `dist/`, which is minified in places (`priority: 1e3`, not `priority: 1000`).
 - Body language is Japanese, matching the existing documents.
+- **Keep them true with checks, not rewrites.** Every defect found in these documents so far has been drift between two copies of a fact, never a format problem, and reorganising them measured at 6-8% saved (2026-09-01). `test/embed-criteria.test.ts` is the pattern: parse the tables, assert they agree with the code and prose they restate, and keep an explicit ledger for the gaps not fixed yet. Duplicating a fact into an index table is fine only when a test then compares the copies.
+- **Measure bold density per line, after stripping code spans.** These documents write `` `**` `` as code when they discuss the syntax, and a document-wide pair scan reads that as an opening marker — it once put `link-requirements.md` at 21.4% when the true figure was 9.5%.
 
 # Where an editor test goes
 
