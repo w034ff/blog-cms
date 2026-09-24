@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { verifySession } from '@/lib/dal';
+import { verifyAdmin } from '@/lib/dal';
 import { listDictionary, tagUsage } from '@/lib/tags';
 import { TagDirectory } from './TagForms';
 
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 // changed or merged into another, a tag removed from every post. The two names are the page's
 // whole difficulty, so it says in one line which is which before anything else.
 export default async function AdminTagsPage() {
-  await verifySession();
+  await verifyAdmin();
   const tags = listDictionary();
   const usage = Object.fromEntries(tagUsage());
 

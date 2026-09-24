@@ -12,8 +12,12 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 const dest = process.env.BLOG_DB_PATH;
 const username = process.env.E2E_ADMIN_USERNAME;
 const password = process.env.E2E_ADMIN_PASSWORD;
-if (!dest || !username || !password) {
-  console.error('[e2e] BLOG_DB_PATH, E2E_ADMIN_USERNAME and E2E_ADMIN_PASSWORD must all be set.');
+const authorUsername = process.env.E2E_AUTHOR_USERNAME;
+const authorPassword = process.env.E2E_AUTHOR_PASSWORD;
+if (!dest || !username || !password || !authorUsername || !authorPassword) {
+  console.error(
+    '[e2e] BLOG_DB_PATH and the E2E_ADMIN_* and E2E_AUTHOR_* credentials must all be set.',
+  );
   process.exit(1);
 }
 
@@ -52,9 +56,14 @@ db.pragma('journal_mode = WAL');
 // Only the copy is touched; the source was opened read-only above.
 migrate(drizzle(db), { migrationsFolder: path.join(process.cwd(), 'drizzle') });
 db.prepare(
-  `INSERT INTO users (username, password_hash) VALUES (?, ?)
-   ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash`,
+  `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')
+   ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
 ).run(username, bcrypt.hashSync(password, 12));
+// And an author, for the screens only an admin may reach (docs/editor-requirements.md §12.33.1).
+db.prepare(
+  `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'author')
+   ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
+).run(authorUsername, bcrypt.hashSync(authorPassword, 12));
 
 // Two rows for the external link card (docs/link-card-requirements.md §14.9). The published page
 // never fetches (§14.1) and the editor's route answers from this table while the row is fresh, so

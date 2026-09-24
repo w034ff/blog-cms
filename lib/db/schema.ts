@@ -65,6 +65,11 @@ export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // What the account may do beyond writing (docs/editor-requirements.md §12.33.1). `author` writes
+  // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
+  // A reader has no row at all. Read from here on each check, not carried in the session token, so
+  // a changed role takes effect on the next request rather than when the 14-day cookie runs out.
+  role: text('role', { enum: ['admin', 'author'] }).notNull().default('author'),
 });
 
 // What is known about a URL a link card points at (docs/link-card-requirements.md §14.3).

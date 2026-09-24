@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { deletePostAction } from '@/app/actions/posts';
 import { logout } from '@/app/actions/auth';
+import { isAdmin } from '@/lib/dal';
 import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
@@ -34,6 +35,7 @@ function AdminThumbnail({ src }: { src: string | null }) {
 
 export default async function AdminHome() {
   const posts = await listAllPosts();
+  const admin = await isAdmin();
 
   return (
     <section>
@@ -48,9 +50,11 @@ export default async function AdminHome() {
           <Link href='/admin/posts/new' className='font-medium hover:underline'>
             新規記事
           </Link>
-          <Link href='/admin/tags' className='hover:underline'>
-            タグ
-          </Link>
+          {admin && (
+            <Link href='/admin/tags' className='hover:underline'>
+              タグ
+            </Link>
+          )}
           <form action={logout}>
             <button type='submit' className='text-zinc-500 hover:underline dark:text-zinc-400'>
               ログアウト
