@@ -289,7 +289,7 @@ if (!text || !language) return false;
 
 コードブロックの `language` はコピー元ファイルの言語（`mode`）になる。この文書からコピーした URL なら `markdown` になる。
 
-**このプラグインは自前の code block にも生きている。** `CodeBlockWithLanguage` は `addProseMirrorPlugins` で `...(this.parent?.() ?? [])` として親のプラグインを引き継いでいる（`code-block-extension.ts:523`）。
+**このプラグインは自前の code block にも生きている。** `CodeBlockWithLanguage` は `addProseMirrorPlugins` で `...(this.parent?.() ?? [])` として親のプラグインを引き継いでいる（`code-block-extension.ts` の `CodeBlockWithLanguage`）。
 
 ### 2.5.1 実測（2026-08-09、E2E で `vscode-editor-data` 付きのペーストを合成）
 
@@ -374,7 +374,7 @@ if (!text || !language) return false;
 
 この節は「ダイアログを出す」形を暗黙に前提している。 §5.5 のバブルを採る場合、1 と 2 は編集モード（URL 入力欄を出しているとき）にだけ当てはまる — §5.5.4-1。
 
-1. **ダイアログはネストした `<form>` にしてはならない。** PostEditor 全体が単一の `<form>` であり、ネストした form はブラウザに捨てられて submit が無言で何もしない。前例は `components/editor/TableGridMenu.tsx:77-79` — `<dialog>` の中は素の `<div>` で、ボタンの `onClick` と Enter キーで submit 関数を呼んでいる。同じ形にする。
+1. **ダイアログはネストした `<form>` にしてはならない。** PostEditor 全体が単一の `<form>` であり、ネストした form はブラウザに捨てられて submit が無言で何もしない。前例は `components/editor/TableGridMenu.tsx` の `TableSizeDialog` — `<dialog>` の中は素の `<div>` で、ボタンの `onClick` と Enter キーで submit 関数を呼んでいる。同じ形にする。
 2. **オートセーブ中に開いたままのダイアログに注意。** そのフォーム内の `<input>` は server action 保存時に React 19 のフォーム自動リセットの影響を受けうる（コードブロックのファイル名入力が実際に踏み、`form` 属性に存在しない id を指す回避策で対処済み）。リンクダイアログは開いている時間が短いが、URL を貼って考え込む操作は起こりうるので、実機で確認すること。
 3. **既存リンクの URL を編集するとき、`title` を消してはならない。** §0 の唯一の実リンクは `title` を持ち、それは公開まで生き残る（§2.3）。`title` の既定値は `null` なので、`setLink({ href })` が既存マークの属性をマージしないならURL を直すと `title` が黙って消える。TipTap の `setMark` の挙動を確かめること。投稿 id 36 がそのままフィクスチャになる。
    → **実測 2026-08-11: マージされる。** `setLink({ href })` は既存マークの属性の上に書くので `title` は残り、`[リンク](https://changed.example "タイトル")` として保存された。手当ては要らなかったが、要らないことが分かったのは測ったからである — 基準 4c として固定してある（§8）。
@@ -949,7 +949,7 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 | 本文・表・callout・アコーディオン内の著者のリンク                   | 対象。意図どおり                                                                                                                                                                                              |
 | 脚注参照 / 戻りリンク                                               | 属性セレクタ (0,2,1) が明暗とも勝つ。不変                                                                                                                                                                     |
 | 脚注ポップオーバー内（`FootnotePopover.tsx:139` が `prose` を着る） | クローンした本文中のリンクは青になる（一貫していてよい）。`.footnote-popover-jump` (0,1,0) はこの規則 (0,1,1) に負けるが**色は明暗とも同値**で、`color` しか宣言していないので `text-decoration: none` は残る |
-| ブロックドラッグのプレビュー（`block-drag-handle.ts:131`）          | 本体と同じ色になる。意図どおり                                                                                                                                                                                |
+| ブロックドラッグのプレビュー（`block-drag-handle.ts` の `.block-drag-preview`） | 本体と同じ色になる。意図どおり                                                                                                                                                                                |
 | 目次                                                                | `.prose` の外（`globals.css:900` に明記）。不変                                                                                                                                                               |
 
 **この数え上げには裏側がある。** 「この規則がどの `<a>` に届くか」だけでは半分で、もう半分は「この規則が今どの既存宣言に勝ってしまうか」である。`.prose a` は (0,1,1) かつ unlayered で、置き換えた typography の規則は (0,1,0) かつ layered だったので、`.prose` 内で単一クラスの `color` を持つものはすべて候補になる。

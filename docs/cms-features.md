@@ -43,7 +43,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 ### 3.2 除外ルールの実装
 
 - フェンス判定は `lib/footnotes.ts:18` の `FENCE`（`` /^ {0,3}(`{3,}|~{3,})/` ``）と同じ形で、フェンス内の行を読み飛ばす。
-- `^<div class="(link-card|embed)"[^>]*></div>$` に一致する行は1行まるごと除外する。この形は実装が実際に吐く形そのもの——`components/editor/link-card-extension.ts:59` と `components/editor/embed-extension.ts:59` がそれぞれ `` `<div class="link-card" data-href="${escapeHref(href)}"></div>` `` / `` `<div class="embed" data-href="${escapeHref(href)}"></div>` `` を `state.write` している。
+- `^<div class="(link-card|embed)"[^>]*></div>$` に一致する行は1行まるごと除外する。この形は実装が実際に吐く形そのもの——`components/editor/link-card-extension.ts` の `serializeLinkCard` と `components/editor/embed-extension.ts` の `serializeEmbed` がそれぞれ `` `<div class="link-card" data-href="${escapeHref(href)}"></div>` `` / `` `<div class="embed" data-href="${escapeHref(href)}"></div>` `` を `state.write` している。
 - 脚注参照 `[^label]`（`lib/footnotes.ts:26` の `REFERENCE`）はマッチした部分を文字列から取り除く。定義行 `[^label]: text`（`lib/footnotes.ts:22` の `DEFINITION`）はラベル部分だけ剥がし、本文（`text`）は残す。
 - 改行は `/\r?\n/` で分割する。`\n` 単独ではないのは `lib/footnotes.ts:35-41` と同じ理由——フォーム送信が値の改行を CRLF に書き換える（`docs/editor-pitfalls.md` §16.1）ため、`\r` が行末に残ったままだと後段の正規表現が丸ごと外れる。
 
