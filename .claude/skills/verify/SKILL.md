@@ -13,20 +13,28 @@ document-level guards — slice repair, placement, schema content expressions �
 vitest cases over `components/editor/test-schema.ts` and cost about a millisecond
 each; AGENTS.md holds the question to ask before writing either.
 
+`e2e/README.md` is the reference: how the harness is built, the shared helpers, how
+to drive selections, history, native drags, touch and locators, and what makes a
+wait valid. Read the section you need before writing a spec.
+
 ## Run it
 
-**Run the files your change touches, not the suite.** The whole suite is 762 cases
-and about 31 minutes serially; one file is 20-90 seconds. A full run belongs before
-a merge, not before a commit.
+**Run the files your change touches, not the suite.** One file is 20-90 seconds;
+the whole suite is about 12 minutes (769 cases at `workers: 4`, measured
+2026-09-13 — measure the current count, don't quote this one). A full run belongs
+before a merge, not before a commit.
 
 ```bash
 npx playwright test e2e/editor-embed.spec.ts          # one file — the default
-npx playwright test e2e/a.spec.ts e2e/b.spec.ts       # several: one command, one boot (~14s each)
+npx playwright test e2e/a.spec.ts e2e/b.spec.ts       # several: one command, one boot
 npx playwright test e2e/editor-embed.spec.ts:658      # one test, by line
 npx playwright test e2e/editor-embed.spec.ts --repeat-each=5   # is it flaky?
-npm run test:e2e                                      # the whole suite, serial (~31m)
-npm run test:e2e:shards                               # the whole suite, 3 processes
+npm run test:e2e                                      # the whole suite (~12m)
 ```
+
+`npm run test:e2e:shards` is not a faster way to run the suite; it is for a run
+that needs its own server and DB copy (`e2e/README.md`, "Why four workers and not
+shards").
 
 **A change with no files of its own gets a new spec, not the suite.** The rule
 above assumes the change belongs to a spec: an extension, a NodeView, one screen.
@@ -36,59 +44,29 @@ Shared chrome — `components/PostEditor.tsx`, a layout under `app/`,
 and a locator that no longer matched. That hazard is why the claim needs a spec —
 it is not a licence to run the suite. **Write the spec that covers the new claim,
 run that file, and stop.** The merge-only rule above is not suspended here; it
-wins. If the blast radius still worries you, say so and ask — 15 minutes of the
-user's machine is not yours to spend.
+wins. If the blast radius still worries you, say so and ask — the user's machine
+is not yours to spend.
 
-**The dev server and the full suite.** A serial `npm run test:e2e` coexists with
-`npm run dev` (port 3001) — measured 2026-09-13, twice, 31.0m and 33.6m. **Sharding
-does not**: with `npm run dev` up, a 3-shard run put 61 of 764 red and took 2,070s,
-and the next one was killed by the OS for low memory (measured 2026-09-12, 19GB).
-Stopped, the same suite is green in 925s. So: shards are the fast path (925s against
-~1,900s serial) and they want the machine to themselves; leave dev up only for a
-serial run. Each shard boots its own `next dev` and Chrome, which is what makes it
-memory-bound — drop to 2 if the machine is loaded, and **never delete a
-`.next-e2e-*` directory while a run holds it** (the servers panic and every
-remaining test fails for no reason).
-
-Under the hood (`playwright.config.ts`, `e2e/constants.ts`): every per-server path
-is keyed by `E2E_PORT` (default 3100), which is what lets the shards coexist.
-
-1. `e2e/prepare-db.mts` copies `data/blog.db` → `e2e/.tmp/blog.e2e.<port>.db`
-   (WAL-safe `better-sqlite3` backup) and upserts a test admin. **The real DB is
-   never touched.**
-2. A second `next dev` boots on that port in its own build dir
-   (`NEXT_DIST_DIR=.next-e2e-<port>`) so it doesn't collide with the dev server's
-   `<distDir>/dev/lock`, with a test `SESSION_SECRET` and `BLOG_DB_PATH`.
-3. The `setup` project logs in via the real `/login` form once and saves the
-   session to `e2e/.auth/admin.<port>.json`; the spec projects reuse it.
+**The dev server and a full run.** A serial run coexisted with `npm run dev`
+(port 3001) on 2026-09-13; three shards beside it did not (61 red, then an OOM
+kill on a 19GB machine). Four workers beside the dev server has not been measured
+— if the machine is loaded, stop the dev server first. **Never delete a
+`.next-e2e-*` directory while a run holds it**: the server panics and every
+remaining test fails for no reason.
 
 Prerequisite: `data/blog.db` must exist (run `npm run db:seed` on a fresh clone).
 
-Working in a git worktree: everything above is cwd-relative and so already private
-to it — except the port. Set `E2E_PORT` (e.g. 3101) in that worktree's
-`.claude/settings.local.json` before running, or the second run fails to bind
-(`reuseExistingServer: false`, so it never silently tests the other tree's server).
+Working in a git worktree: every path is cwd-relative and so already private to it
+— except the port. Set `E2E_PORT` (e.g. 3101) in that worktree's
+`.claude/settings.local.json` before running, or the second run fails to bind.
 
 ## Add a spec
 
 Drop `e2e/<name>.spec.ts`; it inherits admin auth + `baseURL` from the config.
 Use `getByRole` / `getByLabel` for toolbar buttons and fields, and `setInputFiles`
-for uploads (it works on a hidden `<input type="file">`).
-
-The shared helpers are where the hard-won parts live — read them before writing
-the gesture by hand:
-
-- `e2e/editor-probe.ts` — read the live editor: `docString`, `markdown`, `caret`,
-  `settle`, `historyState`.
-- `e2e/editor-authoring.ts` — change it: `loadMarkdown`, `setRange`,
-  `moveBlockAbove`, `openPostSettings` (the metadata fields start folded).
-- `e2e/native-drag.ts` — **native HTML5 drag, driven through CDP**, which
-  `page.mouse` cannot produce. `cdpNativeDrag`, plus `caretPoint` and `dragSelect`,
-  which return the selection actually realized rather than a guessed pixel offset.
-- `e2e/x-embed-stub.ts` — the X endpoint, so no spec depends on a third party.
-
-Drag endpoints are measured, never hard-coded: a fixed `+40px` once took 13 specs
-red at once because Chrome's drag-select does not snap to the nearest boundary.
+for uploads (it works on a hidden `<input type="file">`). Build on the shared
+helpers in `e2e/editor-probe.ts`, `e2e/editor-authoring.ts` and
+`e2e/native-drag.ts` instead of writing the gesture by hand.
 
 ## When something goes red
 
@@ -103,28 +81,18 @@ build stay the same:
    `docs/cms-features.md` records twice (the image-bubble 22s case, and this one).
 3. **A full run**, only once 1 and 2 have said something.
 
+Copy the trace out of `test-results/` before running anything else; the next run
+wipes it.
+
 Then read the failure as one of two kinds:
 
 - **The setup did not land** — a caret that never moved, a click that made no
   NodeSelection, a row that is still the previous query's. Fix the wait, not the
   product. A wait must be a predicate that is **false before the thing it waits for
-  and true after**: a count that is already right, a regex that already matches, and
-  a fixed `waitForTimeout` are all reached without anything having happened.
+  and true after** (`e2e/README.md`, "Waits").
 - **The product changed.** Only then open the app code.
 
-Native keys are for when the key *is* the subject. When a keystroke is only setup,
+Native keys are for when the key _is_ the subject. When a keystroke is only setup,
 place the caret through the editor (`caretAtStartOf`, `setRange`) — a `Home` or an
 arrow sent inside ProseMirror's 20ms selection-sync window is discarded, and no
 amount of waiting produces it.
-
-## Notes / constraints
-
-- System Chrome via `channel: 'chrome'` — no bundled-browser download.
-- `.next-e2e-*/` and `tsconfig.e2e.*.json` are gitignored; `next dev`'s tsconfig
-  auto-edits are redirected to the per-port file (via `typescript.tsconfigPath`)
-  so the tracked `tsconfig.json` stays clean.
-- Each shard runs serially inside itself (`workers: 1`, `fullyParallel: false`) —
-  editor interactions are timing-sensitive, which is why the suite is split into
-  processes rather than given more workers.
-- Adding Playwright followed the repo's supply-chain rules (`@playwright/test`
-  exact-pinned, `--min-release-age 7`, `--ignore-scripts`).
