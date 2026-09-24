@@ -362,6 +362,24 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
     return {
       ...parent,
       Enter: (props: { editor: Editor }): boolean => {
+        // Enter over a range replaces the range first, as it does in any paragraph. The official
+        // handler asks only where `$head` is, so a range ending in the title kept its text and grew
+        // an empty line in the body (measured 2026-09-24, docs/editor-pitfalls.md §6.4).
+        //   • A range that leaves the title is declined, and IsolatingBoundary's Enter clamps it at
+        //     the accordion's edges — the same result as when the head is in the body.
+        //   • A range inside the title is deleted here, and the caret left behind then takes the
+        //     title's own Enter below. baseKeymap would not: it cannot split a `detailsSummary`, so
+        //     the whole key did nothing.
+        const { selection } = props.editor.state;
+        if (!selection.empty) {
+          const { $from, $to } = selection;
+          const inTitle =
+            selection instanceof TextSelection &&
+            $from.parent.type.name === 'detailsSummary' &&
+            $from.sameParent($to);
+          if (!inTitle) return false;
+          props.editor.view.dispatch(props.editor.state.tr.deleteSelection());
+        }
         if (enterIntoEmptyBody(props.editor, openClassName)) return true;
         return parent?.Enter?.(props) ?? false;
       },

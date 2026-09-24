@@ -223,6 +223,67 @@ test('Enter in the title of a folded accordion still lands below it', async ({ p
   );
 });
 
+// Enter over a RANGE whose head is in the title (docs/editor-pitfalls.md §6.4). The official
+// handler asks only where `$head` is, so these kept the selected text and opened an empty line in
+// the body. The title binding now declines a range, and IsolatingBoundary clamps it at the
+// accordion's edges — the same result as when the head is in the body. Positions: 前の段落です 1..7,
+// title 題名 10..12, body 畳んだ本文 15..20.
+const EDGE_MD =
+  '前の段落です\n\n<details>\n<summary>題名</summary>\n\n畳んだ本文\n\n</details>\n\n後の段落です\n';
+
+async function openEdgeDoc(page: Page): Promise<void> {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, EDGE_MD);
+  const toggle = page.locator(`.ProseMirror ${DETAILS} > button`);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを閉じる');
+}
+
+test('Enter over a range from the body back into the title replaces it', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 17, 11);
+  await expect.poll(() => caret(page)).toBe('題名@1');
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), details(detailsSummary("題"), detailsContent(paragraph("だ本文"))), paragraph("後の段落です"))',
+    );
+});
+
+test('Enter over a range from the paragraph above into the title replaces it', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 3, 11);
+  await expect.poll(() => caret(page)).toBe('前の段落です@2');
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の"), paragraph, details(detailsSummary("名"), detailsContent(paragraph("畳んだ本文"))), paragraph("後の段落です"))',
+    );
+});
+
+// A range inside the title has no edge to clamp. It is deleted, and the caret then takes the
+// title's own Enter — a new first line in the body, as a collapsed caret there would.
+test('Enter over a range inside the title deletes it, then opens the body', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 10, 11);
+  await expect.poll(() => caret(page)).toBe('題名@0');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('追加');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), details(detailsSummary("名"), detailsContent(paragraph("追加"), paragraph("畳んだ本文"))), paragraph("後の段落です"))',
+    );
+});
+
 // Tab from the title, the motion Enter above cannot offer: it enters the body *as it stands*, where
 // Enter inserts a first line in front of it. Three cases, one rule — only from the title, only while
 // open, and never a document change.
