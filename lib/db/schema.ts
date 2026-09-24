@@ -68,7 +68,9 @@ export const users = sqliteTable('users', {
   // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
   // A reader has no row at all. Read from here on each check, not carried in the session token, so
   // a changed role takes effect on the next request rather than when the 14-day cookie runs out.
-  role: text('role', { enum: ['admin', 'author'] }).notNull().default('author'),
+  role: text('role', { enum: ['admin', 'author'] })
+    .notNull()
+    .default('author'),
 });
 
 // What is known about an external link card's target (docs/link-card-requirements.md §14.3). The
