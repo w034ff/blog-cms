@@ -35,6 +35,12 @@ it renders.
 no-store`; a real hit carries `x-cache: HIT`).
 - Scrolling to `document.body.scrollHeight` can leave every embed off-screen when a trailing spacer
   fills the viewport. Scroll each element with `scrollIntoViewIfNeeded` and re-check.
+- An iframe scrolled out of view reports an empty `innerText` and fails `elementFromPoint`, which
+  reads as "no banner" (SlideShare's consent notice, 2026-08-25). `scrollIntoViewIfNeeded` first,
+  then read the computed style.
+- Judge "it runs" by the thing that only exists when it runs, not by the absence of an error text
+  in a slice of `innerText` — for StackBlitz, the preview iframe (`<slug>.stackblitz.io`); the
+  editor pane paints the same either way (`docs/embed-requirements.md` §23.14).
 - `transferSize` is 0 for cross-origin resources: request counts are measurable, bytes are not.
 - CDP `Performance.getMetrics` excludes cross-origin iframes (site isolation). It shows the host
   page's main thread is untouched; it does not measure the embed.

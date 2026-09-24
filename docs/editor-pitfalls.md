@@ -382,7 +382,7 @@ steps が空で meta だけのトランザクションでも、すべてのプ�
 
 - 同じコミットの `setOptions` より先に値を置く必要があるときは、layout effect で書く。React はすべての layout effect を passive effect より先に走らせ、`useEditor` の問い直しは passive である。
 - その layout effect は `editorRef.current` ではなく `editor` を読む。`editorRef` は passive effect が埋めるので、`editor` が初めて存在するマウント時のコミットではまだ null である。依存が変わらない記事では書き込みが二度と起きず、保存済みのサムネイルが再読み込みで印を失った（2026-09-08、`docs/link-card-requirements.md` 基準 22p）。
-- ref（あるいは ref を閉じ込めた `useCallback`）を `postEditorExtensions(...)` に渡すと、`react-hooks/refs` が描画中の ref アクセスとして弾く。`editor.storage` なら ref が介在しない。
+- ref（あるいは ref を閉じ込めた `useCallback`）を `postEditorExtensions(...)` に渡すと、`react-hooks/refs` が描画中の ref アクセスとして弾く。`editor.storage` なら ref が介在しない。`useEditor` が返した値に `editor.storage… = x` と書くと `react-hooks/immutability` が弾くので、書き込みは effect の中で行う。
 - この種のバグは `onUpdate` の `transaction` / `appendedTransactions`（steps、meta）を記録して調べる。`appendedTransactions[i].meta.appendedTransaction` に追加前の文書が入っている。
 
 ### 13.2 NodeSelection で出すバブルメニューの 2 つの prop
@@ -481,3 +481,9 @@ CDP の `Input.imeSetComposition` + `Input.dispatchKeyEvent` の Enter は `isCo
 - 両側に `minmax(1rem, 1fr)` の溝を対で置く 4 列のグリッドも同じだけ動く。2 つの `1fr` は、レールを引いた残りを分け合うからである。独立に分かれると仮定した代数で「正しい」と証明でき、`boundingBox()` の測定に否定された。
 - **機構**: 左の溝をレールと独立に計算する。`grid-template-columns: calc((100% - <本文幅>) / 2) <本文幅> 1fr`。左の溝と本文は、単独の `mx-auto max-w-<本文幅>` の箱と同じ式になる。レールを `1fr` にすると 3 列の合計が常に 100% になり、はみ出しが起きないので、ブレークポイントは読みやすさだけで選べる（`docs/toc-requirements.md`）。
 - 確かめ方は測定である。列がある状態と無い状態を複数のビューポート幅で描き、基準要素の `boundingBox().x` が一致することを assert する。
+
+## 18. NodeView の `stopEvent`
+
+- **`stopEvent` は操作部品（`input, button`）だけを主張する。** ラッパ全体を主張すると、NodeSelection を作る mousedown まで飲む（リンクカード、2026-08-12）。NodeView のボタンは選択を動かさないので、ボタンから呼ぶコマンドは `getPos()` の位置を明示的に受け取る（`unsetLinkCard` の `at`）。
+- **`stopEvent` の主張は drop の経路の穴にもなる。** prosemirror-view の `eventBelongsToView` は、`stopEvent` が `event.target` を主張した時点で手を引くので、そこへの drop は ProseMirror の処理を通らず、ブラウザの既定がすべてになる。本文の文字をカードの検索欄にドラッグすると、文字が欄に入り、文書からは消えた（2026-08-22、`a8854cc`）。**機構**: `useDragContainment.ts` の `refuseChromeDrops` が、各 NodeView の `stopEvent` が主張するものと同じ範囲で dragenter / dragover / drop を拒む。`dom` 全体を拒んではいけない。カードの本体は普通のブロック位置で、drop カーソルが動き続ける必要がある。
+- ProseMirror は、触れていないノードの NodeView を作り直さない。別の場所の打鍵や、同じ内容の `setContent` は古い DOM を残す。「描き直しても残る」を確かめるには、別の文書を読み込んでカードが消えたことを確かめてから、元に戻す。NodeView の結果のキャッシュは答え全体を持つ（題名だけのキャッシュは、作り直すたびに下書きの注記と画像を落とした）。

@@ -150,6 +150,41 @@ back the load. Break the group with `closeHistory` instead of sleeping: prosemir
 - Do not read the link card picker's unfiltered list: it holds the newest 20 and drops the seeded
   posts once other specs publish. A geometry spec waits for `naturalWidth > 0`, not for the `<img>`.
 
+### Focus and fresh mounts
+
+- `loadMarkdown` does not focus the editor. Without a click on `.ProseMirror` first,
+  `keyboard.type` never reaches it, and a "the menu does not open" assertion passes for the wrong
+  reason. Click before `loadMarkdown`.
+- `selectInside` + `collapseToEnd` leaves the caret at the end of the text, where the slash menu
+  does not trigger. Resolve the node's first textblock and use its start (`pos + 1` is right only
+  when the node itself is a textblock).
+- Loading the same markdown into the open editor is not a fresh mount: the node keeps its position
+  and attrs, ProseMirror keeps the NodeView, and no lookup runs. Navigate to the page again
+  (`page.goto`) when a test needs a new NodeView.
+- `dblclick()` fires both clicks inside one animation frame, so it misses anything a human
+  double-click (150-300ms apart) hits. Space two `mouse.click` calls. Playwright clicks the
+  horizontal centre of an element, which can be the one spot a bug does not cover; click where the
+  text is when geometry is what's under test.
+- Mutation-test a guard or sanitize assertion: break the predicate and confirm the intended specs
+  go red. It caught two vacuous tests in the link card alone.
+
+### Stubs, navigation and screenshots
+
+- `page.route` and `context.route` do not reach a sandboxed frame with an opaque origin (the
+  gist's `srcdoc` document, `docs/embed-requirements.md` §18); the real GitHub script loads. Such a
+  frame is tested in halves: the parent's half from a report delivered directly, and the shipped
+  document against a script served by the spec's own `node:http` server
+  (`e2e/gist-reporter.spec.ts`). A `data:` URL does not stand in for the script — Chrome refuses it
+  as `<script src>`.
+- X is stubbed with `page.route` (`e2e/x-embed-stub.ts`) because its frame is not sandboxed that
+  way.
+- A fragment-only `page.goto` is a same-document navigation. It silently invalidated an
+  anchor-landing test; read the heading id from `page.request.get` instead.
+- Verify anything visual — a drag ghost, a collapsed box — by looking at a screenshot
+  (`E2E_SHOT_DIR`), not by counts: `toBeVisible()` passed for a ghost that had collapsed to a
+  92px sliver (`docs/embed-requirements.md` §10.10). With `loading="lazy"`, a `fullPage` capture
+  leaves below-the-fold frames unpainted; scroll each element in and take viewport shots.
+
 ## Waits
 
 A wait must be a predicate that is false before the thing it waits for and true after it. A count
