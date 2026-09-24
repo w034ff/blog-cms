@@ -1,3 +1,4 @@
+import { normalizeCategory } from '@/lib/content';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { listAllPosts } from '@/lib/posts';
@@ -79,9 +80,8 @@ function toResult(post: {
     // editor and the published page would come to disagree. `listAllPosts` already selects every
     // column, so this costs no second query.
     thumbnail: resolveThumbnail(post),
-    // The column as it stands. Unlike `thumbnail` there is nothing to resolve —
-    // no label map exists, because the field is free text — so the row draws
-    // what the target post's own form holds (§5.2-5).
-    category: post.category,
+    // The id; the row turns it into a label (§5.2-5). Normalized because the
+    // lookup path hands over a raw row, whose column type is plain text.
+    category: normalizeCategory(post.category),
   };
 }

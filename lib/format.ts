@@ -33,3 +33,30 @@ export function hasVisibleUpdate(date: string, updatedAt: string): boolean {
   if (!date) return false;
   return formatPostDate(date) !== formatPostDate(updatedAt);
 }
+
+// A revision's moment (docs/revision-requirements.md §5): date and minute in JST. The minute is
+// the point — several revisions of one post routinely share a day.
+const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  ...DATE_OPTIONS,
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
+// The year only when it is not this one (JST): a post's revisions almost always share it, and on
+// every row it is the same four digits pushing the badge and title to the right. `now` is a
+// parameter so the boundary can be tested.
+const YEAR_ONLY: Intl.DateTimeFormatOptions = { year: 'numeric', timeZone: 'Asia/Tokyo' };
+const DATE_TIME_WITHOUT_YEAR: Intl.DateTimeFormatOptions = {
+  month: DATE_TIME_OPTIONS.month,
+  day: DATE_TIME_OPTIONS.day,
+  hour: DATE_TIME_OPTIONS.hour,
+  minute: DATE_TIME_OPTIONS.minute,
+  timeZone: DATE_TIME_OPTIONS.timeZone,
+};
+
+export function formatRevisionTime(epochMs: number, now: number = Date.now()): string {
+  const date = new Date(epochMs);
+  const sameYear =
+    date.toLocaleString('ja-JP', YEAR_ONLY) === new Date(now).toLocaleString('ja-JP', YEAR_ONLY);
+  return date.toLocaleString('ja-JP', sameYear ? DATE_TIME_WITHOUT_YEAR : DATE_TIME_OPTIONS);
+}

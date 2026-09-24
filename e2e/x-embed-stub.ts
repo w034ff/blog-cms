@@ -30,8 +30,14 @@ export const X_TALL_ID = '4444444444444444444';
 export const X_HEIGHT = 420;
 export const X_TALL_HEIGHT = 999;
 
-// Long enough to be observable, far below the 8s the timeout allows.
-const REPLY_MS = 300;
+// X's own pace, measured 2026-08-23 (lib/embed-message.ts, EMBED_SILENCE_MS's note): `resize`
+// lands ~600ms after the iframe becomes visible. It was 300 until 2026-09-23, which is faster than
+// the page itself: `EmbedFrames` attaches its listener 200–320ms after the iframe loads on a
+// `next dev` server under the suite's parallel load (measured 2026-09-23), so a reply at 300 raced
+// the listener and a post drawn at first paint turned into a link about one run in three. X's
+// `resize` is fire-and-forget — there is nothing to ask again, as Gist's `ask` does — so the reply
+// the parent can miss is exactly the one a faster stub invents. Still far below the 8s timeout.
+const REPLY_MS = 600;
 
 const url = (id: string) => `https://x.com/ClaudeDevs/status/${id}`;
 export const X_RESIZE_URL = url(X_RESIZE_ID);

@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { CATEGORIES, type CategoryId } from '@/lib/content';
+import type { DictionaryTag } from '@/lib/types';
+import { TagField } from './TagField';
 import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
+import { ChevronRightIcon } from './svg/ChevronRightIcon';
 
 // A drawer that slides in from the right, modal like the phone's own ＋ sheet
 // (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
@@ -37,25 +42,58 @@ import { CloseButton } from './CloseButton';
 // the backdrop gets its own `onClick` instead (InsertMenu's own comment).
 export const SETTINGS_PANEL_ID = 'post-settings-panel';
 
-const inputClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
+// カテゴリ as one button per entry of the fixed list (§12.32): every choice in sight, one press to
+// change. Real radios under the buttons, not a `<select>` and not buttons with state of their own —
+// the form reads `category` off the DOM like every other field here, and a radio group gets the
+// arrow-key movement and the checked state a screen reader announces without any code for them.
+// `aria-labelledby` rather than a wrapping `<label>`: a label associates with one control, and
+// here there are as many as the list is long.
+//
+// Each radio is laid transparently over its whole button rather than `sr-only`: clipped to a
+// pixel, it sat under its own label, so a press reached the label and not the control — the
+// browser forwards that, but a test driving the radio itself found the label in the way.
+function CategoryField({
+  value,
+  onChange,
+}: {
+  value: CategoryId;
+  onChange: (value: CategoryId) => void;
+}) {
+  const labelId = useId();
   return (
-    <label className='block text-sm'>
-      <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>{label}</span>
-      {children}
-    </label>
+    <div className='text-sm'>
+      <span id={labelId} className='mb-1 block font-bold'>
+        カテゴリ
+      </span>
+      <div role='radiogroup' aria-labelledby={labelId} className='flex gap-2'>
+        {CATEGORIES.map(({ id, label }) => (
+          <label
+            key={id}
+            className='relative flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-zinc-700 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-900 has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-100 dark:has-[:checked]:text-zinc-900'>
+            <input
+              type='radio'
+              name='category'
+              value={id}
+              checked={value === id}
+              onChange={() => onChange(id)}
+              className='absolute inset-0 cursor-pointer appearance-none opacity-0'
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 
 type Props = {
   open: boolean;
   onClose: () => void;
-  category: string;
-  onCategoryChange: (value: string) => void;
-  tags: string;
-  onTagsChange: (value: string) => void;
+  category: CategoryId;
+  onCategoryChange: (value: CategoryId) => void;
+  tags: string[];
+  onTagsChange: (value: string[]) => void;
+  tagDictionary: DictionaryTag[];
   thumbnail: string;
   onThumbnailChange: (value: string) => void;
   body: string;
@@ -69,6 +107,12 @@ type Props = {
   error: string | null;
   // The gear that opens this, where focus goes back on close (§12.29).
   returnFocusRef: RefObject<HTMLButtonElement | null>;
+  // The post's history page, or null while a brand-new post has no row yet
+  // (docs/revision-requirements.md §5).
+  historyHref: string | null;
+  // True while edits are not yet persisted (§5): leaving would strand them, and an autosave still
+  // in flight could land on top of a restore made from the history.
+  historyDisabled: boolean;
 };
 
 export function PostSettingsPanel({
@@ -78,6 +122,7 @@ export function PostSettingsPanel({
   onCategoryChange,
   tags,
   onTagsChange,
+  tagDictionary,
   thumbnail,
   onThumbnailChange,
   body,
@@ -86,7 +131,10 @@ export function PostSettingsPanel({
   publishToggleDisabled,
   error,
   returnFocusRef,
+  historyHref,
+  historyDisabled,
 }: Props) {
+  const router = useRouter();
   // Above `app/globals.css`'s own `min-width: 100rem` (§12.25), the backdrop goes
   // `pointer-events: none` and transparent — the drawer clears the editor column at that width, so
   // there is nothing left to block. That alone stops presses from reaching it and stops the
@@ -248,22 +296,8 @@ export function PostSettingsPanel({
           state (chosen / picked from the body / none) is worth seeing the moment the drawer opens
           (requested 2026-09-21). */}
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          <Field label='カテゴリ'>
-            <input
-              name='category'
-              value={category}
-              onChange={(event) => onCategoryChange(event.target.value)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label='タグ（カンマ区切り）'>
-            <input
-              name='tags'
-              value={tags}
-              onChange={(event) => onTagsChange(event.target.value)}
-              className={inputClass}
-            />
-          </Field>
+          <CategoryField value={category} onChange={onCategoryChange} />
+          <TagField value={tags} onChange={onTagsChange} dictionary={tagDictionary} />
           {/* 公開 — the post's visibility as a switch, at the end of the group so it is decided
           after the fields above are checked (docs/editor-requirements.md §12.27). The header keeps
           投稿/更新 as the everyday way to publish; this is where the state is read and where a post
@@ -282,9 +316,9 @@ export function PostSettingsPanel({
           投稿 alone. From then on, off and on again restore the post as it was dated. */}
           {everPublished && (
             <div className='space-y-2 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
-              {/* A section heading, a step below the drawer title (18px) and a step above the field
-              labels (カテゴリ・タグ・サムネイル, 14px grey) — this is the one control here that acts
-              the moment it is pressed. */}
+              {/* A heading a step below the drawer title, and the same as every field's own
+              name above it (サムネイル・カテゴリ・タグ, 14px bold — matched 2026-09-23 so the
+              drawer has one kind of label; grey is left to the notes under a field). */}
               <h3 className='text-sm font-bold'>公開状態</h3>
               <div className='flex items-center gap-3'>
                 {/* Named 公開, not by the heading: "公開状態, on" leaves the direction open, and
@@ -321,6 +355,27 @@ export function PostSettingsPanel({
                   {error}
                 </p>
               )}
+            </div>
+          )}
+          {/* リビジョン履歴 (docs/revision-requirements.md §5). A bordered full-width row with a
+          trailing › because it leaves the screen — the fields above act in place. No section
+          heading: the row's own words are the name, and a heading over it would say them twice.
+
+          A button that navigates rather than a link, because it has to be disableable: an in-app
+          navigation gets no beforeunload guard, so while edits are unsaved this is the only thing
+          stopping them from being left behind. Also how pending edits are discarded — the history
+          lists 公開中の記事 first. 40px tall at every width: the drawer's other rows are that on
+          touch, and a row this wide gains nothing from being shorter on a pointer. */}
+          {historyHref !== null && (
+            <div className='border-t border-zinc-300 pt-4 dark:border-zinc-700'>
+              <button
+                type='button'
+                disabled={historyDisabled}
+                onClick={() => router.push(historyHref)}
+                className='flex min-h-10 w-full items-center justify-between gap-2 rounded border border-zinc-300 px-3 text-left text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                リビジョン履歴
+                <ChevronRightIcon />
+              </button>
             </div>
           )}
         </div>

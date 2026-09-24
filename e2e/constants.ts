@@ -28,6 +28,10 @@ export const TSCONFIG_PATH = `tsconfig.e2e.${E2E_PORT}.json`;
 // secret: it only unlocks a throwaway local DB on a random test port.
 export const TEST_ADMIN = { username: 'e2e-admin', password: 'e2e-password-1234' } as const;
 
+// Test-only author: a signed-in account without the admin role, for what only an admin may reach
+// (docs/editor-requirements.md §12.33.1). Seeded beside TEST_ADMIN, same reasoning.
+export const TEST_AUTHOR = { username: 'e2e-author', password: 'e2e-password-5678' } as const;
+
 // Test-only JWT signing secret for the isolated server — its own, unrelated to
 // the real SESSION_SECRET (which we neither know nor need).
 export const TEST_SESSION_SECRET = 'e2e-only-session-secret-please-ignore-0123456789abcdef';

@@ -3,12 +3,19 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { DEFAULT_CATEGORY, parseTags } from '@/lib/content';
+import {
+  DEFAULT_CATEGORY,
+  MAX_TAGS,
+  isCategoryId,
+  parseTags,
+  type CategoryId,
+} from '@/lib/content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
 import { getPostForEdit } from '@/lib/posts';
+import { knownTagSlugs } from '@/lib/tags';
 import { isUploadPath } from '@/lib/thumbnail';
 import type { DraftContent } from '@/lib/types';
 
@@ -18,7 +25,8 @@ import type { DraftContent } from '@/lib/types';
 // stays lenient so partial work is never lost.
 const contentSchema = z.object({
   title: z.string().min(1),
-  category: z.string().min(1),
+  // Refused rather than normalized: an id off the list reaches here only from a crafted form.
+  category: z.custom<CategoryId>(isCategoryId),
   tags: z.array(z.string()),
   body: z.string(),
   // Not strict, unlike its neighbours here: an unusable path normalizes to ''
@@ -60,7 +68,8 @@ function parseContent(formData: FormData): DraftContent | null {
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
     category: field(formData, 'category') || DEFAULT_CATEGORY,
-    tags: parseTags(field(formData, 'tags')),
+    // Slugs the dictionary does not have are dropped, not refused (lib/tags.ts `knownTagSlugs`).
+    tags: knownTagSlugs(parseTags(field(formData, 'tags'))),
     body: field(formData, 'body'),
     thumbnail: field(formData, 'thumbnail'),
   });
@@ -99,6 +108,11 @@ async function publish(formData: FormData): Promise<PostFormState> {
   // half-written is work in progress, and refusing to store it is how drafts get lost — but an
   // empty one is meaningless to a reader, so publishing is where it has to be finished. The number
   // is what the author sees on screen; the label never is, so it is no use in the message.
+  // The editor's field stops at MAX_TAGS; this is the same line for a request that did not come
+  // through it. Publish only: autosave and 下書きに戻す keep what they are given.
+  if (content.tags.length > MAX_TAGS) {
+    return { error: `タグは ${MAX_TAGS} つまで設定できます。` };
+  }
   const incomplete = incompleteFootnotes(content.body);
   if (incomplete.length > 0) {
     return {

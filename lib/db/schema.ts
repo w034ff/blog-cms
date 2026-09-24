@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 export const posts = sqliteTable('posts', {
@@ -16,7 +15,10 @@ export const posts = sqliteTable('posts', {
   title: text('title').notNull(),
   date: text('date').notNull(),
   description: text('description').notNull().default(''),
-  category: text('category').notNull().default(DEFAULT_CATEGORY),
+  // One of CATEGORIES' ids (lib/content.ts). The DDL default is the free-text era's sentinel and
+  // is never used — every insert writes the column — but moving it would make drizzle-kit rebuild
+  // this table, which is the path that aborts midway here. Reads normalize anything off the list.
+  category: text('category').notNull().default('uncategorized'),
   tags: text('tags', { mode: 'json' }).$type<string[]>().notNull().default([]),
   draft: integer('draft', { mode: 'boolean' }).notNull().default(false),
   body: text('body').notNull().default(''),
@@ -63,6 +65,11 @@ export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  // What the account may do beyond writing (docs/editor-requirements.md §12.33.1). `author` writes
+  // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
+  // A reader has no row at all. Read from here on each check, not carried in the session token, so
+  // a changed role takes effect on the next request rather than when the 14-day cookie runs out.
+  role: text('role', { enum: ['admin', 'author'] }).notNull().default('author'),
 });
 
 // What is known about a URL a link card points at (docs/link-card-requirements.md §14.3).
@@ -110,4 +117,50 @@ export const linkPreviews = sqliteTable('link_previews', {
   // signed into a proxy path rather than published. Empty means the page had no usable image, which
   // includes "it had one and it could not be fetched when the row was written".
   image: text('image').notNull().default(''),
+});
+
+// Past versions of a post (docs/revision-requirements.md). Its own table, not columns on `posts`:
+// one post carries several, and `posts` only accepts schema changes appended at its tail.
+//
+// No foreign key. `deletePost` removes a post's revisions in the same transaction instead, because
+// a cascade would hold only where `foreign_keys` is on — the app's connection, not test/db.ts's —
+// and a test of "deleting a post deletes its revisions" would then measure nothing.
+export const postRevisions = sqliteTable('post_revisions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  postId: integer('post_id').notNull(),
+  // Epoch milliseconds, like `loginAttempts.lastFailureAt`; the history page formats it as JST.
+  createdAt: integer('created_at').notNull(),
+  // What was about to be lost when this was taken (§3): a published version being replaced, or
+  // what a restore replaced.
+  reason: text('reason', { enum: ['publish', 'restore'] }).notNull(),
+  // A DraftContent, newlines normalized to LF. Read through `normalizeDraftContent`, for the same
+  // reason `draft_content` is: `$type` asserts the shape of rows written before a field existed.
+  content: text('content', { mode: 'json' }).$type<DraftContent>().notNull(),
+});
+
+// The tag dictionary (docs/editor-requirements.md §12.33). A post's `tags` column, its working
+// copy and its revisions hold slugs from here, never names: `slug` is the URL (`/tags/<slug>`)
+// and is fixed once the tag exists, `name` is what every surface shows and is the part that can be
+// renamed. A tag reaches this table from the editor (typed, then confirmed as new) or from
+// /admin/tags; nothing else creates one.
+export const tags = sqliteTable('tags', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  slug: text('slug').notNull().unique(),
+  name: text('name').notNull().unique(),
+  createdAt: text('created_at')
+    .notNull()
+    .default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Other identifiers that stand for a tag (docs/editor-requirements.md §12.33) — `next` for
+// `nextjs`, as Zenn keeps them. An alias is never stored in a post: choosing one in the editor
+// stores the tag's own identifier, and /tags/<alias> redirects to /tags/<identifier>. One word
+// names one tag, so an alias is unique here and never equal to any tag's identifier (lib/tags.ts
+// checks the second; this key the first). Recorded automatically when an identifier is changed or
+// merged away, so the old word keeps leading to the tag; added by hand in /admin/tags.
+export const tagAliases = sqliteTable('tag_aliases', {
+  alias: text('alias').primaryKey(),
+  tagId: integer('tag_id')
+    .notNull()
+    .references(() => tags.id, { onDelete: 'cascade' }),
 });

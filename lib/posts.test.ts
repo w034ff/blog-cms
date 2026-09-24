@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { posts } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+import { posts, tags } from '@/lib/db/schema';
 import { db } from '@/lib/db';
 import {
   getAllCategories,
@@ -12,6 +13,7 @@ import {
   getPostsByTag,
   listAllPosts,
 } from '@/lib/posts';
+import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 vi.mock('@/lib/db', async () => {
@@ -21,7 +23,16 @@ vi.mock('@/lib/db', async () => {
 
 beforeEach(() => {
   db.delete(posts).run();
+  db.delete(tags).run();
 });
+
+// Posts hold dictionary slugs and a slug the dictionary lacks is dropped on read, so every tag a
+// seeded row carries is admitted first, named after itself — except where a test says otherwise.
+function admit(slugs: readonly string[]): void {
+  for (const slug of slugs) {
+    db.insert(tags).values({ slug, name: slug }).onConflictDoNothing().run();
+  }
+}
 
 type SeedOptions = {
   slug?: string | null;
@@ -36,6 +47,7 @@ type SeedOptions = {
 };
 
 function seed(options: SeedOptions = {}): number {
+  admit([...(options.tags ?? []), ...(options.draftContent?.tags ?? [])]);
   return db
     .insert(posts)
     .values({
@@ -43,7 +55,7 @@ function seed(options: SeedOptions = {}): number {
       title: options.title ?? 'Title',
       date: options.date ?? '2026-01-01',
       description: '',
-      category: options.category ?? 'uncategorized',
+      category: options.category ?? DEFAULT_CATEGORY,
       tags: options.tags ?? [],
       draft: options.draft ?? false,
       body: options.body ?? '',
@@ -58,7 +70,7 @@ function seed(options: SeedOptions = {}): number {
 // this is a published post's own content parked in draft_content, which is what the race produces.
 const LIVE_CONTENT: DraftContent = {
   title: 'Live',
-  category: 'cat',
+  category: 'blog',
   tags: ['x'],
   thumbnail: '',
   body: 'live body',
@@ -148,7 +160,7 @@ describe('listAllPosts (admin)', () => {
   it('flags a published post that is carrying unpublished edits', async () => {
     const working: DraftContent = {
       title: 'Newer',
-      category: 'cat',
+      category: 'blog',
       tags: [],
       thumbnail: '',
       body: 'newer body',
@@ -168,7 +180,7 @@ describe('listAllPosts (admin)', () => {
     seed({
       slug: 'raced',
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       draftContent: { ...LIVE_CONTENT },
@@ -182,7 +194,7 @@ describe('listAllPosts (admin)', () => {
   // of the comparison would make the post silently publishable-looking while carrying an edit.
   const fieldEdits: [string, Partial<DraftContent>][] = [
     ['title', { title: 'Renamed' }],
-    ['category', { category: 'other' }],
+    ['category', { category: 'tech' }],
     ['body', { body: 'new body' }],
     ['thumbnail', { thumbnail: '/uploads/a.png' }],
     ['tags (changed)', { tags: ['y'] }],
@@ -195,7 +207,7 @@ describe('listAllPosts (admin)', () => {
       seed({
         slug: 'edited',
         title: 'Live',
-        category: 'cat',
+        category: 'blog',
         tags: ['x'],
         body: 'live body',
         draftContent: { ...LIVE_CONTENT, ...edit },
@@ -211,14 +223,14 @@ describe('listAllPosts (admin)', () => {
   it('does not flag a working copy that merely predates a field', async () => {
     const legacy = {
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
     } as DraftContent;
     seed({
       slug: 'legacy',
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       draftContent: legacy,
@@ -234,7 +246,7 @@ describe('listAllPosts (admin)', () => {
     const stale = {
       title: 'Live',
       description: 'old summary',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       thumbnail: '',
@@ -243,7 +255,7 @@ describe('listAllPosts (admin)', () => {
     seed({
       slug: 'stale',
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       draftContent: stale,
@@ -257,7 +269,7 @@ describe('getPostForEdit', () => {
   it('returns the pending working copy when present', async () => {
     const pending: DraftContent = {
       title: 'Pending',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       thumbnail: '',
       body: 'pending body',
@@ -273,7 +285,7 @@ describe('getPostForEdit', () => {
     // never ran. Cast because the whole point is a stored value that does not match the type.
     const legacy = {
       title: 'Pending',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'pending body',
     } as DraftContent;
@@ -292,7 +304,7 @@ describe('getPostForEdit', () => {
     const raced = seed({
       slug: 'r',
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       draftContent: { ...LIVE_CONTENT },
@@ -300,7 +312,7 @@ describe('getPostForEdit', () => {
     const edited = seed({
       slug: 'e',
       title: 'Live',
-      category: 'cat',
+      category: 'blog',
       tags: ['x'],
       body: 'live body',
       draftContent: { ...LIVE_CONTENT, body: 'new body' },
@@ -325,7 +337,7 @@ describe('getPostsByTag / getPostsByCategory', () => {
 
   it('returns only published posts in the category', async () => {
     seed({ slug: 'a', category: 'tech' });
-    seed({ slug: 'b', category: 'life' });
+    seed({ slug: 'b', category: 'blog' });
     seed({ slug: 'c', category: 'tech', draft: true });
     const result = await getPostsByCategory('tech');
     expect(result.map((p) => p.slug)).toEqual(['a']);
@@ -340,24 +352,47 @@ describe('getPostsByTag / getPostsByCategory', () => {
 });
 
 describe('getAllTags / getAllCategories', () => {
+  it('reads tags by their dictionary names and drops a slug the dictionary lacks', async () => {
+    seed({ slug: 'a', tags: ['nextjs', 'gone'] });
+    db.update(tags).set({ name: 'Next.js' }).where(eq(tags.slug, 'nextjs')).run();
+    db.delete(tags).where(eq(tags.slug, 'gone')).run();
+    const [post] = await getAllPosts();
+    expect(post.tags).toEqual(['nextjs']);
+    expect(post.tagList).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+    expect(await getAllTags()).toEqual([{ slug: 'nextjs', name: 'Next.js', count: 1 }]);
+  });
+
   it('counts tags across published posts, sorted by count then name', async () => {
     seed({ slug: 'a', tags: ['ts', 'db'] });
     seed({ slug: 'b', tags: ['ts'] });
     seed({ slug: 'c', tags: ['secret'], draft: true });
     expect(await getAllTags()).toEqual([
-      { tag: 'ts', count: 2 },
-      { tag: 'db', count: 1 },
+      { slug: 'ts', name: 'ts', count: 2 },
+      { slug: 'db', name: 'db', count: 1 },
     ]);
   });
 
-  it('counts categories across published posts only', async () => {
-    seed({ slug: 'a', category: 'tech' });
-    seed({ slug: 'b', category: 'tech' });
-    seed({ slug: 'c', category: 'life' });
-    seed({ slug: 'd', category: 'hidden', draft: true });
+  it('counts categories across published posts only, in the list order', async () => {
+    seed({ slug: 'a', category: 'blog' });
+    seed({ slug: 'b', category: 'blog' });
+    seed({ slug: 'c', category: 'tech' });
+    seed({ slug: 'd', category: 'tech', draft: true });
     expect(await getAllCategories()).toEqual([
-      { category: 'tech', count: 2 },
-      { category: 'life', count: 1 },
+      { category: 'tech', count: 1 },
+      { category: 'blog', count: 2 },
     ]);
+  });
+
+  it('leaves out a category with no published post', async () => {
+    seed({ slug: 'a', category: 'blog' });
+    seed({ slug: 'b', category: 'tech', draft: true });
+    expect(await getAllCategories()).toEqual([{ category: 'blog', count: 1 }]);
+  });
+
+  // A value the migration did not reach (drizzle/0008) still has to read as one of the ids, or it
+  // would print raw and link to a category page that 404s.
+  it('reads a category off the list as the default', async () => {
+    seed({ slug: 'a', category: 'tech-notes' });
+    expect((await getAllPosts())[0].category).toBe(DEFAULT_CATEGORY);
   });
 });

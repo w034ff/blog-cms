@@ -266,6 +266,30 @@ export async function openPostSettings(page: Page): Promise<void> {
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
 }
 
+// 記事の設定's タグ field (TagField.tsx): the combobox, and the hidden input the form actually reads.
+// The hidden one by selector — `getByRole` would not see it, and it is what a save sends.
+export function tagCombobox(page: Page): Locator {
+  return page.getByRole('combobox', { name: 'タグ' });
+}
+
+export function tagsField(page: Page): Locator {
+  return page.locator('input[type="hidden"][name="tags"]');
+}
+
+// Type into タグ and press Enter on the row the list offers first, then wait for that row's tag to
+// be a chip. The panel has to be open. `name` is what the chip then says — the existing tag's name,
+// or the typed text when the first row is the one that adds it.
+export async function addTag(page: Page, typed: string, name: string = typed): Promise<void> {
+  const box = tagCombobox(page);
+  await box.fill(typed);
+  await expect(
+    page.getByRole('listbox', { name: 'タグ' }).getByRole('option').first(),
+  ).toBeVisible();
+  await box.press('Enter');
+  await expect(page.getByRole('button', { name: `「${name}」を外す` })).toBeVisible();
+  await expect(box).toHaveValue('');
+}
+
 // The drawer is modal: its own backdrop catches a click anywhere outside it, including into the
 // editor, and closes the drawer rather than letting the click reach through. A spec that opens
 // 記事の設定 and then needs the editor — to type, to publish, to do anything outside the panel —

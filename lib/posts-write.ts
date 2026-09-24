@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
+import { normalizeNewlines } from '@/lib/draft-content';
+import { deleteRevisionsOf, liveContentOfRow, recordRevision } from '@/lib/revisions';
 import type { DraftContent } from '@/lib/types';
 
 export type PostInput = {
@@ -15,16 +17,6 @@ export type PostInput = {
   body: string;
   thumbnail: string;
 };
-
-// The two ways content reaches the server disagree about line endings: autosave posts JSON and
-// keeps the editor's LF, while publish/unpublish go through a form, and form submission rewrites
-// every newline in a value to CRLF. Left alone, a post's stored markdown flips between the two
-// depending on which button was pressed, and every line-based reader of the body has to know it —
-// lib/footnotes.ts did not, and counted written footnotes as empty. One form is stored: LF, what
-// the editor serialized in the first place.
-function normalizeNewlines(body: string): string {
-  return body.replace(/\r\n?/g, '\n');
-}
 
 // Whether a slug is already taken. Used at publish time to keep public URLs
 // unique; null slugs (drafts) never match a lookup.
@@ -57,8 +49,13 @@ export function updatePost(id: number, input: PostInput): void {
     .run();
 }
 
+// Revisions go with the post, in the same transaction (docs/revision-requirements.md §4 says why
+// this is not a foreign-key cascade).
 export function deletePost(id: number): void {
-  db.delete(posts).where(eq(posts.id, id)).run();
+  db.transaction(() => {
+    deleteRevisionsOf(id);
+    db.delete(posts).where(eq(posts.id, id)).run();
+  });
 }
 
 // Persist in-progress edits without publishing. The destination depends on the
@@ -117,12 +114,26 @@ export function autosavePost(id: number, content: DraftContent): void {
 // Returns false if the row was gone by the time this ran (e.g. deleted from
 // another tab between the caller's existence check and this call) instead of
 // silently no-oping the update.
+//
+// A published post's live version is kept as a `publish` revision before it is replaced
+// (docs/revision-requirements.md §3) — here rather than at the moment it went live, so a post
+// published before revisions existed still has its version kept on its first update. A draft's
+// live columns are not a published version, and what replaces them is what autosave just wrote.
 export function commitPost(
   id: number,
   content: DraftContent,
   draft: boolean,
   date: string,
 ): boolean {
+  return db.transaction(() => {
+    const row = db.select().from(posts).where(eq(posts.id, id)).get();
+    if (!row) return false;
+    if (!row.draft) recordRevision(id, 'publish', liveContentOfRow(row));
+    return writeCommit(id, content, draft, date);
+  });
+}
+
+function writeCommit(id: number, content: DraftContent, draft: boolean, date: string): boolean {
   const result = db
     .update(posts)
     .set({

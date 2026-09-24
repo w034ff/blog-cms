@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Post } from '@/lib/types';
+import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
@@ -38,7 +39,7 @@ export function PostCard({ post }: Props) {
           <Link
             href={`/categories/${encodeURIComponent(post.category)}`}
             className='hover:underline'>
-            {post.category}
+            {categoryLabel(post.category)}
           </Link>
         </div>
         {/* Clamped by lines, not by EXCERPT_MAX_CHARS: that length is shared with the meta
@@ -50,14 +51,14 @@ export function PostCard({ post }: Props) {
             {excerpt}
           </p>
         )}
-        {post.tags.length > 0 && (
+        {post.tagList.length > 0 && (
           <ul className='mt-3 flex flex-wrap gap-2'>
-            {post.tags.map((tag) => (
-              <li key={tag}>
+            {post.tagList.map(({ slug, name }) => (
+              <li key={slug}>
                 <Link
-                  href={`/tags/${encodeURIComponent(tag)}`}
+                  href={`/tags/${encodeURIComponent(slug)}`}
                   className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
-                  #{tag}
+                  #{name}
                 </Link>
               </li>
             ))}

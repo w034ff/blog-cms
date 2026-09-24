@@ -53,7 +53,7 @@ export function ThumbnailField({ value, onChange, body }: Props) {
 
   return (
     <div className='block text-sm'>
-      <span className='mb-1 block text-zinc-600 dark:text-zinc-400'>サムネイル</span>
+      <span className='mb-1 block font-bold'>サムネイル</span>
       {/* The value the server reads. Every other metadata field here is
           uncontrolled with a defaultValue, but this one has no text box to type
           into — the state lives in React and this input is its only route into

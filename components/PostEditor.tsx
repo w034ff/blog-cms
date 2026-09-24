@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import type { CategoryId } from '@/lib/content';
+import type { DictionaryTag } from '@/lib/types';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
@@ -38,7 +40,7 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  category: string;
+  category: CategoryId;
   tags: string[];
   body: string;
   thumbnail: string;
@@ -56,6 +58,8 @@ type Props = {
   // Whether the loaded content is a working copy ahead of the published version
   // (a published post with unsaved-to-public edits). Always false in create mode.
   hasPendingEdits: boolean;
+  // The tag dictionary (lib/tags.ts), for 記事の設定's タグ field to pick from.
+  tagDictionary: DictionaryTag[];
 };
 
 const emptyState: PostFormState = {};
@@ -63,8 +67,8 @@ const emptyState: PostFormState = {};
 // The title is the one metadata field that is always on screen, and the only one whose value
 // the reader sees, so it carries the weight the rest of the fields don't — and it is the only
 // one that can lose its label. A placeholder only works where the typed value names its own
-// field, which is true of a lone 24px bold line and false of カテゴリ「開発」 or タグ; those
-// keep their <Field> labels. note and Zenn are both shaped this way (measured 2026-09-11).
+// field, which is true of a lone 24px bold line and false of カテゴリ or タグ; those keep
+// their own visible labels. note and Zenn are both shaped this way (measured 2026-09-11).
 //
 // No `focus:ring`, so the underline carries visible keyboard focus alone: it is 2px and
 // transparent from the start, so focus changes only its colour and never the field's height.
@@ -93,6 +97,7 @@ export function PostEditor({
   published,
   everPublished: initialEverPublished,
   hasPendingEdits,
+  tagDictionary,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // Markdown source of the body, kept in sync with the editor and mirrored into a
@@ -104,7 +109,11 @@ export function PostEditor({
   // the form reads the DOM either way (useAutosave snapshots it with `new FormData`), so the
   // change would buy nothing and 説明 already shows the uncontrolled shape works.
   const [category, setCategory] = useState(initial.category);
-  const [tags, setTags] = useState(initial.tags.join(', '));
+  // Slugs. One the dictionary no longer has (deleted in /admin/tags since this copy was saved) is
+  // left out here, so it neither draws as a chip nor goes back to the server.
+  const [tags, setTags] = useState(() =>
+    initial.tags.filter((slug) => tagDictionary.some((tag) => tag.slug === slug)),
+  );
   // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
   // down, below the fold on a 600px-tall window, which is the opposite of what folding these
   // fields away is for. A new post is not left guessing: the category arrives pre-filled
@@ -235,6 +244,16 @@ export function PostEditor({
   const applyThumbnail = useCallback(
     (next: string) => {
       setThumbnail(next);
+      markEdited();
+    },
+    [markEdited],
+  );
+
+  // タグ's setter, for the same reason: a chip added or removed changes the hidden `tags` input from
+  // state, which no `input` event reports (TagField.tsx).
+  const applyTags = useCallback(
+    (next: string[]) => {
+      setTags(next);
       markEdited();
     },
     [markEdited],
@@ -780,7 +799,8 @@ export function PostEditor({
             category={category}
             onCategoryChange={setCategory}
             tags={tags}
-            onTagsChange={setTags}
+            onTagsChange={applyTags}
+            tagDictionary={tagDictionary}
             thumbnail={thumbnail}
             onThumbnailChange={applyThumbnail}
             body={body}
@@ -789,6 +809,8 @@ export function PostEditor({
             publishToggleDisabled={pending || (!hasIdentity && autosaveState === 'saving')}
             error={state.error && errorVisible ? state.error : null}
             returnFocusRef={settingsToggleRef}
+            historyHref={hasIdentity ? `/admin/posts/${committedId}/revisions` : null}
+            historyDisabled={unsaved || pending}
           />
 
           <div className='space-y-2'>
