@@ -3,8 +3,8 @@ import { Fragment, Slice } from '@tiptap/pm/model';
 import { isInDetailsTitle, titleAcceptsSlice } from './details-slice-guard';
 import { docOf, nodes, para, text } from './test-schema';
 
-// §6.8's rule, asked of PostEditor's own schema (`test-schema.ts`), since what refuses is
-// `detailsSummary`'s content expression. The paste half is also covered in
+// docs/accordion-requirements.md §6.8's rule, asked of PostEditor's own schema (`test-schema.ts`),
+// since what refuses is `detailsSummary`'s content expression. The paste half is also covered in
 // `e2e/editor-details-title-guard.spec.ts`; both halves ask this one predicate.
 //
 // **The slices below are built by hand on purpose.** This file is a truth table over slice shapes —

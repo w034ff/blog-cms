@@ -926,7 +926,8 @@ export function LinkBubble({
             </div>
             {/* 適用, not 保存: it writes into the document, and 保存 is the autosave indicator's word
                             (§5.5.16). No cancel button: a ✕ was misread as 解除; Escape, a press elsewhere or
-                            moving focus all cancel. Link colour with a hover fill, not filled. */}
+                            moving focus all cancel. Link colour with a hover fill, not filled: nothing else in the
+                chrome is filled, so a fill would read as a weight this card doesn't carry. */}
             {/* `shrink-0`, or 適用 stacked vertically on a phone; the field gives (§5.5.19). */}
             <span className='shrink-0'>
               <ToolbarButton accent onClick={applyDraft}>

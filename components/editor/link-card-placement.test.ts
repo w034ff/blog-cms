@@ -10,8 +10,8 @@ import { docOf, nodes, nodeSlice, para, rangeSlice, tableFixture, text } from '.
 //
 // **No new guard was needed:** both existing guards are written as "what does this destination
 // accept", so a block node added later is covered without being named. Unlike the footnote
-// reference, an inline atom `titleAcceptsSlice` lets through (accordion §6.5), the card is a block;
-// if it is ever made inline, these go red.
+// reference, an inline atom `titleAcceptsSlice` lets through (docs/accordion-requirements.md
+// §6.5), the card is a block; if it is ever made inline, these go red.
 const { details, detailsSummary, detailsContent, linkCard } = nodes;
 
 const card = () => linkCard.create({ href: '/posts/abc123' });

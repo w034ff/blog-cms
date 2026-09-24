@@ -4,8 +4,8 @@ import { Fragment, Slice } from '@tiptap/pm/model';
 import { hostRefusalAt, placementRefusal } from './footnote-extension';
 import { schema } from './test-schema';
 
-// §6's placement rules, asked of PostEditor's own schema (`test-schema.ts`): the accordion case
-// depends on the node's content expression doing the refusing.
+// docs/footnote-requirements.md §6's placement rules, asked of PostEditor's own schema
+// (`test-schema.ts`): the accordion case depends on the node's content expression refusing.
 const { details, detailsSummary, detailsContent, paragraph, footnoteReference } = schema.nodes;
 
 // One accordion with a filled-in title and a one-line body, then a trailing paragraph — the shape

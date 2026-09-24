@@ -14,9 +14,9 @@ import { ArrowLeftIcon } from './svg/ArrowLeftIcon';
 const INSERT_MENU_HEADING_ID = 'insert-menu-heading';
 
 // The phone's home for the insert controls (docs/editor-requirements.md §12.5), as a bottom sheet
-// (§12.18). Shown only under `hover: none` via `touch-only` (app/globals.css) rather than a
-// `matchMedia` read, which would be a hydration mismatch; `InsertControls` is the same component
-// the pointer toolbar renders.
+// modelled on note's and Google Docs' (§12.18). Shown only under `hover: none` via `touch-only`
+// (app/globals.css) rather than a `matchMedia` read, which would be a hydration mismatch;
+// `InsertControls` is the same component the pointer toolbar renders.
 //
 // **The trigger's accessible name is not 「挿入」:** `getByRole`'s `name` matches substrings, so it
 // would also select 挿入する and 2行2列の表を挿入. The sheet's heading 「挿入」 is plain text,

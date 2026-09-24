@@ -7,7 +7,9 @@ import { selectionTouches } from './selection-scan';
 // Custom Backspace join for blockquotes, replacing upstream's `handleBackspace`, which merges only
 // when the preceding quote's last child is a textblock and otherwise lifts. With nested quotes
 // that oscillated forever (docs/editor-pitfalls.md §4.1). This descends to the deepest textblock
-// and merges there. Regression: e2e/editor-quote-backspace.spec.ts.
+// and merges there. Regression: e2e/editor-quote-backspace.spec.ts. (It also once worked around a
+// bundled duplicate prosemirror-state, the bug class test/no-inlined-prosemirror.test.ts guards;
+// docs/editor-pitfalls.md §4.)
 function joinIntoBlockquote(editor: Editor, type: NodeType): boolean {
   const { state, view } = editor;
   const { selection } = state;
