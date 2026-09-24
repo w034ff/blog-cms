@@ -20,7 +20,7 @@ import type { Editor } from '@tiptap/core';
 // by its own naive rule, which does not know the sticky header covers the viewport's own top
 // pixels. That native scroll runs before `build(...).run()`'s own transaction dispatches, and
 // ProseMirror's own scrollIntoView (already the thing correctly written around the sticky chrome
-// elsewhere — pm-scrollintoview-under-sticky-toolbar) then has to work from wherever the native
+// elsewhere — docs/editor-pitfalls.md §13.4) then has to work from wherever the native
 // one left the page rather than from the pre-tap position, and the two disagreed (measured: the
 // inserted blockquote's own bottom edge landed 19px past the viewport's). Suppressing the native
 // scroll leaves PM's own scrollIntoView the only one that runs, off the state this chain actually

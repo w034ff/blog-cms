@@ -17,7 +17,7 @@
 
 ## 0. 前提 — 今どれだけ使われているか
 
-2026-08-12 に `data/blog.db`（`-wal` ごとコピーして集計。`sqlite-copy-needs-wal.md`）を見た結果:
+2026-08-12 に `data/blog.db`（`-wal` ごとコピーして集計。`docs/dev-environment.md` §3）を見た結果:
 
 - 投稿 3 件（`hello-world` / `second-post` / id 36「テスト」）
 - 本文（`body` + `draft_content`）に含まれる markdown リンク 2 件、いずれも id 36 の中

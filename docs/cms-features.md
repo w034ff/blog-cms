@@ -156,7 +156,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 - `<title>`: `post.title`
 - `<link>` / `<guid isPermaLink="true">`: `${siteOrigin}/posts/${post.slug}`（上記の null チェック後）
-- `<pubDate>`: `new Date(post.date).toUTCString()`。Zenn実測のフィードで確認した実際の出力形（`Mon, 03 Aug 2026 09:18:05 GMT`）と一致する——「RFC 822 形式に変換」を自前でフォーマットする必要はなく、`toUTCString()` 一発でよい。`post.updatedAt`（2026-09-06に追加、公開ページの「更新: …」表示の元になった列——本ファイルとは別に `post-date-and-time-display` の記録を参照）は載せない。Zenn自身のフィード（`zenn.dev/zenn/feed` 実測）も、サイト側では更新日を出しているのにフィードには入れていない——ページの表示とフィードの項目は必ずしも一致させなくてよい前例。
+- `<pubDate>`: `new Date(post.date).toUTCString()`。Zenn実測のフィードで確認した実際の出力形（`Mon, 03 Aug 2026 09:18:05 GMT`）と一致する——「RFC 822 形式に変換」を自前でフォーマットする必要はなく、`toUTCString()` 一発でよい。`post.updatedAt`（2026-09-06に追加、公開ページの「更新: …」表示の元になった列——本ファイルの「投稿日と更新日の表示」を参照）は載せない。Zenn自身のフィード（`zenn.dev/zenn/feed` 実測）も、サイト側では更新日を出しているのにフィードには入れていない——ページの表示とフィードの項目は必ずしも一致させなくてよい前例。
 - `<title>` / `<description>`: どちらも CDATA で包む（Zenn実測でも両方CDATA——`title`にも `&`/`<`/`>` が普通に入りうる技術ブログなので、`escapeXml` の個別エスケープより一律CDATAのほうが手書きミスの余地が小さい）。`<link>`/`<guid>` はスラッグが16進文字列で `&`等を含みえないため素の文字列でよい。
 - **注意**: CDATAで包む文字列自体に `]]>` が含まれると、そこでCDATAセクションが終端してXMLが壊れる——`]]>` を `]]]]><![CDATA[>` に置換してから包む（CDATAを一度閉じてすぐ開き直す定石）。
 
@@ -176,7 +176,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 **決定**: 新規の3rd-partyライブラリは追加せず、`lib/rss.ts` に `wrapCdata`（`]]>` 対策込み、§4）ヘルパーを自前で書く。`escapeXml`（属性値・将来の非CDATAフィールド用）も一度は書いたが、実装後のレビューで「呼び出し元が1つも無い未使用コード」と指摘され削除した（§13）——CDATA化しないフィールドが実際に増えたら、その時点で書けば足りる。
 
-**理由**: RSS 2.0 の XML は構造が単純で、依存追加の承認プロセス（[[npm-supply-chain-hardening]]、「never bare `npm install`, no unapproved deps」）を経てまで導入する理由がない。
+**理由**: RSS 2.0 の XML は構造が単純で、依存追加の承認プロセス（`docs/dev-environment.md` §4、「never bare `npm install`, no unapproved deps」）を経てまで導入する理由がない。
 
 ## 7. 配信件数・キャッシュ・discoverability
 
@@ -220,7 +220,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 ## 11. 受け入れ基準
 
-[[requirements-docs-are-records]] の方針に沿い、各基準は `lib/rss.test.ts` に対応するテストケースを持つ。`lib/rss.ts` は純粋関数として書いてあるので、Route Handler自体を叩かなくても大部分を検証できる。`Content-Type` のみコードレビューでの目視確認（`app/rss.xml/route.ts` に1行、ルートハンドラのテストの前例がこのリポジトリに無いため自動テスト化は見送り）。
+AGENTS.md「Requirements documents」の方針（表とコードを照合するテストで保つ）に沿い、各基準は `lib/rss.test.ts` に対応するテストケースを持つ。`lib/rss.ts` は純粋関数として書いてあるので、Route Handler自体を叩かなくても大部分を検証できる。`Content-Type` のみコードレビューでの目視確認（`app/rss.xml/route.ts` に1行、ルートハンドラのテストの前例がこのリポジトリに無いため自動テスト化は見送り）。
 
 | 基準                                                                              | 状態                                          |
 | --------------------------------------------------------------------------------- | --------------------------------------------- |
@@ -465,7 +465,7 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 - `components/ImageZoom.tsx` は `CodeCopyButtons` / `FootnotePopover` / `EmbedFrames` と同じ形の注入型クライアントコンポーネントで、`#post-body` に委譲クリックを 1 つ張るだけ。本文は `dangerouslySetInnerHTML` のまま、公開パイプラインにも sanitize にも触らない。
 - **対象は著者の画像だけ**（`img` でクラスを持たないもの）。この site がクロムとして描く絵は必ずクラスを持ち、著者の絵は持ち得ない（`rehype-sanitize` が `img` に `className` を通さない）ため、`.prose img:not([class])` と同じ判定で足りる。`<a>` の中の画像は対象外 — クリックはリンクのものである。
 - **スコープは `#post-body` であって `.prose` ではない。** `.prose` はエディタと公開ページの共有で、編集面のクリックは NodeSelection（バブルメニュー）に割り当て済みなので、そこに `zoom-in` を出すのは嘘になる。CSS もリスナも公開側の container に閉じてある。
-- **土台は modal な `<dialog>`**（`showModal()`）。Escape・`::backdrop`・フォーカストラップ・背後の inert がブラウザ側で付く。`popover="manual"` はそのどれも付かず全部自前になる（`popover-api-pitfalls`）。UA の `dialog` の箱（中央寄せ・枠・`max-width: calc(100% - 6px - 2em)`）は打ち消して、**要素自体をビューポートにする** — これが「背景クリック＝ dialog 自身へのクリック」を成立させる。`::backdrop` は疑似要素なのでクリック対象にならない。
+- **土台は modal な `<dialog>`**（`showModal()`）。Escape・`::backdrop`・フォーカストラップ・背後の inert がブラウザ側で付く。`popover="manual"` はそのどれも付かず全部自前になる（`docs/editor-pitfalls.md` §17.1）。UA の `dialog` の箱（中央寄せ・枠・`max-width: calc(100% - 6px - 2em)`）は打ち消して、**要素自体をビューポートにする** — これが「背景クリック＝ dialog 自身へのクリック」を成立させる。`::backdrop` は疑似要素なのでクリック対象にならない。
 - **虫眼鏡は絵の上に出す**（`zoom-out`）。拡大されたのは絵なので、戻す申し出をするのも絵である。**そしてクリックで実際に閉じる** — カーソルが約束したことを画面が守らないのは、エディタに `zoom-in` を出さない理由と同じ形の嘘になる。周囲は素の矢印のままで、そこを押しても閉じる（背景を押して閉じるのは説明の要らない慣習）。キャプションだけは対象外 — 文字なので、押すのは選択したい人である。
 - **背後のページはホイールでも動かさない。** `showModal()` が inert にするのはクリックとフォーカスで、**ホイールは対象外**である（記事が絵の下でスクロールした）。`html:has(dialog.image-zoom[open])` に `overflow: hidden` を当てて塞ぐ。`html` は既に `scrollbar-gutter: stable` を持っているので、スクロールバーが消えることによる横方向のずれは起きない。
 - **背景はページ自身の地を透かしたもの**で、黒でも白でもない。実測 2026-09-08（配色スキームを切り替えて再測）: note は `.pswp__bg` を body と同じ色・`opacity: .9`（255,255,255 / 32,42,48）、Zenn は容器を 80% で透かして `blur(2px)`（255,255,255 / 8,29,53）。**Zenn の形をそのまま採った**（`color-mix(in srgb, var(--background) 80%, transparent)` ＋ 2px）。**塗るのは `::backdrop` ではなく dialog 自身** — dialog は既にビューポート全面で、`::backdrop` が originating element から custom property を継承するかはエンジンのバージョン依存なので、`var(--background)` を当てにできない。
@@ -540,7 +540,7 @@ note がキーボードショートカットのドロワーを持っている、
 
 `?` は「エディタの外のコントロール」なので、開くとリンクカードは消える（`docs/link-requirements.md` §8 の 5b/5c/5d が固定しているフォーカス基準の規則。ツールバーのボタンだけが例外である）。入力途中で未適用の URL も一緒に消える（同 5e）。既存の挙動どおりであり、**新しい基準行は足さない**——ここに書くのは、将来これを退行として読まないためである。
 
-**閉じたときフォーカスは `?` ボタンへ戻す。** エディタへは戻さない——`chain().focus()` はスクロールを伴う（`pm-scrollintoview-under-sticky-toolbar` の記録）。
+**閉じたときフォーカスは `?` ボタンへ戻す。** エディタへは戻さない——`chain().focus()` はスクロールを伴う（`docs/editor-pitfalls.md` §13.4）。
 
 **画面に出る文言は「ヘルプ」**（2026-09-20。`書き方` は見出しとして硬く、`キーヘルプ` は鍵しか載っていないと言ってしまう——記法の表がいちばん大きい）。この記録と、コード中の引用は機能名として「書き方ヘルプ」のままで、`WritingHelpDialog.tsx` というファイル名も変えていない。
 

@@ -169,7 +169,7 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
       // an equal z-index would leave paint order to mount timing.
       className='fixed inset-0 z-[55] flex items-start justify-center bg-black/40 p-8'
       // mousedown, not click: a row that unmounts on mousedown lets the mouseup fall through to the
-      // document (editor-popup-row-mousedown-unmount の前例)。
+      // document (docs/editor-pitfalls.md §13.3 の前例)。
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}>

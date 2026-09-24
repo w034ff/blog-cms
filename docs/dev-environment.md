@@ -67,7 +67,7 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 **受け入れる理由**: drizzle-kit は開発専用（`db:push` / `db:migrate`）で、本番のバンドルに入らない。`@esbuild-kit` は TS の drizzle 設定を実行する ESM ローダとしてだけ使われ、esbuild の HTTP サーバは起動しないので、警告の経路に届かない。前向きの修正が無い（drizzle-kit の最新版も `@esbuild-kit/esm-loader` を宣言している）。
 
-**`npm audit fix --force` をしない。** その「修正」は `drizzle-kit@0.18.1` への大幅な格下げで、マイグレーションを壊す（postcss の項目も「修正」が `next@9.3.3` だった）。drizzle-kit が `@esbuild-kit` を外したら前へ上げる。それまでは moderate 4 件が正常である。
+**`npm audit fix --force` をしない。** その「修正」は `drizzle-kit@0.18.1` への大幅な格下げで、マイグレーションを壊す（postcss の項目も「修正」が `next@9.3.3` だった）。drizzle-kit が `@esbuild-kit` を外したら前へ上げる。それまでは、この経路の moderate 4 件が正常である。
 
 ### 5.2 override で持ち上げているもの
 
@@ -76,3 +76,7 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 - `postcss`: next が同梱する古い postcss の XSS（GHSA-qx2v-qp2m-jg93）を、`^8.5.15` に持ち上げて塞いだ（`396f270`）。
 - `sharp` の override は 2026-09-24 に外した。当時の next が `sharp: ^0.34.5` を宣言し、libvips の CVE を抱えた版が残るので `^0.35.3` に持ち上げていた（`fc395f6`）。next 16.3.5 は自分で `^0.35.4` を宣言するので、override は役目を終え、残すと next が先へ進んだときに sharp を引き留める。外しても解決は `sharp@0.35.4` のまま変わらない。`next/image` を import していなくても最適化のルート `/_next/image` は存在し、それが sharp を到達可能にしている。
 - 何かを override で上げるときは範囲を絞る。`brace-expansion` を丸ごと override すると、minimatch@10 が使う 5.x まで 1.x に引き下げて壊す。
+
+### 5.3 未決: vitest のパストラバーサル（2026-09-24 に検出）
+
+`@vitest/mocker` 経由の moderate（Vitest: Path Traversal / Arbitrary File Read）が 1 つあり、`npm audit` は `vitest` と `@vitest/mocker` の 2 件として数えるので、合計は 6 件と表示される。修正版は `vitest@4.1.11`。devDependency だが、上げるか受け入れるかは作者の判断を待っている。上げるなら §4 の手順（7 日の待機を含む）に従い、決まったらこの節を書き換える。

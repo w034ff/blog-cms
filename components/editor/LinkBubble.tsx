@@ -47,7 +47,7 @@ import { isSpeakerdeckDeckPage } from '@/lib/speakerdeck-snippet';
 //     caret in one. The card gives it back, so that trade is settled rather than merely accepted.
 //
 // Caret-driven rather than hover-driven on purpose: hover- or focus-triggered content owes WCAG SC
-// 1.4.13 dismissible/hoverable/persistent (the lesson recorded in popover-api-pitfalls), while an
+// 1.4.13 dismissible/hoverable/persistent (the lesson in docs/editor-pitfalls.md §17.1), while an
 // editing affordance that follows the caret does not. Escape still closes it.
 
 // The plugin key this menu registers under. Named so the metas below reach this menu and not the
