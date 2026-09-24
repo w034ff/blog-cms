@@ -5,6 +5,7 @@ import {
   expectPublished,
   loadMarkdown,
   openPostSettings,
+  ensureCategory,
 } from './editor-authoring';
 import { publishedPath } from './published-post';
 
@@ -49,6 +50,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await page.getByLabel('タイトル').fill(title);
   if (source !== '') await loadMarkdown(page, source);
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   return publishedPath(page);

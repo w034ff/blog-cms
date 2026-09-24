@@ -1,10 +1,10 @@
-import type { CategoryId } from '@/lib/content';
+import type { CategoryId, PostCategory } from '@/lib/content';
 
 export type PostFrontmatter = {
   title: string;
   date: string;
   tags: string[];
-  category: CategoryId;
+  category: PostCategory;
   draft: boolean;
   // The card image the author chose, as a `/uploads/<name>` path; '' when they
   // chose none. Not the image a reader sees — that is `resolveThumbnail`
@@ -91,5 +91,5 @@ export type PostSearchResult = {
   // The post's own category, drawn as the second line of an insert-search row
   // (§5.2-5). The id, not the label: the row looks the label up through
   // `categoryLabel`, the same map every other surface uses.
-  category: CategoryId;
+  category: PostCategory;
 };

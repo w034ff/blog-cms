@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { shot } from './editor-probe';
 import {
   stubX,
@@ -30,6 +30,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await page.getByLabel('タイトル').fill(title);
   await loadMarkdown(page, source);
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   return publishedPath(page);

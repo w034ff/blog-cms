@@ -7,6 +7,7 @@ import {
   openPostSettings,
   tagCombobox,
   tagsField,
+  ensureCategory,
 } from './editor-authoring';
 
 // /admin/tags (docs/editor-requirements.md §12.33): the wiring of its forms, and that a display
@@ -67,6 +68,7 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await addTag(page, first);
   await closePostSettings(page);
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   const editPath = new URL(page.url()).pathname;

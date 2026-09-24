@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // The image caption, on both surfaces (docs/cms-features.md「画像キャプション」).
@@ -176,6 +176,7 @@ test('the caption survives publish and reads the same on the public page', async
 
   await page.getByLabel('タイトル').fill('キャプション付きの画像');
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);

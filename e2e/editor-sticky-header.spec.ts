@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectDraft, expectPublished, loadMarkdown } from './editor-authoring';
+import {
+  expectAutosaved,
+  expectDraft,
+  expectPublished,
+  loadMarkdown,
+  ensureCategory,
+} from './editor-authoring';
 
 // The editor's chrome is two stacked sticky layers: the page header (記事一覧 / the autosave
 // state / 記事の設定 / 更新) and the format toolbar inside the editor frame. The toolbar pins
@@ -266,6 +272,8 @@ test('公開 in 記事の設定 appears after the first 投稿, then unpublishes
   await expect(page.getByRole('switch', { name: '公開' })).toHaveCount(0);
   await page.getByRole('button', { name: '閉じる' }).click();
 
+  await ensureCategory(page);
+
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
@@ -303,6 +311,7 @@ test('a refused 公開 leaves the switch off and shows the reason in the drawer'
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Body.');
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
@@ -319,7 +328,7 @@ test('a refused 公開 leaves the switch off and shows the reason in the drawer'
   await toggle.click();
 
   const drawer = page.getByRole('dialog', { name: '記事の設定' });
-  await expect(drawer.getByRole('alert')).toContainText('注釈が空の脚注');
+  await expect(drawer.getByRole('alert')).toContainText('脚注が 1 件、空のままです。');
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expectDraft(page);
 });
@@ -338,9 +347,11 @@ test('a refused first 投稿 keeps its message and the editor', async ({ page })
     (document.querySelector('form') as HTMLFormElement).dataset.mountProbe = 'kept';
   });
 
+  await ensureCategory(page);
+
   await page.getByRole('button', { name: '投稿' }).click();
 
-  await expect(header(page).getByText('注釈が空の脚注')).toBeVisible();
+  await expect(header(page).getByText('脚注が 1 件、空のままです。')).toBeVisible();
   await expectDraft(page);
   // The same <form> element: a remount would have replaced it without the marker.
   await expect(page.locator('form[data-mount-probe="kept"]')).toHaveCount(1);
@@ -411,4 +422,35 @@ test.describe('記事の設定 focus', () => {
     await expect(drawer).toBeHidden();
     await expect(gear).toBeFocused();
   });
+});
+
+// 投稿 with no title, from deep in a long post (docs/editor-requirements.md §12.34). The browser
+// refuses the form on the title's `required`, scrolls the field into view and shows its bubble —
+// scrolling the minimum, which put the field under the sticky header, where the bubble pointed at
+// nothing the author could read. The measurement is where the field landed, not that it moved.
+test('a 投稿 refused for an empty title brings the title out from under the header', async ({
+  page,
+}) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await loadMarkdown(page, LONG_POST);
+  await page.locator('.ProseMirror p', { hasText: '段落 30 の本文。' }).scrollIntoViewIfNeeded();
+  const title = page.getByLabel('記事タイトル');
+  // Scrolled out of sight above, so the browser has to move the page to show it.
+  expect((await box(page, title)).y).toBeLessThan(0);
+
+  await ensureCategory(page);
+
+  await page.getByRole('button', { name: '投稿' }).click();
+
+  await expect(title).toBeFocused();
+  const headerBox = await box(page, header(page));
+  expect((await box(page, title)).y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
+  expect(await title.evaluate((input: HTMLInputElement) => input.validationMessage)).toBe(
+    'タイトルを入力してください。',
+  );
+
+  // Typing clears it, or the field would stay invalid with a title in it.
+  await title.fill('E2E title required');
+  expect(await title.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(true);
 });

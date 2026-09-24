@@ -3,7 +3,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
-import { normalizeCategory } from '../lib/content.ts';
+import { CATEGORIES, normalizeCategory } from '../lib/content.ts';
 
 const ROOT = process.cwd();
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
@@ -59,7 +59,9 @@ function main(): void {
       title: fm.title,
       date: fm.date,
       description: fm.description ?? '',
-      category: normalizeCategory(fm.category),
+      // Imported posts can arrive published, and a published post has a category (§12.32), so one
+      // the file does not name goes under the list's first rather than being left unchosen.
+      category: normalizeCategory(fm.category) || CATEGORIES[0].id,
       tags: JSON.stringify(tags),
       draft: fm.draft ? 1 : 0,
       body: parsed.content.trim(),

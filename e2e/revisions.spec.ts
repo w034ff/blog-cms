@@ -4,6 +4,7 @@ import {
   expectPublishPending,
   expectPublished,
   openPostSettings,
+  ensureCategory,
 } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 
@@ -44,6 +45,7 @@ test('a previous published version can be restored, without publishing it (row 9
   page,
 }) => {
   const editPath = await newPost(page, `E2E revision ${Date.now()}`, '最初の本文');
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await appendInNewSession(page, editPath, ' 追記');
@@ -86,6 +88,7 @@ test('リビジョン履歴 cannot be pressed while an edit is unsaved (row 10)'
 
 test('restoring the live version discards pending edits (row 11)', async ({ page }) => {
   const editPath = await newPost(page, `E2E revision discard ${Date.now()}`, '公開した本文');
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
@@ -111,6 +114,7 @@ test('restoring the live version discards pending edits (row 11)', async ({ page
 
 test('the 差分 view shows what pressing the button would take away (row 13)', async ({ page }) => {
   const editPath = await newPost(page, `E2E revision diff ${Date.now()}`, '公開した本文');
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await appendInNewSession(page, editPath, ' 未公開の追記');
@@ -141,6 +145,7 @@ test.describe('with no session', () => {
     try {
       const author = await authed.newPage();
       const editPath = await newPost(author, `E2E revision gate ${Date.now()}`, '公開中の本文');
+      await ensureCategory(author);
       await author.getByRole('button', { name: '投稿' }).click();
       await expectPublished(author);
       // An update is what keeps the previous published version as a revision.

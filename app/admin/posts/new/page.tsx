@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
-import { DEFAULT_CATEGORY } from '@/lib/content';
 import { listDictionary } from '@/lib/tags';
 
 // The h1 that used to say this is gone — the editor's own title field says which post this
@@ -18,7 +17,8 @@ const emptyInitial: PostEditorInitial = {
   id: null,
   slug: '',
   title: '',
-  category: DEFAULT_CATEGORY,
+  // Not chosen: publish asks for it (§12.32).
+  category: '',
   tags: [],
   body: '',
   thumbnail: '',

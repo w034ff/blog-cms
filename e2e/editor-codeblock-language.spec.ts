@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectAutosaved, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 
 // The code block NodeView (components/editor/code-block-extension.ts) surfaces the block's
 // `language` (a <select>) and `filename` (a text field) in the editor. Browser-only — the
@@ -241,6 +241,7 @@ test('the header controls keep their values across a form-action save (投稿/�
   // their displayed values must survive — regression: they used to blank in place while the
   // node's attrs stayed intact (no ProseMirror transaction fired to re-sync the NodeView).
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectAutosaved, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // ```diff fences get a per-line class from lib/shiki-diff-line-transformer.ts (Shiki's diff
@@ -23,6 +23,7 @@ test('a public ```diff code block paints +/- rows, but not +++/--- header rows',
   await page.keyboard.type('+new line');
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);
@@ -62,6 +63,7 @@ test('a public ```diff_ts code block highlights TypeScript tokens alongside the 
   await page.keyboard.type('+const x = 2;');
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);

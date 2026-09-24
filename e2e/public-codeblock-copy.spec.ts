@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // The copy button is injected client-side (components/CodeCopyButtons.tsx) into each code block
@@ -21,6 +21,7 @@ test('the public code block copy button copies the code with newlines', async ({
   await page.keyboard.type('const b = 2;');
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);
@@ -53,6 +54,7 @@ test('a click just outside the visible copy button still copies (enlarged hit ar
   await page.keyboard.type('const a = 1;');
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);
@@ -80,6 +82,7 @@ async function publishCodeBlock(page: Page, withFilename: boolean) {
     await block.locator('.code-block-filename').blur();
   }
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);

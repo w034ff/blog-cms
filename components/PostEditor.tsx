@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import type { CategoryId } from '@/lib/content';
+import type { PostCategory } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -40,7 +40,7 @@ export type PostEditorInitial = {
   id: number | null;
   slug: string;
   title: string;
-  category: CategoryId;
+  category: PostCategory;
   tags: string[];
   body: string;
   thumbnail: string;
@@ -116,8 +116,9 @@ export function PostEditor({
   );
   // Closed in both modes. Open-on-create was tried and reverted: it pushed the editor ~200px
   // down, below the fold on a 600px-tall window, which is the opposite of what folding these
-  // fields away is for. A new post is not left guessing: the category arrives pre-filled
-  // (DEFAULT_CATEGORY) and nothing else above is required to publish.
+  // fields away is for. The one thing in it a publish needs is カテゴリ, which a new post starts
+  // without (§12.32, 2026-09-24); the refusal names 記事の設定, so the author is not left
+  // guessing where it is.
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Where focus returns when 記事の設定 closes (PostSettingsPanel.tsx, §12.29).
   const settingsToggleRef = useRef<HTMLButtonElement>(null);
@@ -292,6 +293,9 @@ export function PostEditor({
   if (state !== handledState) {
     setHandledState(state);
     setErrorVisible(Boolean(state.error));
+    // A publish refused for カテゴリ opens 記事の設定 onto it (§12.32): the field is folded away
+    // there, and the drawer repeats the message beside it.
+    if (state.missingCategory) setSettingsOpen(true);
     // React to a publish/unpublish result during render (the sanctioned
     // "adjust state when a value changes" pattern). The matching URL side-effect
     // lives in an effect below.
@@ -738,8 +742,10 @@ export function PostEditor({
         </div>
         {/* Inside the pinned bar rather than below it, so a refused publish is readable from
             wherever the author clicked 投稿. It grows the bar, and the toolbar's offset is
-            measured rather than written down precisely so that it follows. */}
-        {state.error && errorVisible && (
+            measured rather than written down precisely so that it follows. Not for カテゴリ not
+            chosen: that refusal opens 記事の設定 and is said under the field (§12.32), and a second
+            copy here, dimmed behind the drawer, only repeats it. */}
+        {state.error && errorVisible && !state.missingCategory && (
           <p className='mx-auto max-w-site px-1 pt-1 text-sm text-red-600'>{state.error}</p>
         )}
       </div>
@@ -775,14 +781,28 @@ export function PostEditor({
             text they can see (WCAG 2.5.3). The 49 `getByLabel('タイトル')` calls across 26 specs
             still resolve against it: Playwright's getByLabel reads aria-label, and matches a
             substring unless given `exact`. */}
+            {/* `required` is what refuses a 投稿 with no title (§12.34): the browser scrolls to the
+            field, focuses it and shows its bubble. The bubble says タイトル rather than the
+            browser's generic line, and is cleared on each edit — a custom message left standing
+            keeps the field invalid. The scroll margin is the header's measured height, not a
+            constant: the browser scrolls the minimum, which left the field under the sticky
+            header, and that header wraps at narrow widths. */}
             <input
               name='title'
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(event) => {
+                event.target.setCustomValidity('');
+                setTitle(event.target.value);
+              }}
+              onInvalid={(event) => {
+                if (event.currentTarget.validity.valueMissing) {
+                  event.currentTarget.setCustomValidity('タイトルを入力してください。');
+                }
+              }}
               required
               placeholder='記事タイトル'
               aria-label='記事タイトル'
-              className={titleClass}
+              className={`${titleClass} scroll-mt-[calc(var(--editor-header-h)+1rem)]`}
             />
           </div>
 
@@ -808,6 +828,7 @@ export function PostEditor({
             everPublished={everPublished}
             publishToggleDisabled={pending || (!hasIdentity && autosaveState === 'saving')}
             error={state.error && errorVisible ? state.error : null}
+            categoryError={state.missingCategory && errorVisible ? (state.error ?? null) : null}
             returnFocusRef={settingsToggleRef}
             historyHref={hasIdentity ? `/admin/posts/${committedId}/revisions` : null}
             historyDisabled={unsaved || pending}

@@ -4,6 +4,7 @@ import {
   expectDraft,
   expectPublishPending,
   expectPublished,
+  ensureCategory,
 } from './editor-authoring';
 import { publishedPath } from './published-post';
 
@@ -39,6 +40,7 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
 
   // Publish. The editor adopts the action result in place: the row's publish state flips to
   // published-current and the button relabels to 更新.
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
@@ -133,6 +135,7 @@ test('placing the caret does not arm autosave', async ({ page }) => {
   await page.keyboard.type('- one\n');
   await page.keyboard.type('two');
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

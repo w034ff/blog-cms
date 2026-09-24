@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { closeHistory, expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import {
+  closeHistory,
+  expectAutosaved,
+  expectPublished,
+  loadMarkdown,
+  ensureCategory,
+} from './editor-authoring';
 import { markdown, shot } from './editor-probe';
 import { BLOB_NOTICES } from '../components/editor/github-blob-import';
 import { gotoPublished } from './published-post';
@@ -254,6 +260,7 @@ test('the published block wears the same header (§19.4)', async ({ page }) => {
   await expect(page.locator('.ProseMirror pre')).toHaveCount(1);
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await gotoPublished(page);

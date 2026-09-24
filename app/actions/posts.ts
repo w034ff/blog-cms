@@ -3,13 +3,7 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import {
-  DEFAULT_CATEGORY,
-  MAX_TAGS,
-  isCategoryId,
-  parseTags,
-  type CategoryId,
-} from '@/lib/content';
+import { MAX_TAGS, isCategoryId, parseTags, type PostCategory } from '@/lib/content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
@@ -26,7 +20,8 @@ import type { DraftContent } from '@/lib/types';
 const contentSchema = z.object({
   title: z.string().min(1),
   // Refused rather than normalized: an id off the list reaches here only from a crafted form.
-  category: z.custom<CategoryId>(isCategoryId),
+  // '' (not chosen yet) passes here, for 下書きに戻す; publish refuses it on its own below.
+  category: z.custom<PostCategory>((value) => value === '' || isCategoryId(value)),
   tags: z.array(z.string()),
   body: z.string(),
   // Not strict, unlike its neighbours here: an unusable path normalizes to ''
@@ -48,6 +43,8 @@ export type PostFormState = {
   // learn the finalized slug, reset the pending-changes baseline, and flash an
   // indicator. `at` makes each result a distinct state object.
   saved?: { id: number; slug: string | null; published: boolean; at: number };
+  // The refusal is for カテゴリ not chosen (§12.32): the editor opens 記事の設定 onto it.
+  missingCategory?: true;
 };
 
 function field(formData: FormData, name: string): string {
@@ -67,7 +64,7 @@ function parseId(formData: FormData): number | null {
 function parseContent(formData: FormData): DraftContent | null {
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
-    category: field(formData, 'category') || DEFAULT_CATEGORY,
+    category: field(formData, 'category'),
     // Slugs the dictionary does not have are dropped, not refused (lib/tags.ts `knownTagSlugs`).
     tags: knownTagSlugs(parseTags(field(formData, 'tags'))),
     body: field(formData, 'body'),
@@ -104,6 +101,12 @@ async function publish(formData: FormData): Promise<PostFormState> {
   if (!content) {
     return { error: '入力が不正です。タイトルは必須です。' };
   }
+  // A new post starts with no category (§12.32), and publishing is where it has to be chosen. The
+  // editor opens 記事の設定 on `missingCategory` and says this under the field, so it need not
+  // name where the field is.
+  if (content.category === '') {
+    return { error: 'カテゴリを選んでください。', missingCategory: true };
+  }
   // docs/footnote-requirements.md §5.2's third layer. Autosave and 下書き保存 stay lenient — a note
   // half-written is work in progress, and refusing to store it is how drafts get lost — but an
   // empty one is meaningless to a reader, so publishing is where it has to be finished. The number
@@ -116,7 +119,7 @@ async function publish(formData: FormData): Promise<PostFormState> {
   const incomplete = incompleteFootnotes(content.body);
   if (incomplete.length > 0) {
     return {
-      error: `注釈が空の脚注が ${incomplete.length} 件あります。本文を書いてから公開してください。`,
+      error: `脚注が ${incomplete.length} 件、空のままです。内容を書いてから公開してください。`,
     };
   }
   const id = parseId(formData);

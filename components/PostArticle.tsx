@@ -73,11 +73,17 @@ export function PostArticle({
             {showDates && hasVisibleUpdate(post.date, post.updatedAt) && (
               <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
             )}
-            <Link
-              href={`/categories/${encodeURIComponent(post.category)}`}
-              className='hover:underline'>
-              {categoryLabel(post.category)}
-            </Link>
+            {/* '' only on a draft or a revision, which only the author previews: a published post
+            always has a category (§12.32). No link, since /categories/ has no page for it. */}
+            {post.category === '' ? (
+              <span>{categoryLabel(post.category)}</span>
+            ) : (
+              <Link
+                href={`/categories/${encodeURIComponent(post.category)}`}
+                className='hover:underline'>
+                {categoryLabel(post.category)}
+              </Link>
+            )}
           </div>
           {post.tagList.length > 0 && (
             <ul className='mt-3 flex flex-wrap gap-2'>

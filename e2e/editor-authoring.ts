@@ -303,6 +303,18 @@ export async function closePostSettings(page: Page): Promise<void> {
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 }
 
+// A new post starts with no category, and 投稿 refuses it (docs/editor-requirements.md §12.32).
+// Every spec that publishes a new post calls this first; the category is its preamble, not its
+// claim. Leaves a chosen one alone, so a spec that picked ブログ keeps it. Clicks the radio in the
+// page rather than through 記事の設定: opening and closing the drawer before every publish would be
+// two more steps of preamble, and `click()` on a radio fires the same input event the form hears.
+export async function ensureCategory(page: Page): Promise<void> {
+  if ((await page.locator('input[name="category"]:checked').count()) > 0) return;
+  const first = page.locator('input[name="category"]').first();
+  await first.evaluate((input: HTMLInputElement) => input.click());
+  await expect(first).toBeChecked();
+}
+
 // The editor's publish state, read from the pinned row's `data-publish-state`.
 //
 // The row used to say 未公開 / 未公開の変更あり / 公開済み（最新） in words and the suite waited

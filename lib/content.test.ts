@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   CATEGORIES,
-  DEFAULT_CATEGORY,
   categoryLabel,
   isCategoryId,
   normalizeCategory,
@@ -13,12 +12,12 @@ import {
 } from '@/lib/content';
 
 describe('categories', () => {
-  it('has distinct ids and labels, and the default is one of them', () => {
+  it('has distinct ids and labels, none of them the empty "not chosen"', () => {
     const ids = CATEGORIES.map((category) => category.id);
     const labels = CATEGORIES.map((category) => category.label);
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(labels).size).toBe(labels.length);
-    expect(isCategoryId(DEFAULT_CATEGORY)).toBe(true);
+    expect(isCategoryId('')).toBe(false);
   });
 
   it.each(CATEGORIES.map(({ id, label }) => [id, label]))('labels %s as %s', (id, label) => {
@@ -27,14 +26,19 @@ describe('categories', () => {
     if (isCategoryId(id)) expect(categoryLabel(id)).toBe(label);
   });
 
-  // The free-text era's values, the blank a lost field sends, and things that are not strings.
+  // The free-text era's values, the blank of a post with none chosen, and things that are not
+  // strings. Read as not chosen rather than as some category, so publish asks the author (§12.32).
   it.each([['uncategorized'], ['tech-notes'], [''], [undefined], [null], [1]])(
-    'reads %s as the default',
+    'reads %s as not chosen',
     (value) => {
       expect(isCategoryId(value)).toBe(false);
-      expect(normalizeCategory(value)).toBe(DEFAULT_CATEGORY);
+      expect(normalizeCategory(value)).toBe('');
     },
   );
+
+  it('labels not chosen as 未設定', () => {
+    expect(categoryLabel('')).toBe('未設定');
+  });
 });
 
 describe('tagSlug', () => {

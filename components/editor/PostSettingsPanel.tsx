@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { CATEGORIES, type CategoryId } from '@/lib/content';
+import { CATEGORIES, type CategoryId, type PostCategory } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
 import { TagField } from './TagField';
 import { ThumbnailField } from './ThumbnailField';
@@ -74,7 +74,7 @@ function CategoryField({
   value,
   onChange,
 }: {
-  value: CategoryId;
+  value: PostCategory;
   onChange: (value: CategoryId) => void;
 }) {
   const labelId = useId();
@@ -127,7 +127,7 @@ function CategoryField({
 type Props = {
   open: boolean;
   onClose: () => void;
-  category: CategoryId;
+  category: PostCategory;
   onCategoryChange: (value: CategoryId) => void;
   tags: string[];
   onTagsChange: (value: string[]) => void;
@@ -143,6 +143,10 @@ type Props = {
   publishToggleDisabled: boolean;
   // The last action's refusal, while PostEditor still shows it in the header.
   error: string | null;
+  // A publish was refused for カテゴリ not chosen (§12.32), which opens this drawer. Said under the
+  // field and only here — not in the header — and not under 公開 either, whose row is not there
+  // before the first publish, which is when this happens.
+  categoryError: string | null;
   // The gear that opens this, where focus goes back on close (§12.29).
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   // The post's history page, or null while a brand-new post has no row yet
@@ -168,6 +172,7 @@ export function PostSettingsPanel({
   everPublished,
   publishToggleDisabled,
   error,
+  categoryError,
   returnFocusRef,
   historyHref,
   historyDisabled,
@@ -334,7 +339,14 @@ export function PostSettingsPanel({
           state (chosen / picked from the body / none) is worth seeing the moment the drawer opens
           (requested 2026-09-21). */}
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          <CategoryField value={category} onChange={onCategoryChange} />
+          <div>
+            <CategoryField value={category} onChange={onCategoryChange} />
+            {categoryError && (
+              <p role='alert' className='mt-1 text-sm text-red-600'>
+                {categoryError}
+              </p>
+            )}
+          </div>
           <TagField value={tags} onChange={onTagsChange} dictionary={tagDictionary} />
           {/* 公開 — the post's visibility as a switch, at the end of the group so it is decided
           after the fields above are checked (docs/editor-requirements.md §12.27). The header keeps

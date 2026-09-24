@@ -1,5 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
 // Neither of the two footnote links carries a resting underline any more, so hover and keyboard
@@ -54,6 +54,7 @@ test('a published footnote reference is the editor’s `[n]`, and its definition
   await expect(page.locator('.ProseMirror div[data-footnote-def]')).toHaveCount(COUNT);
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

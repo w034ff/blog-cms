@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectAutosaved, expectDraft, expectPublished } from './editor-authoring';
+import { expectAutosaved, expectDraft, expectPublished, ensureCategory } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 
 // A draft is served at its own `/posts/<slug>` — the address every row gets at creation — but only
@@ -22,6 +22,7 @@ async function draftWithSlug(page: import('@playwright/test').Page, title: strin
 
   // Published first, then unpublished: that is the state an author reaches by turning 公開 off, and it
   // is the one where a stale public address could still be in someone's hands.
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await page.getByRole('button', { name: '記事の設定' }).click();

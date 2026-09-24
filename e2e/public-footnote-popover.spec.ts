@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 import { publishedPath } from './published-post';
 
@@ -43,6 +43,7 @@ test.beforeAll(async ({ browser }) => {
   await loadMarkdown(page, SOURCE);
   await expect(page.locator('.ProseMirror div[data-footnote-def]')).toHaveCount(3);
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   postHref = await publishedPath(page);

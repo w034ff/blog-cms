@@ -13,7 +13,6 @@ import {
   getPostsByTag,
   listAllPosts,
 } from '@/lib/posts';
-import { DEFAULT_CATEGORY } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 vi.mock('@/lib/db', async () => {
@@ -55,7 +54,7 @@ function seed(options: SeedOptions = {}): number {
       title: options.title ?? 'Title',
       date: options.date ?? '2026-01-01',
       description: '',
-      category: options.category ?? DEFAULT_CATEGORY,
+      category: options.category ?? 'tech',
       tags: options.tags ?? [],
       draft: options.draft ?? false,
       body: options.body ?? '',
@@ -389,10 +388,12 @@ describe('getAllTags / getAllCategories', () => {
     expect(await getAllCategories()).toEqual([{ category: 'blog', count: 1 }]);
   });
 
-  // A value the migration did not reach (drizzle/0008) still has to read as one of the ids, or it
-  // would print raw and link to a category page that 404s.
-  it('reads a category off the list as the default', async () => {
+  // A value the migration did not reach (drizzle/0008) must not print raw or link to a category
+  // page that 404s. It reads as not chosen (§12.32), and a published post in that state is left
+  // out of every category's count.
+  it('reads a category off the list as not chosen', async () => {
     seed({ slug: 'a', category: 'tech-notes' });
-    expect((await getAllPosts())[0].category).toBe(DEFAULT_CATEGORY);
+    expect((await getAllPosts())[0].category).toBe('');
+    expect(await getAllCategories()).toEqual([]);
   });
 });

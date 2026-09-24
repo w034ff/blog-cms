@@ -13,22 +13,26 @@ export const CATEGORIES = [
 
 export type CategoryId = (typeof CATEGORIES)[number]['id'];
 
-// The category a new post starts in. The row exists before the author ever opens 記事の設定
-// (autosave creates it), so there is no "not chosen yet" state to fall back on.
-export const DEFAULT_CATEGORY: CategoryId = 'tech';
+// A post's category as stored: one of the ids, or '' until the author chooses one — the same ''
+// = "none chosen" the thumbnail uses. A new post starts at '' (§12.32), autosave keeps it, and
+// publish refuses it, so a published post always has an id.
+export type PostCategory = CategoryId | '';
 
 export function isCategoryId(value: unknown): value is CategoryId {
   return CATEGORIES.some((category) => category.id === value);
 }
 
-// Anything that is not one of the ids reads as the default. The stored values were migrated when
+// Anything that is not one of the ids reads as not chosen. The stored values were migrated when
 // the list became fixed (drizzle/0008), so this is for what no migration reaches: a JSON column
-// asserted by `$type`, or a request body.
-export function normalizeCategory(value: unknown): CategoryId {
-  return isCategoryId(value) ? value : DEFAULT_CATEGORY;
+// asserted by `$type`, or a request body. Not chosen rather than a default, so an unreadable
+// value asks the author again instead of filing the post somewhere they did not pick.
+export function normalizeCategory(value: unknown): PostCategory {
+  return isCategoryId(value) ? value : '';
 }
 
-export function categoryLabel(id: CategoryId): string {
+// '' shows as 未設定 — on the admin list and in a revision's diff, the surfaces that see drafts.
+export function categoryLabel(id: PostCategory): string {
+  if (id === '') return '未設定';
   return CATEGORIES.find((category) => category.id === id)?.label ?? id;
 }
 

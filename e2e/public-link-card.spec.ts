@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { publishedPath } from './published-post';
 
 // The link card on the *published* page (docs/link-card-requirements.md §6, criteria 1c/2a–2e).
@@ -35,6 +35,7 @@ async function publish(page: Page, title: string, source: string): Promise<strin
   await loadMarkdown(page, source);
 
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 

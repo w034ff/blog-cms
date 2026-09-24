@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectAutosaved, expectPublished, loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { postSlug } from './published-post';
 import Database from 'better-sqlite3';
 import { TEST_DB_PATH } from './constants';
@@ -37,6 +37,7 @@ test('a published edit is visible on every surface reached by <Link> alone', asy
   await page.getByLabel('タイトル').fill(before);
   await loadMarkdown(page, 'Body before.');
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   const slug = await postSlug(page);
@@ -102,6 +103,7 @@ test('what the client cache does with a change no Server Action announced', asyn
   await page.getByLabel('タイトル').fill(before);
   await loadMarkdown(page, 'Control body.');
   await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   const id = await page.locator('input[name="id"]').inputValue();
