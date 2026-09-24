@@ -18,15 +18,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /home/user/test || exit 0; [ -z \"$(git status --porcelain)\" ] && exit 0; npm run test:run >/tmp/claude-vitest-stop.log 2>&1 || printf '{\"systemMessage\":\"⚠️ vitest failed on Stop — run: npm run test:run (log:/tmp/claude-vitest-stop.log)\"}'",
-            "timeout": 120,
-            "statusMessage": "Running vitest…"
-          },
-          {
-            "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; [ -z \"$(git status --porcelain)\" ] && exit 0; npm run lint >/tmp/claude-eslint-stop.log 2>&1 || printf '{\"systemMessage\":\"⚠️ eslint failed on Stop — run: npm run lint (log:/tmp/claude-eslint-stop.log)\"}'",
-            "timeout": 120,
-            "statusMessage": "Running eslint…"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop-checks.sh",
+            "timeout": 240,
+            "statusMessage": "Running vitest and eslint…"
           }
         ]
       }
