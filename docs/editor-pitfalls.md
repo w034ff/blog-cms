@@ -198,11 +198,15 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 
 **一般則**: 破壊的なジェスチャを拒否に変える前に、その拒否が唯一の経路を塞がないかを問う。no-op は自動的に安全な答えではない。
 
-### 6.4 アコーディオンは isolating である（静的に確定、帰結は未測定）
+### 6.4 アコーディオンの縁をまたぐ範囲の置換（2026-09-24 測定）
 
-インストール版の `@tiptap/extension-details` は、`details` と `detailsSummary` の両方に `isolating: true` を付けている（静的、2026-09-24、3.31.3）。`isolating-boundary.ts` と `code-block-extension.ts` のコメントは、以前は両ノードを isolating でないとしていた。2026-09-24 に dist に合わせて直した。
+インストール版の `@tiptap/extension-details` は、`details` と `detailsSummary` の両方に `isolating: true` を付けている（3.31.3）。§6.1 の切り詰めは、アコーディオンのタイトルと本文の縁、アコーディオンと前後の段落の縁でも働く。
 
-**未測定**: 汎用の切り詰め（`clampedDeleteRanges` → 入力、paste、drop、cut、IME、Backspace / Delete / Enter）がアコーディオンのタイトルと本文の縁でも発火しうる。`details-slice-guard.ts` と `slice-guard-composition.test.ts` はスライスの paste / drop しか扱っておらず、素の範囲 Backspace や選択上の入力は扱っていない。`details-extension.ts` の `enterIntoEmptyBody` / `tabIntoBody` / `detailsInputRuleUndoCaret` と衝突する可能性がある。この一帯に触る前に、実ブラウザでタイトルと本文の縁をまたいで Backspace / paste / drop / cut を試す（§6.1 の手順）。
+`前の段落です` / `details(題名 | 畳んだ本文)` / `後の段落です` で、開いたアコーディオンに対して 6 つの範囲（タイトル→本文、本文→タイトルの逆向き、前の段落→タイトル、タイトル→後の段落、本文→後の段落、前の段落→本文）と 6 つの操作（Backspace、Delete、文字の入力、Enter、cut、paste）の 36 通りを測った。
+
+- **どの場合もアコーディオンは割れず、`pageerror` も出ない。** 縁の内側と外側がそれぞれ消え、結合しない（例: タイトル→本文の Backspace は `題` / `だ本文`、前の段落→本文は `前の` / 空のタイトル / `だ本文`）。キャレットは範囲の先頭に残り、入力・paste はそこに入る。markdown は往復する。
+- **Enter は範囲の頭（head）がどこにあるかで分かれる。** 頭が本文や段落にあれば、切り詰めてから分割する。頭がタイトルにある場合（本文→タイトルの逆向き、前の段落→タイトル）は、選択を消さず、本文の先頭に空の段落を足してキャレットをそこへ移す。タイトルでの Enter の処理（本文に入る）が範囲を見ていないためと見られる。文字は失われないが、選択範囲を置き換えない唯一の操作である。
+- 未測定: drop（移動ドラッグの元の削除）、IME の確定、閉じたアコーディオン（閉じている間は本文にキャレットが入らない）。
 
 ## 7. 表
 
