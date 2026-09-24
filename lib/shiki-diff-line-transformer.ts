@@ -14,16 +14,10 @@ declare module '@shikijs/types' {
   }
 }
 
-// A code block is a diff based on the `diff` meta flag, not the Shiki language — a
-// `diff_<lang>` fence highlights as its real language (e.g. `ts`), with diff coloring layered
-// on top, so this can no longer key off `this.options.lang === 'diff'`. Shiki's bundled `diff`
-// grammar (used for the no-language `diff`/`diff_` form) only carries the +/- markup as a
-// token *foreground* color (see @shikijs/langs/diff + the github-dark/light themes'
-// markup.inserted/deleted scopes) — rehype-pretty-code never surfaces the scope's
-// `background`, so a bare diff fence reads as barely-tinted text instead of a GitHub-style
-// diff. This adds a class per line so CSS (app/globals.css) can paint the full row, based on
-// the raw source line's leading +/- (excluding the `+++`/`---` file-header lines of a unified
-// diff).
+// A diff block is one with the `diff` meta flag, not the Shiki language, since `diff_<lang>`
+// highlights as `<lang>`. Shiki's `diff` grammar only colours the +/- text, and rehype-pretty-code
+// never surfaces the scope's background, so each +/- line (not `+++`/`---` headers) gets a class
+// for app/globals.css to paint the row.
 export function diffLineHighlight(): ShikiTransformer {
   return {
     name: 'diff-line-highlight',

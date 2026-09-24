@@ -129,7 +129,7 @@ describe('resolveEmbed / X', () => {
 
   it('names the iframe per placement, so two embeds are told apart (X1, §10.5)', () => {
     // Without a distinct `embedId` every iframe on the page answers to `embed-0`, and the parent
-    // cannot tell whose `resize` is whose — measured 2026-08-23.
+    // cannot tell whose `resize` is whose.
     const target = resolveEmbed(`https://x.com/ClaudeDevs/status/${X_ID}`);
     expect(target?.src('a')).not.toBe(target?.src('b'));
     // The id is the render stage's string, so it is escaped on the way into the query.
@@ -202,7 +202,7 @@ describe('resolveEmbed / SlideShare', () => {
 
   it('leaves every SlideShare URL that names no deck to the card (S2)', () => {
     for (const href of [
-      // The old shape, which carries no id at all (measured 2026-08-25: it answers 404).
+      // The old shape, which carries no id at all (it answers 404).
       'https://www.slideshare.net/HubSpot/2024-state-of-marketing-report-by-hubspot',
       // A deck page with the id missing, the search page, the front page, a user page.
       'https://www.slideshare.net/slideshow/slidesharesample-260753333',
@@ -359,7 +359,7 @@ describe('resolveEmbed / Speaker Deck', () => {
       `https://speakerdeck.com/player/${SD_ID}/`,
     ])
       expect(resolveEmbed(href)?.src(ANY), href).toBe(SD_SRC);
-    // The 24-character form older decks carry — both lengths play (measured 2026-08-26, §16.2).
+    // The 24-character form older decks carry — both lengths play (§16.2).
     expect(resolveEmbed(`https://speakerdeck.com/player/${SD_LEGACY_ID}`)?.src(ANY)).toBe(
       `https://speakerdeck.com/player/${SD_LEGACY_ID}`,
     );
@@ -371,7 +371,7 @@ describe('resolveEmbed / Speaker Deck', () => {
       // at any depth of the path, and deriving one would mean fetching the page (§16.3).
       'https://speakerdeck.com/soudai/pgcon21j-tutorial',
       'https://www.speakerdeck.com/soudai/pgcon21j-tutorial',
-      // The slug-shaped aliases that do not exist — all four answer 404 (measured 2026-08-26).
+      // The slug-shaped aliases that do not exist — all four answer 404.
       `https://speakerdeck.com/player/soudai/pgcon21j-tutorial`,
       'https://speakerdeck.com/soudai/pgcon21j-tutorial/embed',
       'https://speakerdeck.com/soudai/pgcon21j-tutorial/player',
@@ -392,8 +392,8 @@ describe('resolveEmbed / Speaker Deck', () => {
     for (const id of [
       '',
       'abc',
-      // Uppercase is a different string to Speaker Deck: the same characters upper-cased answer 404
-      // (measured 2026-08-26), so accepting them would build a src that plays nothing (§16.2).
+      // Uppercase is a different string to Speaker Deck: the same characters upper-cased answer 404,
+      // so accepting them would build a src that plays nothing (§16.2).
       SD_ID.toUpperCase(),
       // Shorter than the legacy form, longer than the current one, and not hex at all.
       '0'.repeat(23),
@@ -466,7 +466,7 @@ describe('resolveEmbed / Docswell', () => {
   it('leaves every Docswell URL that is not a deck page to the card (D3)', () => {
     for (const href of [
       // **A video**, which lives at the same path with a `v` in front of the key and is served from
-      // `/video/<key>/embed` instead — `/slide/vYN91PJ/embed` is a 404 (measured 2026-08-26).
+      // `/video/<key>/embed` instead — `/slide/vYN91PJ/embed` is a 404.
       'https://www.docswell.com/s/carol0226/vYN91PJ-2026-08-26-2684',
       // The embed URL itself. Accepting it would make 「リンクに戻す」 write the bare player into an
       // `<a href>` rather than the page the author was holding (§14.2's call).
@@ -489,8 +489,8 @@ describe('resolveEmbed / Docswell', () => {
 
   it('refuses a key that is not a key (D4)', () => {
     for (const key of [
-      // Lowercase is a different string to Docswell: `lk7j5v` answers 404 where `LK7J5V` is the deck
-      // (measured 2026-08-26), so the class has no `a-z` in it — which is also what keeps the video
+      // Lowercase is a different string to Docswell: `lk7j5v` answers 404 where `LK7J5V` is the deck,
+      // so the class has no `a-z` in it — which is also what keeps the video
       // form above out (§17.2).
       DW_KEY.toLowerCase(),
       'LK7J5v',
@@ -669,7 +669,7 @@ describe('resolveEmbed / CodeSandbox', () => {
       // The legacy form, which 307s to `/p/sandbox/<seg>` and carries the segment in the same place
       // — so the src is built without following the redirect (§3.2).
       `https://codesandbox.io/s/${CSB_SEG}`,
-      // `www` answers 200 in its own right rather than redirecting (measured 2026-08-30).
+      // `www` answers 200 in its own right rather than redirecting.
       `https://www.codesandbox.io/p/sandbox/${CSB_SEG}`,
       `${CSB_PAGE}/`,
       // Tracking parameters and a fragment: neither names any part of what is shown, and there is
@@ -688,7 +688,7 @@ describe('resolveEmbed / CodeSandbox', () => {
     );
     expect(resolveEmbed(CSB_PAGE)?.src(ANY)).toBe(CSB_SRC);
     // Zenn's fixture, which has two hyphens: a "text after the last hyphen" rule would send
-    // `2lcdqm`, and Zenn itself sends the whole thing (measured 2026-08-30).
+    // `2lcdqm`, and Zenn itself sends the whole thing.
     const zenn = 'eager-proskuriakova-2lcdqm';
     expect(resolveEmbed(`https://codesandbox.io/p/sandbox/${zenn}`)?.src(ANY)).toBe(
       `https://codesandbox.io/embed/${zenn}?runonclick=1`,
@@ -959,7 +959,7 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
   });
 
   it('names a kind for every row, out of a vocabulary that groups them (SD8)', () => {
-    // §24.1 (2026-09-03). The column stopped printing hosts, which answered "which site" while
+    // §24.1. The column stopped printing hosts, which answered "which site" while
     // every URL an author gets wrong is about which page on it. **The assertion is the vocabulary,
     // not the mapping**: nine rows spell five words, and the three-and-three repetition is what
     // makes 「スライドを貼りたい、どれが使える」 land on a group instead of on one brand name. A

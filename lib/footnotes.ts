@@ -1,12 +1,8 @@
 // Which footnotes in a post are still unfinished (docs/footnote-requirements.md §5.2, §5.3).
 //
-// This runs on the server, over the stored markdown, because that is all the publish action ever
-// sees: `contentSchema` hands it `body: z.string()` and there is no ProseMirror document on that
-// side. So the check cannot be "is there an empty definition" the way the requirement is phrased to
-// the author — an empty definition may not have survived serialization at all, in which case what
-// arrives is a reference with nothing to point at. Both shapes are the same defect from the
-// reader's side, and both are caught by asking about the *reference*: has it a definition, and does
-// that definition say anything.
+// On the server, over the stored markdown, which is all the publish action has. An empty definition
+// may not survive serialization, so the question is asked of each *reference*: does it have a
+// definition, and does that say anything.
 //
 // Deliberately a scan rather than a parse. Pulling markdown-it in here would mean the editor's
 // parser, its footnote plugin and its renderer overrides all loading in a server action to answer a
@@ -32,13 +28,9 @@ export function incompleteFootnotes(body: string): string[] {
   const references: string[] = [];
   let fence: string | null = null;
 
-  // `\r?\n`, not `\n`: publish reaches the server through a form, and form submission rewrites
-  // every newline in the value to CRLF (PostEditor's hidden `body` input). Splitting on `\n` alone
-  // leaves a trailing `\r` on every line but the last, which `DEFINITION` cannot match — `.` does
-  // not match `\r` and `$` without `m` only matches the very end. Each such line then fell through
-  // to the reference scan below, so a *written* note was counted as an empty one; with N footnotes
-  // the last definition still matched and publish was refused with N-1. Storage is normalized to LF
-  // now (lib/posts-write.ts), but every post saved before that still has CRLF in the database.
+  // `\r?\n`: form submission turns newlines into CRLF, and a trailing `\r` stopped `DEFINITION`
+  // matching, so written notes counted as empty. Storage is LF now (lib/posts-write.ts), but older
+  // rows still hold CRLF.
   for (const line of body.split(/\r?\n/)) {
     const fenceMatch = FENCE.exec(line);
     if (fenceMatch) {

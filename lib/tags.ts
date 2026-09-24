@@ -129,11 +129,9 @@ export function renameTag(slug: string, raw: string): TagResult {
   if (!checked.ok) return checked;
   const current = db.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
   if (!current) return { ok: false, error: 'タグが見つかりません。' };
-  // Compared with case and width folded (NFKC, lowercase), against other tags' identifiers, names
-  // and aliases: `REACT` beside an existing `react` would be two tags a reader cannot tell apart.
-  // Symbols are kept in the comparison. Stripping them, as the editor's search does, made `C#` and
-  // `C++` the same as the tag `c` and refused both (2026-09-24) — names a reader tells apart at a
-  // glance. The price is that `Re.act` is allowed beside `react`, which nobody sets on purpose.
+  // Compared NFKC-folded and lowercased against other tags' identifiers, names and aliases, so
+  // `REACT` can't sit beside `react`. Symbols are kept: stripping them made `C#` and `C++` equal to
+  // `c`. So `Re.act` is allowed beside `react`, which nobody sets on purpose.
   const key = normalizeTagName(checked.name).toLowerCase();
   const fold = (text: string) => normalizeTagName(text).toLowerCase();
   const clash =

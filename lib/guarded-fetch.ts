@@ -4,14 +4,11 @@ import { isIP, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 // The one place in this codebase that requests a URL chosen by its caller, and the guard that makes
 // that safe (docs/link-card-requirements.md §14.5, docs/link-requirements.md §5.5.10).
 //
-// **One fetcher, three consumers**: the link bubble reads a title out of the page, an external link
-// card reads a title and a description out of it (lib/link-title.ts), and the image proxy reads
-// bytes (lib/link-image.ts). They differ only in what they do with the response — never in what is
-// allowed to be fetched, which is the whole reason this is one function and not three.
+// **One fetcher, three consumers** (the bubble's title, the card's title and description in
+// lib/link-title.ts, and the image proxy in lib/link-image.ts), so what may be fetched is decided once.
 //
-// The guard is written against resolved addresses rather than against the text of the href, because
-// a string test is not protection: `http://evil.example/` whose A record is 127.0.0.1 passes any
-// spelling check, and so does a 302 into the same. Every hop is resolved and re-checked.
+// Checked against resolved addresses, not the href's text: a name resolving to 127.0.0.1, or a 302
+// into one, passes any spelling test. Every hop is resolved and re-checked.
 //
 // **Known limit**: `fetchImpl` is handed a hostname, so the name is resolved a second time by the
 // runtime and a hostile DNS server can answer differently that time (DNS rebinding). Closing it
@@ -21,23 +18,11 @@ import { isIP, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 const TIMEOUT_MS = 5000;
 const MAX_REDIRECTS = 3;
 
-// Node races the resolved addresses (RFC 8305) and gives each attempt
-// `autoSelectFamilyAttemptTimeout` — 250ms by default — before it starts the next one. When there
-// is no next one, that budget decides the connection, which makes it a second deadline this file
-// never declared: `TIMEOUT_MS` above is the one it means.
-//
-// **Measured 2026-08-31 against asciinema.org**, the first origin asked for here that is not behind
-// a CDN (every provider in lib/embed-provider.ts connects in ~20ms). Its AAAA is unreachable from
-// this host — `ENETUNREACH`, returned instantly, so the switch itself costs nothing — and its A
-// answers in 249–289ms, straddling the budget. With both families 2 of 3 connects failed
-// `ETIMEDOUT` at ~300ms; with the same name resolved to the A record alone 3 of 3 connected, at
-// 274–289ms, because a single address is given no budget at all. The card was therefore a coin
-// flip, and the `link_previews` row it wrote says `failed`.
-//
-// Process-global, because this is a `node:net` default and there is no per-request form without a
-// custom undici dispatcher (undici is not a dependency here). What it changes is only how long one
-// address family is given before the next is tried: a host whose first family hangs *silently* now
-// fails over after 1s rather than 250ms, still inside TIMEOUT_MS.
+// Node races resolved addresses (RFC 8305), giving each attempt `autoSelectFamilyAttemptTimeout`
+// (250ms by default); with no next address that budget decides the connection, a second deadline
+// never meant here. A host with an unreachable AAAA and a ~270ms A record connected at random. Raised
+// process-wide (no per-request form without undici); a silently hanging family now fails over after
+// 1s, still inside TIMEOUT_MS.
 setDefaultAutoSelectFamilyAttemptTimeout(1000);
 
 // Addresses the server must not be talked into fetching: loopback, link-local (including the cloud
@@ -147,10 +132,8 @@ export async function fetchGuarded(
       continue; // resolved and re-checked at the top of the loop
     }
 
-    // Not 2xx means there is nothing here, whatever the body says. Measured 2026-08-16: a
-    // Cloudflare challenge answers 403 *and* carries `<title>Just a moment...</title>`, so a
-    // parser that ignores the status would put that on the card in place of the URL. What the
-    // content-type has to be is the caller's question, not this one's.
+    // Not 2xx is nothing, whatever the body says: a Cloudflare challenge is a 403 with a <title>.
+    // The content type is the caller's question.
     if (!response.ok) return null;
     return response;
   }

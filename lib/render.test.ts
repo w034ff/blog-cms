@@ -45,13 +45,9 @@ describe('renderMdxToHtml — accent emphasis', () => {
     expect(html).not.toContain('evil');
   });
 
-  // Regression (found 2026-07-25): unlike bold/italic/strike, layering inline code onto an
-  // accent-emphasis span doesn't corrupt the surrounding markdown (a code span's content is
-  // never re-parsed, so no flanking-rule issue) — but nesting the *reverse* way, an
-  // accent-emphasis span inside a code span, is still broken: code-span content is always
-  // literal, so the span tags show up as escaped `&lt;span…&gt;` text instead of an element.
-  // accentEmphasis's `excludes: '… code'` (accent-emphasis-extension.ts) stops the editor from
-  // ever producing this nesting; this pins the underlying markdown-level reason why.
+  // Inline code on accent emphasis is harmless (a code span is never re-parsed), but a span *inside*
+  // a code span shows as escaped `&lt;span…&gt;` text. accentEmphasis's `excludes: '… code'` keeps the
+  // editor from producing it; this pins the markdown-level reason.
   it('does not parse a span nested inside a code span — it stays literal text', async () => {
     const { html } = await renderMdxToHtml('`<span class="accent-emphasis">a</span>`');
     expect(html).toContain('&#x3C;span class="accent-emphasis">a&#x3C;/span>');
@@ -236,10 +232,8 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
     expect(html).toContain('<span class="link-card-description">説明文</span>');
-    // Title and description are the card's text: the target's date was dropped 2026-08-15
-    // (lib/rehype-link-card.ts carries the reason). `.link-card-meta` still exists for the editor's
-    // NodeView, which says there that the target is a draft or cannot be found (§13.1), so its
-    // absence here is asserted rather than assumed.
+    // Title and description only: the date line was dropped (lib/rehype-link-card.ts says why).
+    // `.link-card-meta` still exists in the editor's NodeView (§13.1), so its absence is asserted.
     expect(html).not.toContain('link-card-meta');
     // This resolver answers with no picture, and the stage then draws no <img> at all rather than
     // an empty box — the text column is the whole card. In production that answer comes from an
@@ -367,9 +361,8 @@ describe('renderMdxToHtml — link cards', () => {
   });
 
   it('refuses references that are neither shape the stage accepts (2c/2d)', async () => {
-    // Neither `/posts/<slug>` nor an absolute http(s) URL (§14.2). `https://evil.example` is NOT
-    // in this list any more: an external URL is a legitimate reference since 2026-08-18 and gets
-    // the fallback link when nothing has been stored about it — see the external-card block below.
+    // Neither `/posts/<slug>` nor an absolute http(s) URL (§14.2). An external URL is a legitimate
+    // reference and gets the fallback link when unstored (see the external-card block below).
     for (const href of [
       // Protocol-relative, so `new URL()` cannot parse it without a base and the internal test
       // refuses the leading `//` — it is the shape that looks same-origin and is not.
@@ -592,10 +585,9 @@ describe('renderMdxToHtml / embed', () => {
   });
 
   it('refuses a hand-written javascript: reference (E2)', async () => {
-    // The same §4.4 hole the card has, one step worse: what this stage builds is an iframe, and
-    // nothing downstream checks its src. **Both exits have to refuse it** — the iframe and the
-    // plain-link fallback, which is published markup built after sanitize as well. The fallback was
-    // the one that let it through until this test was written.
+    // The card's §4.4 hole, one step worse: the stage builds an iframe whose src nothing checks.
+    // **Both exits must refuse it**, the iframe and the plain-link fallback (also built after
+    // sanitize), which is the one that once let it through.
     for (const href of ['javascript:alert(1)', 'data:text/html,x', '//evil.example/x']) {
       const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
       expect(html, href).not.toContain('<iframe');
@@ -900,20 +892,11 @@ describe('renderMdxToHtml / embed', () => {
 
   it('reaches no third party while rendering, for any provider (E10)', async () => {
     // docs/embed-requirements.md §3.2 and criterion E10: **the embed stage has no fetch in it**,
-    // which is what separates an embed from a link card. That the code contains no fetch is
-    // readable; that none runs is what this measures.
-    //
-    // `fetch` is the whole instrument because it is the whole egress: nothing under `lib/`,
-    // `app/` or `components/` imports `node:http`, `undici`, `axios` or `node-fetch` (grepped
-    // 2026-08-31), so a request that did not go through here would have to arrive with a new
-    // dependency, and that is a change this assertion is not the only thing standing in front of.
-    //
-    // The spy rejects rather than calling through. A render that started fetching would then fail
-    // loudly here rather than quietly reaching the network from a unit test.
-    //
-    // **Per render, not per process.** The processor is built once at module load (lib/render.ts),
-    // long before this spy is installed, so what is measured is what a page render does — which is
-    // what E10 claims — and not a one-time initialisation.
+    // measured rather than read. `fetch` is the whole egress: nothing under `lib/`, `app/` or
+    // `components/` imports `node:http`, `undici`, `axios` or `node-fetch`, so another route would
+    // need a new dependency. The spy rejects rather than calling through, so a fetch fails loudly.
+    // **Per render:** the processor is built at module load, before the spy, so this measures a
+    // page render, which is what E10 claims.
     const calls: string[] = [];
     const real = globalThis.fetch;
     globalThis.fetch = ((input: RequestInfo | URL) => {

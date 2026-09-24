@@ -3,7 +3,7 @@ import { isSpeakerdeckDeckPage, speakerdeckSnippetHref } from './speakerdeck-sni
 
 // docs/embed-requirements.md §16.9. The two snippets below are Speaker Deck's own output, copied
 // out of `data-clipboard-text` on the deck page for `speakerdeck.com/soudai/pgcon21j-tutorial`
-// (measured 2026-08-26) rather than written by hand — what this function has to read is whatever
+// rather than written by hand — what this function has to read is whatever
 // that button actually produces.
 //
 // **The half that carries the risk is what must NOT be recognised.** This function widens the shape

@@ -116,15 +116,10 @@ export function liveContent(post: Post): DraftContent {
   };
 }
 
-// Whether a stored working copy is an unpublished *change*, rather than a copy of what is already
-// public. The two differ because publish and autosave can race: `commitPost` clears draft_content
-// while an autosave started a moment earlier is still in flight, and that save writes the copy
-// back afterwards. Both carry the same form content, so what lands is a working copy identical to
-// the live columns — real as a row, empty as a claim. Keyed on `draft_content !== null` the admin
-// list badged that as 未公開の変更あり, indistinguishable from a genuine pending edit and clearable
-// only by publishing again. Comparing the content answers that case and the genuine one alike, and
-// asks nothing of the write path (where an abort would not help: the request is already sent, and
-// the handler runs whether or not the client is still listening).
+// Whether a working copy is an unpublished *change* rather than a copy of what is public. Publish and
+// autosave can race: `commitPost` clears draft_content while an in-flight autosave writes it back
+// with identical content, which the admin list then badged 未公開の変更あり. Comparing content covers
+// that case without touching the write path.
 function hasUnpublishedEdits(post: Post, draftContent: DraftContent | null): boolean {
   return draftContent !== null && !sameDraftContent(draftContent, liveContent(post));
 }

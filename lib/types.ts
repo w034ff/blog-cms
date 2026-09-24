@@ -41,11 +41,9 @@ export type Post = PostFrontmatter & {
   // the (deliberately not-yet-tightened) column, but in practice always set.
   slug: string | null;
   body: string;
-  // Excluded from the home/tag/category listings and the RSS feed; still reachable at its own
-  // `/posts/<slug>` URL by anyone who has it. Read-only now: the editor's control was retired
-  // 2026-09-21 and nothing writes the column (docs/cms-features.md「非公開限定URL投稿」), so it is
-  // false on every row. Kept on Post, and off PostFrontmatter and so off DraftContent, because
-  // the listing filters it drives are what a revival would reuse.
+  // Excluded from listings and the RSS feed, reachable by direct URL. Read-only: nothing writes it
+  // since the editor's control was retired (docs/cms-features.md「非公開限定URL投稿」), so it is false
+  // everywhere. Kept on Post, off DraftContent, for a possible revival.
   unlisted: boolean;
 };
 
@@ -77,16 +75,9 @@ export type PostSearchResult = {
   title: string;
   date: string;
   draft: boolean;
-  // The image the card draws, already resolved by `resolveThumbnail` — the
-  // column when the author set one, else the body's first upload. `null` is the
-  // normal answer for a text-only post, not an error, so it stays nullable
-  // rather than collapsing to '' like `slug` does.
-  //
-  // This is the one thing here derived from the body, which the rule above
-  // otherwise keeps out. It is a single `/uploads/…` path that the target
-  // post's own page already shows to anyone, the route is admin-only (401
-  // without a session), and what crosses is the resolver's answer rather than
-  // the text it read — so a search still cannot be used to read a post.
+  // The card's image, resolved by `resolveThumbnail`; `null` is normal for a text-only post. The
+  // one body-derived field: a single path the post's own page shows anyway, admin-only, and the
+  // resolver's answer rather than the text, so search still can't read a post.
   thumbnail: string | null;
   // The post's own category, drawn as the second line of an insert-search row
   // (§5.2-5). The id, not the label: the row looks the label up through

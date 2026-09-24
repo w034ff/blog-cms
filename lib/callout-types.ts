@@ -2,15 +2,9 @@
 // pipeline (server) — keep this module importable from both sides (no 'server-only'), the
 // same rule lib/content.ts states for its own reason.
 //
-// It exists because the answer used to be written down five times: the type union and the
-// Japanese titles in components/editor/callout-extension.ts and again in
-// lib/remark-github-alerts.ts, the `note|warning|caution` alternation in three separate
-// regexes across those two files, and the `markdown-alert-*` class names a third time in
-// lib/render.ts's sanitize schema. Four of those five would fail loudly enough — a missing
-// type simply does not parse — but the fifth is silent: a class the schema does not list is
-// stripped from the published HTML, so a new tier would round-trip through the editor, save
-// correctly, and render on the public page with no colour and no error anywhere. Everything
-// below is derived from CALLOUT_TYPES so that adding a tier is one edit here.
+// Everything below derives from CALLOUT_TYPES, so a new tier is one edit here. That matters most for
+// the sanitize schema (lib/render.ts): an unlisted class is stripped *silently*, and the tier would
+// render with no colour and no error.
 //
 // What is deliberately *not* here:
 //   - `:::info` / `:::warning` / `:::danger`, the editor's typing shortcuts. That vocabulary

@@ -6,19 +6,10 @@ import { GITHUB_MARK_PATH } from './github-mark';
 // A code block whose filename is a GitHub blob URL wears a link to that file instead of the URL
 // (docs/embed-requirements.md §19.4).
 //
-// The block itself is an ordinary code block — imported once by the editor, stored as the same
-// ```lang:filename fence every other block uses. **Nothing here fetches anything**, and nothing
-// here is stored: the header is derived from the filename the fence already carries, on every
-// render, the way `rehypeCodeFilename` derives the language from the same string.
-//
-// Position: after `rehypePrettyCode` (which is what builds the `<figcaption>` this rewrites) and
-// before `rehypeNewTabLinks`, so the anchor below is given `target="_blank"` by the same rule that
-// governs every other external link in the body rather than by a second opinion here.
-//
-// **This runs after sanitize, like the two reference-resolving stages beside it.** Everything it
-// builds is this pipeline's own markup, from a string that has been through `parseGithubBlob`, so
-// there is nothing to allow-list — and the one attribute it writes that a reader can follow is an
-// `https://github.com/…` URL that function rebuilt from validated segments.
+// **Nothing here fetches or stores**: the header is derived on every render from the filename the
+// fence already carries. After `rehypePrettyCode` (which builds the `<figcaption>`) and before
+// `rehypeNewTabLinks` (which gives the anchor its `target`). After sanitize, like its neighbours: its
+// only followable URL is one `parseGithubBlob` rebuilt from validated segments.
 
 const TITLE = 'data-rehype-pretty-code-title';
 

@@ -4,9 +4,8 @@ import { visit } from 'unist-util-visit';
 import { externalCardHost, isCardHref } from './link-card-href';
 import { CARD_PLACEHOLDER_DARK_SRC, type CardImage } from './link-card-image';
 
-// What a card resolves to. Deliberately the shape the card renders, not a `Post`: lib/render.ts
-// must not import the DB or its types (docs/link-card-requirements.md §6), so the caller —
-// app/posts/[slug]/page.tsx — is what knows about `posts`, and a test can hand over a literal.
+// The card's rendered shape, not a `Post`: lib/render.ts must not import the DB
+// (docs/link-card-requirements.md §6), so the caller or a test supplies it.
 export type CardTarget = { title: string; description: string; image: CardImage | null };
 export type ResolveCard = (href: string) => Promise<CardTarget | null>;
 
@@ -21,35 +20,18 @@ function hasClass(node: Element, name: string): boolean {
   return Array.isArray(className) && className.includes(name);
 }
 
-// The resolved card: a text column (title, and a description when there is one) and, beside it, the
-// target's image when it has one. Every class here is invented by this stage, which runs after
-// sanitize, so none of it needs allow-listing — the same position (and the same reason)
-// rehype-pretty-code's own spans rely on. `<a>` wraps the whole card so the entire block is one
-// click target.
+// The resolved card: a text column and the image beside it, all in one `<a>`. Built after sanitize,
+// so its classes need no allow-listing.
 //
-// A third line carrying the target's date was dropped 2026-08-15. The bottom line of a link card
-// conventionally carries provenance — which site, which author — and that is what earns it the
-// click. A card pointing at this blog has nothing to put there, and a date shown in its place
-// mostly makes an older post look stale; the image took the space instead (2026-08-15). On an
-// external card the slot means something and holds the target's host (§14.4), which is why the
-// line below is built from the href rather than from the resolver's answer — it says where the
-// click goes, and only the reference knows that.
+// No date line: the bottom line conventionally carries provenance, which an internal card lacks,
+// and a date mostly made older posts look stale. An external card shows the target's host there
+// (§14.4), from the href, since only the reference knows where the click goes.
 //
-// `image` is NOT re-validated here, unlike `data-href` below, and the difference is where each
-// one comes from. The href is written into the body by an author and reaches this stage having
-// skipped sanitize's protocol check; the picture comes from the injected resolver, which builds it
-// with one of three things — `resolveThumbnail` (lib/thumbnail.ts — a `/uploads/…` path, for a
-// post), `linkImageSrc` (lib/link-image.ts — a signed `/api/link-image?…` path, for an external
-// card's picture, §14.4), or the house mark for a post with no picture of its own
-// (lib/link-card-image.ts — a static file, §17). **All three are same-origin**, which is the
-// property that matters: an external card never points a reader at the target's CDN. Re-checking
-// the shape here would be checking this project against itself; what matters is that no future
-// resolver hands over a value it did not build with one of those three.
+// `image` is not re-validated, unlike `data-href`: the resolver builds it from `resolveThumbnail`,
+// `linkImageSrc` (§14.4) or the house mark (§17), **all same-origin**, so a reader is never pointed
+// at a third party's CDN. Any future resolver must keep that.
 //
-// The text column exists even when there is no image: it is what keeps the description clamped to
-// the column's width rather than the card's, so a card gains and loses its picture without the
-// text re-flowing into a different shape. That case is an external target with no og:image now
-// that an internal card always carries one (§17).
+// The text column exists without an image too, keeping the description's width stable.
 function cardElement(href: string, target: CardTarget): Element {
   const lines: Element[] = [
     {
@@ -85,14 +67,8 @@ function cardElement(href: string, target: CardTarget): Element {
     },
   ];
   if (target.image) {
-    // `alt=''` deliberately: the title is right beside it inside the same anchor, so naming the
-    // image would make a screen reader read the card twice. The house mark is decorative for a
-    // second reason — it names this blog, which every internal card already points at.
-    //
-    // The second class is what tells the picture apart from a real one: the mark is drawn to fit
-    // on a tint rather than cropped to fill (app/globals.css, §17). It comes from the resolver
-    // rather than from a test on `src` here, so renaming the file cannot silently change how it
-    // is painted.
+    // `alt=''`: the title beside it names the card. The placeholder class comes from the resolver,
+    // not from testing `src`, so renaming the file can't change how it is painted (§17).
     const image: Element = {
       type: 'element',
       tagName: 'img',
@@ -105,11 +81,8 @@ function cardElement(href: string, target: CardTarget): Element {
       },
       children: [],
     };
-    // The house mark is the site's name in the foreground colour, so it has a file per scheme and
-    // the page — not the image — chooses between them (§17.3). The `<img>` keeps the light file as
-    // its `src`, which is what a browser that ignores `<source>` falls back to. The card's own
-    // rules key on `.link-card-image`, so the wrapper changes nothing about the box: `<picture>` is
-    // a display:contents-shaped element that renders only its `<img>`.
+    // The house mark has a file per colour scheme, chosen by the page (§17.3); the `<img>` keeps the
+    // light file as its fallback. `<picture>` renders only its `<img>`, so the box is unchanged.
     parts.push(
       target.image.placeholder
         ? {
@@ -140,17 +113,9 @@ function cardElement(href: string, target: CardTarget): Element {
   };
 }
 
-// The fallback for a reference whose shape is fine but which resolves to nothing — an unknown
-// slug, or a draft, which `getPostBySlug` reports identically by returning null (§6.1). A plain
-// link, because the href is a validated same-origin relative path: nothing is lost for the reader,
-// and the author sees a link where they expected a card. Dropping the node instead would make the
-// body silently shorter, which is the one outcome nobody can debug.
-// A bare `<a>`, with no wrapper: this stage does not know what the card's parent is, and a `<p>`
-// is not legal everywhere a `<div>` was — a card written inline in a paragraph leaves the
-// surrounding text flowing as bare inline content, and a paragraph dropped into the middle of that
-// nests wrongly. An anchor is flow content and fits wherever the div fitted, which is the same
-// reason the resolved card above is an unwrapped `<a>` too. Both branches then replace the node
-// with one element of the same kind.
+// For a valid reference that resolves to nothing (unknown slug or draft, §6.1): a plain link, since
+// dropping the node would silently shorten the body. A bare `<a>`, as the card is: an anchor fits
+// wherever the div did, a `<p>` does not.
 function fallbackLink(href: string): Element {
   return {
     type: 'element',
@@ -160,22 +125,12 @@ function fallbackLink(href: string): Element {
   };
 }
 
-// Resolves `<div class="link-card" data-href="…">` into a card, a plain link, or nothing
-// (docs/link-card-requirements.md §6.1). Must run AFTER rehype-sanitize — see lib/render.ts for
-// the ordering, and this is what that position costs:
-//
-// The stored form carries a reference and nothing else (§4.2), so `data-href` is the whole of what
-// an author can write into a card — and it is NOT value-checked on the way in. `className` passes
-// rehype-sanitize as a value allowlist, but `data-href` is a bare property name, so once it is
-// allowed at all any value rides through; and running after sanitize means the `<a href>` built
-// below never meets its protocol check either (§4.4). Hence `isCardHref`, which the editor asks as
-// well so that both sides accept the same references, and hence it is an allowlist of two forms
-// rather than a blacklist of bad protocols (lib/link-card-href.ts).
-//
-// Two passes rather than one: `visit` is synchronous and resolution is not, so the nodes are
-// collected first and awaited after. Collecting the parent and index alongside each node is what
-// lets a card be replaced by a different element (or removed outright); mutating during the walk
-// would renumber the very indices still to be visited.
+// Resolves `<div class="link-card" data-href="…">` into a card, a link, or nothing
+// (docs/link-card-requirements.md §6.1). **After sanitize** (lib/render.ts), which costs this:
+// `data-href` is allowed as a bare property, so any value rides through, and the `<a href>` built
+// here meets no protocol check (§4.4). Hence `isCardHref`, an allowlist of two forms shared with the
+// editor (lib/link-card-href.ts). Two passes: resolution is async, and collecting parent and index
+// lets a node be replaced or removed.
 export function rehypeLinkCard() {
   return async (tree: Root, file: VFile) => {
     const found: { node: Element; parent: Root | Element; index: number }[] = [];
@@ -191,17 +146,13 @@ export function rehypeLinkCard() {
       found.map(async ({ node }): Promise<ElementContent | null> => {
         const href = node.properties.dataHref;
         if (typeof href !== 'string' || !isCardHref(href)) return null;
-        // No resolver supplied — the caller renders without a DB (lib/render.test.ts, and any
-        // future preview). The reference is still valid, so it degrades to the same plain link an
-        // unresolvable one gets rather than vanishing.
+        // No resolver (tests, a preview): degrade to the plain link rather than vanish.
         const target = resolve ? await resolve(href) : null;
         return target ? cardElement(href, target) : fallbackLink(href);
       }),
     );
 
-    // Right to left within each parent, so an earlier splice cannot shift the index of one not yet
-    // applied. `found` comes out of `visit` in document order, which is per-parent ascending, so
-    // reversing the whole list is enough.
+    // Right to left within each parent, so a splice can't shift a later index.
     for (let i = found.length - 1; i >= 0; i -= 1) {
       const { parent, index } = found[i];
       const replacement = replacements[i];
