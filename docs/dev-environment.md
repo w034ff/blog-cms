@@ -71,8 +71,8 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 ### 5.2 override で持ち上げているもの
 
-`package.json` の `overrides` は `postcss` と `sharp` を持つ。
+`package.json` の `overrides` は `postcss` だけを持つ。
 
 - `postcss`: next が同梱する古い postcss の XSS（GHSA-qx2v-qp2m-jg93）を、`^8.5.15` に持ち上げて塞いだ（`396f270`）。
-- `sharp`: 当時の next が `sharp: ^0.34.5` を宣言していて、libvips の CVE を抱えた版が残るので `^0.35.3` に持ち上げた（`fc395f6`）。`next/image` を import していなくても最適化のルート `/_next/image` は存在し、それが sharp を到達可能にしている。next が求めない版を組み合わせるので、本番ビルドで `/_next/image?url=/og.png&w=640&q=75` が縮小した PNG を返すことを確かめた。**next 自身の範囲が 0.35 に届いたら、この override を外す。** override は固定されて黙るので、next が追いついた後は sharp を前ではなく後ろに引き留める。確かめ方は `npm view next optionalDependencies.sharp`、またはインストール済みの `node_modules/next/package.json`。
+- `sharp` の override は 2026-09-24 に外した。当時の next が `sharp: ^0.34.5` を宣言し、libvips の CVE を抱えた版が残るので `^0.35.3` に持ち上げていた（`fc395f6`）。next 16.3.5 は自分で `^0.35.4` を宣言するので、override は役目を終え、残すと next が先へ進んだときに sharp を引き留める。外しても解決は `sharp@0.35.4` のまま変わらない。`next/image` を import していなくても最適化のルート `/_next/image` は存在し、それが sharp を到達可能にしている。
 - 何かを override で上げるときは範囲を絞る。`brace-expansion` を丸ごと override すると、minimatch@10 が使う 5.x まで 1.x に引き下げて壊す。
