@@ -25,7 +25,7 @@ test('values set inside 記事の設定 survive a publish made while it is close
 
   await page.getByLabel('タイトル').fill('E2E settings disclosure');
   await openPostSettings(page);
-  const blog = page.getByRole('radio', { name: 'ブログ' });
+  const blog = page.getByRole('radio', { name: 'ブログ', exact: true });
   await blog.check();
   // Two tags the seeded dictionary has (drizzle/0010 admitted the ones already in use).
   await addTag(page, 'rea', 'react');
@@ -74,7 +74,7 @@ test('Enter in a metadata field does not publish', async ({ page }) => {
   await openPostSettings(page);
   await tagCombobox(page).press('Enter');
   // And on a カテゴリ button: it is a radio underneath, an input like the rest.
-  await page.getByRole('radio', { name: 'ブログ' }).press('Enter');
+  await page.getByRole('radio', { name: 'ブログ', exact: true }).press('Enter');
 
   // Still a draft: the button would have relabelled to 更新 had the form gone through.
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();

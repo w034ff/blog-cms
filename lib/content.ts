@@ -4,10 +4,11 @@
 // The categories a post can be filed under — a fixed list, not free text, so the set cannot grow
 // one typo at a time (docs/editor-requirements.md §12.32). The `id` is what the column stores and
 // what /categories/<id> is addressed by; the `label` is what every surface shows. Order is display
-// order: the editor's choices and the public index both follow it.
+// order: the editor's choices and the public index both follow it. `description` is addressed to the
+// author choosing in 記事の設定, not to readers, which is why the public index does not show it.
 export const CATEGORIES = [
-  { id: 'tech', label: '技術記事' },
-  { id: 'blog', label: 'ブログ' },
+  { id: 'tech', label: '技術記事', description: '実際に試して確かめた内容や、技術的な知見' },
+  { id: 'blog', label: 'ブログ', description: '技術を離れた話題、考えや振り返り、お知らせ' },
 ] as const;
 
 export type CategoryId = (typeof CATEGORIES)[number]['id'];

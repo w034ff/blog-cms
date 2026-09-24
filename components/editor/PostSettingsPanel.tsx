@@ -11,7 +11,10 @@ import { ThumbnailField } from './ThumbnailField';
 import { useDismiss } from './useDismiss';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
+import { CheckIcon } from './svg/CheckIcon';
 import { ChevronRightIcon } from './svg/ChevronRightIcon';
+import { CodeBlockIcon } from './svg/CodeBlockIcon';
+import { PencilIcon } from './svg/PencilIcon';
 
 // A drawer that slides in from the right, modal like the phone's own ＋ sheet
 // (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
@@ -42,16 +45,31 @@ import { ChevronRightIcon } from './svg/ChevronRightIcon';
 // the backdrop gets its own `onClick` instead (InsertMenu's own comment).
 export const SETTINGS_PANEL_ID = 'post-settings-panel';
 
-// カテゴリ as one button per entry of the fixed list (§12.32): every choice in sight, one press to
-// change. Real radios under the buttons, not a `<select>` and not buttons with state of their own —
-// the form reads `category` off the DOM like every other field here, and a radio group gets the
-// arrow-key movement and the checked state a screen reader announces without any code for them.
-// `aria-labelledby` rather than a wrapping `<label>`: a label associates with one control, and
-// here there are as many as the list is long.
+// Each category's mark: a stroke glyph on a tinted tile. A Record over CategoryId, so a category
+// added to CATEGORIES fails the type check until it has one. Decoration only — the title names it.
+const CATEGORY_ICONS: Record<CategoryId, { Icon: () => React.JSX.Element; tile: string }> = {
+  tech: { Icon: CodeBlockIcon, tile: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+  blog: {
+    Icon: PencilIcon,
+    tile: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+  },
+};
+
+// カテゴリ as one card per entry of the fixed list (§12.32): every choice in sight with what it is
+// for, one press to change. Real radios under the cards, not a `<select>` and not buttons with state
+// of their own — the form reads `category` off the DOM like every other field here, and a radio
+// group gets the arrow-key movement and the checked state a screen reader announces without any
+// code for them. `aria-labelledby` on the group rather than a wrapping `<label>`: a label associates
+// with one control, and here there are as many as the list is long.
 //
-// Each radio is laid transparently over its whole button rather than `sr-only`: clipped to a
-// pixel, it sat under its own label, so a press reached the label and not the control — the
-// browser forwards that, but a test driving the radio itself found the label in the way.
+// Each radio is laid transparently over its whole card rather than `sr-only`: clipped to a pixel,
+// it sat under its own label, so a press reached the label and not the control — the browser
+// forwards that, but a test driving the radio itself found the label in the way. The radio is named
+// by the card's title alone and described by the rest; left to the wrapping label it would take the
+// description into its name, and a screen reader would read a sentence as the choice.
+//
+// Selected is a darker, doubled edge and a check, not a fill: a fill would put the icon and the
+// description on a dark ground, and colour alone would not carry the state.
 function CategoryField({
   value,
   onChange,
@@ -65,22 +83,42 @@ function CategoryField({
       <span id={labelId} className='mb-1 block font-bold'>
         カテゴリ
       </span>
-      <div role='radiogroup' aria-labelledby={labelId} className='flex gap-2'>
-        {CATEGORIES.map(({ id, label }) => (
-          <label
-            key={id}
-            className='relative flex min-h-10 flex-1 cursor-pointer items-center justify-center rounded border border-zinc-300 px-3 py-2 text-zinc-700 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-900 has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-300 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-100 dark:has-[:checked]:text-zinc-900'>
-            <input
-              type='radio'
-              name='category'
-              value={id}
-              checked={value === id}
-              onChange={() => onChange(id)}
-              className='absolute inset-0 cursor-pointer appearance-none opacity-0'
-            />
-            {label}
-          </label>
-        ))}
+      <div role='radiogroup' aria-labelledby={labelId} className='grid grid-cols-2 gap-2'>
+        {CATEGORIES.map(({ id, label, description }) => {
+          const { Icon, tile } = CATEGORY_ICONS[id];
+          return (
+            <label
+              key={id}
+              className='relative flex cursor-pointer flex-col gap-1.5 rounded-lg border border-zinc-300 p-3 text-zinc-800 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-50 has-[:checked]:ring-1 has-[:checked]:ring-zinc-900 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-800 dark:has-[:checked]:ring-zinc-100'>
+              <input
+                type='radio'
+                name='category'
+                value={id}
+                checked={value === id}
+                onChange={() => onChange(id)}
+                aria-labelledby={`${labelId}-${id}`}
+                aria-describedby={`${labelId}-${id}-description`}
+                className='peer absolute inset-0 cursor-pointer appearance-none opacity-0'
+              />
+              <span className='flex items-center gap-2'>
+                <span className={`rounded-md p-1.5 ${tile}`}>
+                  <Icon />
+                </span>
+                <span id={`${labelId}-${id}`} className='font-bold'>
+                  {label}
+                </span>
+              </span>
+              <span
+                id={`${labelId}-${id}-description`}
+                className='text-xs leading-relaxed text-zinc-500 [word-break:auto-phrase] dark:text-zinc-400'>
+                {description}
+              </span>
+              <span className='absolute top-2 right-2 hidden rounded-full bg-zinc-900 p-0.5 text-white peer-checked:block dark:bg-zinc-100 dark:text-zinc-900'>
+                <CheckIcon />
+              </span>
+            </label>
+          );
+        })}
       </div>
     </div>
   );
