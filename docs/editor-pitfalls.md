@@ -7,7 +7,7 @@ PostEditor（TipTap 3 + ProseMirror）を実装・修正する中で実測した
 - 実測値には日付を付ける。以下で「測定」と書いたものはブラウザ（E2E ハーネス、または実ブラウザでの作者の確認）で観測したもの、「静的」と書いたものはソースを読んだだけのものである。
 - 本文中のバージョンは測定した時点のもの。2026-09-24 時点のインストール版は `@tiptap/core` 3.31.3。
 
-2026-09-24 に Claude のプロジェクト memory（`tiptap-editor-pitfalls` / `dead-backspace-duplicate-pm-state`）から移した。移すにあたって、引いている識別子がリポジトリと `node_modules` に今もあるかを静的に照合した。ブラウザでの再測定はしていない。
+2026-09-24 に Claude のプロジェクト memory から移した（§1〜§12 は `tiptap-editor-pitfalls` と `dead-backspace-duplicate-pm-state`、§13〜§17 は機能ごとの小さな記録 12 件）。移すにあたって、引いている識別子がリポジトリと `node_modules` に今もあるかを静的に照合した。ブラウザでの再測定はしていない。
 
 ## 1. 調べ方
 
@@ -371,3 +371,113 @@ callout の中の文字は `Slice(callout(paragraph(…)), 2, 2)` で、平の�
 - 窓を開けるには本文の色を動かす必要がある（ライトは zinc-900 で 3.41。ダークは最低 zinc-200 で、合う青は `#0969da` の系統からシアン寄りにずれる）。
 
 作者は比較した上で、恒久的な下線を残し、ホバー時の処理を何も足さないことを選んだ。`docs/link-requirements.md` §7.1 の「下線を外してはならない」の根拠はこの計算である。
+
+## 13. React から editor に値を渡す
+
+### 13.1 React の effect から `editor.view.dispatch` しない
+
+steps が空で meta だけのトランザクションでも、すべてのプラグインの `appendTransaction` が走る。サムネイルの印をデコレーションに渡すために effect から dispatch したところ、`trailing-node-extension.ts` がそれに反応して追加し、`onUpdate` が発火した（TipTap は、追加分を含めてどのトランザクションも `docChanged` でない場合にしか `onUpdate` を抑えない）。`onUpdate` は無条件に `markEdited()` を呼ぶので、公開した直後の記事が「未公開の変更あり」に戻った（2026-09-07）。
+
+**機構**: dispatch せず、`editor.storage` に書く。`link-card-extension.ts` の `ownSlug` と同じ形で、拡張は `addProseMirrorPlugins()` の中で `this.storage` を閉じ込めて読む。`@tiptap/react` の `useEditor` は描画のたびに `editor.setOptions(...)` → `view.updateState` を呼ぶので、デコレーションは PostEditor の描画ごとに問い直される。
+
+- 同じコミットの `setOptions` より先に値を置く必要があるときは、layout effect で書く。React はすべての layout effect を passive effect より先に走らせ、`useEditor` の問い直しは passive である。
+- その layout effect は `editorRef.current` ではなく `editor` を読む。`editorRef` は passive effect が埋めるので、`editor` が初めて存在するマウント時のコミットではまだ null である。依存が変わらない記事では書き込みが二度と起きず、保存済みのサムネイルが再読み込みで印を失った（2026-09-08、`docs/link-card-requirements.md` 基準 22p）。
+- ref（あるいは ref を閉じ込めた `useCallback`）を `postEditorExtensions(...)` に渡すと、`react-hooks/refs` が描画中の ref アクセスとして弾く。`editor.storage` なら ref が介在しない。
+- この種のバグは `onUpdate` の `transaction` / `appendedTransactions`（steps、meta）を記録して調べる。`appendedTransactions[i].meta.appendedTransaction` に追加前の文書が入っている。
+
+### 13.2 NodeSelection で出すバブルメニューの 2 つの prop
+
+どちらも作者の報告から見つかり、測定した（2026-09-07、`docs/link-card-requirements.md` 基準 22e / 22f、`e2e/image-bubble-position.spec.ts`）。
+
+- `updateDelay={0}` は必須である。`@tiptap/extension-bubble-menu` の `update()` は `updateDelay > 0 && hasValidSelection` でデバウンスの分岐に入り、NodeSelection は決して空でないので、既定の 250ms が表示そのものを遅らせる（クリックから表示まで 401ms → 92ms）。
+- `placement` は幅に依存しないもの（`top-start`）にする。floating-ui は `-end` を `reference.right - floating.width` で解くのでメニューを測る。ポータルの子は 1 描画古い（§10.5）ので、幅が誤る。コミット後に位置を直す案は、effect から dispatch することになるので採らない（§13.1）。
+- 古い計測で位置を決めたかどうかの判別: `window.dispatchEvent(new Event('resize'))` を投げる。プラグインの `resizeHandler` → `updatePosition()` が React のコミット後に走るので、メニューが動けば古い計測だった。
+
+### 13.3 ポップアップの行は mousedown で既定を止め、click で実行する
+
+行を mousedown で選ぶと一覧が同期的に閉じ、mouseup が下の文書に落ちてキャレットを置き、カードと未適用の編集も一緒に消えた（2026-08-18、リンクカードの見出し選択、`docs/link-requirements.md` §5.5.17）。`preventDefault()` は mousedown で要る。フォーカスが欄から離れるのを止めるためで、カードはそれを作者が離れたと読む（§10.4）。
+
+**規則**: 起動で自分を外すポップアップの中の行やボタンは、`onMouseDown={(e) => e.preventDefault()}` + `onClick={act}`。2 つに分かれているのは事故に見えて「簡略化」されやすい。`SlashList.tsx` が mousedown で選んで問題ないのは、そのメニューがフォーカスの移動で消えるものの内側にないからである。
+
+### 13.4 位置へのジャンプはスティッキーなツールバーの下に着地する
+
+prosemirror-view の `scrollRectIntoView` は既定 5px の余白で最小限だけスクロールし、PostEditor のツールバーが `sticky top-0` でスクロール領域の上を覆っていることを知らない。見出しへ移動すると、見出しは y=5、ツールバーの下端は y=29 だった（2026-08-18、`docs/link-requirements.md` §5.5.18）。
+
+- **機構**: 選択のトランザクションの後で要素自身を `element.scrollIntoView({ block: 'center' })` する。ツールバーの高さを `scrollMargin` の定数にしない（ボタンが 2 行に折り返した時点で古くなる）。ProseMirror は自前でスクロールするので CSS の `scroll-margin` も効かない。
+- 逆向き: フォーカスだけを戻したいクロムも `editor.chain().focus()` でスクロールする。`@tiptap/core` の focus は既定で `scrollIntoView: true` で、NodeSelection では `delayedFocus` の分岐から rAF 内で `scrollIntoView()` を走らせ、ブロック全体の矩形を見せようとする。画像のサムネイルボタンで +87px 動いた（2026-09-08、基準 22o）。`focus(null, { scrollIntoView: false })` を使う。`view.focus()` 自体は `focusPreventScroll` を使う。
+- spec は「スクロールしたか」ではなく「どこに着地したか」（ツールバーに隠れず、ビューポートの中）を測る。対象の前後に詰め物を置かないと、文書の先頭付近ではページが端で止まり、その止まり方を測ることになる。Playwright は大きな対象をクリックする前に自分でスクロールするので、ページを動かす前に対象を選んでおく。
+
+## 14. 箱のスライス修復（callout / アコーディオン）
+
+`callout-slice-guard.ts` と `details-slice-guard.ts` は `box-slice-repair.ts` を共有し、それぞれ仕様を述べて自分の配置規則だけを持つ（`16cece4`、2026-08-18）。4 つの引数（`nodeName`、`unwrap`、`depthDrop`、`recurseIntoRemoved`）と合成順の議論は `docs/accordion-requirements.md` §6.1・§6.2 にある。ここには計測の罠だけを置く。
+
+- `Selection.content()` は `doc.slice(from, to, true)` である。3 つ目の引数 `includeParents` を落とした 2 引数の fixture は、これらのガードが何も言うことのない最小のスライスを作る。最初のテストは `dropOpenWrappers` を完全に外しても全ケース通っていた（AGENTS.md の「Slices come from a real selection」の由来）。
+- `not.toContain('details(details')` は普通のアコーディオン（`details(detailsSummary(`）にも一致するので、正しい結果で落ちる。箱の数を数える。
+- 2 つとも、テストスイートに対して意図的に変異を入れて見つけた。`slice-guard-composition.test.ts` は、引数ごとの変異に `nodeName` の入れ替えと早期 return の削除を加えた 7 つの変異をすべて捕まえる。
+- 裸の `detailsSummary` は欠陥ではない（2026-08-18 に実ブラウザで測定、閉じた）。1 つのアコーディオンの中に留まる選択は `<details(detailsSummary("題名テ"))> (2,2)` をクリップボードに残すが、本物のブロック位置では fitter が置けない `detailsSummary` を `paragraph` に変える。5 つのジェスチャで文字の喪失も no-op も `pageerror` も無かった。
+- Chrome はマウスのドラッグでタイトルから本文への選択を作らない（本文だけに正規化する）。その形には `setRange` でしか届かない。
+
+## 15. フォームと React
+
+### 15.1 PostEditor の `<form>` の中に `<form>` を置かない
+
+PostEditor はタイトル・ツールバー・エディタ・公開ボタンを 1 つの `<form>` で包んでいる。入れ子の `<form>` は不正な HTML で、ブラウザは内側を黙って捨て、その送信は外側に向かう。症状は「送信しても何も起きない」と React の `<form> cannot be a descendant of <form>`。ツールバーの中のダイアログは `<div>` と `type='button'` の `onClick`（キーボード用に欄の `onKeyDown` の Enter）で作る。前例は `components/editor/TableGridMenu.tsx` の `TableSizeDialog`。
+
+### 15.2 NodeView の中のフォーム部品は、公開のたびに表示値が消える
+
+React 19 は `<form action={serverAction}>` の完了後にフォームをリセットし（`requestFormReset`）、所属する非制御の部品をすべて戻す。NodeView の中の `<input>` / `<select>` は表示値が空になる。ノードの属性は残り、トランザクションが起きないので NodeView の `sync()` も走らず、次の編集まで空のままになる。
+
+**機構**: `form` 属性を存在しない id にして、部品をフォームから外す（所属先が無くなり、リセットも送信もされない）。コードブロックのファイル名と言語の欄がこの形である（`code-block-extension.ts` の `DETACHED_FORM_ID`）。
+
+### 15.3 App Router では React のルートが `document` である
+
+React の `event.stopPropagation()` は、`document` に登録したネイティブのリスナー（Escape で設定のドロワーを閉じる `useDismiss` など）を止められない。同じノードを共有しているからである。`event.nativeEvent.stopImmediatePropagation()` を使う。React のルートのリスナーはハイドレーション時に付き、どの effect より先なので、これで止まる（2026-09-23、`components/editor/TagField.tsx`）。
+
+### 15.4 IME の spec は変異で確かめる
+
+CDP の `Input.imeSetComposition` + `Input.dispatchKeyEvent` の Enter は `isComposing=true` で届く。ただしタグの combobox の spec は、合成した文字に一致する選択肢が非同期の「新しいタグを追加」行だけで、否定の assert が fetch の完了前に走り、ガードを消しても通っていた。合成する文字は同期的な選択肢（辞書にある行）に一致させ、誤って取られた Enter がすぐに見えるようにする。
+
+### 15.5 proxy の Set-Cookie で、すべての Server Action がページを再検証する
+
+`proxy.ts` は `/admin` へのリクエストごとにセッションの cookie を更新していた。Next は proxy の Set-Cookie を Server Action の cookie ストアにマージし（`next/dist/server/async-storage/request-store.js` の `mergeMiddlewareCookies`）、cookie が変わると `x-action-revalidated: 1` が付いて、応答がアドレスバーの URL のページ全体を運ぶ。PostEditor が `/admin/posts/new` から `/edit` に `replaceState` していたので、edit ページが差し込まれてエディタが再マウントし、拒否された公開のエラーが消えた（2026-09-21、Next 16.2）。
+
+**機構**: proxy は `req.headers.has('next-action')` のとき更新を飛ばす（`docs/editor-requirements.md` §12.27）。Action の結果が消える、あるいはクライアントコンポーネントが Action の後に再マウントするときは、まず応答の `x-action-revalidated` を見る。修正後も、`/new` からの最初の公開が成功したときは再マウントする。
+
+## 16. 保存されるデータ
+
+### 16.1 本文は公開では CRLF、自動保存では LF で届く
+
+公開・非公開は PostEditor の `<input type='hidden' name='body'>` から FormData で届き、HTML のフォーム送信の手順が値の改行をすべて CRLF に書き換える。自動保存は `app/api/drafts/route.ts` に JSON で届き、LF のまま残る（2026-08-05 に DB で確認）。
+
+- これが `lib/footnotes.ts` の `incompleteFootnotes` を壊した。`'\n'` で分割すると最後以外の行末に `\r` が残り、定義の正規表現が一致しない。脚注が N 個あると N-1 個が空として公開を拒まれた。
+- 新しい書き込みは `lib/posts-write.ts` の `normalizeNewlines()` で LF に揃える。修正前に公開した行は次の公開まで CRLF のままで、公開済みの記事の自動保存は `body` ではなく `draft_content` に書くので自然には直らない。**保存された本文を行で走査するコードは `/\r?\n/` で分割する。**
+- 未監査: `lib/shiki-diff-line-transformer.ts` は `code.split('\n')` している。
+
+### 16.2 `draft_content` の JSON 列の型は検証ではない
+
+`posts.draft_content` は drizzle の `text(..., { mode: 'json' }).$type<DraftContent>()` である。`$type` は型の主張で、検証ではない。`DraftContent` にフィールドを足す前に保存された行はそのキーを持たず、tsc は何も言わず、実行時には文字列のはずの場所が `undefined` になる。
+
+- 2026-08-15 に `thumbnail` を足したとき、下書きを持つ行の編集画面で `initial.thumbnail === undefined` になり、`ThumbnailField` の `value === ''` の分岐を外れて誤った表示になった。次の自動保存で直るので、テストもエラーも何も捕まえなかった。
+- **機構**: 読み込みの境界で揃える。`lib/draft-content.ts` の `normalizeDraftContent` が既定値を埋める。`DraftContent` にフィールドを足したら、ここにも既定値を足す。`lib/posts.test.ts` の「does not flag a working copy that merely predates a field」がこの形を固定している。
+- 通常の列は安全である。マイグレーションで SQL の `DEFAULT` が付く。
+
+## 17. CSS とオーバーレイ
+
+### 17.1 Popover API
+
+脚注のプレビュー（`components/FootnotePopover.tsx`、`docs/footnote-popover-requirements.md`）を作るときに、使い捨てのプローブで測った（2026-08-09）。
+
+- `popover="manual"` には light dismiss も Escape も無い。どちらも `auto` だけのものである。`manual` を選んだら Escape の `keydown` を自分で登録する。ホバーやフォーカスで出すものは WCAG SC 1.4.13（Dismissible）のためにそれが要り、無くても黙って失敗する。
+- UA の `[popover]` の 3 つの宣言が、位置を決めるオーバーレイとぶつかる。`inset: 0` と `margin: auto`（ビューポートの中央に置く。`left` / `top` を自分で決めるなら両方上書きする）と `overflow: auto`。
+- 隠す部分木がページの内容の複製なら、`aria-hidden` だけでは誤りである。複製がリンクを持つと、支援技術から隠した部分木の中にフォーカスできる要素ができる。`inert` なら両方の経路を閉じる。`pointer-events: none` は Tab キーには何も言わない。
+- 読者が入れるホバーのオーバーレイには閉じる遅延が要る。きっかけと箱の間には隙間があり、ポインタは一瞬どちらの上にも無い。遅延 0 では箱が移動中に消え、原理的に届かない（SC 1.4.13 Hoverable）。
+- popover の状態は `el.matches(':popover-open')` で測る。自分の状態は `toggle` のリスナーで合わせる。プラットフォームは自分の閉じる経路を通さずに `auto` の popover を閉じる。
+
+### 17.2 中央の列の縁を動かさずに片側へ列を足す
+
+中央寄せの本文の列（`mx-auto max-w-3xl`）の横に列（目次のレールなど）を足すとき、本文の左端を動かさない方法は代数では決まらない。
+
+- 全体を `mx-auto max-w-[合計]` にすると、足した幅の半分だけ本文が動く。
+- 両側に `minmax(1rem, 1fr)` の溝を対で置く 4 列のグリッドも同じだけ動く。2 つの `1fr` は、レールを引いた残りを分け合うからである。独立に分かれると仮定した代数で「正しい」と証明でき、`boundingBox()` の測定に否定された。
+- **機構**: 左の溝をレールと独立に計算する。`grid-template-columns: calc((100% - <本文幅>) / 2) <本文幅> 1fr`。左の溝と本文は、単独の `mx-auto max-w-<本文幅>` の箱と同じ式になる。レールを `1fr` にすると 3 列の合計が常に 100% になり、はみ出しが起きないので、ブレークポイントは読みやすさだけで選べる（`docs/toc-requirements.md`）。
+- 確かめ方は測定である。列がある状態と無い状態を複数のビューポート幅で描き、基準要素の `boundingBox().x` が一致することを assert する。

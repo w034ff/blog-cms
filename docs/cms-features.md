@@ -45,7 +45,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 - フェンス判定は `lib/footnotes.ts:18` の `FENCE`（`` /^ {0,3}(`{3,}|~{3,})/` ``）と同じ形で、フェンス内の行を読み飛ばす。
 - `^<div class="(link-card|embed)"[^>]*></div>$` に一致する行は1行まるごと除外する。この形は実装が実際に吐く形そのもの——`components/editor/link-card-extension.ts:59` と `components/editor/embed-extension.ts:59` がそれぞれ `` `<div class="link-card" data-href="${escapeHref(href)}"></div>` `` / `` `<div class="embed" data-href="${escapeHref(href)}"></div>` `` を `state.write` している。
 - 脚注参照 `[^label]`（`lib/footnotes.ts:26` の `REFERENCE`）はマッチした部分を文字列から取り除く。定義行 `[^label]: text`（`lib/footnotes.ts:22` の `DEFINITION`）はラベル部分だけ剥がし、本文（`text`）は残す。
-- 改行は `/\r?\n/` で分割する。`\n` 単独ではないのは `lib/footnotes.ts:35-41` と同じ理由——フォーム送信が値の改行を CRLF に書き換える（[[form-submission-crlf-body]]）ため、`\r` が行末に残ったままだと後段の正規表現が丸ごと外れる。
+- 改行は `/\r?\n/` で分割する。`\n` 単独ではないのは `lib/footnotes.ts:35-41` と同じ理由——フォーム送信が値の改行を CRLF に書き換える（`docs/editor-pitfalls.md` §16.1）ため、`\r` が行末に残ったままだと後段の正規表現が丸ごと外れる。
 
 ### 3.3 文字数/単語数から分への換算
 
@@ -73,7 +73,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 **決定**: DB に列を追加せず、`body` から都度計算する純粋関数として実装する。
 
-**理由**: 保存する場合、本文を更新するたびに読了時間を再計算して書き戻す同期コードが要る。しかもそれは `draftContent` で実際に踏んだ不具合のクラス——「後から足したフィールドが古い行では読めない」（[[draft-content-json-column-stale-fields]]、`lib/draft-content.ts` の `normalizeDraftContent`がまさにその埋め合わせ）——をもうひとつ増やすだけになる。読了時間は本文だけから決まる純粋な値で、行スキャン自体が軽いので、都度計算のコストは無視できる。
+**理由**: 保存する場合、本文を更新するたびに読了時間を再計算して書き戻す同期コードが要る。しかもそれは `draftContent` で実際に踏んだ不具合のクラス——「後から足したフィールドが古い行では読めない」（`docs/editor-pitfalls.md` §16.2、`lib/draft-content.ts` の `normalizeDraftContent`がまさにその埋め合わせ）——をもうひとつ増やすだけになる。読了時間は本文だけから決まる純粋な値で、行スキャン自体が軽いので、都度計算のコストは無視できる。
 
 ## 6. 受け入れ基準（未実装のまま凍結）
 
