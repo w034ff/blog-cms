@@ -53,3 +53,7 @@ The E2E suite is **701 of the suite's 759 cases and 86% of its wall clock**, and
 # Project state (`docs/project-status.md`)
 
 What the code cannot tell you: the constraints to keep (never delete `content/posts/*.mdx`; schema changes only through `db:generate` → `db:migrate`; uploads are deleted by reference), the reasons behind early decisions, how the site is deployed, the deferred list, and the multi-user design.
+
+# Where a new finding goes
+
+A finding about the code, a library, the harness or the environment — a measurement, a trap, a decision and its reason — goes into the repo, in the document that owns its subject: `docs/editor-pitfalls.md`, a `docs/*-requirements.md`, `docs/cms-features.md`, `docs/dev-environment.md`, `docs/project-status.md`, or `e2e/README.md`. **Not into Claude's memory**, which is unversioned and exists on one machine; it had grown to 54 files of exactly this before it was moved here on 2026-09-24. Memory keeps only what is about this machine or about how the author likes to work. A skill holds a procedure and points at these documents for the facts; it does not restate them.

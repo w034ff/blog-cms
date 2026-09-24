@@ -19,17 +19,17 @@ wait valid. Read the section you need before writing a spec.
 
 ## Run it
 
-**Run the files your change touches, not the suite.** One file is 20-90 seconds;
-the whole suite is about 12 minutes (769 cases at `workers: 4`, measured
-2026-09-13 — measure the current count, don't quote this one). A full run belongs
-before a merge, not before a commit.
+**Run the files your change touches, not the suite.** One file takes well under
+two minutes; the whole suite is many times that (the dated measurement is in
+`e2e/README.md`, "Why four workers and not shards"). A full run belongs before a
+merge, not before a commit.
 
 ```bash
 npx playwright test e2e/editor-embed.spec.ts          # one file — the default
 npx playwright test e2e/a.spec.ts e2e/b.spec.ts       # several: one command, one boot
 npx playwright test e2e/editor-embed.spec.ts:658      # one test, by line
 npx playwright test e2e/editor-embed.spec.ts --repeat-each=5   # is it flaky?
-npm run test:e2e                                      # the whole suite (~12m)
+npm run test:e2e                                      # the whole suite
 ```
 
 `npm run test:e2e:shards` is not a faster way to run the suite; it is for a run
