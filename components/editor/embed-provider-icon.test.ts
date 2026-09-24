@@ -28,9 +28,8 @@ const PROVIDER_KEY: Record<string, string> = {
   CodePen: 'codepen',
 };
 
-// YouTube is the one provider `embedMarkShapes` deliberately gives no branch (§7.3, decided
-// 2026-08-24): the outcome is a video, so the generic play-frame *is* the mark, not a placeholder for
-// a missing one. Every other provider must draw something of its own.
+// YouTube deliberately has no branch in `embedMarkShapes` (§7.3): the generic play frame *is* its
+// mark. Every other provider must draw its own.
 const SHARES_THE_DEFAULT_MARK = new Set(['YouTube']);
 
 describe('provider marks — the dialog row and the bubble button stay in sync with the registry', () => {

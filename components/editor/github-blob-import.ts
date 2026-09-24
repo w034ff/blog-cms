@@ -11,35 +11,24 @@ import {
 // Turning a `github.com/…/blob/…` link into a code block: the one fetch, and the one insertion
 // (docs/embed-requirements.md §19).
 //
-// **The fetch runs in the author's own browser.** `raw.githubusercontent.com` answers
-// `access-control-allow-origin: *` on a hit *and* on a 404 (measured 2026-08-29), so nothing on
-// this server has to request a URL the author chose — no route, no session gate, no address guard,
-// no cache. That is the whole difference from the link card, whose target pages send no such header
-// and which therefore needed `lib/guarded-fetch.ts` and everything above it.
-//
-// **And it runs once, at insert time.** What is stored is the code, in the fence every other code
-// block uses, so the published page fetches nothing and §3.2 and §4 are untouched (§18.9).
+// **The fetch runs in the author's own browser:** `raw.githubusercontent.com` answers
+// `access-control-allow-origin: *` on a hit and on a 404, so this server never requests a URL the
+// author chose (unlike the link card and `lib/guarded-fetch.ts`). **Once, at insert time:** the
+// code is stored in an ordinary fence, so the published page fetches nothing (§18.9).
 
 // The node this builds. Named rather than taken from the extension so this module has no import
 // cycle with code-block-extension.ts, which is where the type is defined.
 const CODE_BLOCK = 'codeBlock';
 
-// A cheapness bound on the response, applied before the body is read when the server declares a
-// length. GitHub serves `content-length` on every raw hit (measured 2026-08-29), so the common case
-// refuses without transferring anything.
-//
-// Generous, because a line range is read out of a file this side has to have in full — `#L4000` is
-// only reachable by fetching everything before it, and raw has no line addressing of its own.
+// A bound checked against `content-length` (which raw hits carry) before the body is read.
+// Generous, because a line range needs the whole file: raw has no line addressing.
 const MAX_FETCH_BYTES = 2 * 1024 * 1024;
-// What may be written into the document, applied after the range is taken. **This is the number the
-// author feels**, and it is much smaller than the one above: a code block is read, not stored, and
-// past a few hundred lines the honest answer is a link. A whole file over the cap is refused with
-// the gesture that fixes it, since a range does get through.
+// What may be written into the document, after the range is taken. **The number the author feels:**
+// past a few hundred lines the honest answer is a link, and the refusal suggests a range.
 const MAX_INSERT_CHARS = 64 * 1024;
 
-// One import per reference at a time. The button stays live while the fetch is out — hiding it
-// would move the card's controls under the pointer — so a second press is answered rather than
-// queued.
+// One import per reference at a time. The button stays live during the fetch (hiding it would
+// shift the controls), so a second press is answered rather than queued.
 const inFlight = new Set<string>();
 
 export const BLOB_NOTICES = {
@@ -106,12 +95,9 @@ async function readBlob(target: GithubBlobTarget): Promise<{ text: string } | { 
   } catch {
     return { notice: BLOB_NOTICES.fetch };
   }
-  // 404 covers every determinate failure here and they are not distinguishable from the outside: a
-  // private repository, a deleted file, a ref that does not exist and a directory all answer it
-  // (measured 2026-08-29). One wording, because the author has one thing to check.
+  // A private repo, a deleted file, a missing ref and a directory all answer 404, so one wording.
   if (!response.ok) return { notice: BLOB_NOTICES.fetch };
-  // Raw serves source as `text/plain` and everything else as what it is — `image/vnd.microsoft.icon`
-  // for an `.ico`, measured. This is the only thing keeping a binary out of the document.
+  // Raw serves source as `text/plain` and binaries as their own type; this keeps binaries out.
   const type = response.headers.get('content-type') ?? '';
   if (!type.startsWith('text/')) return { notice: BLOB_NOTICES.binary };
   const declared = Number(response.headers.get('content-length'));
@@ -132,12 +118,9 @@ async function readBlob(target: GithubBlobTarget): Promise<{ text: string } | { 
 
 // The whole gesture. Returns a notice to show, or null when the block was made.
 //
-// **The document may change while the fetch is out**, which no other entry point in this editor has
-// to reckon with — `resolveEmbed` is pure and every insertion around it is synchronous. The author
-// can type, undo, or drag something above the link in that window, and a stored `{from, to}` is
-// stale by however much landed. So the range is carried through every transaction's own mapping and
-// re-checked at the end; if what it lands on is no longer this link, nothing is inserted and the
-// author is told, rather than the file being written over whatever is there now.
+// **The document may change while the fetch is out**, unlike every other insertion here. So the
+// range is mapped through each transaction and re-checked at the end; if it no longer holds this
+// link, nothing is inserted and the author is told.
 export async function importGithubBlob(
   editor: Editor,
   initial: { from: number; to: number },
@@ -181,12 +164,8 @@ export async function importGithubBlob(
     editor
       .chain()
       .focus()
-      // Not grouped with whatever the author did just before pressing the button. prosemirror-history
-      // closes the current event on this meta, and `'paste'` is the vocabulary it has — the same
-      // spelling speakerdeck-snippet-paste.ts sets, for the same reason: an import that joined the
-      // preceding keystrokes would make one Ctrl-Z take the block *and* the typing. Measured
-      // 2026-08-29: without it, an import made within the grouping delay of loading the document
-      // undid all the way back to an empty editor.
+      // Its own undo event: prosemirror-history closes the current event on this meta. Without it,
+      // one Ctrl-Z took the block and the preceding typing (or the whole loaded document).
       .setMeta('uiEvent', 'paste')
       .insertContentAt(
         { from: $from.before($from.depth), to: $from.after($from.depth) },
@@ -211,13 +190,9 @@ export async function importGithubBlob(
 // The way back (§19.4). The block came from a link, so it can become one again — the same door the
 // embed and the link card each carry, and the same wording on it.
 //
-// **Offered only for a block whose filename is a blob URL**, which is what makes it answerable: an
-// ordinary code block has no reference to return to. The reference is read back out of the stored
-// filename, so a block imported months ago in another session opens with this button just as one
-// imported a moment ago does — nothing is remembered anywhere else.
-//
-// The code itself is discarded, including any edit the author made to it. That is what the embed's
-// own 「リンクに戻す」 does with the frame it dissolves; one Ctrl-Z brings it back.
+// **Offered only for a block whose filename is a blob URL**, read back from the stored filename, so
+// it works for a block imported in any session. The code, edits included, is discarded, as the
+// embed's 「リンクに戻す」 does; one Ctrl-Z brings it back.
 export function unsetGithubBlob(editor: Editor, pos: number): boolean {
   const node = editor.state.doc.nodeAt(pos);
   if (node?.type.name !== CODE_BLOCK) return false;

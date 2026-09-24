@@ -4,11 +4,8 @@ import { Fragment, Slice } from '@tiptap/pm/model';
 import { hostRefusalAt, placementRefusal } from './footnote-extension';
 import { schema } from './test-schema';
 
-// §6's placement rules, asked of the schema PostEditor actually builds rather than of a hand-written
-// one — the whole point of the accordion case below is that it is the *node's content expression*
-// that refuses, so a schema assembled to suit the test would prove nothing. `test-schema.ts` builds
-// it from `postEditorExtensions`, so that is now the registration itself and not a list of the
-// schema-shaped extensions kept in step with it by hand.
+// §6's placement rules, asked of PostEditor's own schema (`test-schema.ts`): the accordion case
+// depends on the node's content expression doing the refusing.
 const { details, detailsSummary, detailsContent, paragraph, footnoteReference } = schema.nodes;
 
 // One accordion with a filled-in title and a one-line body, then a trailing paragraph — the shape

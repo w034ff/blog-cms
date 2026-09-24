@@ -3,15 +3,9 @@ import { Fragment, Slice } from '@tiptap/pm/model';
 import { isInDetailsTitle, titleAcceptsSlice } from './details-slice-guard';
 import { docOf, nodes, para, text } from './test-schema';
 
-// §6.8's rule, asked of the schema PostEditor actually builds: what refuses here is
-// `detailsSummary`'s own content expression, so a schema written to suit the test would prove
-// nothing. `test-schema.ts` builds it from `postEditorExtensions` itself — which is the claim the
-// hand-listed array this file used to carry could only make in a comment.
-//
-// This exists as a unit test because the drop half cannot be driven end-to-end: an in-editor drag
-// never fires `dragstart` under CDP, so the harness cannot start one (see the E2E notes). The paste
-// half is covered in `e2e/editor-details-title-guard.spec.ts`; both halves ask this one predicate,
-// so pinning it here is what stands behind the gesture the browser can't be made to perform.
+// §6.8's rule, asked of PostEditor's own schema (`test-schema.ts`), since what refuses is
+// `detailsSummary`'s content expression. The paste half is also covered in
+// `e2e/editor-details-title-guard.spec.ts`; both halves ask this one predicate.
 //
 // **The slices below are built by hand on purpose.** This file is a truth table over slice shapes —
 // open depths and child counts — rather than a stand-in for one gesture, so `nodeSlice` and
@@ -50,10 +44,8 @@ describe('titleAcceptsSlice', () => {
   });
 
   it('lets an inline atom through, because §6.5 owns that question', () => {
-    // A `text*` title tears on an inline atom too, but the footnote's placement guard answers it
-    // better than a refusal would: a paste degrades the reference to literal text so the author's
-    // words still land, and a drop is refused with a message naming the footnote. Answering here
-    // first takes both away — measured, it turned two footnote specs red. One question per guard.
+    // Inline atoms belong to the footnote's placement guard, which degrades rather than refuses
+    // (see titleAcceptsSlice). One question per guard.
     const withRef = paragraph.create(null, [text('中身'), footnoteReference.create()]);
     expect(titleAcceptsSlice(new Slice(Fragment.from(withRef), 1, 1))).toBe(true);
   });

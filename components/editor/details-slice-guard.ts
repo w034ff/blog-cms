@@ -4,23 +4,15 @@ import { createBoxSliceRepair } from './box-slice-repair';
 import { resolveDropTarget } from './drop-target';
 import { replaceSelectionClamped } from './isolating-boundary';
 
-// What a *slice* carrying an accordion may do — the same two questions calloutSliceGuard answers,
-// but neither answer transfers, which is why this is its own file rather than a second type name
-// in that one.
-//
-// The placement rule differs: a callout is refused inside a quote or another callout, while an
-// accordion may only ever be placed at the document's top level (§6.3). And the repair differs in
-// a way that would be a schema violation if it were shared — see unwrapHalfSelectedDetails.
+// What a *slice* carrying an accordion may do — the questions calloutSliceGuard answers, with
+// different answers: an accordion may only be placed at the top level
+// (docs/accordion-requirements.md §6.3), and its unwrap goes two levels (§6.2).
 export const DETAILS_NAME = 'details';
 
-// Would the slice put an accordion anywhere but the top level? A slice carries a whole accordion
-// when the block drag handle's NodeSelection picked one up, or when a selection swallowed one
-// end-to-end on its way past.
-//
-// The test is "is any ancestor a container", not a list of hostile types. A drop into a top-level
-// paragraph is fine — ProseMirror splits the paragraph and the accordion lands beside it — so the
-// textblock the pointer is inside does not count; anything above it does. Written this way, a
-// block node added to this editor later is covered without being named.
+// Would the slice put a whole accordion anywhere but the top level? The test is "is any ancestor a
+// container", not a list of hostile types, so a block node added later is covered without being
+// named. The enclosing textblock does not count: ProseMirror splits it and the accordion lands
+// beside it.
 export function wouldNestDetails($pos: ResolvedPos, slice: Slice): boolean {
   let carriesDetails = false;
   slice.content.descendants((node) => {
@@ -33,24 +25,11 @@ export function wouldNestDetails($pos: ResolvedPos, slice: Slice): boolean {
   return false;
 }
 
-// A selection that crosses an accordion's edge hands the drag an accordion node the author never
-// meant to move — the same problem halfSelectedEdges settles for the callout, and the same answer:
-// the box comes off, its contents come over.
-//
-// This is the half that does not generalise, and it is what `unwrap` carries into
-// box-slice-repair.ts. The callout's answer splices `child.content` one level into the parent
-// fragment, which is valid because a callout is `block+`. An accordion's children are
-// `[detailsSummary, detailsContent]`, and neither may live at the top level: splicing them up
-// produces a document ProseMirror refuses. §6.2 records this as the reason the two guards took
-// this long to share anything.
-//
-// So the unwrap goes two levels — the *body's* children are what survive — and the title has to be
-// answered separately, since it is text that would otherwise vanish. It becomes a paragraph ahead
-// of the body, which is what `unsetDetails` does when an accordion is dissolved from the keyboard;
-// a reader of the resulting document sees the same thing either way. An *empty* title is where the
-// two used to disagree — the size check below drops it, the official command kept it as an empty
-// paragraph — so details-extension.ts now overrides that case to read the rule the way this does
-// (§7.5). Keep the two in step: this is the copy that was right.
+// How an accordion is taken apart when a slice must lose the box. Its children are
+// `[detailsSummary, detailsContent]`, neither valid at the top level, so the unwrap goes two levels
+// (§6.2): the body's blocks survive and a non-empty title becomes a paragraph ahead of them. This
+// matches `unsetDetails` from the keyboard, including dropping an empty title (§7.5), so a reader
+// sees the same result either way — keep the two in step.
 function detailsUnwrapped(details: PMNode, schema: PMNode['type']['schema']): PMNode[] {
   const out: PMNode[] = [];
   details.forEach((child) => {
@@ -63,17 +42,9 @@ function detailsUnwrapped(details: PMNode, schema: PMNode['type']['schema']): PM
   return out;
 }
 
-// Both repairs are box-slice-repair.ts's, specialised for this box. What differs from the callout's
-// is entirely in these three fields.
-//
-// `depthDrop: 2`, because the slice was cut through `details` *and* `detailsContent` and both of
-// those levels go with the unwrap — where a callout's `block+` children come up through one.
-//
-// `recurseIntoRemoved: false` keeps what this has always done: `flattenClosed` does not re-scan the
-// blocks it lifts out of an accordion's body. An accordion cannot nest in an accordion, so the only
-// shape it changes is a box carried *inside* the body being lifted, and that is left alone
-// (`slice-guard-composition.test.ts` pins it). The callout recurses because `> > [!NOTE]` puts one
-// callout inside another in stored markdown, which has no counterpart here.
+// How these fields differ from the callout's: docs/accordion-requirements.md §6.2. `depthDrop: 2`
+// because both `details` and `detailsContent` go with the unwrap; no recursion because an accordion
+// cannot nest in an accordion.
 const repair = createBoxSliceRepair({
   nodeName: DETAILS_NAME,
   unwrap: (node) => detailsUnwrapped(node, node.type.schema),
@@ -83,10 +54,8 @@ const repair = createBoxSliceRepair({
 
 export const unwrapHalfSelectedDetails = repair.unwrapHalfSelected;
 
-// The paste-side answer to a *whole* accordion headed somewhere it may not go: the box is dropped
-// and its contents kept, which is what a paste should do — the caret is where the text was asked
-// for, and there is no second place it could land. Every depth, since an accordion can sit inside
-// a quote in loaded markdown (legal to store, refused to author).
+// The paste-side answer to a whole accordion headed somewhere it may not go: the box is dropped and
+// its contents kept at the caret. Every depth, since loaded markdown can put one inside a quote.
 export const flattenClosedDetails = repair.flattenClosed;
 
 // Is `$pos` inside an accordion's title? Asked of every ancestor rather than of `$pos.parent`,
@@ -99,25 +68,14 @@ export function isInDetailsTitle($pos: ResolvedPos): boolean {
   return false;
 }
 
-// May this slice enter a title? `detailsSummary` is `text*`, and ProseMirror does not refuse what
-// will not fit — it *makes room*, splitting the accordion in two and growing a second, untitled one
-// from the remainder (docs/accordion-requirements.md §6.6, §6.8). So the question has to be asked
-// before the slice is placed, and asked of the slice rather than of the position: a selection made
-// *within* one paragraph carries nothing but inline content and lands correctly as text, which is a
-// gesture authors use and this must not take away. It is the moment a slice crosses a block
-// boundary that it starts carrying structure.
+// May this slice enter a title? `detailsSummary` is `text*`, and ProseMirror makes room for what
+// will not fit by splitting the accordion (docs/accordion-requirements.md §6.6, §6.8), so this is
+// asked of the slice before it is placed. Text selected within one paragraph must still flow in.
+// Stated as what the title *accepts*, so a block node added later is covered without being named.
 //
-// The rule is stated as what the title *accepts* rather than as a list of what it refuses, so a
-// block node added to this editor later is covered without being named — the same reasoning §6.3
-// gives for writing the placement rule as `depth === 1`.
-//
-// **This asks about block structure only, and deliberately lets an inline atom through.** A `text*`
-// title tears on one of those too, but that question already belongs to the footnote's placement
-// guard (§6.5), which answers it *better* than a refusal: on a paste it degrades the reference to
-// literal text so the author's words still land, and on a drop it refuses with a message naming the
-// footnote. Answering here first would take both away — measured, it turned two footnote specs red.
-// One question per guard: this one owns block structure, §6.5's owns inline nodes. When an inline
-// node type is added, §6.5 is the section to read, not this one.
+// **Block structure only; inline atoms are let through deliberately.** Those belong to the
+// footnote's placement guard (§6.5), which degrades a pasted reference to text rather than
+// refusing; answering here first would take that away. A new inline node type means reading §6.5.
 export function titleAcceptsSlice(slice: Slice): boolean {
   const { content, openStart, openEnd } = slice;
   if (content.childCount === 0) return false;
@@ -136,38 +94,26 @@ export function titleAcceptsSlice(slice: Slice): boolean {
 
 const detailsSliceGuardKey = new PluginKey('detailsSliceGuard');
 
-// Named for the destination, like the callout's refusal: the author is holding the content, so
-// what they need to know is where it may not go. §7.3.
+// Named for the destination, like the callout's refusal (§7.3).
 const DETAILS_NESTING_BLOCKED =
   'アコーディオンは引用やリスト、コールアウト、表の中には入れられません';
 
-// Names the structures, like the nesting refusal above and unlike a positive "text only" rule.
-// 「文字しか入れられません」 was the first wording and it misfires exactly when it appears: what the
-// author is holding usually *is* text to them — two paragraphs of it — so being told that only text
-// may go in reads as a contradiction. Naming what cannot go in is true of all three refused shapes,
-// including the two that carry no line break at all: a whole paragraph taken by a node selection,
-// and a pasted callout or table. A wording built around 改行 was considered and rejected for that
-// reason — it would be plainly false in those two cases (§6.8).
-// 「アコーディオンのタイトル」 is what the footnote guard and the image refusal already call this
-// place (§7.3: one feature, one name).
+// Names what cannot go in rather than saying "text only", which reads as a contradiction to an
+// author holding two paragraphs of text; a wording about 改行 would be false for a node-selected
+// paragraph or a pasted table (§6.8). 「アコーディオンのタイトル」 matches the other guards (§7.3).
 const DETAILS_TITLE_NO_BLOCKS = 'アコーディオンのタイトルには段落やブロックを入れられません';
 
 export function detailsSliceGuard(notify: (message: string) => void): Plugin {
   return new Plugin({
     key: detailsSliceGuardKey,
     props: {
-      // Position-independent, so it rides the hook prosemirror-view runs over the drag slice as
-      // well as the clipboard one. Registered here rather than composed into the callout guard's
-      // transformPasted: prosemirror-view runs every registered one, and these two touch disjoint
-      // node types, so their order does not matter.
+      // Position-independent, so it rides the hook prosemirror-view also runs over the drag slice.
+      // Order against the callout guard's transformPasted does not matter: disjoint node types.
       transformPasted: unwrapHalfSelectedDetails,
       handlePaste(view, _event, slice) {
         const { $from } = view.state.selection;
-        // The title first: it refuses more than the nesting rule does, and a slice headed there
-        // never reaches a position where a later repair could see it (§6.8 — the same blindness
-        // that made the footnote need its own handlePaste). The caret is read from `state`, never
-        // from the DOM: a click places the DOM caret ~20ms ahead of the state, and a Ctrl+V inside
-        // that window would be judged against where the caret used to be.
+        // The title first: a slice headed there never reaches a position a later repair could see
+        // (§6.8). The caret comes from `state`, not the DOM, which runs ~20ms ahead after a click.
         if (isInDetailsTitle($from) && !titleAcceptsSlice(slice)) {
           notify(DETAILS_TITLE_NO_BLOCKS);
           return true;
@@ -187,11 +133,8 @@ export function detailsSliceGuard(notify: (message: string) => void): Plugin {
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
         const $target = resolveDropTarget(view, coords.pos, slice, moved);
-        // Same rule as the paste above, asked of where the pointer is rather than of the caret —
-        // at drop time `state.selection` is still the *dragged* range. A drag whose selection
-        // crossed a paragraph boundary is the reachable form of this. Drivable end to end, despite
-        // what §6.8 used to say: `dragSelect` + `cdpNativeDrag` in e2e/native-drag.ts complete the
-        // gesture, and what `page.mouse` alone cannot deliver is the `drop`, not the `dragstart`.
+        // Same rule as the paste, asked of the pointer: at drop time `state.selection` is still the
+        // dragged range.
         if (isInDetailsTitle($target) && !titleAcceptsSlice(slice)) {
           notify(DETAILS_TITLE_NO_BLOCKS);
           event.preventDefault();

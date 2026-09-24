@@ -79,8 +79,7 @@ export function ThumbnailField({ value, onChange, body }: Props) {
             なし
           </div>
         )}
-        {/* The state first, then the controls (requested 2026-09-21): the words describe the
-            picture beside them, and read as the buttons' own caption when they came after. */}
+        {/* The state first, then the controls: after the buttons it read as their caption. */}
         <div className='space-y-1.5'>
           <p className='text-xs text-zinc-500 dark:text-zinc-400'>
             {value !== ''
@@ -90,9 +89,8 @@ export function ThumbnailField({ value, onChange, body }: Props) {
                 : '本文の最初の画像が自動で入ります'}
           </p>
           <div className='flex gap-2'>
-            {/* type='button' is load-bearing: this sits inside PostEditor's one
-                big <form>, and a button without it defaults to submit — which
-                here means publishing the post. */}
+            {/* type='button' is load-bearing: inside PostEditor's <form>, a default
+                submit button would publish the post. */}
             <button
               type='button'
               onClick={() => fileRef.current?.click()}

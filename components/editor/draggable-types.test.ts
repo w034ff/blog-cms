@@ -12,9 +12,8 @@ import { DRAGGABLE_TYPES } from './block-drag-handle';
 // dragged out of a quote or a code block must keep working. That scope is only equivalent to "one
 // of the handled types" while every `draggable: true` node is a handled type. And `useImageUpload`'s
 // `hasFiles` reads `types.includes('Files')` as "a file arrived from outside the page", which holds
-// only because no in-editor drag reaches it any more: Chrome builds an in-page image drag out of
-// the picture itself, and that drop re-uploaded the image and split the paragraph it landed in
-// (measured 2026-09-08).
+// only because no in-editor drag reaches it any more (an in-page image drag used to re-upload the
+// image).
 //
 // So a node type that declares `draggable: true` without joining the handle's list reopens both at
 // once, silently. The schema is built from `postEditorExtensions` itself, not from a list rebuilt

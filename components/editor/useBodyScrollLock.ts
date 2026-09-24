@@ -2,17 +2,12 @@
 
 import { useEffect } from 'react';
 
-// Freezes `document.body`'s own scroll while a `fixed` full-screen overlay (the ＋ drawer, the
-// insert dialog) is up — neither is a native `<dialog>`, so neither gets the background-scroll
-// lock `showModal()` provides for free (`TableSizeDialog`, the one native dialog in this editor,
-// needs no equivalent). Without this, scrolling on the backdrop — or scrolling the overlay's own
-// content past its edge, which chains into whatever is behind it — moves the post underneath the
-// overlay that is supposed to be covering it (measured 2026-09-20: `window.scrollY` moved on a
-// wheel event over the ＋ sheet's backdrop, with the post visibly scrolling behind the dim).
+// Freezes `document.body`'s scroll while a `fixed` full-screen overlay (the ＋ drawer, the insert
+// dialog) is up; neither is a native `<dialog>`, so neither gets `showModal()`'s lock, and the
+// post scrolled behind the backdrop.
 //
-// A count, not a boolean: `InsertDialog` can be open at the same time as the ＋ drawer's own sheet
-// (リンク opened from the drawer keeps the sheet mounted underneath — InsertDialog.tsx's own `z-55`
-// comment), so one closing must not release the lock while the other is still up.
+// A count, not a boolean: InsertDialog can be open over the ＋ sheet, so one closing must not
+// release the other's lock.
 let lockCount = 0;
 let previousOverflow = '';
 

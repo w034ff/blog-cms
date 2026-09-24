@@ -1,9 +1,7 @@
 'use client';
 
-// The editor's tooltip. Extracted from ToolbarButton so the link card's two text lines can carry
-// the same one rather than falling back to the browser's `title` attribute, which cannot be styled
-// and which ToolbarButton dropped on purpose (it renders near the cursor, on a delay the browser
-// picks).
+// The editor's tooltip, shared by ToolbarButton and the link card instead of the browser's
+// unstylable `title` attribute.
 //
 // Renders the bubble only. The host element supplies `group/tt relative`, because the tooltip is
 // positioned against it and the hover that reveals it is the host's.
@@ -17,15 +15,9 @@ export function EditorTooltip({ label, shortcut }: { label?: string; shortcut?: 
     // never blocks hover or click; z-50 clears the sticky header's own content. A short delay on
     // appearance mimics a native tooltip; it hides immediately.
     //
-    // Wraps inside a maximum width rather than running off the screen on one line: what the link
-    // card puts in here is a URL that was too long to show in full, which is exactly the case a
-    // `whitespace-nowrap` tooltip handles worst. Short labels are unaffected — they never reach
-    // the width.
-    //
-    // `w-max` is what makes that work. An absolutely positioned box shrinks to fit its containing
-    // block, and `left-1/2` leaves it only half of one — so on a narrow host it wrapped every
-    // label into a column two words wide (measured: 「ブログ開設の / お知らせ」 on a 288px line).
-    // `w-max` sizes it to its content first, and `max-w-xs` is then the only limit.
+    // Wraps at `max-w-xs` because the link card puts over-long URLs here. `w-max` is required: an
+    // absolute box shrinks to its containing block, and `left-1/2` leaves it half of one, so on a
+    // narrow host every label wrapped into a two-word column.
     <span
       aria-hidden='true'
       className='editor-tooltip pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-max max-w-xs -translate-x-1/2 break-all rounded bg-zinc-900 px-1.5 py-1 text-[10px] leading-tight text-white opacity-0 shadow-sm transition-opacity duration-100 group-hover/tt:opacity-100 group-hover/tt:delay-300 dark:bg-zinc-700'>

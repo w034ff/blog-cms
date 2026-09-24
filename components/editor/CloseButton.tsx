@@ -1,11 +1,9 @@
 import type { Ref } from 'react';
 import { CloseIcon } from './svg/CloseIcon';
 
-// The close button every editor dialog puts in its title row — 記事の設定, 書き方ヘルプ and the
-// insert dialog wrote the same button three times, and one of them growing alone would have left
-// the other two behind. A 36px circle on a pointer, matching 記事一覧's arrow in the header; 40px
-// under `hover: none` (`.dialog-close-button`, app/globals.css), the app's touch floor — on a
-// phone this and the backdrop strip are the only ways out of 記事の設定. Was a 26px text ×.
+// The close button in every editor dialog's title row (記事の設定, 書き方ヘルプ, the insert
+// dialog). A 36px circle on a pointer, matching 記事一覧's arrow; 40px under `hover: none`
+// (`.dialog-close-button`, app/globals.css), the app's touch floor.
 //
 // `type='button'` is load-bearing: 記事の設定 sits inside PostEditor's one <form>, and a button
 // without it would publish the post.

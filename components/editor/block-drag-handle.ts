@@ -7,13 +7,10 @@ import { resolveEmbed } from '@/lib/embed-provider';
 import { buildIcon, embedMarkShapes } from './svg/icon-shapes';
 import type { EditorView } from '@tiptap/pm/view';
 
-// Top-level-only reorder targets. A nested instance (e.g. a blockquote inside a callout) gets
-// no handle of its own — doc.forEach below only sees direct children of the doc, which already
-// excludes it, so no extra filtering is needed. Extend this set to broaden scope later (headings
-// need the section-range question settled first — see the design discussion — so they're not here).
-// Exported for the invariant in draggable-types.test.ts, not for use elsewhere: every node whose
-// spec declares `draggable: true` must be in here, or it becomes a native drag source with no
-// handle and nothing refusing its `dragstart` (§7.7 of docs/link-card-requirements.md).
+// Top-level-only reorder targets (`doc.forEach` below sees only direct children). Headings are not
+// here until the section-range question is settled. Exported for draggable-types.test.ts: every
+// `draggable: true` node must be listed, or it is a native drag source with no handle and nothing
+// refusing its `dragstart` (docs/link-card-requirements.md §7.7).
 export const DRAGGABLE_TYPES = new Set([
   'blockquote',
   'callout',
@@ -25,29 +22,18 @@ export const DRAGGABLE_TYPES = new Set([
   'embed',
 ]);
 
-// Pointer movement (px) before a mousedown-on-handle counts as a drag rather than a plain click
-// (which just leaves the mousedown NodeSelection in place — see the "mousedown creates a
-// NodeSelection" behavior this preserves).
+// Movement (px) before a handle press counts as a drag; below it, a click leaves the NodeSelection.
 const DRAG_THRESHOLD = 4;
 
-// How close to the viewport's top/bottom edge the pointer has to get before the page starts
-// scrolling under it, and how fast it scrolls once it is right at the edge (px per frame, ramped
-// linearly across the band so a shallow entry creeps and the last few pixels move properly).
-//
-// A native HTML5 drag gets this from the browser; a mousemove-driven one (see
-// createDragController's note on why this drag is not native) gets nothing, so a target below the
-// fold was simply unreachable: the pointer stopped at the edge, the page stayed put, and the whole
-// time `body.block-dragging` holds `cursor: grabbing` + `user-select: none` and handleKeyDown
-// swallows every key — an editor that reads as frozen rather than as a drag that can't finish.
+// The edge band where the page autoscrolls under the pointer, and the step at the very edge (px per
+// frame, ramped across the band). A mousemove-driven drag gets no native autoscroll, so a target
+// below the fold was unreachable and the modal drag looked frozen.
 const AUTOSCROLL_ZONE = 64;
 const AUTOSCROLL_MAX_STEP = 18;
-// The step above is stated per 60Hz frame and scaled by the real frame interval, so a 120Hz display
-// scrolls at the same speed rather than twice it.
+// The step is per 60Hz frame, scaled by the real interval.
 const AUTOSCROLL_FRAME_MS = 1000 / 60;
 
-// How far past the source block's own box the "cut out of here" veil is drawn (markCut). Enough
-// to cover the selection ring the block is wearing — `outline: 2px` at `outline-offset: 2px`
-// (globals.css) reaches 4px out — so the veil replaces that ring rather than being drawn inside it.
+// How far the markCut veil extends past the block: enough to cover its 2px+2px selection ring.
 const CUT_INFLATE = 4;
 
 interface DragSession {
@@ -57,16 +43,12 @@ interface DragSession {
   handleEl: HTMLElement;
   startX: number;
   startY: number;
-  // The pointer's last known viewport coordinates. The drop target has to be recomputed whenever
-  // the page scrolls under a *stationary* pointer (autoscroll, or the wheel — which keeps working
-  // during a drag), and `findBoundary` reads clientY, so the last mousemove's coordinates are what
-  // that recomputation has to be driven from.
+  // The last pointer coordinates, since a scroll under a stationary pointer changes the target.
   clientX: number;
   clientY: number;
   dragging: boolean;
   target: number | null;
-  // Was the block picked up by its own body rather than by the handle? Only that press has a caret
-  // to give back when it turns out to be a plain click (see handleMouseUp).
+  // Picked up by the body rather than the handle; only that click has a caret to give back.
   viaBody: boolean;
 }
 
@@ -77,37 +59,20 @@ interface Boundary {
   width: number;
 }
 
-// Where the document stops accepting blocks. Normally the very end, but the footnote definitions'
-// section is pinned past it by the doc's content expression — `block+ footnoteSection?`
-// (footnote-extension.ts) — so when one exists the last admissible gap is the one *before* it.
-// Same question trailing-node-extension.ts answers for where its paragraph goes, and answered the
-// same way: off `doc.lastChild`'s type, not a search for the node by name.
+// Where the document stops accepting blocks: before the footnote section when there is one (its
+// place is fixed by `block+ footnoteSection?`), found off `doc.lastChild` as trailing-node does.
 function endOfBlocks(doc: ProseMirrorNode): number {
   const last = doc.lastChild;
   const sectionType = doc.type.schema.nodes.footnoteSection;
   return last && last.type === sectionType ? doc.content.size - last.nodeSize : doc.content.size;
 }
 
-// Finds the doc position to drop at for a given pointer Y, plus where to draw the indicator line
-// (matching the width of the top-level blocks themselves — not `.ProseMirror`'s own box, which is
-// wider by its `px-4` padding on each side and would overhang past the blocks' actual edges).
-// Only positions between top-level siblings are candidates — dropping a whole top-level node only
-// ever makes sense at another top-level gap. For the gaps *between* blocks that also settles
-// schema validity for free (the gap already holds a block boundary), so prosemirror-transform's
-// generic (and here unnecessary) `dropPoint` is not needed; the gap at the tail is the one
-// exception and is clamped by endOfBlocks() above rather than taken as `doc.content.size`. Built
-// from `view.nodeDOM` + `getBoundingClientRect` rather than `view.posAtCoords`: the pointer roams
-// outside the content area during a drag (that's the point of a custom drag), and `posAtCoords`
-// returns null there.
-//
-// The footnote section is skipped as a candidate for the same reason: it is an ordinary top-level
-// child with a full-height box the pointer sweeps over on the way down, but no gap it bounds is a
-// place a block may land. Skipping it resolves that whole band to the tail gap instead, drawn at
-// the last real block's own edges like every other indicator.
-//
-// `excludeFrom` skips the dragged node itself (always exactly one top-level child, at that
-// offset) — see applyMove()'s comment for why excluding it, rather than collapsing its layout
-// away, is the current approach.
+// The drop position for a pointer Y and where to draw the indicator (at the blocks' own width, not
+// `.ProseMirror`'s padded box). Only gaps between top-level siblings, which are valid by
+// construction, so no `dropPoint`; the tail is clamped by endOfBlocks. Built from `view.nodeDOM` +
+// rects because `posAtCoords` returns null outside the content area. The footnote section is
+// skipped, resolving its band to the tail gap, and `excludeFrom` skips the dragged node (see
+// applyMove).
 function findBoundary(view: EditorView, clientY: number, excludeFrom: number): Boundary {
   const { doc } = view.state;
   const sectionType = doc.type.schema.nodes.footnoteSection;
@@ -138,10 +103,7 @@ function findBoundary(view: EditorView, clientY: number, excludeFrom: number): B
   return { pos: end, y: last.bottom, left: last.left, width: last.width };
 }
 
-// The top-level block the selection holds whole, when it is one of the types the handle serves —
-// which is the same scope decorations() draws a handle for, `$from.depth === 0` being the top-level
-// test. Null for everything else: a text selection, an inline NodeSelection (a footnote reference),
-// and a card or an image nested inside a quote, none of which this plugin speaks for.
+// The top-level DRAGGABLE_TYPES block the selection holds whole, or null.
 function selectedHandledBlock(state: EditorState): { node: ProseMirrorNode; from: number } | null {
   const { selection } = state;
   if (!(selection instanceof NodeSelection)) return null;
@@ -150,24 +112,11 @@ function selectedHandledBlock(state: EditorState): { node: ProseMirrorNode; from
   return { node: selection.node, from: selection.from };
 }
 
-// Did this drag start from a node prosemirror-view itself made a native drag source? It sets the
-// attribute on the DOM of every node whose spec declares it (dist: `if (node.type.spec.draggable)
-// dom.draggable = true`), and `LeftMouseDown` adds the same one for a press inside an existing
-// NodeSelection.
-//
-// The attribute is the whole test, and it is asked of the DOM rather than resolved through the
-// model. It is the same question Chrome asked when it picked a drag source, so it cannot disagree
-// with what actually started; a `dragstart` also carries no press coordinates worth resolving
-// (`posAtCoords` would have to be fed the drag's origin, which the event does not report reliably),
-// and the seam the specs assert this at dispatches the event on the element itself.
-//
-// Scoped to the attribute rather than to "the press landed inside a DRAGGABLE_TYPES block" on
-// purpose: a TextSelection dragged out of a quote or a code block presses on ordinary text, and
-// that gesture has to keep working. A schema audit finds exactly `image`/`linkCard`/`embed`
-// declaring `draggable: true` (link-card-extension.ts, embed-extension.ts, and
-// @tiptap/extension-image's own node) — all three in DRAGGABLE_TYPES above, all three carrying a
-// handle — and nothing in this editor sets the attribute by hand, so inside `view.dom` it never
-// means anything else.
+// Did the press land on a node prosemirror-view made a native drag source
+// (`if (node.type.spec.draggable) dom.draggable = true`, or `LeftMouseDown` inside a
+// NodeSelection)? Asked of the DOM attribute, the same thing Chrome asked, rather than the model.
+// Scoped to the attribute so a TextSelection dragged out of a quote still works; only
+// image/linkCard/embed declare it, all with handles (docs/editor-pitfalls.md §5.3).
 function pressedNativeDragSource(view: EditorView, target: EventTarget | null): boolean {
   const el =
     target instanceof HTMLElement ? target : target instanceof Node ? target.parentElement : null;
@@ -177,15 +126,10 @@ function pressedNativeDragSource(view: EditorView, target: EventTarget | null): 
 
 // What the plugin (and the handle's mousedown) can ask of a live drag session.
 interface DragController {
-  // True once the pointer has actually moved past DRAG_THRESHOLD, not from mousedown — the
-  // plugin's handleKeyDown reads this to run the drag modally (swallow edit keys while it holds),
-  // and a plain click on a handle must not put the editor in that state even briefly. The
-  // "picked up but not yet moving" window needs no protection of its own: the only hazard there is
-  // an edit invalidating the captured from/to, and any such edit changes the doc, which the
-  // plugin's `update` backstop already answers by aborting the session outright.
+  // True only past DRAG_THRESHOLD, which is when handleKeyDown goes modal; before that, the
+  // doc-changed backstop covers the only hazard (docs/editor-pitfalls.md §5.1).
   isDragging: () => boolean;
-  // Cancel an in-flight drag without applying any move — used by both Escape and the doc-changed
-  // backstop. It tears down listeners, the body class, and the indicator.
+  // Cancel without moving (Escape, the doc-changed backstop).
   abort: () => void;
   start: (
     node: ProseMirrorNode,
@@ -199,20 +143,15 @@ interface DragController {
   destroy: () => void;
 }
 
-// Drives one drag session end-to-end via plain mouse tracking instead of native HTML5
-// drag-and-drop. Native drag was dropped because its no-drop cursor is governed by DOM
-// containment (prosemirror-view's dragover/drop handlers only fire while `event.target` stays a
-// descendant of `view.dom`), which made the handle's own on-screen position load-bearing for
-// something that has nothing to do with it. A plain `mousemove`/`mouseup` pair has no such
-// constraint — the pointer can go anywhere.
+// One drag session by plain mouse tracking rather than native HTML5 drag, whose drop handling
+// only works while the target stays inside `view.dom`.
 function createDragController(view: EditorView): DragController {
   let session: DragSession | null = null;
   let indicator: HTMLElement | null = null;
   let preview: HTMLElement | null = null;
-  // The veil drawn over the source block while a real target is on offer (markCut).
+  // The markCut veil.
   let veil: HTMLElement | null = null;
-  // The pending autoscroll frame, or 0 when the pointer is not in an edge band (see autoscrollTick),
-  // and the timestamp of the previous one (0 whenever the loop is not running).
+  // The pending autoscroll frame (0 when idle) and the previous frame's timestamp.
   let autoscrollFrame = 0;
   let autoscrollAt = 0;
 
@@ -227,9 +166,7 @@ function createDragController(view: EditorView): DragController {
     return indicator;
   }
 
-  // The `prose prose-zinc dark:prose-invert` classes are the same ones PostEditor.tsx puts on
-  // `.ProseMirror` itself, so a cloned blockquote/table/code-block keeps its normal typographic
-  // styling even outside that container.
+  // The same prose classes as `.ProseMirror`, so the clone keeps its styling.
   function ensurePreview(): HTMLElement {
     if (!preview) {
       const el = document.createElement('div');
@@ -241,38 +178,19 @@ function createDragController(view: EditorView): DragController {
     return preview;
   }
 
-  // `to` (put it back right after itself) means "put it back where it came from" — skip the
-  // transaction rather than issuing a no-op undo-history entry. `from` can no longer actually
-  // occur (findBoundary() excludes the dragged node's own offset from its candidates, so no
-  // result ever carries that value) — the check is kept anyway since it's harmless and cheap.
+  // `to` (and `from`, which findBoundary no longer offers) is a no-op, so no transaction.
   //
-  // This exclusion is the current fix for a boundary-crossing bug: without it, findBoundary()
-  // would count the dragged node itself among the top-level siblings it scans (its DOM hasn't
-  // gone anywhere until drop), so its `from`/`to` gaps — both no-ops per this guard — would sit a
-  // full block-height apart, forcing the pointer to cross both before reaching the next real
-  // boundary. An earlier version fixed this by collapsing the dragged node's own layout to ~0
-  // height instead (so the two gaps merged visually) — reverted after trying it in the browser:
-  // the reflow (surrounding content sliding to fill the gap) was hard to track, especially for a
-  // large element like a table. Excluding the node outright was tried even earlier than that and
-  // reverted too, for a different reason — without the source's layout changing at all, the drop
-  // indicator could jump ahead to the next real gap while the pointer was still visually over the
-  // (still full-size) dragged node, reading as desynced. It's back now, paired with two things
-  // that weren't in the earlier attempt: the cursor-following preview (`ensurePreview()`) gives
-  // positive "here's what you're carrying" feedback instead of relying on the source block itself,
-  // and handleMouseMove()'s own `pos === session.to` check suppresses the indicator entirely for
-  // that no-op candidate — so the only thing the indicator can ever show is a real target, never
-  // the jump-to-a-no-op-gap that originally read as broken.
+  // The dragged node is excluded from findBoundary's candidates, or its own two no-op gaps sat a
+  // block-height apart. Collapsing its layout instead was tried and reverted (the reflow was hard to
+  // follow); exclusion alone once made the indicator jump ahead while the pointer was over the
+  // source. It works now with the cursor-following preview and the suppressed no-op indicator.
   function applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
     if (target === from || target === to) return;
     const tr = view.state.tr.delete(from, to);
     const pos = tr.mapping.map(target);
-    // `Transform.insert` is silent about refusing: `replaceStep` returns null for a slice that
-    // cannot be fitted and no step is added, so the only symptom is that the next line finds no
-    // node at `pos` and NodeSelection.create throws on `nodeAfter.nodeSize` — a TypeError out of
-    // the mouseup handler, with the document left byte-identical. That is what a drop aimed past
-    // the footnote section used to produce; findBoundary() no longer offers such a target, and
-    // counting steps keeps any future one a no-op rather than a crash. `tr.docChanged` cannot
-    // answer this — the delete above already set it.
+    // `Transform.insert` refuses silently (no step added), and NodeSelection.create below then threw
+    // out of mouseup. Counting steps keeps any such target a no-op; `tr.docChanged` can't tell,
+    // since the delete already set it.
     const steps = tr.steps.length;
     tr.insert(pos, node);
     if (tr.steps.length === steps) return;
@@ -281,67 +199,30 @@ function createDragController(view: EditorView): DragController {
     view.focus();
   }
 
-  // What the cursor carries. Two shapes, because two things can be true of a block: it can be
-  // *shown*, or it can only be *named*.
-  //
-  // **An embed can only be named.** A cloned `<iframe>` is not a picture of one — the clone gets a
-  // browsing context of its own and loads the same `src` again the moment it is attached, and for
-  // an X embed it carries the same `embedId` as the block it came from, which is the name that
-  // block answers to. Measured 2026-08-24: picking up an X embed put a second frame on the page
-  // under `emb-view-1`, it reported the height its own narrower box called for, and the NodeView in
-  // the document took it — the block at the original position shrank from 1550px to 1092px the
-  // instant the drag began. Keeping the live frame would also cost 17 requests and 4 of X's own
-  // analytics beacons per drag, for a post that is still blank when a 1–2 second drag ends
-  // (docs/embed-requirements.md §10.10).
-  //
-  // So an embed is carried as a token, on one line: the provider's mark, and `EmbedTarget.label` —
-  // the account for a post, the provider and the moment for a video. **The kind is deliberately not
-  // spelled out**: 「X の投稿」 beside the X monogram is the same words on every post, and an X URL
-  // that is not a post never becomes an embed at all (§10.4), so the phrase separates nothing.
-  // The block's own box is not reproduced either. It was, briefly, and it is worth not repeating:
-  // an empty 480x300 slab whose largest feature was a 「リンクに戻す」 button nobody can press.
-  //
-  // Everything else is carried as itself, with any `<iframe>` inside it removed before the clone is
-  // attached, so no browsing context ever loads. Nothing in the schema puts one there today; the
-  // removal is what keeps that from becoming a quiet regression.
+  // What the cursor carries (docs/editor-pitfalls.md §5.5). **An embed is only named**, as a
+  // one-line token (the provider's mark and `EmbedTarget.label`, without a redundant kind): a cloned
+  // `<iframe>` is a live frame that loads again and answers under the original's name, which
+  // shrank the real block (docs/embed-requirements.md §10.10). Everything else is cloned, with any
+  // `<iframe>` removed before attaching.
   function previewContent(node: ProseMirrorNode, dom: HTMLElement): HTMLElement {
     if (node.type.name === 'embed') return embedToken(node);
     const clone = dom.cloneNode(true) as HTMLElement;
     clone.querySelectorAll('iframe').forEach((frame) => frame.remove());
     stripCardControls(clone);
-    // The ring is the document's state, not the ghost's, and nothing in a ghost is editable.
+    // The ring is the document's state, not the ghost's.
     clone.classList.remove('ProseMirror-selectednode');
     clone.setAttribute('contenteditable', 'false');
     return clone;
   }
 
-  // **A ghost carries the card's face, never its controls** (docs/link-card-requirements.md §7.5).
-  // The same argument §10.10 of docs/embed-requirements.md already made for the embed: the most
-  // prominent thing in the ghost must not be a button nobody can press.
-  //
-  // It is worse here than that reads, because the ghost's box sizes to its content and the card's
-  // control band does not fit in it. Measured 2026-08-25 on an internal card: the band came out
-  // 112x141 of a 271x252 ghost — the three buttons stacked vertically with 「リンクに戻す」 broken one
-  // character per line — and the title, the only thing that says *which* card is in flight, sat
-  // 186px down. On an external card it was worse still: the band alone overran the 300px
-  // `max-height`, so `overflow: hidden` clipped the title and the host away and the ghost was three
-  // unpressable buttons and nothing else. The ghost was not a picture of the card; it was a picture
-  // of the card coming apart.
-  //
-  // `.link-card-head` is the band both states put their controls in (`head()`,
-  // link-card-extension.ts), so removing it takes the resolved card's three buttons and the
-  // picker's search box in one stroke. `.link-card-results` is the picker's list of pressable rows,
-  // which is the same thing one level down.
-  //
-  // That leaves the picker with nothing at all — no title, no image, no lookup to have answered —
-  // and an empty bordered box is the other failure §10.10 named. So it gets a line saying what it
-  // is, in the title's own slot, for the reason the embed's token gives its own: what is being
-  // carried has to be named even when it cannot be shown.
+  // **A ghost carries the card's face, never its controls** (docs/link-card-requirements.md §7.5):
+  // the control band didn't fit the ghost and crowded out, or clipped away, the title. Removing
+  // `.link-card-head` and `.link-card-results` takes the buttons, search box and rows; a picker left
+  // with nothing gets a naming line in the title's slot.
   function stripCardControls(clone: HTMLElement): void {
     clone.querySelectorAll('.link-card-head, .link-card-results').forEach((el) => el.remove());
     if (!clone.classList.contains('link-card')) return;
-    // `renderCard` always builds the title span, so its absence is what tells the two states apart
-    // — not the `href` attribute, which the ghost has no reason to read.
+    // Only a resolved card has a title span.
     if (clone.querySelector('.link-card-title')) return;
     const body = clone.querySelector('.link-card-body');
     if (!body) return;
@@ -356,13 +237,11 @@ function createDragController(view: EditorView): DragController {
     const target = resolveEmbed(href);
     const el = document.createElement('div');
     el.className = 'embed-drag-token';
-    // No mark for a reference no provider claims: the marks all name a provider, and the default
-    // one is a player, which would promise something this block is not going to be.
+    // No mark for an unclaimed reference: every mark names a provider.
     if (target) el.appendChild(buildIcon(embedMarkShapes(target.provider)));
     const body = document.createElement('span');
     body.className = 'embed-drag-token-body';
-    // A reference no provider claims is carried under the same words the block itself shows
-    // (embed-extension.ts), with the URL as the only other thing known about it.
+    // The same words the block shows, plus the URL.
     const label = target?.label ?? { lead: '埋め込みにできない参照', detail: href };
     const lead = document.createElement('span');
     lead.className = 'embed-drag-token-lead';
@@ -378,8 +257,7 @@ function createDragController(view: EditorView): DragController {
     return el;
   }
 
-  // px to scroll this frame for a pointer at `clientY` — 0 anywhere outside the two edge bands,
-  // ramping to AUTOSCROLL_MAX_STEP at the very edge.
+  // px to scroll this frame; 0 outside the edge bands.
   function autoscrollStep(clientY: number): number {
     if (clientY < AUTOSCROLL_ZONE) {
       return -Math.ceil(((AUTOSCROLL_ZONE - clientY) / AUTOSCROLL_ZONE) * AUTOSCROLL_MAX_STEP);
@@ -391,12 +269,8 @@ function createDragController(view: EditorView): DragController {
     return 0;
   }
 
-  // Frame loop, live only while the pointer sits in an edge band. It stops on leaving the band and
-  // also when a scroll changed nothing (the document's end), so a pointer parked at the bottom of a
-  // fully scrolled page doesn't hold a frame loop open for the rest of the drag; handleMouseMove
-  // starts it again the moment the pointer moves. Redrawing the indicator is left to handleScroll
-  // rather than done here — a programmatic scroll raises the same `scroll` event as the wheel, and
-  // one path for "the page moved under the pointer" is what keeps the two from disagreeing.
+  // Runs only while the pointer is in an edge band and the page can still scroll. The indicator is
+  // redrawn by handleScroll, the one path for "the page moved under the pointer".
   function autoscrollTick(now: number): void {
     autoscrollFrame = 0;
     const current = session;
@@ -405,8 +279,7 @@ function createDragController(view: EditorView): DragController {
       autoscrollAt = 0;
       return;
     }
-    // Clamped, so a frame the browser skipped (a tab regaining focus, a long layout) advances the
-    // page by a few frames' worth rather than teleporting it.
+    // Clamped, so a skipped frame doesn't jump the page.
     const elapsed =
       autoscrollAt === 0
         ? AUTOSCROLL_FRAME_MS
@@ -421,38 +294,21 @@ function createDragController(view: EditorView): DragController {
     autoscrollFrame = requestAnimationFrame(autoscrollTick);
   }
 
-  // The page moved under the pointer — by the wheel (which keeps working mid-drag), by a trackpad,
-  // or by autoscrollTick above. `findBoundary` answers in viewport coordinates, so the gap under a
-  // pointer that never moved is a different one now, and the indicator drawn for the old one is
-  // both wrong on screen and wrong as the drop target: before this, a wheel-scroll mid-drag landed
-  // the block at a boundary computed against the pre-scroll layout, silently.
+  // The page moved under the pointer (wheel, trackpad, autoscroll), so the target must be
+  // recomputed, or a scroll mid-drag silently dropped against the old layout.
   function handleScroll(): void {
     updateTarget();
   }
 
-  // The one thing that can strand a session: a native HTML5 drag starting while this one is live.
-  // Its OS drag loop swallows both `mousemove` and `mouseup` for the rest of the gesture — measured,
-  // a native drag inside the editor logs `mousedown → dragstart → drop` with **no mouseup at all** —
-  // so handleMouseUp never runs, and the session stays live forever with `body.block-dragging`
-  // (`cursor: grabbing` + `user-select: none`, which is why clicking stops placing a caret) and
-  // handleKeyDown's modal swallow still on. That is an editor that is, from the author's side,
-  // frozen. Reported 2026-08-22, with the blue frame (the NodeSelection a first click on the handle
-  // leaves) as the precondition — and that fits: prosemirror-view's `LeftMouseDown` arms `mightDrag`
-  // when the press lands inside an existing NodeSelection and then sets `draggable` on the DOM it
-  // resolves for it, which is what hands Chrome a drag source the handle's own `preventDefault`
-  // (called before that, on mousedown) can no longer suppress.
-  //
-  // Cancelling the dragstart is the root fix — whatever element sources it, this drag is ours.
-  // Registered on the window in the capture phase so a source outside `view.dom` is covered too.
+  // A native drag starting mid-session swallows mousemove and mouseup, stranding the modal session
+  // (docs/editor-pitfalls.md §5.2). Cancelling `dragstart` is the root fix, on the window in the
+  // capture phase so any source is covered.
   function handleDragStart(event: DragEvent): void {
     if (!session) return;
     event.preventDefault();
   }
 
-  // Belt and braces for a native drag that starts anyway (a browser that begins the OS loop before
-  // dispatching a cancellable `dragstart`): its end is the last chance to let the session go.
-  // `blur` covers a release outside the window entirely — alt-tabbed away mid-drag, or let go over
-  // the browser's own chrome, both of which can consume the mouseup as well.
+  // Backstops: a native drag's end, and `blur` for a release outside the window.
   function handleAbortingEvent(): void {
     endSession();
   }
@@ -482,11 +338,8 @@ function createDragController(view: EditorView): DragController {
   function handleMouseMove(event: MouseEvent): void {
     const current = session;
     if (!current) return;
-    // The button is not down any more and no mouseup ever arrived — prosemirror-view keeps the same
-    // failsafe for its own MouseDown (`move(event) { if (event.buttons == 0) this.done() }`). Some
-    // gesture ate the release; whatever it was, the next mouse movement recovers the editor instead
-    // of leaving it modal. Abort rather than apply the move: an unwitnessed release is not a drop,
-    // and if a native drag was what ate it, its own drop has already moved something.
+    // No button down and no mouseup seen: abort, as prosemirror-view's own
+    // `if (event.buttons == 0) this.done()` does. An unwitnessed release is not a drop.
     if (event.buttons === 0) {
       endSession();
       return;
@@ -499,16 +352,11 @@ function createDragController(view: EditorView): DragController {
       }
       current.dragging = true;
       document.body.classList.add('block-dragging');
-      // CSS `:hover`/`:has(+ :hover)` (globals.css) stop tracking the real cursor once a native
-      // HTML5 drag starts (a well-known browser quirk — hover freezes at the drag-start position
-      // until drop), which is what kept the source handle visible throughout the old native-drag
-      // implementation. Plain `mousemove` has no such freeze, so once the pointer leaves the
-      // dragged block, `:hover` correctly stops matching and the handle would otherwise vanish
-      // mid-drag. This class forces it to stay visible for the session's duration instead.
+      // Keeps the handle visible once the pointer leaves the block, which `:hover` (unlike during a
+      // native drag) correctly stops matching.
       current.handleEl.classList.add('is-dragging');
-      // A cursor-following clone of what's being dragged — the source block itself stays exactly
-      // where it is (no collapse/reflow, see applyMove()'s comment for why), so this is the
-      // drag's only positive "here's what you're carrying" signal.
+      // The cursor-following ghost: the drag's "what you're carrying" signal, since the source
+      // block doesn't move.
       const dom = view.nodeDOM(current.from);
       if (dom instanceof HTMLElement) {
         const el = ensurePreview();
@@ -535,41 +383,14 @@ function createDragController(view: EditorView): DragController {
     return veil;
   }
 
-  // Shows the source block **cut out of the document** — faded behind a dashed outline, in place of
-  // the live block and its selection ring — for exactly as long as a real target is on offer. With
-  // the indicator drawn at that target, the two together state the whole move: this leaves here,
-  // that is where it lands. Both go away together in the stretch where the only candidate is the
-  // gap the block already sits in, because dropping there takes nothing out of anywhere
-  // (docs/link-card-requirements.md §7.6).
+  // Shows the source block **cut out** (faded, dashed) exactly while a real target is on offer, so
+  // with the indicator it states the move (docs/link-card-requirements.md §7.6). Shown on the
+  // no-op instead, it read as a cut; a 「ここに戻ります」 line looked like the drop indicator.
   //
-  // **The first version showed this in the other state** — on the no-op, as "the slot it drops back
-  // into" — and the author read it as a cut preview on sight. That reading is the right one: a
-  // faded box behind a dashed edge is how every tool draws *absence*, so it has to mean the block
-  // is going somewhere, not that it is staying. Nothing about the drawing changed; only which
-  // branch shows it.
-  //
-  // A line in the gap below the block, labelled 「ここに戻ります」, was tried for the no-op state and
-  // rejected before that (compared in the browser 2026-08-25): it draws in the same place and
-  // nearly the same shape as the real drop indicator while meaning the opposite, so one mark would
-  // say both "insert here" and "insert nowhere".
-  //
-  // Changing the source block's appearance was reverted once before — see applyMove()'s comment —
-  // but that attempt collapsed its **height**, and what could not be followed was the reflow of
-  // everything below it. Nothing here moves any layout: the block is not touched at all.
-  //
-  // **A class on the block's own DOM does not survive, measured 2026-08-25.** It was the first
-  // implementation and it looked right for one mouse move. `decorations()` below builds a fresh
-  // DecorationSet on every state change and its widgets carry no `key`, so ProseMirror cannot match
-  // the old ones and rebuilds the descs around them — `view.nodeDOM(from)` came back as a
-  // *different* `<blockquote>` on the very next move, with the class left on the detached one. Any
-  // transaction at all does it, and one arrives mid-drag on its own (the press's NodeSelection
-  // giving way to a TextSelection). So the mark is a `position: fixed` box over the block instead —
-  // the same shape as the indicator and the ghost, and for the same reason: chrome this file owns
-  // outright, drawn from the block's rect rather than written into it.
-  //
-  // The box is inflated by CUT_INFLATE so it covers the selection ring (2px at `outline-offset:
-  // 2px`, globals.css) rather than leaving a blue outline showing through a faded block; the veil's
-  // own dashed outline is pulled back in by the same amount, so it lands on the block's real edge.
+  // **A class on the block's DOM does not survive:** `decorations()` rebuilds its widgets without a
+  // `key` on every state change, so the descs around them are rebuilt and `view.nodeDOM(from)`
+  // returned a different element on the next move. So this is a `position: absolute` box over the
+  // block, inflated by CUT_INFLATE to cover the selection ring.
   function markCut(on: boolean): void {
     const current = session;
     const dom = on && current ? view.nodeDOM(current.from) : null;
@@ -580,36 +401,21 @@ function createDragController(view: EditorView): DragController {
     const rect = dom.getBoundingClientRect();
     const el = ensureVeil();
     el.style.display = 'block';
-    // Document coordinates, not the viewport's (`position: absolute` in globals.css). `updateTarget`
-    // already re-runs on `scroll`, but a scroll event lands after the scroll it reports, so a veil
-    // pinned to the viewport is always one frame's worth of scroll behind the block it covers —
-    // absorbed by CUT_INFLATE at full speed and not on a slow frame (measured 2026-09-11: 5px
-    // against 20px at 8x throttling). Placed in the document it simply moves with the block.
+    // Document coordinates, so the veil moves with the block instead of lagging a scroll event.
     el.style.top = `${rect.top + window.scrollY - CUT_INFLATE}px`;
     el.style.left = `${rect.left + window.scrollX - CUT_INFLATE}px`;
     el.style.width = `${rect.width + CUT_INFLATE * 2}px`;
     el.style.height = `${rect.height + CUT_INFLATE * 2}px`;
   }
 
-  // Resolve the drop target for the pointer's last known position and redraw the chrome that
-  // follows it. Split out of handleMouseMove because the pointer is not the only thing that moves:
-  // the page scrolling under a stationary pointer changes the answer just as much (handleScroll).
+  // Resolve the target and redraw; also called from handleScroll.
   function updateTarget(): void {
     const current = session;
     if (!current?.dragging) return;
     const { pos, y, left, width } = findBoundary(view, current.clientY, current.from);
-    // `to` (the gap right after the dragged node's own original position) is always a no-op per
-    // applyMove()'s guard — suppress the indicator for it rather than showing a target that would
-    // just put the block back where it started. This is the resolved candidate for the whole zone
-    // from the dragged node's own top down through the next sibling's midpoint — including right
-    // at drag start, when the pointer is barely past the handle and still visually over the
-    // (unmoving — see applyMove()'s comment) source block itself, where showing a "real-looking"
-    // indicator elsewhere would read as reacting before you've gone anywhere.
-    // The cut preview is bound to the same answer, from the other side: it shows only when there
-    // *is* a target, so the emptied source and the line at the destination arrive and leave
-    // together as one statement of the move (markCut). Nothing marks this zone, and that is the
-    // point — a drop here takes the block out of nowhere and puts it back where it is, and the
-    // honest drawing of "nothing happens" is the block drawn as it already is.
+    // `to` is a no-op, so no indicator: it covers the zone from the node's top to the next
+    // sibling's midpoint, including the start of the drag. The cut preview is off there too, so a
+    // no-op is drawn as the block as it is.
     if (pos === current.to) {
       current.target = null;
       if (indicator) indicator.style.display = 'none';
@@ -629,32 +435,16 @@ function createDragController(view: EditorView): DragController {
     }
   }
 
-  // endSession() clears `session`, so the finished one is captured before it runs.
+  // endSession() clears `session`, so it is captured first.
   function handleMouseUp(): void {
     const finished = session;
     endSession();
     if (!finished) return;
     if (!finished.dragging) {
-      // A press that never travelled DRAG_THRESHOLD is a plain click, and for one that started on
-      // the block's own body this is where the caret has to land: the mousedown was
-      // preventDefault-ed to keep the browser from painting a selection under the drag, which also
-      // stopped prosemirror-view's `LeftMouseDown.up` from moving the selection itself. Without
-      // this the block stays selected whole and the next keystroke replaces it (measured).
-      //
-      // `Selection.near` for posAtCoords' reason: the press can land somewhere no caret can sit
-      // (between blocks, on an atom), and near() resolves to the closest place one can. A press
-      // from the *handle* is excluded — clicking a handle means "select this block", which is the
-      // selection already in place.
-      //
-      // An atom is excepted from that near() call: it has no addressable interior, so a re-press
-      // anywhere in its own box resolves through the *boundary* position next to it rather than
-      // through anything inside — and near() then finds the nearest real text on the far side of
-      // that boundary. Measured 2026-08-25: re-pressing the blank lower band of an already-ringed
-      // link card or embed (padding below the title, or an embed's box past a resized frame) moved
-      // the selection into the following block instead of leaving the card/embed selected. A press
-      // on real content inside the same atom (its title text) never reaches this at all — that
-      // click already resolves through ProseMirror's own leaf-click handling before a drag session
-      // is ever started here — so this only has to answer for the blank band.
+      // A body press that never became a drag is a click: place the caret the prevented mousedown
+      // didn't (docs/editor-pitfalls.md §5.2), via `Selection.near`. Not for a handle press, which
+      // means "select the block", nor for an atom, whose blank band resolves through a boundary
+      // position and near() found text in the next block.
       if (finished.viaBody) {
         if (finished.node.isAtom) {
           view.dispatch(
@@ -699,8 +489,7 @@ function createDragController(view: EditorView): DragController {
       };
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
-      // Capture, because `scroll` does not bubble: this has to hear the document's own scrolling
-      // and any scrollable ancestor's alike, since either one moves the blocks under the pointer.
+      // Capture, since `scroll` doesn't bubble and any scrollable ancestor counts.
       window.addEventListener('scroll', handleScroll, true);
       window.addEventListener('dragstart', handleDragStart, true);
       window.addEventListener('dragend', handleAbortingEvent, true);
@@ -731,15 +520,9 @@ function handleToDOM(view: EditorView, getPos: () => number | undefined): HTMLEl
     '<circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/>' +
     '<circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/>' +
     '</svg>';
-  // preventDefault suppresses native text-selection (mousedown-and-drag across contenteditable
-  // otherwise selects text the whole way) — the drag itself is driven by DragController below, not
-  // by the browser, so there's no native drag-initiation left to worry about suppressing.
+  // preventDefault stops native text selection; the drag is DragController's.
   handle.addEventListener('mousedown', (event) => {
-    // Primary button only. `event.button` went unchecked, so the secondary button opened a full
-    // drag session — measured: a right-drag set `body.block-dragging` and reordered the blockquote
-    // outright, under the context menu the same press opens. A session is modal (the body class
-    // takes the cursor and text selection, handleKeyDown swallows every key), which is not a state
-    // any button but the one that means "pick this block up" should be able to reach.
+    // Primary button only: a right-drag opened a modal session under the context menu.
     if (event.button !== 0) return;
     const pos = getPos();
     if (pos == null) return;
@@ -755,16 +538,8 @@ function handleToDOM(view: EditorView, getPos: () => number | undefined): HTMLEl
   return handle;
 }
 
-// Each handle is `position: absolute` (globals.css) so it never displaces the block it belongs
-// to, anchored against `.ProseMirror`'s own `position: relative`. Both the handle and its target
-// sibling then share the same offsetParent (`.ProseMirror`), so the target's plain `offsetTop`
-// *is* the correct `top` for the handle: no getBoundingClientRect/scroll-position math needed,
-// just the browser's own layout of the two boxes. A target that is itself positioned is fine —
-// blockquote carries `position: relative` for its corner quote glyph (globals.css) — since an
-// element's own positioning never changes its *own* offsetParent, and handles only ever exist as
-// direct children of `.ProseMirror` (see the top-level-only note above), so no handle can end up
-// anchored to a target instead. Horizontal placement is a fixed CSS offset (every
-// target type sits at the same left edge as a top-level doc child), so only `top` needs JS at all.
+// Handles are `position: absolute` children of `.ProseMirror`, sharing the target's offsetParent,
+// so the target's `offsetTop` is the handle's `top`. Horizontal placement is a fixed CSS offset.
 function alignHandles(view: EditorView): void {
   view.dom.querySelectorAll<HTMLElement>(':scope > .block-drag-handle').forEach((handle) => {
     const sibling = handle.nextElementSibling;
@@ -773,23 +548,11 @@ function alignHandles(view: EditorView): void {
 }
 
 // A hover-revealed grip in the left gutter of every type in DRAGGABLE_TYPES above — blockquotes,
-// callouts, accordions, images, tables, code blocks and link cards — for selecting (and dragging to
-// reorder) the whole block in one action — mousedown-only for now, no keyboard equivalent.
-//
-// One handle per matching top-level node, via a widget decoration placed immediately before it
-// (`side: -1`) rather than a NodeView: a plain `toDOM` node (blockquote, image) has nothing to hang
-// one in, and a single decoration-scan plugin covers all seven uniformly — the types that do have a
-// NodeView (callout, codeBlock and linkCard here, details' from @tiptap/extension-details) would each
-// otherwise need the same grip built by hand. A
-// natively draggable node is not exempt: `image` and `linkCard` both carry `draggable: true`, so
-// prosemirror-view sets the DOM attribute (dist: `if (node.type.spec.draggable) dom.draggable = true`
-// — it runs for a custom NodeView's `dom` too) and grabbing the block itself already moves it
-// (measured for the card 2026-08-14: a native drag reorders it with its `data-href` intact). Both get
-// a handle anyway. The handle is the visible, uniform affordance, and unlike the native path it
-// cannot aim anywhere but the top-level gaps findBoundary() offers. There's no
-// mousemove-driven hit-testing for *showing* a handle either — the widget is a real sibling in the
-// document flow, and CSS (`:has(+ :hover)`, globals.css) reveals it exactly when the block right
-// after it is hovered. Actually *dragging* it, once picked up, is DragController's job (above).
+// callouts, accordions, images, tables, code blocks and link cards — selecting and dragging the
+// whole block (mouse only). A widget decoration (`side: -1`), not a NodeView, so one plugin covers
+// every type, including those whose DOM is a plain `toDOM`. Natively draggable nodes get one too:
+// unlike a native drag, the handle can only aim at findBoundary's top-level gaps. CSS
+// (`:has(+ :hover)`) reveals it.
 export const BlockDragHandle = Extension.create({
   name: 'blockDragHandle',
   addProseMirrorPlugins() {
@@ -807,59 +570,14 @@ export const BlockDragHandle = Extension.create({
             return DecorationSet.create(state.doc, decorations);
           },
           handleDOMEvents: {
-            // No NodeSelection is a native drag source, full stop.
-            //
-            // prosemirror-view makes ANY node with a NodeSelection one: `NodeViewDesc.selectNode()`
-            // sets `dom.draggable = true` on the selected node, and `LeftMouseDown` arms `mightDrag`
-            // for a press inside an existing NodeSelection — with no type or depth check at all.
-            // Reported 2026-08-22 for a ringed top-level block (a click on the handle is what rings
-            // one) and confirmed from the author's browser: that drag freezes the editor the moment
-            // it starts — every key and every click ignored, Escape included, with `view.dragging`
-            // left set (so neither `drop` nor `dragend` ever reached `view.dom`). It could not be
-            // reproduced from Playwright, whose synthetic input never enters Chrome's OS drag loop
-            // (e2e/native-drag.ts), so what strands it there is not settled.
-            //
-            // First fix (`994c1b0`) scoped the cancel to `selectedHandledBlock` — top-level
-            // `DRAGGABLE_TYPES` only — because that was the reported gesture. But the mechanism
-            // above has no such scope: Ctrl/Cmd+click (prosemirror-view's own `selectNodeModifier`)
-            // turns ANY selectable node into a NodeSelection, paragraphs and headings included, and
-            // a plain click already does that for an inline atom like a footnote reference (picking
-            // it for deletion, §5.1) — every one of those is then the same native drag source.
-            // Measured live: Ctrl+click on a plain paragraph leaves `draggable="true"` on it and an
-            // undefended `dragstart`. Cancel for every NodeSelection instead.
-            //
-            // The footnote reference's drag (criterion 14, e2e/editor-footnote.spec.ts) moves a
-            // TextSelection spanning it, not a NodeSelection on it, so it never reaches this guard
-            // either way.
-            //
-            // **Nor is the selection the whole scope.** An UNRINGED image, link card or embed is a
-            // native drag source in its own right — prosemirror-view sets `draggable` on the DOM of
-            // every node whose spec declares it, no selection involved — so `pressedNativeDragSource`
-            // below refuses those presses too. What that leaks when it is not refused is not the
-            // freeze above but a second bug: Chrome builds the drag out of the PICTURE. Measured
-            // 2026-09-08 in a standalone contenteditable, `dragstart`'s dataTransfer carries the
-            // image as a File (`a.png`, `image/png`), and prosemirror-view's own `clearData()` does
-            // not remove it — `types` reads `["Files"]` immediately after, which is the same fact
-            // dist's `chrome_version > 120` guard is about. useImageUpload's window listeners test
-            // exactly that (`types.includes('Files')`), so the drop overlay
-            // 「ここに画像をドロップして追加」 opened over the page mid-drag; its `drop` then read
-            // the same File through `imageFilesFromList` (`image/png` is allowed), uploaded the
-            // picture again, inserted a second copy of it, and split the paragraph it landed in —
-            // all on top of ProseMirror's own node move, which had already succeeded. Confirmed in
-            // the author's browser and measured in the harness (docs/link-card-requirements.md
-            // §7.7, which also records how to drive a drop that carries a File).
-            // Reported 2026-09-08 against an image wearing the サムネイル
-            // badge — the badge is hidden under `.ProseMirror-selectednode` (globals.css), so "badge
-            // showing" is precisely "this image carries no NodeSelection", which is why the gesture
-            // looked specific to the badge.
-            //
-            // The gesture is not lost, it moves to the affordance built for it: the handle drags an
-            // unringed block, and a press on the body still rings it (prosemirror-view's own
-            // `handleSingleClick`, on mouseup), after which mousedown below picks it up.
-            //
-            // A plain TextSelection dragged out of a quote or a code block — the gesture every drop
-            // guard in this editor is built on — is untouched by either half: it is never a
-            // NodeSelection, and its press lands on ordinary text that carries no `draggable`.
+            // **No NodeSelection is a native drag source** (docs/editor-pitfalls.md §5.3): any
+            // NodeSelection gets `draggable`, with no type or depth check (Ctrl+click makes one on a
+            // paragraph), and that drag froze the editor. Nor is the selection the whole scope:
+            // unringed image/linkCard/embed are drag sources through `pressedNativeDragSource`, and
+            // Chrome's picture drag carried a File that re-uploaded the image
+            // (docs/link-card-requirements.md §7.7). The handle, or a press on a ringed block,
+            // still moves it. A TextSelection drag (including the footnote reference's, criterion 14)
+            // is untouched.
             dragstart(view, event) {
               if (
                 !(view.state.selection instanceof NodeSelection) &&
@@ -870,14 +588,9 @@ export const BlockDragHandle = Extension.create({
               event.preventDefault();
               return true;
             },
-            // The other half: pressing a ringed block picks it up the way its handle does, so the
-            // gesture the dragstart above refuses still moves the block. Returns false either way —
-            // ProseMirror keeps its own mousedown handling (the caret, the selection), and a press
-            // that never travels DRAG_THRESHOLD is still just a click.
-            //
-            // A press on chrome a NodeView claims (the card's search box, the code block's
-            // filename field) never arrives here at all: `eventBelongsToView` gives up as soon as a
-            // `stopEvent` claims the target, before handleDOMEvents is consulted.
+            // Pressing a ringed block picks it up as its handle does. False either way, so
+            // ProseMirror keeps its mousedown handling. NodeView chrome claimed by `stopEvent`
+            // never reaches here.
             mousedown(view, event) {
               if (event.button !== 0) return false;
               const block = selectedHandledBlock(view.state);
@@ -885,8 +598,7 @@ export const BlockDragHandle = Extension.create({
               const dom = view.nodeDOM(block.from);
               if (!(dom instanceof HTMLElement)) return false;
               if (!(event.target instanceof Node) || !dom.contains(event.target)) return false;
-              // The handle is the widget decoration immediately before the block (side: -1), and
-              // the drag needs it only to keep it visible for the session (`is-dragging`).
+              // The handle is the widget right before the block, kept visible for the session.
               const handle = dom.previousElementSibling;
               if (!(handle instanceof HTMLElement)) return false;
               if (!handle.classList.contains('block-drag-handle')) return false;
@@ -901,31 +613,15 @@ export const BlockDragHandle = Extension.create({
                   event.clientY,
                   true,
                 );
-              // Suppress the browser's own drag-selection, exactly as the handle's mousedown does:
-              // without it the press paints a text selection behind the moving pointer (measured
-              // 2026-08-22 in selection-blue pixels over the dragged block — 188 at rest, 3709
-              // mid-drag), because ProseMirror's mousedown turns the NodeSelection into a caret and
-              // `.ProseMirror-hideselection` stops applying. Restoring the NodeSelection at
-              // DRAG_THRESHOLD does not undo it: `selectionToDOM` declines to touch the DOM
-              // selection while a mouse press is live.
-              //
-              // The cost is that `LeftMouseDown.up` no longer moves the selection either, so a
-              // press that turns out to be a plain click would leave the block selected whole and
-              // the next keystroke would replace it. handleMouseUp gives that back (see the caret
-              // it places for a session that never became a drag).
+              // Suppress the browser's drag-selection as the handle's mousedown does
+              // (docs/editor-pitfalls.md §5.2); handleMouseUp gives a plain click its caret back.
               event.preventDefault();
               return false;
             },
           },
-          // Run the drag modally: while a drag is *moving* (isDragging, which is the post-threshold
-          // window — a session that hasn't moved yet is left transparent, since the doc-changed
-          // backstop below already covers the only hazard there), the dragged block carries a
-          // NodeSelection, so an unswallowed Delete/Backspace would fire ProseMirror's
-          // deleteSelection and remove it mid-drag — the doc then shrinks and applyMove's
-          // mousedown-captured from/to point past the end ("Position … out of range" on drop). This
-          // fires before ProseMirror's own keymaps (a window listener can't — it runs after them),
-          // so swallowing here stops the edit from ever reaching the doc. Escape still cancels; any
-          // other key is a no-op for the drag's duration. Idle (not dragging) it's fully transparent.
+          // Modal while moving (docs/editor-pitfalls.md §5.1): Delete/Backspace would remove the
+          // NodeSelected block and applyMove's from/to would point past the end. Runs before
+          // ProseMirror's keymaps; Escape cancels.
           handleKeyDown(view, event) {
             const controller = controllers.get(view);
             if (!controller?.isDragging()) return false;
@@ -936,27 +632,16 @@ export const BlockDragHandle = Extension.create({
         view(editorView) {
           const controller = createDragController(editorView);
           controllers.set(editorView, controller);
-          // A newly (re)created handle starts at `top: 0` (globals.css) until aligned. Two
-          // realignment triggers, each firing only on a real layout change:
-          //   1. doc-changing transactions (below) — an edit can add/remove/resize blocks, moving
-          //      the offsets every handle is pinned to. Selection-only updates are deliberately
-          //      skipped: arrow-key navigation never moves a block, so realigning on it would just
-          //      be a forced `offsetTop` reflow per keystroke for no positional change.
-          //   2. any size change of the content box (ResizeObserver) — a viewport resize rewraps
-          //      text and shifts offsets (a pure width change, no doc edit), and an async image
-          //      `load` grows the box's height; the observer catches both. Handles are
-          //      `position: absolute`, so realigning them can't itself resize the box — no loop.
+          // Realign on doc changes (not selection-only updates) and on content-box resizes (rewrap,
+          // image loads). Absolute handles can't resize the box, so no loop.
           alignHandles(editorView);
           const resizeObserver = new ResizeObserver(() => alignHandles(editorView));
           resizeObserver.observe(editorView.dom);
           return {
             update: (view, prevState) => {
               if (view.state.doc !== prevState.doc) {
-                // Backstop for a doc change that slips past handleKeyDown's modal suppression —
-                // an external/async transaction (not a swallowed keystroke). The captured
-                // from/to/target are stale against the new doc, so abort rather than let the drop
-                // apply a move at wrong positions. A legit drop dispatches from applyMove *after*
-                // its own endSession(), so `controller` is already idle here and this no-ops.
+                // A doc change that slipped past the modal keys makes the captured positions stale:
+                // abort. A real drop has already ended its session, so this no-ops then.
                 controller.abort();
                 alignHandles(view);
               }

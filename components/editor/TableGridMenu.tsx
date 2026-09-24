@@ -22,13 +22,9 @@ const TABLE_MAX_COLS = 20;
 
 const clamp = (n: number, min: number, max: number) => Math.min(Math.max(n, min), max);
 
-// The 行数 / 列数 fields + キャンセル/追加, laid out for TableSizeDialog's own small floating
-// card (fields side by side, buttons bottom-right) — the pointer's grid-escape-hatch only; the
-// touch drawer uses TableSizeRows below instead, a different layout on the same state shape, not
-// a variant of this one (see that component's own comment on why they diverge). Kept as strings
-// so a field can be cleared while typing; parsed and clamped on submit. Mounted fresh each time it
-// becomes visible (TableSizeDialog only renders this while `open`), so `'3'` as the initial value
-// is the only reset it needs.
+// The 行数 / 列数 fields for the pointer's TableSizeDialog (touch uses TableSizeRows). Strings so a
+// field can be cleared while typing; parsed and clamped on submit. Remounted on each open, so the
+// initial `'3'` is the only reset needed.
 function TableSizeFields({
   onInsert,
   onCancel,
@@ -97,10 +93,7 @@ function TableSizeFields({
   );
 }
 
-// One 行数/列数 row: label left, a −/+ stepper right — no text field, so no software keyboard
-// pops up for the common case (2026-09-20, replacing this row's own first draft, a number
-// `<input>`). Clamped the same way the input's `clamp(parseInt(...) || 1, 1, max)` was, just
-// applied a step at a time instead of parsed from typed text.
+// One 行数/列数 row with a −/+ stepper, so no software keyboard pops up.
 function SizeStepper({
   icon,
   label,
@@ -108,22 +101,16 @@ function SizeStepper({
   max,
   onChange,
 }: {
-  // Same icon-then-label shape every other drawer row uses (画像/リンク/…/コードブロック,
-  // Toolbar.tsx) — 行数/列数 were the one row-shaped thing left in the sheet without one
-  // (requested 2026-09-20): TableRowsIcon/TableColumnsIcon.
+  // Icon-then-label, like every other drawer row.
   icon: ReactNode;
   label: string;
   value: number;
   max: number;
   onChange: (value: number) => void;
 }) {
-  // No resting border/ring — 0516af5 dropped that everywhere else in this drawer on purpose
-  // (ToolbarButton.tsx's own comment: pressability at rest is the glyph, not a box around it).
-  // `active:` matches `.toolbar-button:active`'s own colors (app/globals.css) rather than
-  // `bg-zinc-200`/`-700`, which is ToolbarButton's "this is currently ON" state, not a press.
-  // 40px button in a 48px row (settled 2026-09-20, after 32px/40px and 48px/48px tries): this row
-  // is a label plus two separate steppers, not one tap target, so it isn't bound to the app's
-  // usual "the row IS the button, so they're the same figure" 40px floor either way.
+  // No resting ring, as elsewhere in the drawer. `active:` uses `.toolbar-button:active`'s colours,
+  // not the "currently ON" `bg-zinc-200`. A 40px button in a 48px row: the row holds two separate
+  // targets, so it isn't itself the button.
   const stepButtonClass =
     'flex h-10 w-10 items-center justify-center rounded text-base leading-none text-zinc-700 hover:bg-zinc-100 active:bg-zinc-300 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-600';
 
@@ -158,18 +145,9 @@ function SizeStepper({
   );
 }
 
-// The 行数/列数 steppers as full-width rows (min-h-10, divide-y, px-4 edges) — matching every
-// other row in the ＋ drawer, both the row list itself (InsertMenu.tsx's `.insert-menu-rows`) and
-// 囲み枠's own drilled-in picker (`.dropdown-item`, app/globals.css) — plus 表を追加, a full-width
-// button of its own rather than a bordered pill (compared side by side against a right-aligned
-// and a header-placed version, 2026-09-20; picked for the same reason a full-width row is easier
-// to hit than a small one — it just isn't a *tap-anywhere* row like 引用/脚注/画像, since the
-// steppers above it still need their own precise targets). Worded 表を追加, not bare 追加: this
-// sheet's own header already reads 表 once drilled in, but the button sits right after two rows
-// that are ABOUT a table without naming one themselves. TableSizeDialog's own 追加 stays bare —
-// its dialog heading already reads 表を追加 immediately above it, which this row doesn't have. No
-// キャンセル: the sheet's own 戻る (InsertMenu.tsx) already backs out to the row list, so a second
-// cancel control here would duplicate it (requested 2026-09-20).
+// The touch drawer's table picker: 行数/列数 steppers as full-width rows matching the drawer, plus a
+// full-width 表を追加 (worded, since the rows above don't name the table; the dialog's 追加 sits
+// under a 表を追加 heading). No キャンセル: the sheet's 戻る already backs out.
 function TableSizeRows({ onInsert }: { onInsert: (rows: number, cols: number) => void }) {
   const [rows, setRows] = useState(3);
   const [cols, setCols] = useState(3);
@@ -190,10 +168,7 @@ function TableSizeRows({ onInsert }: { onInsert: (rows: number, cols: number) =>
         max={TABLE_MAX_COLS}
         onChange={setCols}
       />
-      {/* `pt-4`, not `py-2` both sides (2026-09-20): 列数's own row is 48px with a 40px stepper
-          inside it, so its bottom edge sits only a few px above this button's top — close enough
-          that a repeated +/− tap (aiming at the stepper, not this button) could land low and hit
-          it instead. The extra top gap is deliberate slack, not visual balance. */}
+      {/* `pt-4`: deliberate slack so a repeated −/+ tap that lands low doesn't hit this button. */}
       <div className='px-4 pt-4 pb-2'>
         <button
           type='button'
@@ -206,9 +181,8 @@ function TableSizeRows({ onInsert }: { onInsert: (rows: number, cols: number) =>
   );
 }
 
-// Numeric-input fallback for the pointer's grid: a modal for sizes beyond it. Uses
-// the native <dialog> so Escape, the backdrop, focus trapping, and top-layer
-// stacking come for free — no modal lib in the project.
+// Numeric-input fallback for sizes beyond the pointer's grid, on a native <dialog> for Escape,
+// backdrop, focus trapping and the top layer.
 function TableSizeDialog({
   open,
   onClose,
@@ -220,9 +194,7 @@ function TableSizeDialog({
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
-  // showModal/close can't be expressed declaratively, so mirror the open prop onto the real
-  // dialog from an effect. TableSizeFields is only rendered while `open` (below), so it remounts
-  // — and its own fields reset — on every reopen without this effect touching them itself.
+  // showModal/close are imperative, so the open prop is mirrored from an effect.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -244,26 +216,16 @@ function TableSizeDialog({
         if (event.target === dialogRef.current) onClose();
       }}
       className='m-auto rounded-lg border border-zinc-300 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100'>
-      {/* A plain <div>, not a <form>: the editor already sits inside PostEditor's
-          <form>, and a nested form is invalid HTML — the browser drops it and the
-          submit never fires.
-
-          `onMouseDown` stops here for the same reason InsertDialog.tsx's own content div does:
-          this dialog is portalled to `document.body` (above), outside InsertMenu.tsx's own
-          `ref` — its `useDismiss` closes the whole ＋ sheet on any mousedown it doesn't contain,
-          and a click in here would otherwise both fire that (unmounting this dialog's own portal
-          mid-click, so `submit()` never runs) and do whatever it's actually for. Confirmed by
-          reproducing: 追加 visibly received the click (`elementFromPoint` agreed) yet `submit()`
-          never logged, until this stopped the bubble. */}
+      {/* A <div>, not a <form>: nested inside PostEditor's <form> it would be dropped
+          (docs/editor-pitfalls.md §15.1). `onMouseDown` is stopped because this portalled dialog is
+          outside the ＋ sheet's useDismiss ref, whose close would unmount it mid-click. */}
       <div className='flex flex-col gap-4 p-4' onMouseDown={(event) => event.stopPropagation()}>
         <h2 className='text-sm font-medium'>表を追加</h2>
         {open && (
           <TableSizeFields
             onCancel={onClose}
             onInsert={(rows, cols) => {
-              // Close the modal before inserting: while it's open the rest of the document is
-              // inert and the editor transaction won't land. close() drops the inertness
-              // synchronously, so the insert runs against a live editor.
+              // Close first: while modal the document is inert and the insert won't land.
               dialogRef.current?.close();
               onInsert(rows, cols);
             }}
@@ -274,18 +236,9 @@ function TableSizeDialog({
   );
 }
 
-// Table-insert control. On a pointer: a dropdown holding a grid of cells — hovering
-// (or focusing) a cell highlights the top-left block up to it and shows its size;
-// clicking inserts a table of that many rows and columns. Beats typing numbers — you
-// see the shape you get, because hovering previews it before the click commits.
-//
-// That preview does not exist on touch — a tap both focuses and clicks in the same
-// gesture, so the highlight only ever appears at the same moment the table is
-// already inserted — and the grid's own cells (h-4 w-4, 16px) sit well under the
-// 40px touch target every other drawer row uses. So the touch drawer skips the grid
-// entirely: drilling into 表 there goes straight to TableSizeRows — a 行数/列数 stepper laid out
-// as drawer rows, not TableSizeFields' text-field-and-buttons form the pointer keeps as its
-// grid's escape hatch (requested 2026-09-20).
+// Table-insert control. On a pointer, a size grid whose hover previews the shape before the click.
+// Touch has no hover preview and the 16px cells are under the 40px target, so the drawer goes
+// straight to TableSizeRows.
 export function TableGridMenu({ editor }: { editor: Editor }) {
   // The cell under the pointer/focus (1-indexed), defining the pending table size;
   // null when nothing is hovered, which clears the highlight and the size readout.
@@ -294,25 +247,16 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
   // `null` outside the drawer (the pointer toolbar's own floating panel) — see insert-menu-nav.ts.
   const nav = useInsertMenuNav();
 
-  // The one place both success paths meet: the grid cell's own onClick below, and the numeric
-  // dialog's 追加 (TableSizeDialog's `onInsert`). `nav?.closeMenu()` here closes the sheet whole
-  // for both, on top of the grid cell's own `close()` ("back to the row list") — a pick here is as
-  // final as 引用/脚注/画像 tapping their own row (2026-09-20). The numeric dialog's *opening*
-  // ("行数・列数を入力…", below) does NOT call this — the table isn't inserted yet at that point.
+  // Where both success paths meet (grid cell, dialog's 追加). A pick is final, so the whole sheet
+  // closes; opening the numeric dialog does not come through here.
   const insert = (rows: number, cols: number) => {
     focusThenRun(editor, (c) => c.insertTable({ rows, cols, withHeaderRow: true }));
     setHover(null);
     nav?.closeMenu();
   };
 
-  // insertTable refuses where a table can't go — anywhere the selection touches an existing table,
-  // since a cell is paragraph-only and inserting would have replaced or split the host
-  // (table-extensions.ts). Ask the command rather than re-testing the context here, and grey the
-  // trigger out instead of opening a picker whose every cell silently does nothing; the panel is
-  // gated on the same flag, so the "行数・列数を入力…" dialog behind it is unreachable too. This is
-  // the insert control only — row/column editing lives in the floating TableToolbar, which appears
-  // precisely when this one greys out, so nothing is taken away. Size arguments are irrelevant to
-  // the refusal, so the dry run is asked without them.
+  // Ask insertTable itself (it refuses where the selection touches a table) and grey the trigger
+  // out; TableToolbar appears exactly then. Size arguments don't affect the refusal.
   const canInsert = editor.can().insertTable();
 
   return (
@@ -328,8 +272,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
         panelClass='flex-col gap-2 p-2'>
         {(close) =>
           nav ? (
-            // Touch drawer: straight to the row-styled fields, no grid — see this component's own
-            // comment, and TableSizeRows' for why it isn't just TableSizeFields reused.
+            // Touch drawer: steppers, no grid.
             <TableSizeRows
               onInsert={(rows, cols) => {
                 insert(rows, cols);
@@ -359,13 +302,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
                         insert(rows, cols);
                         close();
                       }}
-                      // The one exception to the pointer every button gets in app/globals.css, and
-                      // it overrides that rule as a utility rather than by editing it (`@layer
-                      // base` is what makes that work). A cell is a <button> so the grid can be
-                      // swept by keyboard as well, but 64 of them are read as one sizing surface,
-                      // not as 64 controls — the size comes off the 「行 × 列」 readout below
-                      // rather than from aiming at a particular square. The 行数・列数を入力…
-                      // button under it is an ordinary control and keeps the pointer.
+                      // `cursor-default`: the 64 cells read as one sizing surface, not 64 controls.
                       className={`h-4 w-4 cursor-default rounded-sm border ${
                         selected
                           ? 'border-blue-400 bg-blue-200 dark:border-blue-500 dark:bg-blue-500/40'
@@ -395,13 +332,8 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
           )
         }
       </ToolbarDropdown>
-      {/* Pointer only — the touch drawer has no grid to escape from, so nothing ever opens this.
-          Portalled to `document.body`, not left in place: `showModal()` promotes a `<dialog>` to
-          the top layer, but a top-layer element still doesn't paint while any ancestor is
-          `display:none`, and this same component also mounts (undisplayed) under exactly that
-          once a touch drawer row is drilled into elsewhere (InsertMenu.tsx's `hidden` on the
-          row-list wrapper). Same fix InsertDialog already uses, for a related reason (a
-          stacking-context ancestor there, a display:none one here). */}
+      {/* Pointer only. Portalled: a top-layer `<dialog>` still doesn't paint under a
+          `display:none` ancestor, which the drawer's hidden row list can be. */}
       {!nav &&
         createPortal(
           <TableSizeDialog

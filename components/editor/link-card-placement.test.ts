@@ -8,19 +8,10 @@ import { docOf, nodes, nodeSlice, para, rangeSlice, tableFixture, text } from '.
 // gesture; a card arriving by paste or drop never passes through it, and this is what answers for
 // that half.
 //
-// The finding these pin is that **no new guard was needed**. Both existing guards are written as
-// "what does this destination accept" rather than as a list of hostile node types — the accordion
-// one says so explicitly — so a block node added later is covered without being named, and the
-// link card is exactly such a node.
-//
-// This is also where the card differs from the footnote reference, and the difference is the whole
-// reason one needed its own handlePaste in 2026-08-08 and the other does not: a footnote reference
-// is an *inline* atom, and `titleAcceptsSlice` deliberately lets those through (§6.5 of the
-// accordion document owns that question). The card is a *block* atom, so it lands on the covered
-// side of that line. If the card is ever made inline, these tests go red and that is the signal.
-//
-// Written as a unit test for the same reason details-title-slice.test.ts is: an in-editor drag
-// never fires `dragstart` under CDP, so the drop half cannot be driven end-to-end at all.
+// **No new guard was needed:** both existing guards are written as "what does this destination
+// accept", so a block node added later is covered without being named. Unlike the footnote
+// reference, an inline atom `titleAcceptsSlice` lets through (accordion §6.5), the card is a block;
+// if it is ever made inline, these go red.
 const { details, detailsSummary, detailsContent, linkCard } = nodes;
 
 const card = () => linkCard.create({ href: '/posts/abc123' });
@@ -55,15 +46,12 @@ describe('the fixtures are the shapes the gestures really produce', () => {
 
 describe('the link card is a block node, so the schema itself refuses it in a title', () => {
   it('is not accepted by `detailsSummary`', () => {
-    // The schema-level fact the guard exists to enforce *before* ProseMirror gets a chance to
-    // "make room" by splitting the accordion in two (the 2026-08-08 tear).
+    // What the guard enforces before ProseMirror "makes room" by splitting the accordion.
     expect(detailsSummary.contentMatch.matchType(linkCard)).toBeNull();
   });
 
   it('cannot be built into an accordion title at all', () => {
-    // createChecked, not create: `create` writes whatever it is handed without consulting the
-    // content expression, so the unchecked form builds this invalid node quite happily and would
-    // have made this test pass for no reason.
+    // createChecked: `create` ignores the content expression and would pass vacuously.
     expect(() => detailsSummary.createChecked(null, card())).toThrow();
     // …while the accordion around a legal title builds fine, so the refusal above is the title's
     // and not some other part of the shape.
@@ -107,8 +95,7 @@ describe('table cells — paste and drop (6b)', () => {
   });
 
   it('refuses a dropped card, and for the content reason rather than the position one', () => {
-    // 'content' is the refusal that comes with a notice — the author is told why, which for a
-    // slice-carried block is the only feedback a refused gesture can give.
+    // 'content' is the refusal that comes with a notice.
     expect(tableDropRefusal($inCell, cardSlice())).toBe('content');
   });
 

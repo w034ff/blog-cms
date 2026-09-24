@@ -3,34 +3,26 @@
 import type { ReactNode } from 'react';
 import { EditorTooltip } from './EditorTooltip';
 
-// Client-only component (the toolbar mounts after the client editor exists), so
-// navigator is available; the guard just keeps any SSR pass from throwing.
-// Exported for WritingHelpDialog, which prints the same keys in a list and must
-// make the same ⌘/Ctrl choice — a second copy of this would be a second answer.
+// The guard only keeps an SSR pass from throwing. Exported so WritingHelpDialog makes the same
+// ⌘/Ctrl choice.
 export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iP(hone|ad|od)/.test(navigator.platform);
 }
 
-// TipTap keymap token ("Mod-Shift-s") → the keys a reader presses, one per element. "Mod" is the
-// platform command key: ⌘ on macOS, Ctrl elsewhere. Split out from formatShortcut below for
-// WritingHelpDialog, which draws a cap per key and so needs the parts rather than the joined line.
+// TipTap keymap token ("Mod-Shift-s") → the keys a reader presses, one per element ("Mod" is ⌘ on
+// macOS, Ctrl elsewhere). WritingHelpDialog draws a cap per part.
 export function shortcutParts(token: string, mac: boolean): string[] {
   return token.split('-').map((part) => {
     if (part === 'Mod') return mac ? '⌘' : 'Ctrl';
     if (part === 'Alt') return mac ? '⌥' : 'Alt';
     if (part === 'Shift') return mac ? '⇧' : 'Shift';
-    // A named key keeps its own spelling — `Enter` reads as shouting once uppercased, and the
-    // uppercase is only there to make a single letter look like a key cap (`ariaKeyshortcuts`
-    // below already draws the same line).
+    // Only single letters are uppercased, to look like key caps; `Enter` keeps its spelling.
     return part.length === 1 ? part.toUpperCase() : part;
   });
 }
 
-// The same keys as one label, for the tooltip. Mac joins glyphs (⌘⇧S); other platforms use "+"
-// (Ctrl+Shift+S) — **which is also what decides how many caps the help sheet draws**: the separator
-// is the platform saying where one key ends, so a surface that splits on it is splitting where the
-// platform already does.
+// The same keys as one label, for the tooltip: ⌘⇧S on Mac, Ctrl+Shift+S elsewhere.
 export function formatShortcut(token: string, mac: boolean): string {
   return shortcutParts(token, mac).join(mac ? '' : '+');
 }
@@ -69,10 +61,8 @@ export function ToolbarButton({
 }: {
   onClick: () => void;
   active?: boolean;
-  // Grays the button out and blocks clicks — for a command that would currently be a no-op
-  // (e.g. accentEmphasis's `excludes` blocks bold/italic/strike on the selection). The
-  // shortcut itself is unaffected by this (see guarded-toggle.ts): it already no-ops cleanly
-  // without touching undo history, so this prop is purely a discoverability affordance.
+  // Greys the button out for a command that would currently be a no-op. Purely visual: the
+  // shortcut already no-ops cleanly (guarded-toggle.ts).
   disabled?: boolean;
   // Set for icon-only buttons, where it supplies both the hover tooltip and the
   // accessible name (text buttons don't need it — their label is the text).
@@ -85,11 +75,8 @@ export function ToolbarButton({
   // Red tint for a destructive action (e.g. delete the whole table), so it reads as
   // "danger" and isn't mistaken for the neutral controls beside it.
   destructive?: boolean;
-  // The same shape in the link blue, for the one control in a surface that commits what the
-  // author typed there (the link card's 適用). The label carries the colour and the background
-  // stays clear until hover — a filled button was tried and taken back out, because nothing else
-  // in this editor's chrome is filled. Measured against the surfaces it sits on: 5.19 at rest and
-  // 6.26 on hover in the light scheme, 4.81 and 6.50 in the dark one.
+  // Link blue for the one control that commits what the author typed (the link card's 適用). Not
+  // filled, because nothing else in the chrome is. Contrast ≥ 4.8 in both schemes.
   accent?: boolean;
   // Suppress the visible tooltip while keeping the accessible name. Dropdown triggers
   // set this when open so the tooltip doesn't collide with the panel directly below.
@@ -101,16 +88,11 @@ export function ToolbarButton({
   // sit in a floating card rather than in a row of the toolbar (LinkBubble). The square
   // hover fill reads as a segmented control when only three buttons share a card.
   round?: boolean;
-  // Marks the undo/redo pair for a 40px touch width, same as `wide` below — kept as its own prop
-  // because it also switches the button to manual flex centring (`.toolbar-button-history`,
-  // app/globals.css), which `wide`'s targets don't need: they already centre their own content in
-  // a span. Originally the only two given the width, because their presence had already cost the
-  // toolbar a row at every phone width (measured 2026-09-09) — since superseded by §12.11's
-  // horizontal scroll, which is what let `wide` extend the same width to the rest of the row.
+  // The undo/redo pair: 40px touch width like `wide`, plus manual flex centring
+  // (`.toolbar-button-history`, app/globals.css), which `wide`'s span-wrapped content doesn't need.
   historyControl?: boolean;
-  // 40px touch width instead of the 24px a mark's own content computes to (`.toolbar-button-wide`,
-  // `hover: none`). Safe now that the row scrolls instead of wrapping (§12.11) — before that, width
-  // was the scarce dimension and only the history pair got it (see `historyControl`).
+  // 40px touch width (`.toolbar-button-wide`, `hover: none`); affordable because the row scrolls
+  // rather than wraps (docs/editor-requirements.md §12.11).
   wide?: boolean;
   children: ReactNode;
 }) {
@@ -124,21 +106,15 @@ export function ToolbarButton({
   const hasTip = Boolean(title || shortcutLabel) && !tooltipHidden;
 
   return (
-    // `group/tt relative` anchors the custom tooltip below the button. The native
-    // `title` attribute is intentionally dropped (it renders near the cursor with
-    // a browser-controlled delay) — `aria-label` keeps the accessible name,
-    // `aria-keyshortcuts` exposes the key, and the span below is the visible
-    // tooltip, centered under the button.
+    // `group/tt relative` anchors EditorTooltip. No native `title`: `aria-label` carries the name
+    // and `aria-keyshortcuts` the key.
     <button
       type='button'
       onClick={onClick}
       disabled={disabled}
       aria-label={title}
       aria-keyshortcuts={shortcut ? ariaKeyshortcuts(shortcut, mac) : undefined}
-      // `toolbar-button` carries no styling of its own here: it is the hook for the touch-only
-      // rules in globals.css (`@media (hover: none)`) — the ring and the 40px height — which is
-      // where they can be written once for every menu that uses this button. `-round` is the
-      // second hook the height needs: a circle has to grow in both dimensions.
+      // `toolbar-button` / `-round` are hooks for the touch-only rules in globals.css.
       className={`toolbar-button group/tt relative text-xs ${
         historyControl ? 'toolbar-button-history ' : ''
       }${wide ? 'toolbar-button-wide ' : ''}${

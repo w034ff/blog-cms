@@ -10,11 +10,8 @@ import { TrashIcon } from './svg/TrashIcon';
 import { isCaptionParagraph } from './image-caption-extension';
 import { isUploadPath } from '@/lib/thumbnail';
 
-// The image node the caret is on, as a NodeSelection — clicking an image (or its drag handle)
-// already produces one, the same fact block-drag-handle.ts's DRAGGABLE_TYPES relies on. Anything
-// else, including a ranged selection that merely contains an image, answers null: a ranged
-// deleteSelection there would take the whole range, not just this image, so 削除 below must not
-// be offered for it.
+// The image under a NodeSelection, or null — including for a range that merely contains one, where
+// 削除's deleteSelection would take the whole range.
 function selectedImage(editor: Editor): { from: number; src: string } | null {
   const { selection } = editor.state;
   if (!(selection instanceof NodeSelection) || selection.node.type.name !== 'image') return null;
@@ -22,30 +19,17 @@ function selectedImage(editor: Editor): { from: number; src: string } | null {
   return { from: selection.from, src: typeof src === 'string' ? src : '' };
 }
 
-// The two things globals.css needs to place the menu: the anchor's width, and whether the picture
-// can host the menu at all. A picture narrower than the menu cannot — fitted into its corner the
-// menu overhangs to the left and covers the picture's top band, and at 120x24 covers it whole —
-// so there the menu stays above the picture, where `top-start` already puts it.
+// What globals.css needs to place the menu: the anchor's width, and whether the picture is wide
+// enough to host the menu in its corner (otherwise it stays above, where `top-start` puts it).
 //
-// **The comparison is only true after React has committed.** The menu's width is React's:
-// `@tiptap/core`'s `dispatchTransaction` runs `view.updateState` — and with it the plugin's
-// `updatePosition` — before it emits `transaction`, which is what re-renders this component. So a
-// decision taken inside the positioning callback measures the PREVIOUS render's menu: the delete
-// button alone (35.6px) on the first show after a deselect, where the committed menu is 142.9px
-// (measured 2026-09-08; 44px and 151px before the labels became icons). Measured 2026-09-07: every
-// picture between those two widths was given the corner and covered by it.
-//
-// Which is why the layout effect below owns this call, and the positioning callback only borrows
-// it. The callback's copy covers the one path that reaches here with no render at all — the
-// plugin's `resizeHandler`, where a window resize can shrink a `max-width: 100%` picture under a
-// menu whose width is already settled.
+// **Only true after React has committed** (docs/editor-pitfalls.md §10.5): the positioning
+// callback sees the previous render's menu. So the layout effect below owns this call; the
+// callback borrows it only for the plugin's `resizeHandler`, which runs with no render.
 function fitMenuToPicture(menu: HTMLElement, block: HTMLElement, picture: HTMLElement): void {
   const width = picture.getBoundingClientRect().width;
   menu.style.setProperty('--anchor-width', `${width}px`);
-  // Where the picture sits inside the block. floating-ui is anchored to the BLOCK (see
-  // getReferencedVirtualElement), so this is the rest of the journey to the picture's corner, and
-  // it belongs on this side because these properties are re-read at paint while the reference the
-  // plugin captured is not.
+  // The picture's inset within the block floating-ui is anchored to; re-read at paint, unlike the
+  // captured reference.
   menu.style.setProperty(
     '--anchor-left',
     `${picture.getBoundingClientRect().left - block.getBoundingClientRect().left}px`,
@@ -54,22 +38,13 @@ function fitMenuToPicture(menu: HTMLElement, block: HTMLElement, picture: HTMLEl
     '--anchor-top',
     `${picture.getBoundingClientRect().top - block.getBoundingClientRect().top}px`,
   );
-  // `@tiptap/react`'s `syncClassName` assigns `element.className` wholesale, so a class written
-  // from the positioning callback would be dropped by the render that follows it. React runs a
-  // child's layout effects before its parent's and the menu is the child, so the effect below
-  // always writes this back within the same commit, before paint.
+  // `syncClassName` assigns `className` wholesale; the layout effect rewrites this before paint.
   menu.classList.toggle('is-outside', width < menu.offsetWidth);
 }
 
-// Where the caption goes and whether one is already there. The convention is a whole paragraph of
-// italic text directly after the image (docs/cms-features.md「画像キャプション」), so this button
-// only has to reach that one position — `isCaptionParagraph` is imported rather than restated
-// because the editor's decoration answers the same question and the two must not drift.
-//
-// Three cases, and the middle one is why this is not simply an insert: TrailingNode always keeps a
-// paragraph at the end of the document, so pressing this on the last image in a post almost always
-// finds an empty paragraph already sitting where the caption belongs. Inserting there would leave a
-// stray blank one behind.
+// Where the caption goes: the paragraph directly after the image (docs/cms-features.md
+// 「画像キャプション」), judged by the decoration's own `isCaptionParagraph`. An empty paragraph there
+// (TrailingNode's, after the last image) is reused rather than leaving a stray blank one.
 function captionSpot(
   editor: Editor,
   from: number,
@@ -86,45 +61,26 @@ function captionSpot(
   return { insertAt: after, caretAt: after + 1 };
 }
 
-// The floating menu over a selected image: 削除 always, plus a thumbnail toggle gated on
-// `isUploadPath` — the server coerces anything else back to '' (app/actions/posts.ts), so an
-// ungated button would silently do nothing on save. Sibling of TableToolbar/LinkBubble, not a
-// NodeView: same reason as those, a NodeSelection carries no editing state of its own to keep.
+// The floating menu over a selected image. The thumbnail toggle is gated on `isUploadPath`: the
+// server coerces anything else to '' (app/actions/posts.ts).
 export function ImageBubble({
   editor,
   thumbnail,
   onSetThumbnail,
 }: {
   editor: Editor;
-  // The post's chosen thumbnail path ('' = none chosen). It is what makes the button a toggle:
-  // both its label and its `active` highlight are read off whether this image is the one.
+  // The post's chosen thumbnail path ('' = none chosen).
   thumbnail: string;
   onSetThumbnail: (next: string) => void;
 }) {
-  // Stable identities, for the reason TableToolbar's own copies are: BubbleMenu dispatches a
-  // transaction whenever shouldShow/appendTo/options/getReferencedVirtualElement change by
-  // reference, and shouldRerenderOnTransaction re-renders this component with them — a fresh
-  // closure each render would loop forever.
+  // Stable identities, as in TableToolbar, or BubbleMenu's re-dispatch loops forever.
   const shouldShow = useCallback(() => selectedImage(editor) !== null, [editor]);
   const appendTo = useCallback(() => document.body, []);
-  // The menu sits in the picture's own top-right corner rather than floating above the block, and
-  // **floating-ui is never told where that corner is.** It solves `top-start`, which is
-  // `reference.left` and measures nothing about this menu; CSS carries the menu from there into
-  // the corner (globals.css), where `100%` in a transform resolves against the menu's own box at
-  // paint time and so can never be a render behind. `top-end` would have been the direct route
-  // and is unusable for exactly that reason — it solves x as `reference.right - floating.width`,
-  // measuring a menu whose buttons are React children of a portal, one render behind the
-  // transaction that positions it (`canBeThumbnail` is false while nothing is selected, so the
-  // element still holds 削除 alone at that moment). Measured on `top-end`: 107.05px past the
-  // picture's right edge, exactly the 105.05px button plus the gap, and it stayed there until an
-  // unrelated resize corrected it.
-  //
-  // `offset: 0`, so the placement is the picture's top edge and nothing else. The 8px gap the
-  // menu takes when it cannot fit belongs to that one case, and that case is a CSS class
-  // (`.is-outside`, set by `fitMenuToPicture`) — one number, in one file.
-  //
-  // `flip` and `shift` are off. Both exist to keep a menu inside the viewport, and this one is
-  // inside the picture, which is inside the column.
+  // **floating-ui is never told where the picture's corner is.** It solves `top-start`, which
+  // measures nothing about the menu; CSS carries it into the corner, where a transform's `100%`
+  // resolves at paint. `top-end` would measure a menu one render stale (docs/editor-pitfalls.md
+  // §13.2). `offset: 0`: the gap for a picture too narrow is `.is-outside`'s. No `flip`/`shift`:
+  // the menu stays inside the picture.
   const options = useMemo(
     () => ({ placement: 'top-start' as const, offset: 0, flip: false, shift: false }),
     [],
@@ -144,22 +100,11 @@ export function ImageBubble({
     const block = blockBox();
     return block ? (block.querySelector<HTMLElement>('.image-box') ?? block) : null;
   }, [blockBox]);
-  // **The BLOCK is the anchor, not the picture, and that is a correctness fix rather than a
-  // preference** (2026-09-12). The plugin asks for this once — pasting an image selects it, so the
-  // reference is taken while the bitmap is still loading — and it never asks again, because
-  // clicking the picture that is already selected changes no selection. Measured at that moment:
-  // the picture is `0x0` at the middle of the column while the block is already `766` wide at its
-  // final left. `top-start` against a zero-width point put the menu half a picture-width right of
-  // the corner, and it stayed there until an unrelated window resize.
-  //
-  // The block's horizontal box does not depend on the bitmap, so a reference taken early is
-  // already right. Everything that does depend on it — the picture's width and its inset — moves
-  // to the custom properties below, which `fitMenuToPicture` rewrites on every render and which
-  // resolve at paint. That is the half that was already self-healing: `--anchor-width` reached
-  // 220px on its own while the captured rect stayed frozen.
-  //
-  // It also removes the last path that could measure the menu itself, which is what 22f is a
-  // detector for.
+  // **The BLOCK is the anchor, not the picture — a correctness fix.** The plugin asks once, and a
+  // pasted image is selected while its bitmap is still `0x0`, so a picture anchor froze the menu in
+  // the wrong place. The block's horizontal box does not depend on the bitmap; the picture's width
+  // and inset go through custom properties that `fitMenuToPicture` rewrites each render. This also
+  // removes the last path that could measure the menu itself (criterion 22f).
   const getReferencedVirtualElement = useCallback(() => {
     const block = blockBox();
     const picture = pictureBox();
@@ -171,9 +116,7 @@ export function ImageBubble({
       contextElement: block,
     };
   }, [blockBox, pictureBox]);
-  // No dependency array: what this measures is the render itself — the menu's committed width —
-  // so it has to run after every one of them, and before paint, which is why it is a layout
-  // effect rather than a passive one.
+  // No dependency array: it measures each committed render, before paint.
   useLayoutEffect(() => {
     const menu = menuRef.current;
     const block = blockBox();
@@ -189,21 +132,15 @@ export function ImageBubble({
     <BubbleMenu
       editor={editor}
       pluginKey='imageMenu'
-      // A NodeSelection on an image is never empty (`to === from + 1`, it is a leaf atom), so
-      // `hasValidSelection` in the plugin's `update` is always true here and the default 250ms
-      // debounce (`updateDelay > 0` is what gates it) runs on the very click that selects the
-      // image — before `shouldShow` is even consulted. That is the whole delay between clicking an
-      // image and this menu appearing. `0` takes the synchronous branch instead. TableToolbar and
-      // LinkBubble pass the same `0` for a different reason (a stale position after a block drag).
+      // Required for a NodeSelection menu: otherwise the 250ms debounce delays showing it
+      // (docs/editor-pitfalls.md §13.2).
       updateDelay={0}
       shouldShow={shouldShow}
       appendTo={appendTo}
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
       ref={menuRef}
-      // Everything about how this reads — flush into the corner, square, one hard border, a
-      // divider between the items — is in globals.css, because it has to reach inside
-      // ToolbarButton's own utilities and the reasons are worth a paragraph each.
+      // The look is in globals.css, which has to reach inside ToolbarButton's utilities.
       className='image-bubble z-20 flex bg-white dark:bg-zinc-900'>
       {image && (
         <ToolbarButton
@@ -213,21 +150,12 @@ export function ImageBubble({
             if (!spot) return;
             const chain = editor.chain();
             if (spot.insertAt !== null) chain.insertContentAt(spot.insertAt, { type: 'paragraph' });
-            // `scrollIntoView: false` for the thumbnail toggle's measured reason below. Unlike that
-            // one this focus carries a position, so it never takes the `delayedFocus` branch — but
-            // the caption sits directly under the picture the author is looking at either way, and
-            // nothing here asked the page to move.
-            //
-            // `setItalic`, not `toggleItalic`: the guarded toggle exists for accentEmphasis's
-            // exclusion (guarded-toggle-marks.ts) and the point here is to state the mark, not to
-            // flip it — pressing this twice must leave the caption a caption.
+            // No scroll: the caption is right under the picture being looked at. `setItalic`, not
+            // `toggleItalic`: pressing twice must leave the caption a caption.
             chain.focus(spot.caretAt, { scrollIntoView: false }).setItalic().run();
           }}>
-          {/* The word itself is on the button's `title`, which is both the tooltip and the
-              accessible name — 「キャプション」 is note's own for this field, and the two shorter
-              candidates are taken by something else in this editor: 注釈 reads as the footnote
-              (footnote-literal-extension.ts) and 説明 is both the post form's own field and what an
-              alt-text control would have to be called. */}
+          {/* 「キャプション」 is on `title`: 注釈 reads as a footnote and 説明 is the post's own
+              field. */}
           <CaptionIcon />
         </ToolbarButton>
       )}
@@ -236,40 +164,14 @@ export function ImageBubble({
           active={isCurrentThumbnail}
           title={isCurrentThumbnail ? 'サムネイルを解除' : 'サムネイルに設定'}
           onClick={() => {
-            // The button lives outside the editor's own DOM (BubbleMenu portals to <body>), so
-            // clicking it leaves the editor blurred with its NodeSelection still standing —
-            // unlike every command below, which routes through `editor.chain()` and refocuses as
-            // part of that. onSetThumbnail is a plain React callback, not a chain, so nothing
-            // else here would put focus back; every other button in this editor's chrome
-            // (TableToolbar, LinkBubble, 削除 below) restores it the same way.
             onSetThumbnail(isCurrentThumbnail ? '' : image.src);
-            // `scrollIntoView: false`, or pressing this button scrolls the page. A NodeSelection
-            // takes @tiptap/core's focus command down its `delayedFocus` branch (`position === null
-            // && !isTextSelection`), which runs `editor.commands.scrollIntoView()` in a rAF — and
-            // prosemirror-view then scrolls the whole *block* into view against the window, which
-            // knows nothing about the sticky toolbar. Measured 2026-09-08 with the picture's bottom
-            // 82px below the fold: the page jumped 87px on the press, exactly `rect.bottom -
-            // window.bottom + scrollMargin` (dist's `scrollRectIntoView`, the `getSide(scrollMargin,
-            // "bottom")` branch), and a picture taller than the viewport takes the branch above it
-            // and lands its top under the toolbar instead.
-            //
-            // Nothing here asked to be scrolled to: the author is looking at the picture and just
-            // pressed a button drawn on it. Focus still has to be restored — the button lives
-            // outside the editor's DOM (BubbleMenu portals to <body>), so clicking it leaves the
-            // editor blurred with its NodeSelection still standing, and `onSetThumbnail` is a plain
-            // React callback, not a chain that would refocus on its own. `view.focus()` itself uses
-            // `focusPreventScroll`, so dropping the scroll leaves nothing that moves the page.
+            // Refocus, since the portalled button blurred the editor and `onSetThumbnail` is not a
+            // chain. `scrollIntoView: false`, or a NodeSelection's `delayedFocus` scrolls the whole
+            // block into view under the sticky toolbar (docs/editor-pitfalls.md §13.4).
             editor.chain().focus(null, { scrollIntoView: false }).run();
           }}>
-          {/* **The one word this menu keeps.** Its two neighbours say what they do with a picture,
-              which a glyph can carry; this one says which of two states the picture is in, and a
-              glyph would have to be learnt before it could be read. So the noun stays visible and
-              the action moves to `title` — 「サムネイルに設定」/「サムネイルを解除」, the tooltip
-              and the accessible name, which is where the state is stated in words. The `active`
-              fill is the glanceable half of the same answer.
-
-              The visible word is a substring of both, which is what WCAG SC 2.5.3 asks of a
-              control whose accessible name is longer than its label. */}
+          {/* **The one visible word:** it names a state, which a glyph would have to be learnt to
+              read. The action is in `title`, whose names contain the word (WCAG SC 2.5.3). */}
           サムネイル
         </ToolbarButton>
       )}

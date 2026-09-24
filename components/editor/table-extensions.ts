@@ -61,24 +61,14 @@ function alignDelimiter(align: CellAlign): string {
   return '---';
 }
 
-// The refusal both guards below report. One string for both gestures on purpose: it is one rule
-// ("a cell holds paragraphs"), and the author who just dragged a code block into a cell is owed the
-// same answer as the one who pasted it. Worded for both — 「貼り付け」 would be wrong for a drop.
+// One string for paste and drop, since it is one rule (docs/editor-requirements.md §2.1).
 const TABLE_CELL_BLOCK_BLOCKED = '表のセルにはこの要素を入れられません';
 
 const tableDropGuardKey = new PluginKey('tableDropGuard');
 const tableCellPasteGuardKey = new PluginKey('tableCellPasteGuard');
 
-// Refuse a paste that would put a non-paragraph block inside a cell (pasteIntoCellRefused, in
-// table-cell-rules.ts). Refusing rather than repairing, unlike the callout paste guard: there is no one repair
-// that fits every offender. A callout or a quote could be unwrapped to its text, but a code block
-// would lose its fence, and an image or a nested table has no text to keep at all — so a repair
-// would be a different rule per node type with a refusal underneath it anyway. One refusal, and
-// the same verdict the drop guard already gives the same content, is the smaller and more
-// consistent answer.
-//
-// A refused paste is silent by nature — the clipboard is unchanged and the document is unchanged —
-// so the notice is the whole of the feedback, the same reason a refused image raises one.
+// Refuse a paste that would put a non-paragraph block in a cell. Refused rather than repaired: no
+// one repair fits every block (docs/editor-requirements.md §2.1). The notice is the only feedback.
 function tableCellPasteGuard(notify: (message: string) => void): Plugin {
   return new Plugin({
     key: tableCellPasteGuardKey,
@@ -110,11 +100,9 @@ function tableCellPasteGuard(notify: (message: string) => void): Plugin {
 //   B. a whole table pasted into a cell → prosemirror-tables merges it cell-wise and the copied
 //      header row lands in the body, where a row of `th` has no pipe form.
 //
-// Neither is the table-splitting defect tableCellPasteGuard refuses, which is why they were left out
-// of it. Both are repaired here instead, *after* the gesture rather than at the slice: B is
-// performed by prosemirror-tables' own handlePaste, which runs before this extension's plugins and
-// is also the code that makes cell-to-cell paste work correctly — racing it would break the gesture
-// this is trying to protect.
+// Neither splits the table, so tableCellPasteGuard doesn't refuse them; both are repaired *after* the
+// gesture, since B is prosemirror-tables' own handlePaste (which also makes cell-to-cell paste work)
+// and runs before this extension's plugins.
 
 // The table `$pos` sits in, with its document position, or null when it is in none.
 function tableAround($pos: ResolvedPos): { table: PMNode; pos: number } | null {
@@ -129,10 +117,7 @@ function tableAround($pos: ResolvedPos): { table: PMNode; pos: number } | null {
 // those two conditions — so this is false only for the reasons no repair reaches: a merged cell
 // (colspan/rowspan has no pipe form at all), or a first row that isn't a header.
 //
-// That second one is why this is a precondition rather than "repair whatever you find". The
-// toolbar's 見出し行 button (toggleHeaderRow) deliberately produces a headerless table, which is
-// also not a pipe table; a table already in the HTML fallback for a reason of its own gains nothing
-// from having its cells rewritten, so it is left exactly as the author left it.
+// A table in the HTML fallback for its own reason (e.g. 見出し行 toggled off) is left as it is.
 function repairRestoresPipeForm(table: PMNode): boolean {
   const [firstRow, ...bodyRows] = childrenOf(table);
   if (!firstRow) return false;
@@ -142,12 +127,8 @@ function repairRestoresPipeForm(table: PMNode): boolean {
   return !bodyRows.some((row) => childrenOf(row).some(cellHasSpan));
 }
 
-// A cell's paragraphs as one paragraph, separated by hard breaks. Not a bare join: concatenating
-// would run the last word of one paragraph into the first of the next, and a hard break is already
-// the supported way to get two lines into a cell — Shift+Enter makes one, and tiptap-markdown
-// serializes it as `<br>` while `inTable` (the flag the table serializer above sets), which is
-// valid GFM and reloads as the same hardBreak node. So the repair produces a shape the editor could
-// already have been asked for by hand, rather than a new one.
+// A cell's paragraphs joined with hard breaks, the shape Shift+Enter makes (`<br>` while `inTable`,
+// round-tripping as the same node).
 function joinedCellContent(cell: PMNode): PMNode {
   const first = cell.firstChild;
   if (!first) return cell;
@@ -159,11 +140,8 @@ function joinedCellContent(cell: PMNode): PMNode {
   return first.type.create(first.attrs, Fragment.fromArray(parts));
 }
 
-// The repair itself, or null when there is nothing to do. Applied to the table holding the
-// selection: every route puts content *into* a cell and leaves the selection there (prosemirror-view
-// selects what it inserted; prosemirror-tables sets a CellSelection over the cells it wrote), so
-// that is the table the gesture touched. One whose selection ends up elsewhere is simply not
-// repaired — a miss, never a corruption.
+// The repair, or null. Applied to the table holding the selection, where every route leaves it; a
+// selection elsewhere means a miss, never a corruption.
 function repairPipeTable(state: EditorState): Transaction | null {
   const found = tableAround(state.selection.$from);
   if (!found || isPipeTable(found.table) || !repairRestoresPipeForm(found.table)) return null;
@@ -196,28 +174,14 @@ function repairPipeTable(state: EditorState): Transaction | null {
 
 const tablePipeFormRepairKey = new PluginKey('tablePipeFormRepair');
 
-// Both gestures that put outside content into a cell, and no others. Drop is here because the drop
-// guard's *position* rule does not cover it: that one refuses a drop at a cell's block edge, on the
-// grounds that a drop inside the cell's text merges inline — true of a one-paragraph slice, but a
-// two-paragraph one still lands as two paragraphs and costs the table its pipe form exactly as the
-// paste does. Measured, not assumed.
+// Only paste and drop (a two-paragraph drop into a cell's text also loses the pipe form). The scope
+// is load-bearing: Enter is handled by hardBreakInCell instead, and repairing on `setContent` would
+// rewrite a stored HTML-fallback post on open and autosave an edit nobody made.
 //
-// The scope is load-bearing in both directions:
-//   • Enter inside a cell is the *gesture's* business, not the repair's: an unconditional join here
-//     would undo every Enter the instant it was typed, so what changed is what Enter does (a hard
-//     break — hardBreakInCell below), leaving this repair with nothing to see;
-//   • the same shapes arrive from `setContent` when a post already stored in the HTML fallback is
-//     opened, and repairing there would silently rewrite stored content on open and hand the
-//     autosave an edit the author never made.
-//
-// The flag is set from `handleDOMEvents`, which is the only hook that sits ahead of *every*
-// handlePaste and handleDrop claimant — prosemirror-tables' handlePaste among them, and this repair
-// exists precisely because that one gets there first. It is cleared on the next microtask rather
-// than by the transaction, because a gesture one of the guards above refuses produces no transaction
-// at all and would otherwise leave the flag standing over the next keystroke. Everything a paste or
-// a drop dispatches is synchronous, so the window is exact. (Not prosemirror-view's
-// brokenClipboardAPI fallback, which finishes on a timeout — the same browsers this editor already
-// doesn't target, see the note on handleCutClamped in isolating-boundary.ts.)
+// The flag is set from `handleDOMEvents`, the only hook ahead of every handlePaste/handleDrop
+// (prosemirror-tables' included), and cleared on the next microtask, since a refused gesture makes
+// no transaction. Paste and drop dispatch synchronously, so the window is exact (not so
+// prosemirror-view's brokenClipboardAPI fallback; see handleCutClamped in isolating-boundary.ts).
 function tablePipeFormRepair(): Plugin {
   let placing = false;
   // False throughout: this only wants to know the gesture is happening, not to handle it.
@@ -240,17 +204,9 @@ function tablePipeFormRepair(): Plugin {
   });
 }
 
-// Suppress table drops that ProseMirror would turn into structure rather than a
-// plain text move, and those carrying a block no cell may hold (see
-// tableDropRefusal). Drops into a cell's text, or outside any table, fall through
-// to the default handling, so moving text between cells and dragging elsewhere in
-// the document still work.
-//
-// The slice question is the paste guard's, and it is here because the position
-// question never covered it: this guard used to allow anything dropped inside a
-// cell's *text*, on the grounds that inline content merges — true of text and of a
-// single paragraph, and false of a block, which splits the table in two exactly as
-// the refused paste would have. Same rule, same notice, three gestures agreeing.
+// Refuse table drops that would create structure or carry a block no cell may hold
+// (tableDropRefusal, docs/editor-requirements.md §2.3). Drops into a cell's text, or outside any
+// table, fall through.
 function tableDropGuard(notify: (message: string) => void): Plugin {
   return new Plugin({
     key: tableDropGuardKey,
@@ -258,20 +214,10 @@ function tableDropGuard(notify: (message: string) => void): Plugin {
       handleDrop(view, event, slice, moved) {
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
-        // resolveDropTarget rather than a local dropPoint call, so this and the drop *indicator*
-        // (drop-cursor-guard.ts) compute the same target. They used to differ: this side resolved
-        // against the document on screen, the indicator against the one the move's own deletion
-        // leaves behind. The two agree except where that deletion joins two nodes — which changes
-        // the depth the mapped position resolves at, and is exactly the case resolveDropTarget
-        // exists for — so the indicator could promise a drop this then refused, or hide on one it
-        // would have taken. Both silent.
+        // resolveDropTarget, so this and the drop indicator (drop-cursor-guard.ts) agree.
         const refusal = tableDropRefusal(resolveDropTarget(view, coords.pos, slice, moved), slice);
         if (!refusal) return false;
-        // A position refusal stays silent: the indicator was already hidden while the
-        // author hovered there (drop-cursor-guard.ts), so the answer arrived before
-        // the mouse came up. A content refusal has no such tell — the block would
-        // have landed anywhere in the cell — so it says why, the same way the paste
-        // guard does for the same slice.
+        // Only the content refusal notifies; the position one was shown by the hidden indicator.
         if (refusal === 'content') notify(TABLE_CELL_BLOCK_BLOCKED);
         // Returning true makes ProseMirror preventDefault and skip the whole drop,
         // so the dragged text stays put rather than being deleted from its source.
@@ -282,14 +228,8 @@ function tableDropGuard(notify: (message: string) => void): Plugin {
   });
 }
 
-// Markdown can't hold block structure in a table cell: the GFM pipe form is one line
-// of inline content, and even the raw-HTML fallback (spans / multi-paragraph, see
-// isPipeTable) only survives for paragraph content. With the stock `block+` cells a
-// nested code block, callout, list, or table silently flattens to its text on save
-// (a lone block in a cell still counts as the pipe form and is rendered inline).
-// Narrow the schema to paragraphs so such structure can't be authored in a cell at
-// all — block input rules simply don't fire there, and block inserts land outside
-// the table instead of inside the cell.
+// Cells are `paragraph+`: markdown can't hold block structure in a cell, and with stock `block+`
+// cells nested blocks flattened to text on save.
 export const ParagraphTableCell = TableCell.extend({ content: 'paragraph+' });
 export const ParagraphTableHeader = TableHeader.extend({ content: 'paragraph+' });
 
@@ -303,14 +243,9 @@ function isWholeTextblockSelected(selection: Selection): boolean {
   return $from.parentOffset === 0 && $to.parentOffset === $from.parent.content.size;
 }
 
-// prosemirror-view's own vertical-arrow handling (selectVertically) refuses to act
-// on a non-empty TextSelection at all, so right after Tab the keydown falls through
-// to the browser's native behavior for a range selection, which collapses it to an
-// edge instead of moving a row — ArrowDown after Tab, Tab looks like it moved
-// sideways instead of down. Recognize that specific "whole cell selected" shape and
-// move to the same column one row up/down ourselves, the same way prosemirror-tables'
-// own (selection-empty-only) arrow keymap would. An ordinary partial selection made
-// by hand is left alone, so plain shift-selecting text still collapses normally.
+// After Tab, `selectVertically` ignores the non-empty selection and the browser just collapses it,
+// so ArrowUp/Down didn't move a row (docs/editor-requirements.md §4.1). For that whole-cell shape,
+// move a row as prosemirror-tables' arrow keymap would; a partial selection is left alone.
 function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
   const { state, view } = editor;
   if (!isInTable(state) || !isWholeTextblockSelected(state.selection)) return false;
@@ -320,45 +255,14 @@ function tableVerticalArrow(dir: 1 | -1, editor: Editor): boolean {
   return true;
 }
 
-// Enter inside a cell makes a hard break rather than a second paragraph. A cell is `paragraph+`, so
-// the second paragraph is legal and the table still looks right — but two blocks in a cell has no
-// GFM pipe form, so the whole table silently serializes as raw HTML from that keystroke on, losing
-// column alignment on the public page (sanitize strips the fallback's inline `text-align`), its
-// `<thead>` and any chance of hand-editing the markdown. A shape this editor cannot store is not a
-// shape typing should be able to produce — the same argument that already narrowed cells from
-// `block+` to `paragraph+`.
+// Enter, Shift+Enter and Mod+Enter in a cell make a hard break (docs/editor-requirements.md §4): a
+// second paragraph would drop the whole table to the raw-HTML fallback. **Keymap only**, so stored
+// fallback posts still load. Declines outside a single cell; a selection leaving the cell is the
+// isolating clamp's. Shift/Mod+Enter are routed here because HardBreak binds them straight to
+// `setHardBreak`, skipping the whole-cell guard.
 //
-// A hard break is not a new shape either: Shift+Enter already makes one here, tiptap-markdown writes
-// it as `<br>` while `inTable` and `| x<br>y |` round-trips byte-identically, and the pipe-form
-// repair converts a pasted or dropped second paragraph into exactly this. So all four routes into a
-// cell now agree.
-//
-// **Keymap only — the schema stays `paragraph+`.** Posts already stored in the HTML fallback keep
-// loading exactly as they do today; only what can be newly authored changes.
-//
-// The binding is document-wide, so it has to decline everything that is not a caret (or a plain
-// selection) inside one cell: false hands the key on, and the empty-selection case then reaches
-// baseKeymap's Enter as before. A selection that runs *out* of a cell is not this binding's problem
-// either — the isolating clamp is asked first and answers it (isolating-boundary.ts), including the
-// hard break it leaves in the cell for the same reason as here.
-//
-// Three keys make a hard break, and all three are routed through here (see addKeyboardShortcuts
-// below): Enter, because in a cell it must not split; Shift+Enter and Mod+Enter, because
-// @tiptap/extension-hard-break binds them straight to `setHardBreak` and so would otherwise skip
-// the whole-cell guard below — the same wipe on the key this comment calls the canonical in-cell
-// break. Outside a cell this declines, and HardBreak's own bindings answer them as before.
-//
-// The one selection it must not take at face value is the one Tab leaves behind. setHardBreak is an
-// insert, so it replaces whatever is selected — and after Tab that is the destination cell's entire
-// content (isWholeTextblockSelected above), which the author never selected and cannot see they are
-// about to lose. Tab then Enter read as "move here, then add a line" and instead wiped the cell,
-// leaving only the break. Collapse that shape to the end of the cell first and insert there: the
-// content survives and Enter still does the one thing it does in a cell. This is the same defect the
-// arrow keys had for the same reason, answered the same way (tableVerticalArrow above) — a
-// selection made *by hand* is left alone there, and a partial one is left alone here, so typing over
-// a range you actually chose still replaces it. A hand-made whole-cell selection is
-// indistinguishable from Tab's and so takes the same non-destructive branch; undo is one step
-// either way.
+// After Tab the whole cell is selected (§4.1), and inserting would wipe it; that shape collapses to
+// the cell's end first. A partial selection is still replaced.
 function hardBreakInCell(editor: Editor): boolean {
   const { selection } = editor.state;
   if (!(selection instanceof TextSelection)) return false;
@@ -376,9 +280,7 @@ function hardBreakInCell(editor: Editor): boolean {
 // delimiter, and add a command to set a whole column's `align`. Everything else —
 // cell parsing/display and the public render (remark emits `<td align>`, honored
 // by globals.css) — already round-trips.
-// Table's own options plus the refusal reporter the cell paste guard needs. Declared as a type
-// (rather than left inferred) so `MarkdownTable.configure({ onBlocked })` typechecks at the call
-// site in PostEditor.
+// Declared so `MarkdownTable.configure({ onBlocked })` typechecks.
 export type MarkdownTableOptions = TableOptions & {
   onBlocked: (message: string) => void;
 };
@@ -425,28 +327,13 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
     const parent = this.parent?.();
     return {
       ...parent,
-      // A table can't nest inside a cell (paragraph-only cells), so inserting from
-      // within one would split the host table in two around the new table. Refuse
-      // instead; the picker is a no-op while the caret is in a table.
-      //
-      // selectionTouches rather than isInTable, which reads `$head` alone: a selection dragged
-      // *out* of a table upwards leaves the head outside and so passed the check, and insertTable
-      // then replaced the range — the existing table was swapped for a fresh empty one, its
-      // contents gone. The scan is direction-agnostic (selection.from/to are normalized) and still
-      // covers the plain caret-in-a-cell case.
+      // Refused where the selection touches a table (a cell can't hold one), asked with
+      // selectionTouches rather than `isInTable`, which reads `$head` alone and let a range dragged
+      // out of a table replace it.
       insertTable:
         (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
-          // `detailsSummary` for the same reason one level over: an accordion's title is `text*`,
-          // so a table inserted there does not go in — the fitter splits the accordion around it
-          // and the document saves as two `<details>`. The body is untouched by this name and
-          // still takes a table, which §6.3 of docs/accordion-requirements.md asks for explicitly.
-          //
-          // `linkCard`/`embed`: both are atoms, so selecting one gives a NodeSelection over exactly
-          // that node, and the stock command replaces a NodeSelection outright — the card or embed
-          // was silently swapped for a fresh empty table (reported 2026-09-05). `image` is named
-          // alongside them for consistency of the refusal rather than for invisibility: losing a
-          // picture to a fresh table is visible, but the four controls refuse over a selected block
-          // atom as one rule (2026-09-08 — callout-extension.ts carries the same note).
+          // Also an accordion title (`text*`; the body still takes a table,
+          // docs/accordion-requirements.md §6.3) and a selected block atom, as in setCallout.
           if (
             selectionTouches(props.state, 'table', 'detailsSummary', 'linkCard', 'embed', 'image')
           )
@@ -483,9 +370,7 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
       ArrowDown: () => tableVerticalArrow(1, this.editor),
       ArrowUp: () => tableVerticalArrow(-1, this.editor),
       Enter: () => hardBreakInCell(this.editor),
-      // HardBreak's own Shift-Enter/Mod-Enter call setHardBreak directly, so they have to be
-      // intercepted here to reach the whole-cell guard — this extension is registered after
-      // StarterKit in PostEditor's array, which ExtensionManager reverses, so these are asked first.
+      // Asked before HardBreak's own bindings, being later in the extensions array.
       'Shift-Enter': () => hardBreakInCell(this.editor),
       'Mod-Enter': () => hardBreakInCell(this.editor),
     };
@@ -493,9 +378,7 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
   addOptions(): MarkdownTableOptions {
     return {
       ...(this.parent?.() as TableOptions),
-      // How the paste guard tells the author why nothing happened. Supplied by PostEditor, which
-      // owns the one notice both this and the image refusals write to (useEditorNotice). Defaults
-      // to a no-op so the extension stays usable — and testable — without the host wiring it up.
+      // The shared refusal notice; a no-op default so the extension works without the host.
       onBlocked: () => {},
     };
   },

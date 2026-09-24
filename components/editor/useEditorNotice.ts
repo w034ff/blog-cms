@@ -9,13 +9,8 @@ const NOTICE_MS = 3000;
 // The editor's refusal notice: one short line shown over the content (EditorToast) when a gesture
 // was declined and there is nothing on screen to say why.
 //
-// The toolbar greys out a control an insert can't use, so a refused *button* explains itself. Paste
-// and drag-and-drop have no control to grey — they just do nothing — which is why they need this.
-//
-// Lifted out of useImageUpload, which owned it while images were the only refusal that reached the
-// author this way. It is not image-specific: the table cell paste guard (table-extensions.ts) uses
-// the same channel, and PostEditor now owns the one instance both write to, so two refusals in a
-// row can't leave two toasts fighting over the same corner.
+// A refused button explains itself by greying out; paste and drop have no control to grey.
+// PostEditor owns the single instance every guard writes to, so two refusals never stack toasts.
 export function useEditorNotice(): {
   notice: string | null;
   showNotice: (message: string) => void;
@@ -23,8 +18,7 @@ export function useEditorNotice(): {
   const [notice, setNotice] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Raise the notice and start its countdown, restarting the clock if one is already up (a second
-  // refused paste should get its own full three seconds, not the tail of the first).
+  // Raise the notice, restarting the countdown if one is already up.
   const showNotice = useCallback((message: string): void => {
     setNotice(message);
     if (timer.current !== null) clearTimeout(timer.current);

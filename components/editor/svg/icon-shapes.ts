@@ -3,11 +3,8 @@ import { X_PROVIDER } from '@/lib/embed-message';
 
 // The geometry of the editor's icons, as data.
 //
-// It lives apart from the components in this directory because it has two consumers that cannot
-// share code: the React icons here, and the link card's NodeView (link-card-extension.ts), which
-// builds plain DOM and so cannot render JSX. Duplicating the paths there is what this avoids —
-// the shapes below were tuned against how they read at 16px (see UnlinkIcon's note), and a second
-// copy would drift away from that the first time one of them is adjusted.
+// Shared by the React icons and the NodeViews that build plain DOM (link-card-extension.ts), so the
+// shapes tuned for 16px exist once.
 export type IconShape =
   // `filled` is for a shape that is a solid area rather than a stroke — a play triangle inside a
   // stroked frame, say. The svg's own attributes stay stroke-first (see `buildIcon`), so a filled
@@ -46,11 +43,8 @@ export const LINK_SHAPES: readonly IconShape[] = [
 
 // A horizontal chain with a slash across it — "remove the link".
 //
-// The two shapes both carry the message and they have to be drawn so as not to fight each other at
-// 16px. The chain is horizontal: a diagonal break was tried first and, in the destructive red, read
-// as a question mark (measured, both schemes) — the halves have to sit on a level baseline to be
-// recognised as a chain at all. The arcs and the connecting bar are then trimmed short of the
-// slash's path rather than run under it, so the crossing stays two strokes wide instead of four.
+// The chain is horizontal because a diagonal break read as a question mark in the destructive red.
+// The arcs stop short of the slash, so the crossing stays two strokes wide instead of four.
 export const UNLINK_SHAPES: readonly IconShape[] = [
   { kind: 'path', d: 'M9 17H7A5 5 0 0 1 7 7' },
   { kind: 'path', d: 'M15 7h2a5 5 0 0 1 4 8' },
@@ -62,15 +56,9 @@ export const UNLINK_SHAPES: readonly IconShape[] = [
 // the frame because that is what the button does: the caption is the paragraph *after* the image
 // (docs/cms-features.md「画像キャプション」), not something written inside it.
 //
-// Three other glyphs were drawn and rejected on how they read at 16px (measured 2026-09-08, in the
-// menu itself rather than enlarged): a CC-style subtitle box lost its inner lines and became a
-// plain rectangle; a picture over *two* lines closed up into what looked like a monitor stand; and
-// three bare text lines read as the toolbar's own list icon. The one line survives because it is
-// the only stroke below the frame and has the full width to itself.
-//
-// It is close to `ImageIcon`, which is the insert button in the toolbar — the same subject, drawn
-// once as a frame with content and once as a frame with a line under it. They never appear
-// together: one is in the toolbar, the other on the picture.
+// At 16px a subtitle box, a picture over two lines and bare text lines all misread (a rectangle, a
+// monitor stand, the list icon); one full-width line does not. Close to `ImageIcon`, but the two
+// never appear together.
 export const CAPTION_SHAPES: readonly IconShape[] = [
   { kind: 'rect', x: 3, y: 3, width: 18, height: 12, rx: 2 },
   { kind: 'path', d: 'M3 11l4-4 3.5 3.5L14 7l7 6' },
@@ -113,11 +101,9 @@ export const PLAY_SHAPES: readonly IconShape[] = [
   { kind: 'path', d: 'M10.5 9.5l4.5 2.5-4.5 2.5z', filled: true },
 ];
 
-// The same frame as `PLAY_SHAPES`, filled with two content lines instead of a play triangle —
-// Docswell's mark (embed-requirements.md §17.7) until 2026-09-03, when their terms turned up a
-// requirement to ask permission before using it on an external site, which this repo has not done.
-// A play triangle reads as video, which `docswell`'s kind ("スライド") is not, so this draws the
-// generic shape of a slide rather than falling back to `PLAY_SHAPES`.
+// The `PLAY_SHAPES` frame with two content lines: a generic slide, used for Docswell, whose terms
+// require permission to use its mark (embed-requirements.md §17.7). Not the play triangle, which
+// reads as video.
 export const SLIDE_SHAPES: readonly IconShape[] = [
   { kind: 'rect', x: 3, y: 5, width: 18, height: 14, rx: 2 },
   { kind: 'line', x1: 7, y1: 10, x2: 15, y2: 10 },
@@ -141,15 +127,12 @@ export const X_MARK_SHAPES: readonly IconShape[] = [
 // SlideShare's CDN — the badge's orange disc is dropped, since the disc is a container rather than
 // the mark and no other mark here carries one.
 //
-// **One colour costs this mark nothing**: the inner panel is published as a counter — a reversed
-// subpath inside the same `d` — so it is a hole in the fill rather than a second colour, and the
-// two overlapping panels still read as two at 16px (compared against the badge and against the
-// stroked screen it replaces, 16/24/40px in both schemes, 2026-08-26).
+// One colour costs nothing: the inner panel is a reversed subpath (a hole), so the two panels still
+// read as two at 16px.
 //
-// Fitted like the other brand marks: the glyph is 109×86 in the favicon's units, scaled to a 21.5
-// span by width and centred in the 24 box, landing at 21.5×16.96. The transform is baked into the
-// coordinates because an IconShape carries no transform; rounding to 2 decimals was diffed against
-// the un-baked render and differs in 0 pixels at 16, 24 and 40px.
+// Fitted like the other brand marks: 109×86 scaled to a 21.5 span and centred in the 24 box
+// (21.5×16.96). The transform is baked in because an IconShape has none; 2-decimal rounding renders
+// identically at 16/24/40px.
 export const SLIDESHARE_MARK_SHAPES: readonly IconShape[] = [
   {
     kind: 'path',
@@ -163,11 +146,8 @@ export const SLIDESHARE_MARK_SHAPES: readonly IconShape[] = [
 // one is filled because a hollow letterform is a blot at 16px, and this one because the logo is
 // five solid shapes to begin with.
 //
-// The 1.2-unit gaps are the measurement (2026-08-25, rendered at 16px against the alternatives).
-// Without them the five shapes merge into one silhouette — the colours are what separate them in
-// the original, and this file has one colour. With them the F still reads on a 1x screen, where
-// the gaps are under a pixel and blur back into that same silhouette: the fallback is the shape it
-// would have had anyway.
+// The 1.2-unit gaps stand in for the colours that separate the five shapes in the original; on a
+// 1x screen they blur back into the silhouette the shape would have had anyway.
 //
 // Geometry rather than a copied path, so it can be re-derived: three left-column shapes rounded on
 // the left (x 8.6–11.4), one top-right rounded on the right, and a circle at the middle right, on a
@@ -184,16 +164,9 @@ export const FIGMA_MARK_SHAPES: readonly IconShape[] = [
 // rather than a drawn shape, and the third drawn **filled** — the glyph is a solid shape to begin
 // with, as Figma's five are.
 //
-// **Speaker Deck's own mark, re-fitted rather than re-derived.** Figma's note explains why that one
-// is geometry: five circles and rounded rectangles can be written down and checked. This is two
-// letterforms whose curves are the typeface's, and a re-derivation would be a drawing of the logo
-// rather than the logo — X_MARK_SHAPES is the precedent for taking the path as published.
-//
-// The refit is one number: the published mark is 32×20, and scaling it to 24 wide makes it heavier
-// at 16px than the two marks beside it, which span about 21.5. So it is scaled to that span instead
-// and centred in the 24 box (measured 2026-08-26, rendered at 16/24/40px against X and Figma in
-// both schemes). The source is `mark-*.svg` on Speaker Deck's own CDN, translated out of its
-// `translate(-41,-25)` group.
+// **Re-fitted rather than re-derived:** two letterforms whose curves are the typeface's, taken as
+// published like X_MARK_SHAPES. The 32×20 source (`mark-*.svg` on Speaker Deck's CDN, out of its
+// `translate(-41,-25)` group) is scaled to the 21.5 span of the marks beside it and centred.
 export const SPEAKERDECK_MARK_SHAPES: readonly IconShape[] = [
   {
     kind: 'path',
@@ -217,43 +190,28 @@ export const GITHUB_MARK_SHAPES: readonly IconShape[] = [
 // drag ghost both ask — and a provider added to `lib/embed-provider.ts` with a mark given to only
 // one of them is the drift this avoids.
 //
-// The providers are named by their `EmbedTarget.provider` string. `X_PROVIDER` is imported because
-// `lib/embed-message.ts` already has to name X for the protocol it speaks; SlideShare has no such
-// constant to borrow, and inventing one there would put a name in a file about postMessage for a
-// provider that never sends one.
+// Keyed by `EmbedTarget.provider`. `X_PROVIDER` is borrowed from lib/embed-message.ts; the others
+// have no such constant, and one would not belong in a postMessage file.
 // CodeSandbox's square ring (docs/embed-requirements.md §20.10). **The closest-sourced mark here**:
 // it is not lifted off a brand page but out of the document CodeSandbox serves at `/embed/<id>`
 // itself, which carries the favicon inline as
-// `<svg viewBox='0 0 100 100'><path fill-rule='evenodd' d='M81.8182 18.1818V81.8182H18.1818V18.1818H81.8182ZM10 90V10H90V90H10Z'/></svg>`
-// (read 2026-08-30).
+// `<svg viewBox='0 0 100 100'><path fill-rule='evenodd' d='M81.8182 18.1818V81.8182H18.1818V18.1818H81.8182ZM10 90V10H90V90H10Z'/></svg>`.
 //
-// That is an even-odd fill of two nested squares; an `IconShape` is stroke-first, so the ring is
-// re-expressed as its centreline. Outer edge 10 and inner edge 18.1818 in a 100 box put the
-// centreline at 14.0909, which scales to 3.38 with a 17.24 span in the 24 box. The ring's own width
-// (8.1818, i.e. 1.9636 at this scale) is within 2% of the `stroke-width: 2` that `buildIcon` and
-// the React icons already set, so **the line weight is the icon set's rather than the brand's** and
-// the difference does not reach a pixel at any size drawn here.
+// The even-odd ring is re-expressed as its centreline (14.0909 in 100 → 3.38 with a 17.24 span in
+// 24). Its width is within 2% of the set's `stroke-width: 2`, so **the line weight is the icon
+// set's** and differs by under a pixel.
 export const CODESANDBOX_MARK_SHAPES: readonly IconShape[] = [
   { kind: 'rect', x: 3.38, y: 3.38, width: 17.24, height: 17.24, rx: 0 },
 ];
 
 // CodePen's cube (docs/embed-requirements.md §21.10). The source is the pen page's own
 // `<link rel="mask-icon">` — `cpwebassets.codepen.io/assets/favicon/logo-pin-<digest>.svg`, a
-// single `<path>` in a `0 0 24.3 24.29` box (read 2026-08-31). **A mask-icon is monochrome by
-// definition**, so unlike §17.7's Docswell there was no two-colour drawing to flatten: this is the
-// published artwork, unaltered in shape.
+// single `<path>` in a `0 0 24.3 24.29` box — monochrome by definition, so the published artwork
+// is used unaltered.
 //
-// Only the frame around it is this project's. The path fills its own box edge to edge, which would
-// make it the largest mark in the set and clip it against `buildIcon`'s `0 0 24` viewBox, so it is
-// scaled by 21.5/24.3 and centred (`translate(1.25, 1.2555) scale(0.884774)`) — §17.7's 21.5 span,
-// which puts it beside X's 21.3. **The transform is baked into the coordinates** because
-// `IconShape` has none; the baked path was rendered against the same path under that `<g
-// transform>` and is identical at 16px, with the larger sizes differing only where rounding to
-// three decimals moves an antialiased edge.
-//
-// **Filled, and it needs no `fill-rule`.** The interior facets are wound against the outer hexagon,
-// so nonzero and even-odd draw the same picture (compared at 240px); `IconSvg` sets no rule, and
-// this is the shape that would have needed one.
+// Scaled to the set's 21.5 span and centred (`translate(1.25, 1.2555) scale(0.884774)`), baked into
+// the coordinates because `IconShape` has no transform. **No `fill-rule` needed:** the facets are
+// wound against the hexagon, so nonzero and even-odd draw the same picture.
 export const CODEPEN_MARK_SHAPES: readonly IconShape[] = [
   {
     kind: 'path',

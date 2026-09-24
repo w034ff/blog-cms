@@ -9,17 +9,11 @@ import { CloseButton } from './CloseButton';
 // 「ヘルプ」 — the editor's one reference sheet: the markdown input rules, the slash menu, and the
 // keyboard shortcuts (docs/cms-features.md「書き方ヘルプ」§4).
 //
-// **The order is by how hard each part is to find, not by how often it is used.** Every toolbar
-// button already prints its key in a tooltip, so the shortcut table is the part that is least
-// missing and comes last; the input rules have no surface anywhere and come first. That ordering
-// is the whole reason this is a reference sheet rather than the shortcut list it started as.
+// **Ordered by how hard each part is to find:** input rules have no other surface and come first;
+// shortcuts already show in tooltips and come last.
 //
-// It takes no `editor`. Everything here is content *about* the editor rather than a command *on*
-// one, which is why the header can offer it even when the editor itself failed to mount — the same
-// reason the publish button sits outside that gate (PostEditor.tsx).
-//
-// Rendered only while open (PostEditor holds the flag), so the `navigator` read below never happens
-// during an SSR pass: a click is the only way to mount this.
+// It takes no `editor`, so the header can offer it even when the editor failed to mount. Rendered
+// only while open, so the `navigator` read below never runs during SSR.
 
 function Key({ children }: { children: string }) {
   return (
@@ -29,13 +23,9 @@ function Key({ children }: { children: string }) {
   );
 }
 
-// **One cap per key, with the `+` outside them.** `<kbd>` means one key, so a whole combination in
-// a single element says there is a key called "Ctrl+Shift+S"; three caps also make "press three
-// things" legible as a shape rather than as a string to read character by character.
-//
-// Except on a Mac, where the run is one cap: Apple writes ⌘⇧S with no separator, and splitting it
-// into ⌘ ⇧ S is not how that platform spells a shortcut. The rule stays one rule — **a cap is what
-// the platform writes as a key** — and `formatShortcut`'s own joiner is where that is decided.
+// **A cap is what the platform writes as a key:** one `<kbd>` per key with `+` outside them, but
+// one cap for a Mac run like ⌘⇧S, which Apple writes without separators. `formatShortcut`'s joiner
+// decides it.
 function Shortcut({ token, mac }: { token: string; mac: boolean }) {
   const parts = shortcutParts(token, mac);
   if (mac) return <Key>{parts.join('')}</Key>;
@@ -53,20 +43,16 @@ function Shortcut({ token, mac }: { token: string; mac: boolean }) {
 
 function Type({ children }: { children: string }) {
   return (
-    <code // `whitespace-nowrap`: `---` broke across two lines at this column width, which reads as
-      // two different triggers (measured 2026-09-20).
+    <code // `whitespace-nowrap`: a wrapped `---` reads as two triggers.
       className='whitespace-nowrap rounded bg-zinc-100 px-1 font-mono text-[12px] dark:bg-zinc-800'>
       {children}
     </code>
   );
 }
 
-// **Hand-maintained, and that is the decision rather than an omission** (acceptance criterion 3h).
-// The rules live inside `addInputRules` handlers whose own depth guards — `$from.depth !== 1` for
-// the `:::` directives, a three-part blockquote test for the `[!TYPE]` markers — have no projection
-// into two columns. The rules themselves are measured in e2e; what this table can go wrong about is
-// being out of date, which is a different failure and is answered by keeping it here, next to
-// nothing else, where it is read whenever the sheet is.
+// **Hand-maintained by decision** (acceptance criterion 3h): the rules' depth guards inside
+// `addInputRules` have no two-column projection. The rules are measured in e2e; this table's only
+// risk is staleness.
 const SYNTAX: readonly { trigger: ReactNode; result: string }[] = [
   {
     trigger: (
@@ -74,10 +60,8 @@ const SYNTAX: readonly { trigger: ReactNode; result: string }[] = [
         <Type>{'## '}</Type> / <Type>{'### '}</Type>
       </>
     ),
-    // **「2 階層のみ」は閉じた集合の宣言で、そこが効いている。** `## ` と `### ` を並べるだけでは
-    // 「代表例を 2 つ載せた」とも読め、`# ` を打って黙って何も起きない読者に答えを渡せない。
-    // `# `/`#### ` を独立した行で否定していた形から 2026-09-20 に畳んだ（行が 1 つ減り、表から
-    // 否定形が消える）。
+    // 「2 階層のみ」は閉じた集合の宣言。`## ` と `### ` を並べるだけでは代表例とも読め、`# ` を
+    // 打って何も起きない読者に答えを渡せない。
     result: '大見出し / 小見出し（見出しは 2 階層のみ）',
   },
   {
@@ -90,13 +74,8 @@ const SYNTAX: readonly { trigger: ReactNode; result: string }[] = [
   },
   { trigger: <Type>{'> '}</Type>, result: '引用' },
   {
-    // Written with the trailing space the rule needs, like `## ` and `> ` above — the left column is
-    // the characters typed, so the commit key does not need a note in the right one.
-    //
-    // **Only the `:::` vocabulary is listed.** `> [!NOTE]` reaches the same three tiers and is what
-    // gets stored, but it adds no capability here, and the two vocabularies disagree on one word
-    // (`:::warning` is 注意, `[!WARNING]` is 警告): listing both would put a contradiction in front
-    // of a reader who has no use for the second one.
+    // **Only the `:::` vocabulary is listed:** `> [!NOTE]` adds no capability, and the two disagree
+    // on one word (`:::warning` is 注意, `[!WARNING]` is 警告).
     trigger: (
       <>
         <Type>{':::info '}</Type> / <Type>{':::warning '}</Type> / <Type>{':::danger '}</Type>
@@ -113,12 +92,8 @@ const SYNTAX: readonly { trigger: ReactNode; result: string }[] = [
     ),
     result: 'コードブロック',
   },
-  // `**太字**` / `*斜体*` / `~~打ち消し~~` / `` `コード` `` は載せない（2026-09-20）。4 つとも鍵が
-  // 下の節に出ており（前の 3 つはツールバーのボタンも持つ）、記法の行が足す能力は無い。選んでから
-  // 押すか、打ちながら書くかという書き方の違いであって、できることの違いではない。
-  //
-  // **区切り線だけは残る。** `---` と打つのが唯一の作り方で、ツールバーにもスラッシュにも
-  // `setHorizontalRule` を呼ぶ導線が無く、鍵も無い。
+  // インラインの記法は載せない。4 つとも下の節に鍵があり、足す能力が無い。区切り線だけは `---` が
+  // 唯一の作り方なので残す。
   { trigger: <Type>---</Type>, result: '区切り線' },
   { trigger: <Type>{'[text](url)'}</Type>, result: 'リンク' },
   { trigger: <Type>{'[^'}</Type>, result: '脚注' },
@@ -132,14 +107,9 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
 
   useBodyScrollLock(true);
 
-  // Focus in on open, back out on close. The opener is captured here rather than handed in as a
-  // prop: it is whatever had focus, and putting it back is this dialog's own business — nothing in
-  // the header has to remember to do it. Deferred a frame for the reason InsertDialog's is: the
-  // button exists in this commit but has not been laid out yet.
-  //
-  // **Focus goes back to the button, never to the editor.** `view.dom.focus()` is what InsertDialog
-  // does, because it is about to insert at the caret; this sheet inserts nothing, and that call
-  // would scroll the caret back under the sticky header for no reason (`focus-then-run.ts`).
+  // Focus in on open (a frame later, once laid out) and back to the opener on close. **Never to the
+  // editor:** this sheet inserts nothing, and `view.dom.focus()` would scroll the caret under the
+  // sticky header.
   useEffect(() => {
     openerRef.current = document.activeElement;
     const frame = requestAnimationFrame(() => closeRef.current?.focus());
@@ -153,9 +123,7 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      // Stopped, or the editor's own Escape handling runs underneath and dismisses whatever the
-      // author left open behind this sheet (a link card, the slash menu) as a side effect of
-      // closing a reference table.
+      // Stopped, or the editor's Escape also dismisses whatever is open behind this sheet.
       event.stopPropagation();
       onClose();
     };
@@ -188,8 +156,7 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
           <CloseButton ref={closeRef} onClick={onClose} />
         </div>
 
-        {/* One scroll over the three sections — no tabs. What an author does here is scan for one
-            row, and a tab hides two thirds of the rows behind a guess about which third it is in. */}
+        {/* One scroll, no tabs: the author scans for one row, and tabs would hide most rows. */}
         <div className='space-y-5 overflow-y-auto px-4 py-4 text-sm'>
           <section>
             <h3 className='mb-2 text-xs font-bold text-zinc-500 dark:text-zinc-400'>記法</h3>

@@ -23,15 +23,12 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 //   <blank>
 //   </details>
 //
-// Without the first, the body stays inside the HTML block and comes back as literal text; without
-// the second, `</details>` is swallowed by the last block. Both blank lines come from closing the
-// block before writing the next piece — prosemirror-markdown emits the separation on the next
-// write (flushClose), which is the same mechanism serializeCallout uses for its blank `>` line.
+// Without the first, the body stays inside the HTML block as literal text; without the second,
+// `</details>` is swallowed by the last block. Both come from closing the block before the next
+// write (flushClose), as serializeCallout's blank `>` line does.
 //
-// The summary is written as raw HTML rather than through `state.text()`. Two reasons, and the
-// second is the one that bites: `text()` escapes *markdown* syntax, so a title reading `*強調*`
-// would come back as `\*強調\*`; and the line is HTML, so it needs HTML escaping instead, or a
-// title containing `<` or `&` loses characters when markdown-it parses the tag it just grew.
+// The summary is written as raw HTML with HTML escaping, not through `state.text()`, which applies
+// markdown escaping (`*強調*` → `\*強調\*`) and leaves `<` and `&` to be eaten by markdown-it.
 function escapeSummary(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 }
@@ -52,9 +49,8 @@ function serializeDetails(state: MarkdownSerializerState, node: PMNode): void {
 // `<div data-type="detailsContent">` — that wrapper is the official extension's own DOM shape, and
 // its parseHTML requires it — so the body blocks are collected into one here.
 //
-// Idempotent by contract: tiptap-markdown re-runs every extension's `parse.setup` on each parse
-// (the lesson from the footnote fix), so a second pass must not wrap the wrapper again. The
-// early return is that guard.
+// Idempotent: tiptap-markdown re-runs `parse.setup` on each parse, so the early return keeps a
+// second pass from wrapping the wrapper.
 function updateDetailsDOM(element: HTMLElement): void {
   element.querySelectorAll('details').forEach((details) => {
     if (details.querySelector(':scope > div[data-type="detailsContent"]')) return;
@@ -73,58 +69,34 @@ function updateDetailsDOM(element: HTMLElement): void {
   });
 }
 
-// Is the whole selection sitting at the document's top level? The one placement rule (§6.3):
-// an accordion may only be *created* there — not in a quote, a callout, a list item, a table
-// cell, or another accordion. Asked of both ends, so a range reaching out of a container is
-// refused like a caret inside one.
-//
-// A depth test rather than `selectionTouches(state, 'blockquote', …)`, which is what setCallout
-// uses: the rule here is "nowhere but the top level", so naming the containers would be a list
-// that goes stale the moment a new block node is added. The stored markdown is *not* restricted
-// the same way — every one of these shapes loads and round-trips (measured, §4.4); it is the
-// gesture that is refused, exactly as callout-slice-guard.ts:42-46 argues it must be.
+// Is the whole selection at the document's top level? The one placement rule (§6.3): an accordion
+// may only be *created* there. Asked of both ends, and as a depth test rather than a list of
+// containers, which would go stale with a new block node. Stored markdown may nest it (§4.4); only
+// the gesture is refused, as for `wouldNestCallout` in callout-slice-guard.ts.
 function selectionIsTopLevel({ state }: CommandProps): boolean {
   const { $from, $to } = state.selection;
   return $from.depth === 1 && $to.depth === 1;
 }
 
-// `:::details ` on a top-level line, committed with the trailing space — the same shape as
-// callout's `:::info ` shortcut. Unlike that one this cannot go through findWrapping: `details`
-// is `detailsSummary detailsContent`, so there is no wrapping that turns one paragraph into it.
-// The line is replaced instead, and whatever was typed after the trigger becomes the body, so
-// nothing the author had already written is lost.
+// `:::details ` on a top-level line. No findWrapping can turn a paragraph into
+// `detailsSummary detailsContent`, so the line is replaced and anything typed after the trigger
+// becomes the body.
 const DIRECTIVE = /^:::details\s$/;
 
-// The class @tiptap/extension-details puts on the NodeView's wrapper while it is open — the
-// official default, restated because three places read it and the option's type allows undefined:
-// the option below, openInsertedDetails, and app/globals.css, which draws the whole open state off
-// it (the marker's direction and the divider under the title).
+// The official open class, restated because the option below, openInsertedDetails and
+// app/globals.css all read it, and the option's type allows undefined.
 const OPEN_CLASS = 'is-open';
 
-// The toggle's accessible name, and nothing else: the marker itself is drawn in CSS
-// (app/globals.css) off the wrapper's `is-open` class, as the same clip-path triangle the public
-// page's ::before uses, so this writes no text into the button. The official default writes
-// English (`"Collapse details content"`), and the site's UI is Japanese — §7.3.
-// `renderToggleButton` is called on mount and on every toggle.
+// Only the toggle's Japanese accessible name (§7.3); the marker is CSS off `is-open`. Called on
+// mount and on every toggle.
 function renderToggleButton({ element, isOpen }: { element: HTMLElement; isOpen: boolean }): void {
   element.setAttribute('aria-label', isOpen ? 'アコーディオンを閉じる' : 'アコーディオンを開く');
 }
 
-// A freshly inserted accordion is left open, so the author can write the body without opening it
-// first. Only the two authoring routes do this: a loaded document keeps every accordion closed
-// (§5), which is what a reader gets, and a pasted or dropped one is content being moved rather
-// than written.
-//
-// It has to be done by clicking the toggle, and the reason is §5's `persist: false`. In that mode
-// the official extension's `addAttributes()` returns `[]` — there is no `open` attribute in the
-// schema at all — so there is nothing to set on the node, and equally nothing that could reach the
-// document and mark the post dirty. Open state lives only in the NodeView's own DOM, whose one
-// external control is that button.
-//
-// Deferred by a frame because the NodeView does not exist until the view has processed the
-// transaction that created the node. Everything is re-read inside the callback rather than
-// captured: by then the insertion may have been undone, in which case no accordion holds the
-// selection and this does nothing.
+// A freshly inserted accordion is left open (§7.4); loaded, pasted and dropped ones are not. It is
+// done by clicking the toggle because under `persist: false` (§5) there is no `open` attribute:
+// the state lives only in the NodeView's DOM. A frame later, once the NodeView exists, re-reading
+// everything in case the insertion was undone.
 function openInsertedDetails(editor: Editor, openClassName: string): void {
   requestAnimationFrame(() => {
     if (editor.isDestroyed) return;
@@ -139,18 +111,14 @@ function openInsertedDetails(editor: Editor, openClassName: string): void {
   });
 }
 
-// Is the accordion holding this position open? Its NodeView's wrapper carries the class while it
-// is (§7.4 — with `persist: false` the DOM is the only place the open state exists, so there is
-// nothing in the document to ask).
+// Is the accordion holding this position open? Only the DOM knows (§7.4).
 function detailsIsOpen(editor: Editor, posBeforeDetails: number, openClassName: string): boolean {
   const dom = editor.view.nodeDOM(posBeforeDetails);
   return dom instanceof HTMLElement && dom.classList.contains(openClassName);
 }
 
-// The body of the accordion whose title `$head` sits in, and the position its first line starts
-// at — or null when the caret is not in a title, or that accordion is folded. Both keys that go
-// title → body ask through here, so the folded case is answered in one place: putting the caret
-// into a hidden body is the one thing §7.2 is emphatic about.
+// The open body of the accordion whose title `$head` is in, or null (not in a title, or folded).
+// Both title → body keys ask here, so neither can put the caret into a hidden body (§7.2).
 //
 // `$head.after()` is the detailsContent; +1 enters it, +1 again enters its first block.
 function openBodyFromSummary(
@@ -168,8 +136,7 @@ function openBodyFromSummary(
   return { body, firstLinePos: $head.after() + 2 };
 }
 
-// Put the caret at `pos` and change nothing else, which is the whole of what both keys below do
-// once they have decided they apply.
+// Put the caret at `pos` and change nothing else.
 function moveCaretTo(editor: Editor, pos: number): boolean {
   const { tr } = editor.state;
   tr.setSelection(TextSelection.near(tr.doc.resolve(pos)));
@@ -178,20 +145,10 @@ function moveCaretTo(editor: Editor, pos: number): boolean {
   return true;
 }
 
-// Enter in the title of a just-inserted accordion (§7.4). The official handler *inserts* the
-// body's first line rather than entering the one that is already there — invisible in most shapes,
-// but a freshly inserted body IS one empty paragraph, so it comes out with a spare that the author
-// has to notice and delete. Same landing place, one line instead of two.
-//
-// Deliberately narrow: only when the body is exactly one empty textblock, which is precisely the
-// shape insertion leaves behind. There, "make a new first line" and "go to the existing one" put
-// the caret in the same place and differ only in the leftover, so this is the official behaviour
-// without the duplicate rather than a departure from it. Once the body holds anything real the two
-// are different operations and the official one is right, so it is left alone.
-//
-// Returns false for everything it does not handle, including a folded accordion
-// (openBodyFromSummary below), where the official handler's answer — a new block below — is the one
-// this must not take away.
+// Enter in the title when the body is exactly one empty textblock (the shape insertion leaves,
+// §7.4): the official handler *inserts* a first line, leaving a spare empty paragraph. Here that and
+// "enter the existing one" differ only in the leftover. Otherwise, including a folded accordion,
+// the official handler runs.
 function enterIntoEmptyBody(editor: Editor, openClassName: string): boolean {
   const { $head, empty } = editor.state.selection;
   if (!empty) return false;
@@ -202,20 +159,9 @@ function enterIntoEmptyBody(editor: Editor, openClassName: string): boolean {
   return moveCaretTo(editor, target.firstLinePos);
 }
 
-// Tab in the title moves to the body as it stands — the motion Enter cannot offer. The official
-// Enter *inserts* the body's first line (see above), so leaving a title whose body already holds
-// something costs an empty paragraph the author then has to delete; enterIntoEmptyBody only removes
-// that for the one shape where the two coincide. This is the plain "next field" move, the same
-// meaning Tab has between table cells, and it changes no content at all.
-//
-// Only from the title, and only while the accordion is open (§7.2) — a folded one declines, and Tab
-// then does what it does everywhere else in prose, which is move the browser's focus. The title is
-// `text*`, so no list or table can sit in it and no other extension's Tab is in play here; this
-// binding therefore depends on no ordering.
-//
-// Deliberately one-way. The body is `block+` and so can hold a list, where Shift+Tab already means
-// liftListItem — a body → title binding would have to win that argument first, and nothing is asking
-// for it yet.
+// Tab in the title moves to the body as it stands, changing no content (the move Enter can't make
+// without inserting a line). Only while open (§7.2). No ordering dependency: nothing else's Tab
+// applies in a `text*` title. One-way, since Shift+Tab in a body list already means liftListItem.
 function tabIntoBody(editor: Editor, openClassName: string): boolean {
   const target = openBodyFromSummary(editor, editor.state.selection.$head, openClassName);
   return target !== null && moveCaretTo(editor, target.firstLinePos);
@@ -223,23 +169,12 @@ function tabIntoBody(editor: Editor, openClassName: string): boolean {
 
 // Puts the caret back where the author was typing after `:::details ` is undone by Backspace.
 //
-// `undoInputRule` (@tiptap/core) never sets a selection — it inverts the rule's steps, re-inserts
-// the literal text, and leaves the caret to whatever the step mapping produces. That works for the
-// shortcuts that *wrap* (measured: `:::info ` and `> ` both land at the end of the restored text),
-// because the paragraph survives the wrap and the caret maps back into it. This rule cannot wrap —
-// `details` is `detailsSummary detailsContent`, so the line is replaced outright — and it then puts
-// the caret inside the new node, per §7. Inverting that maps a position inside a node that no
-// longer exists, and the caret comes to rest at the start of the *following* paragraph (measured).
-//
-// So the caret is placed here instead, after the fact. The target is the end of the restored text
-// less whatever the rule had carried into the body, which is where the author's cursor was when the
-// rule fired: for a bare `:::details ` the body is empty and this is the end of the line, and for
-// `:::details本文` it is the boundary between the trigger and 本文.
-//
-// The conditions are narrow enough that nothing else reaches it. An accordion held the selection,
-// the input rule's inverse was available and now is not, and the position it occupied now holds a
-// textblock — that last one is what excludes simply typing in a new accordion's title, which also
-// consumes the undoable but leaves the accordion where it was.
+// `undoInputRule` sets no selection; the caret follows step mapping. That works for wrapping
+// shortcuts, but this rule replaces the line, so the mapped caret landed at the start of the
+// *following* paragraph. The caret goes to the end of the restored text less what the rule carried
+// into the body, i.e. where it was when the rule fired (§7.6). Narrow: an accordion held the
+// selection, the inverse was available and now is not, and its position now holds a textblock (which
+// excludes typing into a new title).
 function detailsInputRuleUndoCaret(detailsType: NodeType): Plugin {
   return new Plugin({
     appendTransaction(transactions, oldState, newState) {
@@ -259,9 +194,7 @@ function detailsInputRuleUndoCaret(detailsType: NodeType): Plugin {
   });
 }
 
-// The refusal reporter the slice guard needs, declared as a type so `MarkdownDetails.configure({
-// onBlocked })` typechecks at the call site in PostEditor — the same shape Callout and
-// MarkdownTable take, writing to the same single notice (useEditorNotice).
+// Declared so `MarkdownDetails.configure({ onBlocked })` typechecks, as for Callout.
 export type DetailsOptions = Parameters<typeof Details.configure>[0] & {
   onBlocked: (message: string) => void;
 };
@@ -289,15 +222,9 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
     };
   },
 
-  // The official `setDetails` performs no placement check at all — it takes the caret's block
-  // range and inserts if `detailsContent` can hold it, which a table cell's paragraph can. So
-  // `can().setDetails()` reports true inside a cell, the slash menu offers the row, and running
-  // it splits the table (the breakage table-cell-rules.ts documents). Wrapping it is therefore a
-  // precondition for using `can()` as the menu's predicate, not a refinement of it.
-  //
-  // Silent on refusal, like setCallout: every route that can reach this asks `can()` first and
-  // hides itself, so there is no gesture left for a notice to explain. The notices belong to the
-  // guards, where a drop really is refused after the fact.
+  // The official `setDetails` has no placement check, so `can()` was true in a table cell and
+  // running it split the table; wrapping it is what makes `can()` usable as the menu's predicate.
+  // Silent on refusal, since every route asks `can()` first.
   addCommands() {
     const parent = this.parent?.();
     const openClassName = this.options.openClassName ?? OPEN_CLASS;
@@ -308,26 +235,14 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
         (props: CommandProps): boolean => {
           if (!selectionIsTopLevel(props)) return false;
           if (!(parent?.setDetails?.()(props) ?? false)) return false;
-          // `dispatch` is absent when the menu asks `can().setDetails()` for its own predicate —
-          // that is a dry run over a throwaway transaction, and nothing may be opened for it.
+          // No `dispatch` in a `can()` dry run, which must open nothing.
           if (props.dispatch) openInsertedDetails(props.editor, openClassName);
           return true;
         },
 
-      // The official `unsetDetails` turns the title into a paragraph unconditionally, so dissolving
-      // an accordion whose title was never filled in leaves an empty paragraph that stands for
-      // nothing. Insert one from the slash menu, change your mind, press Backspace, and the single
-      // line you started on has become three.
-      //
-      // §7.2's rule is that the title's *characters* survive the dissolve; an empty title has none,
-      // so the paragraph is residue rather than content. detailsUnwrapped (details-slice-guard.ts)
-      // already reads the rule that way — it emits the paragraph only `if (child.content.size > 0)`
-      // — which means the keyboard and the paste/drop repair disagreed today, and the comment there
-      // claiming a reader "sees the same thing either way" was true only for a filled-in title.
-      // This is that rule applied to the other path, not a new one.
-      //
-      // Only the empty case is handled here; with a title to preserve the official command is
-      // right and runs unchanged.
+      // An empty title leaves no paragraph behind (§7.5): the official `unsetDetails` always made
+      // one, so a regretted insert grew one line into three. This matches `detailsUnwrapped`
+      // (details-slice-guard.ts); keep the two in step. A filled title runs the official command.
       unsetDetails:
         () =>
         (props: CommandProps): boolean => {
@@ -352,10 +267,8 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
     };
   },
 
-  // Everything the official extension binds is kept; Enter and Tab each get a case in front of it,
-  // and only the one described at enterIntoEmptyBody / tabIntoBody. Delegating rather than replacing
-  // means a future @tiptap bump that changes (or newly binds) either handler keeps working — this
-  // narrows them, it does not restate them.
+  // The official bindings are kept; Enter and Tab only get a case in front, so a @tiptap bump that
+  // changes them still flows through.
   addKeyboardShortcuts() {
     const parent = this.parent?.();
     const openClassName = this.options.openClassName ?? OPEN_CLASS;
@@ -432,24 +345,13 @@ export const MarkdownDetails = Details.extend<DetailsOptions>({
   },
 });
 
-// The children are rendered by serializeDetails itself, so neither is ever asked to serialize on
-// its own — but tiptap-markdown builds its serializer map from every registered node, and a node
-// with no entry falls back to raw HTML. Declaring no-ops keeps that fallback from ever running.
+// serializeDetails renders the children; the no-op entries keep tiptap-markdown's raw-HTML fallback
+// from running for them.
 export const MarkdownDetailsSummary = DetailsSummary.extend({
-  // No marks in the title (§1's non-goal, made permanent 2026-08-10). The official node is `text*`
-  // and says nothing about marks, so bold/italic/strike/code/accent/link all applied — and then
-  // vanished on save, because serializeDetails reads `textContent` and the title round-trips as one
-  // raw `<summary>…</summary>` line. Silent loss at save time, which is the worst place for it.
-  //
-  // Declared on the schema rather than guarded per command, and §6.3's "禁止するのは操作であって
-  // スキーマではない" does not argue against it here. That rule exists because forbidding a *shape*
-  // drops the content of any markdown carrying it the moment the document opens — but a dropped
-  // mark keeps its text, and the emphasis is already lost at save today, so this moves the loss
-  // from silent-on-save to visible-on-press without making it larger. One declaration also answers
-  // every route at once: the toolbar greys itself out (`can().toggleBold()` turns false), the
-  // keyboard chords decline, and a pasted or loaded `<summary><b>x</b></summary>` keeps its words
-  // and leaves the mark behind. Re-opening this means §6.5's three pieces — content expression,
-  // serializer, public renderer — not this line alone.
+  // No marks in the title (§6.7): serializeDetails writes `textContent`, so marks vanished on save.
+  // On the schema, despite §6.3's "禁止するのは操作であってスキーマではない": a dropped mark keeps
+  // its text, so this only moves the loss from silent-on-save to visible-on-press, and it answers
+  // every route at once. Re-opening it means §6.5's three pieces, not this line alone.
   marks: '',
 
   addStorage() {

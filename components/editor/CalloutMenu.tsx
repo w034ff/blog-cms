@@ -21,23 +21,15 @@ const CALLOUT_ICONS: Record<CalloutType, ComponentType> = {
   caution: AlertOctagonIcon,
 };
 
-// Callout control: a dropdown that drops a styled GitHub-alert callout at the cursor — or,
-// when the cursor is already inside one, switches that callout's type in place (setCallout
-// handles both, so callouts never nest; see the extension). Mirrors the list menu: the
-// trigger highlights while inside a callout and the panel marks the current type.
-// `labelled` draws the name beside the glyph. The toolbar leaves it off — a row of icons, where
-// the tooltip carries the name and width is the scarce dimension. The ＋ menu turns it on: its
-// other rows (表・リンク・画像) are worded, and **a tooltip does not exist under `hover: none`**
-// (docs/link-requirements.md §5.5.19), so an icon alone there is a row that says nothing at all.
+// Callout control: inserts a GitHub-alert callout at the cursor, or switches the type of the one
+// the cursor is in (setCallout handles both, so callouts never nest). `labelled` draws the name
+// beside the glyph for the ＋ menu, where there is no tooltip under `hover: none`
+// (docs/link-requirements.md §5.5.19).
 export function CalloutMenu({ editor, labelled }: { editor: Editor; labelled?: boolean }) {
   const inCallout = editor.isActive('callout');
-  // setCallout refuses where a callout doesn't belong — inside a table, and inside a quote
-  // (someone else's words; a callout is the author's own aside). Ask the command rather than
-  // re-testing those contexts here, so this can't drift from the extension's rules, and grey
-  // the trigger out instead of letting a pick silently no-op. Same `can()` check backs the
-  // `/` menu's row filtering (slash-command.ts). Every type shares one guard, so `some` is
-  // just "would any row do something" — it stays true inside a callout, where they switch
-  // the type in place.
+  // Ask setCallout itself (it refuses in tables and quotes) so this can't drift from the
+  // extension's rules; the `/` menu uses the same `can()` check. `some` stays true inside a
+  // callout, where the rows switch the type.
   const canInsert = CALLOUT_MENU_ORDER.some((type) => editor.can().setCallout(type));
   const currentType: CalloutType | null = inCallout
     ? toCalloutType(editor.getAttributes('callout').type)
@@ -49,8 +41,7 @@ export function CalloutMenu({ editor, labelled }: { editor: Editor; labelled?: b
   const choose = (type: CalloutType, close: () => void) => {
     focusThenRun(editor, (c) => c.setCallout(type));
     close();
-    // Closes the sheet whole, on top of `close()`'s own "back to the row list" — a pick here is
-    // as final as 引用/脚注/画像 tapping their own row (2026-09-20).
+    // A pick is final, so the whole sheet closes, not just the picker.
     nav?.closeMenu();
   };
 

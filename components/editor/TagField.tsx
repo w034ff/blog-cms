@@ -31,9 +31,7 @@ function matches(
   const needle = tagSearchKey(name);
   if (needle === '') return [];
   const keyOf = (tag: Tag) => tagSearchKey(tag.name);
-  // An alias finds its tag like the tag's own names do, and the row is the tag's own: the post will
-  // carry the identifier, never the alias, so the row shows what the chip will say. An arrow row
-  // (`nxt → nextjs`) was tried the same day and dropped as one more thing to read.
+  // An alias finds its tag, and the row shows the tag itself: that is what the chip will say.
   const hit = (tag: DictionaryTag) =>
     keyOf(tag).includes(needle) ||
     tag.slug.includes(needle) ||
@@ -52,11 +50,9 @@ function matches(
         : 0,
     )
     .slice(0, MAX_OPTIONS);
-  // Offered for any text that can be a tag (no symbols — `tagSlug` is '' otherwise) unless the
-  // dictionary already has that very tag, by identifier, alias or name, selected or not: the server
-  // would answer with it anyway (lib/tags.ts `createTag`), and a row promising a new one would be a
-  // lie. Not hidden while the text is the start of an existing tag — that was tried the same day,
-  // and it left `go` beside `golang` impossible to make here. The row is quieted instead (below).
+  // Offered for any text that can be a tag unless the dictionary already has it by identifier,
+  // alias or name (lib/tags.ts `createTag` would return that one). Still offered when the text is a
+  // prefix of an existing tag, or `go` beside `golang` could never be made; it is quieted instead.
   const slug = tagSlug(name);
   const exists = dictionary.some(
     (tag) => tag.slug === slug || tag.aliases.includes(slug) || tag.name === name,
@@ -82,10 +78,8 @@ export function TagField({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
-  // At the limit the box still takes typing, and the first character of a sixth tag is what
-  // says so: the list stays shut and the limit shows in red above the box, instead of a hint
-  // that sits there the whole time (a counter, a placeholder) for a limit most posts never reach.
-  // Clearing the text or taking a chip back is what makes it go.
+  // At the limit, typing a sixth tag shows the limit in red instead of opening the list, rather
+  // than a permanent counter for a limit most posts never reach.
   const overLimit = value.length >= MAX_TAGS && normalizeTagName(query) !== '';
   const options = useMemo(
     () => (overLimit ? [] : matches(dictionary, value, query)),
@@ -152,10 +146,9 @@ export function TagField({
       // The drawer's own handler cancels implicit submission for every input; this only decides.
       if (expanded && !creating) void choose(options[activeIndex]);
     } else if (event.key === 'Escape' && expanded) {
-      // The list's Escape, not the drawer's. `useDismiss` listens on `document`, which under the
-      // App Router is also React's root, so `stopPropagation` has no ancestor left to stop at — the
-      // listener shares the node. React's was attached at hydration, before any effect's, so
-      // stopping the rest of this node's listeners is what keeps the drawer open.
+      // The list's Escape, not the drawer's. Under the App Router `document` is React's root, so
+      // useDismiss's listener shares the node and only `stopImmediatePropagation` stops it
+      // (docs/editor-pitfalls.md §15.3).
       event.nativeEvent.stopImmediatePropagation();
       setOpen(false);
     } else if (event.key === 'Backspace' && query === '' && value.length > 0) {
@@ -239,9 +232,8 @@ export function TagField({
             onClick={() => {
               if (!creating) void choose(option);
             }}
-            // The add row is set apart and quieter than the tags above it — a line above it, small grey
-            // text — so that, present under almost every keystroke, it does not read as one more
-            // candidate. Still an option like the others: reached by the arrows, taken by Enter.
+            // The add row is set apart and quieter, since it appears under almost every keystroke;
+            // it is still an option reached by the arrows.
             className={`flex min-w-0 cursor-pointer items-baseline gap-3 px-3 ${
               option.kind === 'create'
                 ? `py-1.5 text-xs text-zinc-500 dark:text-zinc-400 ${index > 0 ? 'mt-1 border-t border-zinc-200 dark:border-zinc-700' : ''}`

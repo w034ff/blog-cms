@@ -4,20 +4,10 @@ import type { NodeType } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { selectionTouches } from './selection-scan';
 
-// Custom Backspace join for blockquotes, replacing @tiptap/extension-blockquote's own
-// (upstream src/handleBackspace.ts): upstream only merges when the preceding blockquote's last
-// child is itself a textblock, and otherwise `lift`s the current block out of its quote. With
-// *nested* quotes that produced an infinite Backspace toggle: the empty block bounced in and out
-// of the quote (lift ↔ ProseMirror's default join-into-quote) and never reached the text. Here we
-// instead descend the preceding quote's trailing edge to its deepest textblock and merge there, so
-// one Backspace lands the caret at the end of that line regardless of nesting depth. Plain
-// textblock-to-textblock joins are left to ProseMirror's default (it already merges paragraphs
-// correctly). Regression: e2e/editor-quote-backspace.spec.ts (nested-quote case).
-//
-// (Historically this also worked around @tiptap/extension-blockquote inlining its own
-// prosemirror-state copy, whose duplicate TextSelection broke `instanceof` in prosemirror-view
-// — the "dead Backspace" bug. That packaging bug was fixed upstream in 3.28.0, which now imports
-// @tiptap/pm/state; the canonical TextSelection below is kept but no longer load-bearing for it.)
+// Custom Backspace join for blockquotes, replacing upstream's `handleBackspace`, which merges only
+// when the preceding quote's last child is a textblock and otherwise lifts. With nested quotes
+// that oscillated forever (docs/editor-pitfalls.md §4.1). This descends to the deepest textblock
+// and merges there. Regression: e2e/editor-quote-backspace.spec.ts.
 function joinIntoBlockquote(editor: Editor, type: NodeType): boolean {
   const { state, view } = editor;
   const { selection } = state;
@@ -60,22 +50,10 @@ export const Blockquote = BaseBlockquote.extend({
     const parent = this.parent?.();
     return {
       ...parent,
-      // `linkCard`/`embed` are atoms, so selecting one gives a NodeSelection whose range is
-      // exactly that node. Upstream's toggleBlockquote → wrapIn finds a valid wrapping for it
-      // (both satisfy blockquote's `block+` content) and wraps just that node, producing
-      // `<blockquote><linkCard/></blockquote>` — quoting a card was never a thing an author asked
-      // for, and it stuck the card under the wrong parent instead of leaving it alone (reported
-      // 2026-09-05). Toolbar.tsx's "no command guard is needed" note is about the table-cell
-      // refusal `can()` already reports on its own — it doesn't cover this NodeSelection case.
-      //
-      // `image` joins them for consistency of the refusal (2026-09-08), and it is the one of the
-      // four whose cost is worth stating: wrapIn *wraps*, it does not replace, so quoting a
-      // selected picture was never destructive the way the callout/table/image cases are. It is
-      // named anyway because the four controls refuse over a selected block atom as one rule, and
-      // a rule with one exception in it is not one an author can predict. The cost lands on the
-      // range scan, not the NodeSelection: a text selection running paragraph→picture→paragraph
-      // can no longer be quoted either. That is `selectionTouches`' existing behaviour for
-      // linkCard/embed, applied to a node that appears in body prose far more often.
+      // Upstream's wrapIn happily wraps a selected `linkCard`/`embed` atom in a quote, which no
+      // author asks for. `image` is refused too, though wrapping it is not destructive, so the
+      // four insert controls refuse over a selected block atom as one predictable rule. Cost: a
+      // text selection running across a picture can no longer be quoted either.
       toggleBlockquote: () => (props) => {
         if (selectionTouches(props.state, 'linkCard', 'embed', 'image')) return false;
         return parent?.toggleBlockquote?.()(props) ?? false;

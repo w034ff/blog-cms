@@ -4,24 +4,13 @@ import { titleAcceptsSlice } from './details-slice-guard';
 import { pasteIntoCellRefused, tableDropRefusal } from './table-cell-rules';
 import { docOf, nodes, nodeSlice, para, rangeSlice, tableFixture, text } from './test-schema';
 
-// docs/embed-requirements.md §5 and §12's first item. §5 decided that **no new slice guard is
-// needed** for the embed — the accordion title's `titleAcceptsSlice` and the table cell's
-// `carriesNonParagraphBlock` were expected to cover it "for the same reason they cover the card" —
-// and §12 recorded that as inference: paste and drop had never been measured.
+// docs/embed-requirements.md §5 and §12's first item: **no new slice guard is needed** for the
+// embed, because the existing guards are written as "what does this destination accept". Same file
+// as link-card-placement.test.ts, for the node that came after it.
 //
-// This is the same file link-card-placement.test.ts is, for the node that arrived after it, and the
-// finding is the same: both guards are written as "what does this destination accept" rather than
-// as a list of hostile node types, so a block node added later is covered without being named.
-//
-// **The predicates alone would pass before this file existed**, so what makes these measurements
-// rather than restatements is the two things around them: the schema-level fact that would change
-// if the embed were ever made inline (the tripwire — an inline atom is deliberately let through,
-// docs/accordion-requirements.md §6.5), and the negative controls, without which a rule that
-// refused *everything* would pass.
-//
-// The slices are taken from real selections rather than built by hand, and their open depths are
-// asserted before they are used: a hand-built triple that happens to agree with the gesture proves
-// nothing about the gesture.
+// What makes these measurements rather than restatements: the tripwire that fails if the embed is
+// ever made inline (docs/accordion-requirements.md §6.5), and the negative controls, without which
+// a rule refusing everything would pass.
 const { details, detailsSummary, detailsContent, embed } = nodes;
 
 const HREF = 'https://www.youtube.com/watch?v=hDPybQwAuVo';
@@ -58,17 +47,13 @@ describe('the fixtures are the shapes the gestures really produce', () => {
 
 describe('the embed is a block node, so the schema itself refuses it in a title', () => {
   it('is not accepted by `detailsSummary`', () => {
-    // The tripwire. `titleAcceptsSlice` deliberately lets *inline* atoms through — that question
-    // belongs to the footnote's placement guard (accordion §6.5) — so the embed sits on the covered
-    // side of that line only for as long as it is a block. If it is ever made inline, this goes red
-    // and §6.5 is the section to read, not this file.
+    // The tripwire: `titleAcceptsSlice` lets inline atoms through (accordion §6.5), so the embed is
+    // covered only while it is a block. If this goes red, read §6.5.
     expect(detailsSummary.contentMatch.matchType(embed)).toBeNull();
   });
 
   it('cannot be built into an accordion title at all', () => {
-    // createChecked, not create: `create` writes whatever it is handed without consulting the
-    // content expression, so the unchecked form builds the invalid node happily and would have made
-    // this test pass for no reason.
+    // createChecked: `create` ignores the content expression and would pass vacuously.
     expect(() => detailsSummary.createChecked(null, embed.create({ href: HREF }))).toThrow();
     // …while the accordion around a legal title builds fine, so the refusal above is the title's.
     expect(() =>
@@ -90,8 +75,7 @@ describe('titleAcceptsSlice — the accordion title, paste and drop', () => {
   });
 
   it('still accepts an ordinary in-paragraph text copy', () => {
-    // The negative control: the gesture the guard must not take away. Without it, a rule that
-    // refused every slice would pass everything above.
+    // The negative control: the gesture the guard must not take away.
     expect(titleAcceptsSlice(rangeSlice(doc, 2, 5))).toBe(true);
   });
 });
@@ -109,8 +93,7 @@ describe('table cells — paste and drop', () => {
   });
 
   it('refuses a dropped embed, and for the content reason rather than the position one', () => {
-    // 'content' is the refusal that comes with a notice — the author is told why, which for a
-    // slice-carried block is the only feedback a refused gesture can give.
+    // 'content' is the refusal that comes with a notice.
     expect(tableDropRefusal($inCell, wholeEmbedSlice())).toBe('content');
   });
 

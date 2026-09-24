@@ -16,33 +16,15 @@ import { ChevronRightIcon } from './svg/ChevronRightIcon';
 import { CodeBlockIcon } from './svg/CodeBlockIcon';
 import { PencilIcon } from './svg/PencilIcon';
 
-// A drawer that slides in from the right, modal like the phone's own ＋ sheet
-// (InsertMenu.tsx, docs/editor-requirements.md §12.18) — requested 2026-09-21, reversing this
-// file's first revision the same day, which had gone the other way (see docs/editor-requirements.md
-// §12.22 for both turns and why). Shares that sheet's dismiss mechanics: `useDismiss` closes on an
-// outside `mousedown` or Escape, a separate full-screen backdrop dims everything behind it and
-// closes on its own click, and `useBodyScrollLock` freezes the page while it is up — nothing here
-// reaches the editor until the drawer is explicitly closed.
+// A modal drawer from the right (docs/editor-requirements.md §12.22), with the ＋ sheet's dismiss
+// mechanics: useDismiss, a backdrop that closes on its own click, and useBodyScrollLock. Not modal
+// past `min-width: 100rem` (§12.25), where it clears the editor column: presses read the
+// backdrop's computed style at the moment they happen, while the scroll lock tracks the breakpoint
+// live because it must hold or release continuously.
 //
-// Not modal past `min-width: 100rem` (§12.25) — wide enough that the drawer no longer overlaps the
-// editor column, so there is nothing for a backdrop to protect. Dimming, blocking and dismissal all
-// key off the backdrop's own computed style rather than React state (see the backdrop's and
-// `useDismiss`'s own comments below) — page scroll is the one exception, and does track the same
-// breakpoint as live React state (below), because it is not decided at a discrete moment the way a
-// press or a click is: it has to hold or release continuously as the width crosses the line, which
-// a one-shot computed-style read cannot do.
-//
-// **Always mounted, never conditionally rendered**, unlike InsertMenu. Its children are form
-// fields — useAutosave and publish both read the live form with `new FormData(form)`, so a field
-// that leaves the document leaves the payload (カテゴリ would fall back to its default and the
-// thumbnail would come off, the hazard the original inline panel's own comment recorded). `open`
-// never toggles mounting — a hidden form control still submits, which is the property this
-// component exists to keep — only a class (`.is-open`, on the stable `post-settings-backdrop`/
-// `post-settings-drawer` pair, app/globals.css) that both shows/hides the pair and, when motion is
-// allowed, carries the open/close animation (§12.23). The backdrop is a second, equally persistent
-// element for the same reason `useDismiss`'s ref has to go on the drawer alone: with the backdrop
-// covering the whole screen there is no "outside" left for its outside-press check to catch, so
-// the backdrop gets its own `onClick` instead (InsertMenu's own comment).
+// **Always mounted, never conditionally rendered.** Its children are form fields that useAutosave
+// and publish read via `new FormData(form)`, so a field leaving the document leaves the payload.
+// `.is-open` only shows/hides and animates (§12.23).
 export const SETTINGS_PANEL_ID = 'post-settings-panel';
 
 // Each category's mark: a stroke glyph on a tinted tile. A Record over CategoryId, so a category
@@ -55,21 +37,11 @@ const CATEGORY_ICONS: Record<CategoryId, { Icon: () => React.JSX.Element; tile: 
   },
 };
 
-// カテゴリ as one card per entry of the fixed list (§12.32): every choice in sight with what it is
-// for, one press to change. Real radios under the cards, not a `<select>` and not buttons with state
-// of their own — the form reads `category` off the DOM like every other field here, and a radio
-// group gets the arrow-key movement and the checked state a screen reader announces without any
-// code for them. `aria-labelledby` on the group rather than a wrapping `<label>`: a label associates
-// with one control, and here there are as many as the list is long.
-//
-// Each radio is laid transparently over its whole card rather than `sr-only`: clipped to a pixel,
-// it sat under its own label, so a press reached the label and not the control — the browser
-// forwards that, but a test driving the radio itself found the label in the way. The radio is named
-// by the card's title alone and described by the rest; left to the wrapping label it would take the
-// description into its name, and a screen reader would read a sentence as the choice.
-//
-// Selected is a darker, doubled edge and a check, not a fill: a fill would put the icon and the
-// description on a dark ground, and colour alone would not carry the state.
+// カテゴリ as one card per entry (§12.32). Real radios, so the form reads `category` off the DOM
+// and arrow keys and announcements come free; `aria-labelledby` on the group because there are
+// many controls. Each radio covers its card transparently rather than `sr-only` (a clipped radio
+// sat under its label, in a test's way), named by the title and described by the rest. Selected is
+// a doubled edge and a check, not a fill, so colour alone does not carry the state.
 function CategoryField({
   value,
   onChange,
@@ -143,9 +115,7 @@ type Props = {
   publishToggleDisabled: boolean;
   // The last action's refusal, while PostEditor still shows it in the header.
   error: string | null;
-  // A publish was refused for カテゴリ not chosen (§12.32), which opens this drawer. Said under the
-  // field and only here — not in the header — and not under 公開 either, whose row is not there
-  // before the first publish, which is when this happens.
+  // A publish refused for カテゴリ not chosen (§12.32); shown under the field only.
   categoryError: string | null;
   // The gear that opens this, where focus goes back on close (§12.29).
   returnFocusRef: RefObject<HTMLButtonElement | null>;
@@ -178,18 +148,10 @@ export function PostSettingsPanel({
   historyDisabled,
 }: Props) {
   const router = useRouter();
-  // Above `app/globals.css`'s own `min-width: 100rem` (§12.25), the backdrop goes
-  // `pointer-events: none` and transparent — the drawer clears the editor column at that width, so
-  // there is nothing left to block. That alone stops presses from reaching it and stops the
-  // backdrop's own `onClick` from firing (a `pointer-events: none` element never receives one), but
-  // `useDismiss`'s listener is on `document`, not the backdrop, so a press into the editor still
-  // reaches it and still reads as "outside the drawer." Reading the backdrop's own computed style
-  // at the moment of the press is what makes this one CSS breakpoint the only place the mode is
-  // decided — no matching state in React, no resize listener, nothing to fall out of sync with it.
-  //
-  // Escape is not a press, and is not ignored the same way (§12.29): it closes at every width, but
-  // past the line only while focus is inside the drawer — there the editor stays usable beside it,
-  // and an Escape meant for a bubble menu or the slash menu must not take the drawer with it.
+  // Past `min-width: 100rem` (§12.25) the backdrop is `pointer-events: none`, but useDismiss listens
+  // on `document`, so it reads the backdrop's computed style at the press: the CSS breakpoint stays
+  // the only place the mode is decided. Escape (§12.29) closes at every width, but past the line only
+  // while focus is inside the drawer, so an Escape meant for a bubble menu doesn't take it.
   const backdropRef = useRef<HTMLDivElement>(null);
   const panelRef = useDismiss<HTMLDivElement>(open, (reason) => {
     const backdrop = backdropRef.current;
@@ -205,14 +167,8 @@ export function PostSettingsPanel({
     onClose();
   });
 
-  // Tracks the same `min-width: 100rem` line as app/globals.css's own §12.25 rule, kept in sync
-  // by construction (the identical query string, not a duplicated pixel value) rather than by
-  // convention. `true` until the first effect runs, matching the narrow/modal behaviour SSR would
-  // produce — harmless either way, since `settingsOpen` starts `false` and nothing here does
-  // anything until a post-hydration open. Unlike the backdrop and `useDismiss`, this can't be
-  // decided at the moment of an event: the lock has to hold or release for as long as the drawer
-  // stays open, including through a mid-session resize across the line, which only a live
-  // subscription (not a one-shot read) can track.
+  // The same `min-width: 100rem` query string as §12.25's CSS, tracked live because the lock must
+  // follow a resize across the line. `true` (modal) until the first effect, as SSR would render.
   const [lockScroll, setLockScroll] = useState(true);
   useEffect(() => {
     const query = window.matchMedia('(min-width: 100rem)');
@@ -223,15 +179,9 @@ export function PostSettingsPanel({
   }, []);
   useBodyScrollLock(open && lockScroll);
 
-  // Focus (§12.29). On open it moves to the drawer itself (`tabIndex={-1}`), not to カテゴリ: a
-  // field would raise the phone's keyboard the moment the drawer slides in, and the dialog's own
-  // name is what a screen reader should announce. On close it goes back to the gear, which is the
-  // only way this opens — but only when it was inside the drawer or had fallen to <body> (a press
-  // on the backdrop). The first draft of this component returned focus to whatever held it at open
-  // time; after an image-bubble round trip that was the bubble's own button, and restoring it stole
-  // focus from the editor and closed the bubble with 解除 still needed (measured 2026-09-21). A
-  // fixed target plus the "was it ours" check cannot do that: focus that the author put in the
-  // editor stays there.
+  // Focus (§12.29): on open to the drawer itself, not a field that would raise the phone keyboard.
+  // On close back to the gear, but only if focus was inside the drawer or on <body>; focus the
+  // author put in the editor stays there (restoring "whatever had it at open" once stole it).
   const wasOpen = useRef(false);
   useEffect(() => {
     const panel = panelRef.current;
@@ -246,10 +196,7 @@ export function PostSettingsPanel({
     wasOpen.current = open;
   }, [open, panelRef, returnFocusRef]);
 
-  // While modal (below `min-width: 100rem`, where `lockScroll` holds), Tab wraps inside the drawer:
-  // the backdrop blocks the pointer from the page behind, and without this the keyboard walked
-  // straight out into the editor under it. Past the line the drawer is not modal and Tab leaves it
-  // as it would any sidebar.
+  // While modal, Tab wraps inside the drawer; past the line it leaves like any sidebar.
   function wrapTab(event: ReactKeyboardEvent<HTMLDivElement>): void {
     const panel = panelRef.current;
     if (!lockScroll || !panel) return;
@@ -283,21 +230,10 @@ export function PostSettingsPanel({
       {/* Dims the post and the header underneath (z-[54], above the header's z-40 and the
           toolbar's z-30) and closes the drawer on a click anywhere outside it.
 
-          `!mb-0` on both this and the drawer below: wherever in the tree PostEditor.tsx mounts
-          this component, it risks landing among `space-y-*` siblings (a `space-y-N` utility gives
-          every non-last child a `margin-bottom`). A `position: fixed` box's `bottom-0` resolves
-          against its own margin box, so an inherited margin-bottom silently shortens it — measured
-          788px on an 800px screen (12px short, from a `space-y-3` ancestor) with the true bottom
-          strip of the page left undimmed. `!important` is the reliable fix because it holds
-          regardless of DOM position, not just for wherever the component happens to render today.
-
-          `post-settings-backdrop`/`post-settings-drawer` and `is-open` (app/globals.css) carry the
-          open/close animation — a stable pair of classes rather than the `open ? '…' : 'hidden'`
-          full-string swap this used before, because an entrance/exit transition needs the element
-          present across both states for `@starting-style` and `transition-behavior: allow-discrete`
-          to have something to interpolate. The show/hide itself (`display: none` unless `.is-open`)
-          is declared unconditionally in that file, so a reduced-motion viewer still gets a correct,
-          instant toggle — only the animation is gated on `prefers-reduced-motion`.
+          `!mb-0` on both: a `space-y-*` parent's margin-bottom shortens a fixed box's `bottom-0`
+          (§12.22). The stable class pair plus `.is-open` lets `@starting-style` animate both
+          directions (§12.23); the show/hide itself is unconditional, so reduced motion still
+          toggles instantly.
 
           This is what a narrow screen taps to reach: the drawer below is `calc(100% - 2.5rem)`
           wide rather than `w-full` (requested 2026-09-21), leaving a 40px strip of this backdrop
@@ -335,9 +271,7 @@ export function PostSettingsPanel({
         </div>
 
         <div className='space-y-4'>
-          {/* サムネイル first: it is the post's face on every card, and the one field here whose
-          state (chosen / picked from the body / none) is worth seeing the moment the drawer opens
-          (requested 2026-09-21). */}
+          {/* サムネイル first: the post's face, and the one state worth seeing on open. */}
           <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
           <div>
             <CategoryField value={category} onChange={onCategoryChange} />
@@ -348,27 +282,14 @@ export function PostSettingsPanel({
             )}
           </div>
           <TagField value={tags} onChange={onTagsChange} dictionary={tagDictionary} />
-          {/* 公開 — the post's visibility as a switch, at the end of the group so it is decided
-          after the fields above are checked (docs/editor-requirements.md §12.27). The header keeps
-          投稿/更新 as the everyday way to publish; this is where the state is read and where a post
-          goes back to a draft. Not on the header bar: a pinned unpublish would sit one click away
-          for the whole writing session.
-
-          A submit button wearing `role='switch'`, not a checkbox: it sends the same `intent` 投稿
-          and 下書きに戻す sent, so the server-side checks (title required, footnotes) apply
-          unchanged, and it never flips on its own — `aria-checked` is the server's answer
-          (`isPublished`), so a refused publish leaves it where it was. The header's 投稿 is still
-          the form's first submit button, which is what an Enter in a field would activate, and
-          blockImplicitSubmit cancels that anyway.
-
-          Only once the post has been published. The first publish stamps a date that never changes
-          and puts the URL out, so it is not the reversible act a switch stands for; it stays with
-          投稿 alone. From then on, off and on again restore the post as it was dated. */}
+          {/* 公開 as a switch, last in the group (docs/editor-requirements.md §12.27); not on the
+          header, where unpublish would sit one click away all session. A submit button with
+          `role='switch'`, sending the same `intent` as 投稿/下書きに戻す so the server checks apply;
+          `aria-checked` is the server's answer, so a refused publish leaves it. Shown only after the
+          first publish, which stamps a permanent date and is not reversible. */}
           {everPublished && (
             <div className='space-y-2 border-t border-zinc-300 pt-4 dark:border-zinc-700'>
-              {/* A heading a step below the drawer title, and the same as every field's own
-              name above it (サムネイル・カテゴリ・タグ, 14px bold — matched 2026-09-23 so the
-              drawer has one kind of label; grey is left to the notes under a field). */}
+              {/* Styled like every field's label, so the drawer has one kind. */}
               <h3 className='text-sm font-bold'>公開状態</h3>
               <div className='flex items-center gap-3'>
                 {/* Named 公開, not by the heading: "公開状態, on" leaves the direction open, and
@@ -387,11 +308,8 @@ export function PostSettingsPanel({
                     className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform dark:bg-zinc-900 ${isPublished ? 'translate-x-[1.375rem]' : 'translate-x-0.5'}`}
                   />
                 </button>
-                {/* The state in words, right of the switch it describes (the switch leads the row,
-                on the column's left edge), coloured with the track: dark when public, muted as a
-                draft. 公開中 rather than 公開, so it reads as a state and not a label. No in-flight
-                wording — the switch is disabled while the action runs, and the word changes once
-                it settles. Hidden from assistive tech: `aria-checked` already says it. */}
+                {/* The state in words (公開中 reads as a state), coloured with the track. Hidden from
+                assistive tech, which has `aria-checked`. */}
                 <span
                   aria-hidden='true'
                   className={`text-sm ${isPublished ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'}`}>
@@ -407,15 +325,9 @@ export function PostSettingsPanel({
               )}
             </div>
           )}
-          {/* リビジョン履歴 (docs/revision-requirements.md §5). A bordered full-width row with a
-          trailing › because it leaves the screen — the fields above act in place. No section
-          heading: the row's own words are the name, and a heading over it would say them twice.
-
-          A button that navigates rather than a link, because it has to be disableable: an in-app
-          navigation gets no beforeunload guard, so while edits are unsaved this is the only thing
-          stopping them from being left behind. Also how pending edits are discarded — the history
-          lists 公開中の記事 first. 40px tall at every width: the drawer's other rows are that on
-          touch, and a row this wide gains nothing from being shorter on a pointer. */}
+          {/* リビジョン履歴 (docs/revision-requirements.md §5), with a trailing › because it leaves
+          the screen. A button, not a link, because it must be disableable: in-app navigation has
+          no beforeunload guard, so this is what keeps unsaved edits from being left behind. */}
           {historyHref !== null && (
             <div className='border-t border-zinc-300 pt-4 dark:border-zinc-700'>
               <button

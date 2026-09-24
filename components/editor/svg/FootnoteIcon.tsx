@@ -1,7 +1,5 @@
-// Two lines of body text, a long one over a short one — no numeral (tried twice: a lone "1" read
-// fine but sat oddly alone, a "1" beside a second line read as an equals sign at 16px,
-// screenshot-compared 2026-09-20). The row's own label carries "footnote"; the glyph is a generic
-// note/text mark, the same division of labour 引用's quote-mark icon has (labelled, not literal).
+// Two lines of body text, long over short. No numeral: at 16px a "1" beside a line read as an
+// equals sign. The row's label says "footnote"; the glyph is a generic note mark.
 export function FootnoteIcon() {
   return (
     <svg

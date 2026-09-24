@@ -1,8 +1,6 @@
 // Numbered-list glyph: the same three ruled lines as ListIcon, with "1 2 3" at the left instead of
-// dots. The digits are `<text>`, not hand-drawn strokes — the platform-standard numeral path
-// (traced curves for "2"/"3") reads as a smudge at this icon's actual 16px render size, where a
-// font's own small-size hinting still holds up (reported 2026-09-17, confirmed by zooming into a
-// screenshot). The only `<text>` in this icon set for that reason.
+// dots. The digits are `<text>`, the only `<text>` in the set: traced numeral paths smudged at 16px,
+// where a font's hinting holds up.
 export function OrderedListIcon() {
   return (
     <svg

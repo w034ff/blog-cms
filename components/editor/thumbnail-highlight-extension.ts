@@ -5,14 +5,10 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view';
 // Rings whichever image node's `src` matches the post's chosen thumbnail path (ImageBubble.tsx),
 // so the author can see which image is marked without opening its bubble menu.
 //
-// The path lives in `editor.storage`, the same place link-card-extension.ts keeps `ownSlug`:
-// PostEditor writes it in an effect, and this plugin's decorations() reads it back through a
-// closure over `this.storage`. Not plugin state pushed by a dispatched transaction — a standalone
-// `editor.view.dispatch(...)` from a React effect runs every plugin's appendTransaction,
-// including trailing-node-extension.ts's, at a moment with no relation to an actual edit, which
-// is more machinery than this needs. PostEditor already re-renders on every `thumbnail` change
-// and that render already reaches `view.updateState` (@tiptap/react's own setOptions call,
-// unconditional), which is what asks this plugin for its decorations again.
+// The path lives in `editor.storage` (like link-card-extension.ts's `ownSlug`), not plugin state:
+// a dispatch from a React effect would run every appendTransaction for no edit
+// (docs/editor-pitfalls.md §13.1). PostEditor's re-render already reaches `view.updateState`,
+// which re-asks for decorations.
 export type ThumbnailHighlightStorage = { path: string };
 
 declare module '@tiptap/core' {
@@ -29,9 +25,7 @@ export const ThumbnailHighlight = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    // Captured here, not read inline in decorations() below, for the same reason
-    // link-card-extension.ts's ownSlug closure exists: `this` is the extension instance only
-    // inside this method, not inside the plain function passed to `props`.
+    // Captured here: `this` is the extension only inside this method, not inside `props`.
     const path = () => this.storage.path;
     return [
       new Plugin({

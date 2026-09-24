@@ -8,12 +8,9 @@ import { isPublishableUri } from './link-protocols';
 // *shape of the strip itself*: the character class is copied from @tiptap/extension-link rather
 // than written as `\s`, and the whole of that choice is the C0 range.
 //
-// Measured 2026-08-27, and the reason this file exists: with the strip removed, ` tel:+81…` is
-// accepted — the space keeps `DIES_ON_PUBLISH`'s `^` from matching and `defaultValidate` admits
-// `tel:` on its own. So the line carries real weight. And with the strip written as `\s`, U+0001
-// is accepted, because `\s` does not cover the C0 controls that upstream's class starts with.
-// **`URI_WHITESPACE` being simplified to `\s` is the realistic future edit, and the U+0001 case
-// below is the only thing in the repo that would notice.**
+// Without the strip, ` tel:+81…` is accepted; with it written as `\s`, U+0001 is.
+// **Simplifying `URI_WHITESPACE` to `\s` is the realistic future edit, and the U+0001 case below
+// is the only thing in the repo that would notice.**
 
 // The composition extensions.ts installs: the extension's own check runs behind the subtraction.
 // The `!!` is not this file's tidying — it is what the extension itself hands over, verbatim:
@@ -75,10 +72,8 @@ describe('what an author writes for this site is untouched', () => {
     },
   );
 
-  // `javascript:` is refused by the extension's own check, not by the subtraction — which is why
-  // the paste guard, having no check behind it, answers true. Nothing is open by it: the guard only
-  // decides whether to strip a link off a paste, and what would otherwise make one is linkify,
-  // which does not read `javascript:` as a link at all (§2.4.2, measured 2026-08-09).
+  // `javascript:` is refused by the extension's own check, so the paste guard answers true. Nothing
+  // is open by it: linkify does not read `javascript:` as a link at all (§2.4.2).
   it('leaves javascript: to the extension check', () => {
     expect(viaExtension('javascript:alert(1)')).toBe(false);
     expect(viaPasteGuard('javascript:alert(1)')).toBe(true);

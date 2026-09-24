@@ -1,26 +1,16 @@
 // Fixtures for the editor guards that are pure functions over a document, a slice, or the schema.
 // Imported by tests only; nothing in the editor reads this file.
 //
-// **Why it exists.** Five test files each rebuilt this schema by hand — 51, 67, 81 and 172 lines
-// before their first `describe()` — while a new E2E spec needs two imports and is writing
-// assertions on line three (measured 2026-09-11). So the layer that costs ~1ms a case was the
-// expensive one to write and the layer that costs ~2.3s a case was the cheap one, and the browser
-// won by default. This is the asymmetry, not a preference, and this file is the fix for it.
-//
-// A guard belongs here when its claim can be written against a `Slice`, a content expression, or a
-// markdown string. It belongs in `e2e/` when only a browser can observe it: input rules, keymaps,
-// NodeViews, geometry, IME, a real drag, CSS.
+// It exists so that a vitest case is as cheap to write as an E2E spec; which layer a claim belongs
+// in is AGENTS.md's "Where an editor test goes".
 
 import { getSchema } from '@tiptap/core';
 import type { Node as PMNode, Schema, Slice } from '@tiptap/pm/model';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { postEditorExtensions } from './extensions';
 
-// **The editor's own registration, not a list re-written here.** Every file that used to assemble
-// this claimed in a comment to be using "the schema PostEditor actually builds" while in fact
-// hand-listing the extensions, which passes precisely when what PostEditor registers is the thing
-// that changed. `draggable-types.test.ts` made that argument first and built the schema this way;
-// the rest is that argument applied.
+// **The editor's own registration, not a list re-written here:** a hand-picked list passes
+// precisely when what PostEditor registers is the thing that changed.
 //
 // `showNotice` is the editor's refusal channel and no schema depends on it, so it is a no-op here.
 export const schema: Schema = getSchema(postEditorExtensions(() => {}));
@@ -37,11 +27,9 @@ export const para = (value?: string): PMNode =>
 /** A whole document. `schema.topNodeType` rather than `nodes.doc`, since the footnote extension replaces it. */
 export const docOf = (...content: PMNode[]): PMNode => schema.topNodeType.create(null, content);
 
-// The two slice shapes the gestures really produce, **taken from a real selection and never built
-// by hand**. `Selection.content()` is `doc.slice(from, to, true)`, and a hand-built `Slice` that
-// happens to agree with one proves nothing about the gesture it stands for — a two-argument fixture
-// once made a whole suite vacuous without failing (2026-08). Assert the open depths of what comes
-// back before a test leans on it; `openStart`/`openEnd` are the whole difference between these two.
+// The two slice shapes the gestures produce, **taken from a real selection, never built by hand**
+// (`Selection.content()` is `doc.slice(from, to, true)`). Assert the open depths before relying on
+// them; they are the whole difference between these two.
 
 /** What the block drag handle hands a guard: one whole node, closed on both sides. */
 export const nodeSlice = (doc: PMNode, pos: number): Slice =>
