@@ -43,3 +43,7 @@ The E2E suite is **701 of the suite's 759 cases and 86% of its wall clock**, and
 # Editor pitfalls (`docs/editor-pitfalls.md`)
 
 **Before changing anything under `components/editor/`, or before debugging an editor report, use its headings as the index and read the sections that apply** — not the whole document. It records the TipTap / ProseMirror behaviour that cuts across features — gestures that fail without changing the document, isolating edges, hook ordering, bubble-menu timing — each measured once at real cost. It follows the requirements documents' editing rules above, and a finding that is about more than one feature goes there rather than into a feature's own document.
+
+# Dependencies and the dev environment (`docs/dev-environment.md`)
+
+**Never run a bare `npm install`, and add no dependency that is not in an approved plan.** The install procedure (cooldown, no lifecycle scripts, exact pins, post-install audit) and the accepted `npm audit` findings are in `docs/dev-environment.md` §4-5. The same document covers what looks like an app bug but is not: the Turbopack dev cache serving stale output, a restored tab stuck on the editor placeholder, and SQLite copies that miss the WAL file.
