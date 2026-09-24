@@ -49,3 +49,7 @@ The E2E suite is **701 of the suite's 759 cases and 86% of its wall clock**, and
 # Dependencies and the dev environment (`docs/dev-environment.md`)
 
 **Never run a bare `npm install`, and add no dependency that is not in an approved plan.** The install procedure (cooldown, no lifecycle scripts, exact pins, post-install audit) and the accepted `npm audit` findings are in `docs/dev-environment.md` §4-5. The same document covers what looks like an app bug but is not: the Turbopack dev cache serving stale output, a restored tab stuck on the editor placeholder, and SQLite copies that miss the WAL file.
+
+# Project state (`docs/project-status.md`)
+
+What the code cannot tell you: the constraints to keep (never delete `content/posts/*.mdx`; schema changes only through `db:generate` → `db:migrate`; uploads are deleted by reference), the reasons behind early decisions, how the site is deployed, the deferred list, and the multi-user design.
