@@ -77,6 +77,6 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 - `sharp` の override は 2026-09-24 に外した。当時の next が `sharp: ^0.34.5` を宣言し、libvips の CVE を抱えた版が残るので `^0.35.3` に持ち上げていた（`fc395f6`）。next 16.3.5 は自分で `^0.35.4` を宣言するので、override は役目を終え、残すと next が先へ進んだときに sharp を引き留める。外しても解決は `sharp@0.35.4` のまま変わらない。`next/image` を import していなくても最適化のルート `/_next/image` は存在し、それが sharp を到達可能にしている。
 - 何かを override で上げるときは範囲を絞る。`brace-expansion` を丸ごと override すると、minimatch@10 が使う 5.x まで 1.x に引き下げて壊す。
 
-### 5.3 未決: vitest のパストラバーサル（2026-09-24 に検出）
+### 5.3 vitest のパストラバーサル（2026-09-24 に対応）
 
-`@vitest/mocker` 経由の moderate（Vitest: Path Traversal / Arbitrary File Read）が 1 つあり、`npm audit` は `vitest` と `@vitest/mocker` の 2 件として数えるので、合計は 6 件と表示される。修正版は `vitest@4.1.11`。devDependency だが、上げるか受け入れるかは作者の判断を待っている。上げるなら §4 の手順（7 日の待機を含む）に従い、決まったらこの節を書き換える。
+`@vitest/mocker` 経由の moderate（Vitest: Path Traversal / Arbitrary File Read）を、`vitest` を 4.1.9 から 4.1.11 に上げて塞いだ。`npm audit` は drizzle-kit 経由の 4 件（§5.1）だけに戻った。vitest の範囲に従って、推移的依存の `vite` が 8.0.16 から 8.3.0 に、`rolldown` が 1.0.3 から 1.2.9 に上がり、`lightningcss` 1.33.0 が加わった。どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
