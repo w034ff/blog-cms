@@ -14,12 +14,10 @@ import {
 } from './editor-authoring';
 import { docString, historyState, markdown, settle } from './editor-probe';
 
-// The link card in the live editor (docs/link-card-requirements.md §9). Browser-only for the usual
-// reason plus one of its own: the card's NodeView fetches its title over `/api/posts/search`, so
-// what it shows exists only at runtime, in a page with a session.
-//
-// The seeded posts come from the real `data/blog.db` copy (e2e/prepare-db.mts): `second-post` is
-// 「React Server Components を学ぶよ」and `hello-world` is 「ブログ開設のお知らせ」.
+// The link card in the live editor (docs/link-card-requirements.md §9). Browser-only: the NodeView
+// fetches its title over `/api/posts/search`, so what it shows exists only in a page with a session.
+// Seeded posts (e2e/prepare-db.mts): `second-post` is 「React Server Components を学ぶよ」,
+// `hello-world` 「ブログ開設のお知らせ」.
 
 const CARD_HREF = '/posts/second-post';
 const CARD_TITLE = 'React Server Components を学ぶよ';
@@ -29,10 +27,8 @@ const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
 async function openWithCard(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `${CARD_MD}\n\n本文\n`);
 }
@@ -41,9 +37,8 @@ function card(page: Page) {
   return page.locator('.ProseMirror .link-card-view');
 }
 
-// The slash menu no longer inserts a card directly (docs/embed-requirements.md §24.2,
-// docs/link-card-requirements.md §21) — it opens the shared insert dialog, and picking a post on
-// its 「記事から選ぶ」 tab is what lands the (already-resolved) card in the document.
+// The slash menu opens the shared insert dialog (docs/embed-requirements.md §24.2,
+// docs/link-card-requirements.md §21); picking a post on 「記事から選ぶ」 lands a resolved card.
 test('the slash menu opens the shared dialog, and its 記事から選ぶ tab makes a card (1a)', async ({
   page,
 }) => {
@@ -61,9 +56,7 @@ test('the slash menu opens the shared dialog, and its 記事から選ぶ tab mak
   await dialog.getByPlaceholder('記事のタイトルで検索…').fill('React');
   await dialog.getByRole('button', { name: CARD_TITLE }).click();
 
-  // The dialog is gone and the card lands resolved — never an unresolved card with its own picker
-  // on screen, which is the property the embed-only door already established for the block it
-  // makes (§24:2091 hands over the "unfinished card left behind" property this used to have).
+  // The card lands resolved, never an unresolved card with its picker on screen (§24.2).
   await expect(dialog).toHaveCount(0);
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
   expect(await docString(page)).toContain('linkCard');
@@ -72,8 +65,8 @@ test('the slash menu opens the shared dialog, and its 記事から選ぶ tab mak
 test('a card stores the reference and none of the display text (1b)', async ({ page }) => {
   await openWithCard(page);
 
-  // The whole of §4.2 in one assertion: what is saved names the post and says nothing a reader
-  // sees. A renamed post therefore needs no rewrite of any body that links to it.
+  // §4.2: what is saved names the post and says nothing a reader sees, so a renamed post needs no
+  // rewrite of bodies that link to it.
   const saved = await markdown(page);
   expect(saved).toContain(CARD_MD);
   expect(saved).not.toContain(CARD_TITLE);
@@ -83,8 +76,7 @@ test('a card survives the markdown round trip (1a)', async ({ page }) => {
   await openWithCard(page);
   const first = await markdown(page);
 
-  // Re-parse what was saved, the way reopening the post does. A node whose serializer or parser
-  // is missing degrades here — into raw HTML text, or into nothing at all.
+  // Re-parse what was saved, as reopening does; a missing serializer or parser degrades here.
   await loadMarkdown(page, first);
   expect(await docString(page)).toContain('linkCard');
   expect(await markdown(page)).toBe(first);
@@ -96,39 +88,29 @@ test('the card shows the current title, fetched rather than stored (1c)', async 
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
 });
 
-// The other half of criterion 4f, and §17's editor half. A card to one of this blog's own posts
-// always carries a picture — the site's own mark when the post has none — so the editor has to
-// show the same thing the reader gets. Drawing nothing here would be the editor teaching a layout
-// that does not exist, which is the failure §13 exists to prevent. `second-post` carries no
-// thumbnail and no image in its body, so `resolveThumbnail` answers null for it and
-// `internalCardImage` turns that into the mark; the case where the post has a picture of its own
-// is measured in thumbnail.spec.ts, which can upload one first.
+// The other half of criterion 4f, §17's editor half: a card to an own post always carries a
+// picture, the house mark when the post has none, and the editor must show what the reader gets
+// (§13). `second-post` has no image; the own-picture case is in thumbnail.spec.ts.
 test('a card to a post with no image shows this site’s mark (4f/17b)', async ({ page }) => {
   await openWithCard(page);
-  // Wait for the lookup to land first: asserting on the card before the answer arrives is the same
-  // vacuous pass whichever way the code behaves.
+  // Wait for the lookup first, or the assertion passes whatever the code does.
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
   const image = card(page).locator('img.link-card-image');
   await expect(image).toHaveAttribute('src', '/link-card-placeholder.svg');
-  // Both classes: the second is what makes the stylesheet draw it as a mark on a tint rather than
-  // crop it like a photograph, and it is set on every draw rather than toggled (§17).
+  // The second class draws it as a mark on a tint, and is set on every draw (§17).
   await expect(image).toHaveClass(/link-card-placeholder/);
   await expect(image).toHaveAttribute('alt', '');
-  // The dark file rides along in the `<picture>` the NodeView builds, exactly as the published
-  // card's does — the editor showing the reader's layout is the whole of §13.
+  // The dark file rides in the NodeView's `<picture>`, as on the published card (§13).
   await expect(card(page).locator('picture source')).toHaveAttribute(
     'srcset',
     '/link-card-placeholder-dark.svg',
   );
 });
 
-// §13.1. The second line used to hold the reference itself, which said nothing a 20-hex slug can
-// say — so it now appears only when something about the target needs saying. A published post the
-// route matches is the state with nothing to report.
+// §13.1: the second line appears only when something about the target needs saying.
 test('a card whose target is fine has no second line (4g)', async ({ page }) => {
   await openWithCard(page);
-  // The title first: asserting the absence of a line before the lookup lands would pass whatever
-  // the code does.
+  // The title first, or the absence below passes whatever the code does.
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
   // Absent, not empty — an empty span still carries the line's top margin.
   await expect(card(page).locator('.link-card-meta')).toHaveCount(0);
@@ -141,14 +123,11 @@ test('a reference the route cannot match says so (4g)', async ({ page }) => {
   await loadMarkdown(page, '<div class="link-card" data-href="/posts/nosuchpost"></div>\n\n本文\n');
 
   await expect(card(page).locator('.link-card-meta')).toHaveText('記事が見つかりません');
-  // And the title degrades to the reference (§5.3): the author has to be able to see *which*
-  // reference is the broken one.
+  // The title degrades to the reference (§5.3), so the author sees which one is broken.
   await expect(card(page).locator('.link-card-title')).toHaveText('/posts/nosuchpost');
 });
 
-// The note §10 listed as unmeasured until 2026-08-18. Every seeded post is published, so the draft
-// is made here — an autosave is enough to create the row, and the slug it was given is reachable
-// only through the same route the card itself asks.
+// Every seeded post is published, so the draft is made here; autosave creates the row.
 test('a card to an unpublished post says so (4h)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -170,24 +149,21 @@ test('a card to an unpublished post says so (4h)', async ({ page }) => {
   await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
 
   await expect(card(page).locator('.link-card-title')).toHaveText(draftTitle);
-  // §5.2-4: on the published page this card falls back to a plain link, and this line is the only
-  // place the author is told before it happens.
+  // §5.2-4: the published page falls back to a plain link, and this line is the only warning.
   await expect(card(page).locator('.link-card-meta')).toHaveText('未公開の記事');
 });
 
 test('the caret cannot enter a card, and the link bubble stays away (4a)', async ({ page }) => {
   await openWithCard(page);
 
-  // Clicking a card selects the node rather than placing a caret inside it: it is an atom, so
-  // there is no position within it to hold one.
+  // An atom: a click selects the node, with no position inside for a caret.
   await card(page).click();
   await settle(page);
   expect(
     await page.evaluate(() => document.querySelectorAll('.ProseMirror-selectednode').length),
   ).toBeGreaterThan(0);
 
-  // §7-1: with no caret inside, `isActive('link')` is never true here, so the bubble needs no rule
-  // of its own to stay away. This is the assertion that pins that reasoning.
+  // §7-1: with no caret inside, `isActive('link')` is never true, so the bubble needs no rule.
   await expect(page.getByRole('group', { name: 'リンク' })).toHaveCount(0);
 });
 
@@ -202,10 +178,8 @@ test('a card can be turned back into a text link (4b)', async ({ page }) => {
   expect(await markdown(page)).toContain(`[${CARD_TITLE}](${CARD_HREF})`);
 });
 
-// §7.4. The half worth measuring is not that a new tab appears — `window.open` is the browser's —
-// but that the document is untouched by pressing a control that sits *inside* a NodeView, next to
-// two buttons that both rewrite the node. A card that opened its target and dissolved itself would
-// be §7.1's failure by another route.
+// §7.4. Not that a tab opens (`window.open` is the browser's), but that pressing a control beside
+// two node-rewriting buttons leaves the document untouched.
 test('the card can be opened, and opening it leaves the card alone (4i)', async ({
   page,
   context,
@@ -224,10 +198,9 @@ test('the card can be opened, and opening it leaves the card alone (4i)', async 
   expect(await markdown(page)).toContain(`data-href="${CARD_HREF}"`);
 });
 
-// §7.4's other half: below 30rem the band drops the label and keeps the icon alone, and the label
-// it stops showing is the accessible name every other test in this file selects them by. Hiding it
-// with `display: none` would read identically in a screenshot and take the name with it — a
-// regression a wide-viewport spec cannot see, because the rule it breaks only applies narrow.
+// §7.4's other half: below 30rem the band shows icons only, and the hidden label is the
+// accessible name every test here selects by. `display: none` would look the same and drop it, which
+// a wide-viewport spec cannot see.
 test('the band keeps its names when it shows icons (4j)', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await openWithCard(page);
@@ -255,7 +228,7 @@ test('the band keeps its names when it shows icons (4j)', async ({ page }) => {
   expect(band.dangerColor).not.toBe(band.plainColor);
 });
 
-// The band's other width: above 30rem both the icon and the label show, not the label alone.
+// Above 30rem both the icon and the label show.
 test('the wide band shows icons alongside its labels', async ({ page }) => {
   await openWithCard(page);
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
@@ -276,10 +249,9 @@ test('the wide band shows icons alongside its labels', async ({ page }) => {
   expect(band.labelWidth).toBeGreaterThan(2);
 });
 
-// The 40rem fallback (app/globals.css, `:has(.link-card-image)`): a card with a picture runs out of
-// room for three labels well above 30rem, and 550px is inside that squeeze zone. The band must fall
-// back to icon-only there rather than let `text-overflow: ellipsis` drop a character per button, and
-// its height must still match the picker's — the invariant §7.1 exists for — at that same width.
+// The 40rem fallback (app/globals.css, `:has(.link-card-image)`): at 550px a card with a picture is
+// short of room for three labels, so the band must go icon-only rather than ellipsize, and its
+// height must still match the picker's (§7.1).
 test('a card with a picture falls back to icons before its labels squeeze (4n)', async ({
   page,
 }) => {
@@ -315,18 +287,9 @@ test('a card with a picture falls back to icons before its labels squeeze (4n)',
   expect(pickerHeadHeight).toBeCloseTo(band.headHeight, 0);
 });
 
-// §7.3, and the answer to what §10 used to list as unmeasured. A card is an atom, so
-// prosemirror-commands deletes it whole from the edge of the neighbouring textblock in one press —
-// its `joinBackward` has an explicit branch for it (dist: `// If the node before is an atom, delete
-// it`, guarded by `before.isAtom && $cut.depth == $cursor.depth - 1`), and `joinForward` has the
-// twin (`after.isAtom`). Nothing in this repo binds Backspace for the card, so that branch is what
-// runs, and `selectNodeBackward` — the "select it first, delete on the second press" step — is never
-// reached because joinBackward already returned true.
-//
-// The behavior is kept (same as `image`, the other atom block), so what has to hold is the way back:
-// undo must return the card *with its reference*, since a card that came back pointing nowhere would
-// be the §7.1 failure by another route. That is the half this spec exists for — the deletion itself
-// is upstream's and would pass without any of this file's code.
+// §7.3. A card is an atom, so prosemirror-commands' `joinBackward` deletes it whole in one press
+// (`before.isAtom && $cut.depth == $cursor.depth - 1`; `joinForward` has `after.isAtom`), as for
+// `image`. What this spec owns is the way back: undo must return the card with its reference.
 for (const gesture of ['Backspace', 'Delete'] as const) {
   test(`${gesture} at a card's edge deletes it, and undo restores the reference (4e)`, async ({
     page,
@@ -334,8 +297,7 @@ for (const gesture of ['Backspace', 'Delete'] as const) {
     await page.goto('/admin/posts/new');
     await expect(page.locator('.ProseMirror')).toBeVisible();
     await page.locator('.ProseMirror').click();
-    // The card sits on the side the gesture reaches: before the paragraph for Backspace, after it
-    // for Delete. `本文` is the document's first paragraph either way.
+    // The card sits on the side the gesture reaches; `本文` is the first paragraph either way.
     await loadMarkdown(
       page,
       gesture === 'Backspace' ? `${CARD_MD}\n\n本文\n` : `本文\n\n${CARD_MD}\n`,
@@ -349,41 +311,32 @@ for (const gesture of ['Backspace', 'Delete'] as const) {
       await collapseToEnd(page);
     }
 
-    // `loadMarkdown` is one history event (setContent), and a deletion that groups with it is undone
-    // together with the whole document — an undo that says nothing about what the deletion cost.
-    // The break is stated outright and the events are counted, so the case no longer depends on any
-    // duration: this used to be a 700ms pause waiting out `newGroupDelay` (default 500), which left
-    // 200ms of margin and is the one mechanism that could explain the unexplained double failure of
-    // 2026-08-16 (docs/link-requirements.md §5.5.10).
+    // Break the history so the deletion is not undone with the whole document, and count events rather
+    // than wait out `newGroupDelay` (e2e/README.md).
     await closeHistory(page);
     const before = (await historyState(page)).undoDepth;
 
     await page.keyboard.press(gesture);
     expect(await docString(page)).not.toContain('linkCard');
-    // One event of its own — the assertion the pause used to buy, except that a slow test cannot
-    // satisfy this one by accident.
+    // One event of its own, which a slow test cannot satisfy by accident.
     expect((await historyState(page)).undoDepth).toBe(before + 1);
 
     await page.keyboard.press('Control+z');
     expect(await docString(page)).toContain('linkCard');
-    // The reference, not just the node: this is what makes the one-press deletion acceptable.
+    // The reference, not just the node: what makes the one-press deletion acceptable.
     expect(await markdown(page)).toContain(CARD_MD);
-    // Exactly one event undone. A stray transaction joining the deletion's group would leave the
-    // document looking right here while the press had in fact cost more than the deletion.
+    // Exactly one event undone; a stray transaction in the group would cost more than the deletion.
     expect((await historyState(page)).undoDepth).toBe(before);
   });
 }
 
-// §5.4, the gesture half. `available` reads the same predicate `setLinkCard` runs, so a context
-// where the card cannot be placed drops the row — and where it is the only row left, `hasAnyItem`
-// declines the trigger and `/` stays an ordinary character.
+// §5.4, the gesture half. `available` reads `setLinkCard`'s predicate, so where the card cannot go
+// the row drops, and with no row left `hasAnyItem` declines and `/` stays a character.
 test('the slash row is absent in a table cell (3b)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '| A | B |\n| --- | --- |\n| x | y |\n');
   await setRange(page, await firstPos(page, 'tableCell'));
@@ -396,10 +349,8 @@ test('the slash row is absent in a table cell (3b)', async ({ page }) => {
 test('the slash row is absent in an accordion title (3b)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '<details>\n<summary>タイトル</summary>\n\n本文\n\n</details>\n');
   await setRange(page, await firstPos(page, 'detailsSummary'));
@@ -408,17 +359,13 @@ test('the slash row is absent in an accordion title (3b)', async ({ page }) => {
   await expect(page.locator('[data-slash-menu]')).toHaveCount(0);
 });
 
-// §5.4, the slice half, and the finding it records: no new guard was written for the card, because
-// both existing guards are keyed on what the destination accepts rather than on a list of node
-// types. These are the end-to-end half of link-card-placement.test.ts — they measure that a card
-// really does land on the covered side of that line, through the real paste path.
+// §5.4, the slice half: both existing guards key on what the destination accepts, so no new guard
+// was written. The end-to-end half of link-card-placement.test.ts, through the real paste path.
 test('a pasted card is refused in an accordion title, leaving it intact (6a)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '<details>\n<summary>タイトル</summary>\n\n本文\n\n</details>\n');
   await setRange(page, await firstPos(page, 'detailsSummary'));
@@ -426,7 +373,7 @@ test('a pasted card is refused in an accordion title, leaving it intact (6a)', a
   await pasteHtml(page, `<div class="link-card" data-href="${CARD_HREF}"></div>`);
 
   await expect(page.getByRole('status')).toBeVisible();
-  // The accordion is whole — the 2026-08-08 failure was one accordion becoming two.
+  // The accordion is whole, not split in two.
   expect(await docString(page)).toBe(
     'doc(details(detailsSummary("タイトル"), detailsContent(paragraph("本文"))), paragraph)',
   );
@@ -438,15 +385,11 @@ test('a pasted card is refused in a table cell, leaving the table intact (6b)', 
 }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '| A | B |\n| --- | --- |\n| x | y |\n');
-  // Not `firstPos(…, 'tableCell') `: a cell holds a paragraph, so the position just inside the cell
-  // is *before* that paragraph, and prosemirror-state warns that the endpoint points at no inline
-  // content. selectInside resolves the cell's textblock; collapseToEnd makes it a caret.
+  // A cell's first position is before its paragraph; selectInside finds the textblock.
   await selectInside(page, 'tableCell');
   await collapseToEnd(page);
 
@@ -457,16 +400,12 @@ test('a pasted card is refused in a table cell, leaving the table intact (6b)', 
   expect(await docString(page)).not.toContain('linkCard');
 });
 
-// A card may sit in a quote or a list item — those are `block+` and nothing refuses it there. Pinned
-// because §5.4 names only the two places that refuse, and "everywhere else works" is the other half
-// of that claim.
+// Quotes and list items are `block+`, so nothing refuses a card there: §5.4's other half.
 test('a card is allowed inside a blockquote (3a)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  // Focus before loading: setRange moves the *selection*, but keyboard.type goes to whatever the
-  // browser has focused, and without this the keystrokes never reach the editor at all — which
-  // makes an "the menu does not open" assertion pass for the wrong reason. Same order as
-  // editor-details-title-guard.ts's openWithAccordion.
+  // Focus first: loadMarkdown does not focus the editor (e2e/README.md), and unfocused keystrokes
+  // would make "the menu does not open" pass vacuously.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, '> 引用\n');
   await setRange(page, await firstPos(page, 'blockquote'));
@@ -479,28 +418,13 @@ test('a card is allowed inside a blockquote (3a)', async ({ page }) => {
   expect(await docString(page)).toContain('blockquote(paragraph("引用"), linkCard)');
 });
 
-// A second click meant for the result row must not reach the resolved card's buttons.
+// A second click meant for a result row must not reach the resolved card's buttons. Regression: the
+// buttons rendered where the first row had been, so a double-click cleared or dissolved the card;
+// single-click specs stayed green, since Playwright clicks a row's centre.
 //
-// This is a regression spec, and the defect it pins shipped: the buttons rendered within 3px of
-// where the first result row had been, so a double-click on a result cleared the card (「変更」,
-// at the row's left edge) or dissolved it into a text link (「リンクに戻す」, just right of it).
-// Recovered from data/blog.db-wal, where a card the author had just made went
-// `data-href="/posts/…"` → `data-href=""` → `[タイトル](/posts/…)` inside one autosave window, and
-// then reproduced here. The 12 specs above all stayed green throughout: every one of them clicks
-// once, and Playwright's default click lands on the row's horizontal *centre*, which is the one
-// part of that band the buttons never covered.
-//
-// Swept across the row rather than taken at a single point, because the two buttons sat at
-// different offsets and a spec aimed at one of them would have passed while the other was live.
-// Offsets are from the row's left edge — where the title text is, i.e. where a person actually
-// clicks, not where Playwright does.
-//
-// Two spaced clicks rather than `dblclick()`, and the gap is the whole point. Playwright's
-// `dblclick` delivers both clicks inside one animation frame, which the deferral in `setHref`
-// swallows on its own — so a spec written that way passed with the *geometry still broken*, and
-// would have certified the layout fix while measuring the frame timing instead. Measured: with the
-// buttons put back at the foot of the card, the `dblclick` form stayed green and this one goes red
-// at x=24. A person's second click arrives long after that frame, so it has to meet the layout.
+// Swept across the row from its left edge, where a person clicks, since the buttons sat at
+// different offsets. Two spaced clicks, not `dblclick()`: that lands both in one frame, which
+// `setHref`'s deferral swallows, and passed with the geometry still broken.
 test('a second click on a result row a moment later leaves the card resolved (4b)', async ({
   page,
 }) => {
@@ -509,42 +433,27 @@ test('a second click on a result row a moment later leaves the card resolved (4b
     await openPickerViaChange(page);
 
     const row = page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE });
-    // Scrolled to first, because `boundingBox()` answers for a row the list has clipped just as
-    // readily as for one on screen — and the point it returns is then not on the row at all, so
-    // the click below lands wherever that spot happens to be and the sweep measures nothing. The
-    // list is a `max-height` box with `overflow-y: auto` (app/globals.css) and every test in this
-    // file autosaves a draft, so by the time this one runs there are more posts than it shows.
-    // A person scrolls the row into view before clicking it; this is that.
+    // Scroll first: `boundingBox()` answers for a clipped row too, and the list is a `max-height`,
+    // `overflow-y: auto` box (app/globals.css) that other specs' drafts overflow.
     await row.scrollIntoViewIfNeeded();
     const box = await row.boundingBox();
     if (!box) throw new Error('the result row has no box');
     const point = { x: box.x + x, y: box.y + box.height / 2 };
     await page.mouse.click(point.x, point.y);
-    // Long enough to be a second click rather than one gesture, and long enough for the fetched
-    // title to be in the cache — which is what made the stored link read as the post's title.
+    // A second click rather than one gesture, with the fetched title already cached.
     await page.waitForTimeout(250);
     await page.mouse.click(point.x, point.y);
     await settle(page);
 
-    // Both halves matter: the node has to survive *and* keep its reference. Clearing it back to
-    // `data-href=""` left a card in the document too, and that is what the first failure looked
-    // like — a card that had silently forgotten which post it pointed at.
+    // The node must survive and keep its reference: the first failure left a card with `data-href=""`.
     expect(await docString(page), `second click at x=${x}`).toContain('linkCard');
     expect(await markdown(page), `second click at x=${x}`).toContain(CARD_MD);
   }
 });
 
-// The start of the *inline content* of the first node of `typeName` — the offset-0 caret every
-// case above needs, because `startOfLine` is what decides whether `/` opens the menu at all.
-//
-// Resolved down to the first textblock rather than taken as `pos + 1`. That shortcut is right only
-// where the node is itself a textblock (`detailsSummary`) and wrong for a `tableCell`, which holds
-// a paragraph: `pos + 1` lands *before* that paragraph, prosemirror-state warns the endpoint points
-// at no inline content, and the caret ends up somewhere this file never named. Collapsing a
-// `selectInside` range to its end is wrong in the other direction — it puts the caret *after* the
-// cell's text, where `startOfLine` is false and `/` never triggers, so the menu stays shut for a
-// reason unrelated to the rule under test. Both were measured; the second is worse, because it
-// made the table-cell case pass while the row was forced available.
+// The inline-content start of the first `typeName`: `startOfLine` decides whether `/` opens the
+// menu. Not `pos + 1` (before a cell's paragraph) nor a collapsed `selectInside` (after the text,
+// where `/` never triggers, which let the table case pass with the row forced available).
 function firstPos(page: Page, typeName: string): Promise<number> {
   return page.evaluate((name) => {
     type Probe = Element & {
@@ -565,8 +474,7 @@ function firstPos(page: Page, typeName: string): Promise<number> {
     el.editor.state.doc.descendants((node, pos) => {
       if (start === -1 && node.type.name === name) {
         start = pos;
-        // A node that is its own textblock answers immediately; anything else waits for the first
-        // textblock found inside it.
+        // A textblock answers at once; otherwise the first textblock inside.
         if (node.isTextblock) target = pos;
         return;
       }
@@ -578,8 +486,8 @@ function firstPos(page: Page, typeName: string): Promise<number> {
   }, typeName);
 }
 
-// The clipboard path, synthesized the way the accordion and link-protocol specs do it: Playwright
-// cannot put HTML on the real clipboard, and this is the event ProseMirror's own handler reads.
+// Synthesized paste: Playwright cannot put HTML on the clipboard, and this is the event
+// ProseMirror reads.
 function pasteHtml(page: Page, html: string): Promise<void> {
   return page.evaluate((value) => {
     const transfer = new DataTransfer();
@@ -592,24 +500,20 @@ function pasteHtml(page: Page, html: string): Promise<void> {
   }, html);
 }
 
-// The external card in the editor (docs/link-card-requirements.md §14.9). `example.com` and
-// `unreachable.example` have seeded `link_previews` rows (e2e/prepare-db.mts), so the route answers
-// them from the table and nothing here reaches the network — which is also what the route does in
-// production for any card drawn twice within a week (§14.3).
+// The external card (docs/link-card-requirements.md §14.9). Seeded `link_previews` rows
+// (e2e/prepare-db.mts) answer, so nothing reaches the network (§14.3).
 const EXTERNAL_HREF = 'https://example.com/article';
 const EXTERNAL_TITLE = '外部ページの見出し';
 const EXTERNAL_MD = `<div class="link-card" data-href="${EXTERNAL_HREF}"></div>`;
 
-// What a card says when the page would not answer, and what to do about it (§14.3.2). The row
-// remembers the failure for 30 minutes, so the note names the two buttons that forget it.
+// The failure note names the two buttons that forget the 30-minute row (§14.3.2).
 const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに戻してカードにし直すと再取得します）';
 
 test('the picker takes a URL and makes an external card (14a)', async ({ page }) => {
   await openWithCard(page);
   const search = await openPickerViaChange(page);
 
-  // One field for both kinds: what was typed decides which (§14.6-1). A URL replaces the post
-  // results with the single row that makes a reference out of it.
+  // One field for both kinds (§14.6-1): a URL yields the single row that makes a reference.
   await search.fill(EXTERNAL_HREF);
   await page
     .locator('.link-card-results')
@@ -619,9 +523,7 @@ test('the picker takes a URL and makes an external card (14a)', async ({ page })
   await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
   // The provenance line, which an internal card does not have (§14.4).
   await expect(card(page).locator('.link-card-domain')).toHaveText('example.com');
-  // The picture, and where it comes from: the editor draws the same signed same-origin path the
-  // published page does, so what the author sees is what the reader gets and neither browser is
-  // pointed at the target's CDN (§14.4).
+  // The signed same-origin path the published page draws too, never the target's CDN (§14.4).
   await expect(card(page).locator('img')).toHaveAttribute('src', /^\/api\/link-image\?url=/);
 });
 
@@ -636,8 +538,7 @@ test('an external card stores the URL and none of the fetched text (14b)', async
   expect(saved).toContain(EXTERNAL_MD);
   expect(saved).not.toContain(EXTERNAL_TITLE);
 
-  // The round trip, the same way reopening the post arrives at it (§14.2 — the node, the class and
-  // the attribute are the internal card's, so this is what says an absolute href survives them).
+  // The round trip (§14.2): an absolute href survives the internal card's node and attribute.
   await loadMarkdown(page, saved);
   expect(await docString(page)).toContain('linkCard');
   expect(await markdown(page)).toBe(saved);
@@ -646,10 +547,9 @@ test('an external card stores the URL and none of the fetched text (14b)', async
 test('an absolute href survives the round trip with its query and fragment (14a)', async ({
   page,
 }) => {
-  // §14.2 bet that §4.1's answer holds for absolute URLs without measuring it, and
-  // `link-requirements.md` §2.2.2 is the reason to doubt the bet: a fragment-bearing markdown link
-  // comes back percent-encoded. This is the raw-HTML attribute path instead — `escapeHref` writes
-  // it and markdown-it parses it — so the `&` and the multibyte fragment are what to watch.
+  // §14.2 assumed §4.1 holds for absolute URLs; link-requirements.md §2.2.2 is the reason to doubt
+  // it. This is the raw-HTML attribute path (`escapeHref` writes, markdown-it parses): watch the `&`
+  // and the multibyte fragment.
   const messy = 'https://example.com/a?b=1&c=2#見出し';
   const card = `<div class="link-card" data-href="${messy}"></div>`;
   await page.goto('/admin/posts/new');
@@ -658,8 +558,7 @@ test('an absolute href survives the round trip with its query and fragment (14a)
   await loadMarkdown(page, `${card}\n\n本文\n`);
 
   const saved = await markdown(page);
-  // `&` is written as `&amp;` inside the attribute and read back as `&` — the stored string is the
-  // reference, unchanged.
+  // `&amp;` in the attribute, `&` read back: the stored reference is unchanged.
   expect(saved).toContain('data-href="https://example.com/a?b=1&amp;c=2#見出し"');
   await loadMarkdown(page, saved);
   expect(await markdown(page)).toBe(saved);
@@ -669,10 +568,9 @@ test('an absolute href survives the round trip with its query and fragment (14a)
 test('a hand-written card to this blog’s own URL resolves as an internal card (14n)', async ({
   page,
 }) => {
-  // The third door (§14.5.1): `parseHTML` takes any `data-href`, so a body can carry this blog's
-  // own published address even though neither entry point produces it. Without the rewrite in
-  // `lookupCard` the card asks the preview route about this server, is refused there, and tells the
-  // author their own post could not be read.
+  // The third door (§14.5.1): `parseHTML` takes any `data-href`, so a body can carry this blog's own
+  // address. Without `lookupCard`'s rewrite the preview route refuses it and the card reports the
+  // author's own post as unreadable.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -684,8 +582,7 @@ test('a hand-written card to this blog’s own URL resolves as an internal card 
 
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
   await expect(card(page).locator('.link-card-meta')).toHaveCount(0);
-  // The stored reference is untouched — the rewrite decides which table answers, not what the body
-  // says or where the card's link goes.
+  // The stored reference is untouched: the rewrite picks the table, not the body or the link.
   expect(await markdown(page)).toContain(`data-href="${origin}${CARD_HREF}"`);
 });
 
@@ -699,8 +596,7 @@ test('a URL that could not be read says so, and shows the URL (14k)', async ({ p
   );
 
   await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
-  // The title degrades to the reference (§5.3), which is the thing the author can act on. The host
-  // line is not drawn — there is no resolved card to draw it from, and the URL already names it.
+  // The title degrades to the reference (§5.3); no host line without a resolved card.
   await expect(card(page).locator('.link-card-title')).toHaveText('https://unreachable.example/x');
 });
 
@@ -715,10 +611,8 @@ test('the bubble turns a line-alone link into a card (14.6-2)', async ({ page })
   await page.getByRole('button', { name: 'カードにする' }).click();
 
   await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
-  // The paragraph is replaced, not emptied and followed: an empty paragraph left above the card
-  // would be invisible in the markdown and real in the editor. Asserted as the whole document
-  // rather than as a `toContain`, because what has to be absent is a line that serializes to
-  // nothing — only the exact string can say it is not there.
+  // The paragraph is replaced, not emptied: an empty paragraph serializes to nothing, so only the
+  // exact string proves it is absent.
   expect(await markdown(page)).toBe(`${EXTERNAL_MD}\n\n本文`);
 });
 
@@ -729,7 +623,7 @@ test('the bubble offers no card for a link inside a sentence (14.6-2)', async ({
   await loadMarkdown(page, `詳しくは[この記事](${EXTERNAL_HREF})を参照。\n`);
 
   await page.locator('.ProseMirror a').first().click();
-  // The bubble is up — otherwise the absence below would pass for the wrong reason.
+  // The bubble is up, or the absence below passes vacuously.
   await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
   // A card is a block (§5.2-1), so there is no card to make out of a link the sentence needs.
   await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
@@ -740,8 +634,7 @@ test('a bare URL alone on a line stays a plain link (14l)', async ({ page }) => 
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
 
-  // Typed, autolinked, and left alone: §4.1 (a) priced the loss of this form too high to take, and
-  // a paste-time conversion would have taken it (§14.6).
+  // Typed, autolinked, left alone: §4.1 (a) and §14.6.
   await page.keyboard.type(`${EXTERNAL_HREF} `);
   await settle(page);
   expect(await docString(page)).not.toContain('linkCard');
@@ -749,13 +642,8 @@ test('a bare URL alone on a line stays a plain link (14l)', async ({ page }) => 
 });
 
 test('a row from an older version is not used, however fresh it is (14t)', async ({ page }) => {
-  // §14.3.1. The failure this pins was measured on 2026-08-18: rows written in the hours before
-  // the `image` column existed kept their week-long TTL, so the cards built from them had no
-  // picture and no amount of reopening the post could shake them loose. Age was never the whole
-  // question — what the row was written by is the other half.
-  //
-  // The seeded row (e2e/prepare-db.mts) is minutes old, `ok`, and carries a title. If age decided,
-  // the card would show 「古い版の行」. It is at version 0, so it does not.
+  // §14.3.1: which version wrote a row matters, not only its age. The seeded row (prepare-db.mts)
+  // is fresh, `ok` and titled 「古い版の行」, but at version 0, so the card must not show it.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -767,7 +655,7 @@ test('a row from an older version is not used, however fresh it is (14t)', async
   await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
   await expect(card(page).locator('.link-card-title')).not.toHaveText('古い版の行');
 
-  // And it was rewritten rather than merely ignored — the next render must not repeat the work.
+  // Rewritten, not just ignored, so the next render does not repeat the work.
   const db = new Database(TEST_DB_PATH, { readonly: true });
   const row = db
     .prepare('SELECT status, version FROM link_previews WHERE url = ?')
@@ -777,19 +665,16 @@ test('a row from an older version is not used, however fresh it is (14t)', async
 });
 
 test('the bubble still offers the card after 適用 (14u)', async ({ page }) => {
-  // Reported 2026-08-18: the button was there, the author edited the link, pressed 適用, and it was
-  // gone from the row it came back to. `applyDraft` leaves the selection covering the link — as a
-  // *range* — and the placement question being asked refused a range outright (§14.6-2). The
-  // command replaces a textblock, so the question is whether the parent can hold a card in its
-  // place, which a range answers as well as a caret does.
+  // After 適用 the selection covers the link as a range, and the placement check refused ranges
+  // (§14.6-2). The command replaces a textblock, so the question is whether the parent can hold a
+  // card there, which a range answers as well as a caret.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `[リンク](${EXTERNAL_HREF})\n\n本文\n`);
 
   await page.locator('.ProseMirror a').first().click();
-  // The bubble is a floating card that arrives a frame or two later; counting before it is up
-  // measures nothing, whichever way the code behaves.
+  // The bubble arrives a frame or two later; counting before it is up measures nothing.
   await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'カードにする' })).toBeVisible();
 
@@ -802,8 +687,7 @@ test('the bubble still offers the card after 適用 (14u)', async ({ page }) => 
 });
 
 test('the first paragraph of a list item is not offered as a card (14u)', async ({ page }) => {
-  // `listItem` is `paragraph block*`, so replacing its first child with a card would leave the item
-  // headless. The old question (may a block go *after* this textblock) said yes to exactly that.
+  // `listItem` is `paragraph block*`: replacing its first child with a card would leave it headless.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -814,33 +698,24 @@ test('the first paragraph of a list item is not offered as a card (14u)', async 
   await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
 });
 
-// §18: the article being written cannot be made into a card of itself. Four doors, and every one of
-// them is measured here rather than through the predicate alone — the predicate is unit-tested
-// (lib/link-card-href.test.ts) and says nothing about whether the editor ever asks it.
-//
-// These open a post of their own rather than one of the seeded two. Two reasons: the create-mode
-// path is the one the wiring exists for (a brand-new post learns its slug from the first autosave,
-// long after the extension list was built, which is why the slug travels through the editor's
-// storage), and a spec that loaded a document into `second-post` would leave its autosaved working
-// copy behind for every spec after it.
+// §18: a post cannot be made into a card of itself. Each door is measured here; the predicate
+// alone is unit-tested (lib/link-card-href.test.ts). A post of its own: create mode is what the
+// wiring is for (the slug arrives with the first autosave, through the editor's storage), and a
+// seeded post would keep this spec's working copy for every later spec.
 async function openOwnPost(page: Page, title: string): Promise<string> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.getByLabel('タイトル').fill(title);
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('本文');
-  // Autosave creates the row — and with it the slug this whole section is about. The URL swap is
-  // what says the editor has adopted the identity.
+  // Autosave creates the row and the slug; the URL swap says the editor adopted it.
   await expectAutosaved(page);
   await page.waitForURL(/\/admin\/posts\/\d+\/edit/);
   return postSlug(page);
 }
 
-// Reopens the picker on an already-resolved card via 「変更」 — the only surviving door to it, now
-// that a fresh insert lands resolved via the shared dialog (§24.2, §21). The picker itself
-// (`renderPicker`) is unchanged and untested by that move: 「変更」 flips the same NodeView-local
-// `editing` flag a fresh, never-resolved card used to start with, so everything downstream of "the
-// picker is open" still measures exactly what it did before.
+// 「変更」 is the only door back to the picker (§24.2, §21); it flips the same `editing` flag a
+// never-resolved card starts with, so the picker under test is unchanged.
 async function openPickerViaChange(page: Page) {
   await card(page).getByRole('button', { name: '変更' }).click();
   const search = page.locator('.link-card-search');
@@ -862,15 +737,12 @@ test('the picker drops the post being edited, and says why when nothing is left 
   const search = await openPicker(page);
   const results = page.locator('.link-card-results');
 
-  // The default list is every post: this one is not in it, and the others are one click away —
-  // which is what keeps the absence below from passing on a picker that lists nothing at all.
-  // Counted rather than named: the list is `LIMIT = 20` over every post newest-first
-  // (app/api/posts/search/route.ts), so which posts are in it depends on how many other specs
-  // have published by the time this one runs, and under `workers > 1` that is not knowable.
+  // The others are listed, so the absence below is not a picker listing nothing. Counted, not
+  // named: `LIMIT = 20` newest-first (app/api/posts/search/route.ts) depends on other specs.
   await expect(results.locator('.link-card-result')).not.toHaveCount(0);
   await expect(results.getByText(title)).toHaveCount(0);
 
-  // The one case where dropping the row would say something untrue: this post is the only match.
+  // This post is the only match, the one case where dropping the row says something untrue.
   await search.fill(title);
   await expect(results.getByText('この記事自身は参照できません')).toBeVisible();
   await expect(results.getByText('一致する記事がありません')).toHaveCount(0);
@@ -883,28 +755,24 @@ test('the picker drops the post being edited, and says why when nothing is left 
   await search.fill('React');
   await expect(results.getByRole('button', { name: CARD_TITLE })).toBeVisible();
 
-  // The paste door (§14.5.1 hands this one the internal reference): this post's own public URL.
+  // The paste door (§14.5.1): this post's own public URL.
   await search.fill(`${BASE_URL}/posts/${slug}`);
   await expect(results.getByText('この記事自身は参照できません')).toBeVisible();
   await expect(results.getByRole('button', { name: 'この URL をカードにする' })).toHaveCount(0);
 
-  // Another post's public URL still becomes a card, so the refusal is about this post and not
-  // about own-origin URLs in general.
+  // Another post's URL still becomes a card: the refusal is about this post, not own-origin URLs.
   await search.fill(`${BASE_URL}${CARD_HREF}`);
   await expect(results.getByRole('button', { name: 'この URL をカードにする' })).toBeVisible();
 });
 
 test('a link to the post being edited is not offered 「カードにする」 (18b)', async ({ page }) => {
   const slug = await openOwnPost(page, `自参照リンク ${Date.now()}`);
-  // Reloaded on purpose: this is the edit-mode entry, where the slug is known before the editor
-  // exists. 18a covers the create-mode one, where it is not.
+  // Edit mode: the slug is known before the editor exists. 18a covers create mode.
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `[この記事](/posts/${slug})\n\n[別の記事](${CARD_HREF})\n`);
-  // setContent leaves the caret inside the *second* link, so its bubble is already up — and it
-  // covers the line above, which is the link this test is about to click (measured: the click
-  // retried for 30s against the bubble). Put the caret somewhere that is not a link first.
+  // setContent leaves the caret in the second link, whose bubble covers the link to click.
   await setRange(page, 1);
   await expect(page.locator('.link-bubble')).toHaveCount(0);
 
@@ -912,10 +780,10 @@ test('a link to the post being edited is not offered 「カードにする」 (1
   await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
 
-  // The link itself is untouched — §18 is about the card, not about linking to yourself in text.
+  // The link is untouched: §18 is about cards, not linking to yourself in text.
   expect(await markdown(page)).toContain(`[この記事](/posts/${slug})`);
 
-  // The other post's link, and the same guard against a bubble sitting over the target.
+  // The other post's link, with the same guard against the bubble.
   await setRange(page, 1);
   await expect(page.locator('.link-bubble')).toHaveCount(0);
   await page.locator('.ProseMirror a').nth(1).click();
@@ -925,26 +793,22 @@ test('a link to the post being edited is not offered 「カードにする」 (1
 test('a card that already points at this post says so (18c)', async ({ page }) => {
   const slug = await openOwnPost(page, `自参照カード ${Date.now()}`);
   await page.locator('.ProseMirror').click();
-  // The door the other three cannot close: a body that already carries the reference, written
-  // before this rule or pasted as raw HTML. It resolves to a refusal rather than to the post.
+  // A body already carrying the reference (older, or pasted as raw HTML) resolves to a refusal.
   await loadMarkdown(page, `<div class="link-card" data-href="/posts/${slug}"></div>\n\n本文\n`);
 
   await expect(card(page).locator('.link-card-meta')).toHaveText('この記事自身は参照できません');
   await expect(card(page).locator('.link-card-title')).toHaveText(`/posts/${slug}`);
-  // Still a card in the document, with its reference intact: the author is the one who decides
-  // what to do about it (「変更」 or 「リンクに戻す」), and nothing was rewritten behind them.
+  // Still a card with its reference: the author decides (「変更」 or 「リンクに戻す」).
   expect(await markdown(page)).toContain(`data-href="/posts/${slug}"`);
 });
 
 test('カードにする asks the page again; an ordinary render does not (14.3.2)', async ({ page }) => {
-  // §14.3.2. The author fixes the other side — a sharing setting, most often — and presses the
-  // button again. Without this the row answers for them for up to `FAIL_TTL_MS`, and the card
-  // repeats a failure that has already been fixed. **Both halves have to be measured**: that the
-  // explicit conversion re-asks, and that the render after it does not — a flag left set would put
-  // the automatic path on the network, which is the thing the row exists to keep off it.
+  // §14.3.2: after fixing the other side, the author presses again. **Both halves**: the explicit
+  // conversion re-asks, and the render after it does not, or the automatic path would hit the
+  // network the row exists to keep it off.
   const HREF = 'https://unreachable.example/force-refresh';
   const MD = `<div class="link-card" data-href="${HREF}"></div>\n\n本文\n`;
-  // The client's own requests, not the server's: what is under test is which one carries the flag.
+  // The client's requests: which one carries the flag is under test.
   const asked: string[] = [];
   page.on('request', (req) => {
     const url = new URL(req.url());
@@ -964,31 +828,26 @@ test('カードにする asks the page again; an ordinary render does not (14.3.
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, MD);
 
-  // ① The NodeView's own lookup. It never forces, however the page answered.
+  // ① The NodeView's own lookup never forces.
   await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
   expect(asked.every((search) => !search.includes('force=1'))).toBe(true);
   await expect.poll(fetchedAt).not.toBeNull();
   const first = fetchedAt();
 
-  // ② 「リンクに戻す」 hands back a link whose text is the reference (nothing resolved, so there is
-  // no title to use), and the bubble offers 「カードにする」 over it — the round trip the note names.
+  // ② 「リンクに戻す」 gives back a link titled with the reference; 「カードにする」 over it.
   await card(page).getByRole('button', { name: 'リンクに戻す' }).click();
   await page.locator('.ProseMirror a').first().click();
   await page.getByRole('button', { name: 'カードにする' }).click();
 
   await expect(card(page).locator('.link-card-meta')).toHaveText(RETRY_NOTE);
   expect(asked.filter((search) => search.includes('force=1'))).toHaveLength(1);
-  // The row was written again, which is the half the query string cannot prove: the server skipped
-  // a row it would otherwise have answered from, and asked the page.
+  // The row was rewritten: the server skipped a row it would have answered from.
   await expect.poll(fetchedAt).toBeGreaterThan(first!);
   const second = fetchedAt();
 
-  // ③ The flag is consumed by that one lookup **even though the page failed again**. A fresh
-  // NodeView over the same reference is back behind the TTL: it asks the route, and the route
-  // answers from the row without touching the network.
-  // A genuinely fresh mount. Re-loading the same markdown into the open editor is not one: the
-  // node lands at the same position with the same attrs, ProseMirror keeps the NodeView it already
-  // has, and no lookup runs at all (measured 2026-08-29 — the count did not move).
+  // ③ The flag is spent by that one lookup even though the page failed again; a fresh NodeView is
+  // back behind the TTL. Reloading the same markdown is not a fresh mount: ProseMirror keeps the
+  // NodeView for an unchanged node.
   const before = asked.length;
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -1000,10 +859,7 @@ test('カードにする asks the page again; an ordinary render does not (14.3.
   expect(fetchedAt()).toBe(second);
 });
 
-// The insert search's rows (§5.2-5 / §20). Every assertion here is on a row's *parts*: the text was
-// already right before the change, and the parts are what it added.
-//
-// A shared opener, because both of these want the picker and nothing else.
+// The insert search's rows (§5.2-5 / §20): the assertions are on a row's parts.
 async function openPickerOnNewPost(page: Page): Promise<void> {
   await openWithCard(page);
   await openPickerViaChange(page);
@@ -1027,8 +883,7 @@ function rowShapes(page: Page): Promise<RowShape[]> {
         label: el.getAttribute('aria-label'),
         height: Math.round(el.getBoundingClientRect().height),
         hasImage: img !== null,
-        // `naturalWidth`, not `src`: a 404 leaves the attribute exactly as asserted, which is the
-        // point §17 already made about the card's own picture.
+        // `naturalWidth`, not `src`: a 404 keeps the attribute (§17).
         loaded: img !== null && img.naturalWidth > 0,
         placeholder: img?.classList.contains('link-card-result-placeholder') ?? false,
         category: el.querySelector('.link-card-result-category')?.textContent ?? null,
@@ -1038,14 +893,11 @@ function rowShapes(page: Page): Promise<RowShape[]> {
   );
 }
 
-// A body image is all a row needs to have a picture of its own: `resolveThumbnail` falls back to
-// the body's first one, and the row draws whatever that function returns. So a post can be given
-// either kind of row without an upload — this one is already in data/uploads, the same 390x220
-// file e2e/image-layout.spec.ts measures.
+// `resolveThumbnail` falls back to the body's first image, so no upload is needed; this file is
+// already in data/uploads (the one e2e/image-layout.spec.ts measures).
 const BODY_IMAGE = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 
-// A titled post with a body, left as a draft: the picker lists drafts too (§5.2-4), so autosave
-// is the whole of what a row needs and there is no publish to wait for.
+// Drafts are listed (§5.2-4), so autosave is enough.
 async function draftPost(page: Page, title: string, body: string): Promise<void> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -1058,11 +910,8 @@ async function draftPost(page: Page, title: string, body: string): Promise<void>
 test('every insert-search row carries a picture, and they are all one height (20a, 20d)', async ({
   page,
 }) => {
-  // Two posts of this test's own, one of each kind. The seeded pair used to arrive through the
-  // picker's default list, but that list is `LIMIT = 20` newest-first over every post, so the
-  // seeds drop off it as soon as enough specs have published — which under `workers > 1` is not
-  // something this spec can know. A stamp shared by both titles is a query that returns exactly
-  // these two, and the search filters before the cap.
+  // Two posts of this test's own, found by a shared stamp: seeded posts fall off the 20-row
+  // default list once enough specs publish, and the search filters before the cap.
   const stamp = `行そろえ ${Date.now()}`;
   await draftPost(page, `${stamp} 絵あり`, `![](${BODY_IMAGE})\n\n本文\n`);
   await draftPost(page, `${stamp} 絵なし`, '本文\n');
@@ -1077,24 +926,19 @@ test('every insert-search row carries a picture, and they are all one height (20
     expect(row.hasImage, row.label ?? '').toBe(true);
     expect(row.loaded, row.label ?? '').toBe(true);
   }
-  // Both kinds have to be on screen, or the loop above says nothing about the fallback — which is
-  // why the pair above is one post with a picture of its own and one with none (§17's house mark).
+  // Both kinds on screen, or the loop says nothing about the house-mark fallback (§17).
   expect(rows.some((row) => row.placeholder)).toBe(true);
   expect(rows.some((row) => !row.placeholder)).toBe(true);
 
-  // One height for every row. This is the assertion the `<picture>` margin broke — the house-mark
-  // rows stood at 109.8px against 53.8px (§20) — and an uneven list is also what makes a sweep
-  // measured from a row's own box land somewhere else (4b).
+  // One height for every row, which the `<picture>` margin broke (§20); uneven rows would also
+  // misplace 4b's sweep.
   expect([...new Set(rows.map((row) => row.height))]).toHaveLength(1);
 });
 
 test('a draft row wears a badge and names its category by label, and its name is unchanged (20b, 20c)', async ({
   page,
 }) => {
-  // A draft is made here rather than seeded, for 4h's reason — and it is also the one post whose
-  // category is certain. It is filed under ブログ, not left at the default, so the two rows below
-  // carry different labels: with both on 技術記事, a row that printed the default whatever the post
-  // held would pass.
+  // Filed under ブログ, not the default, so a row printing the default whatever the post holds fails.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   const draftTitle = `ブログの下書き ${Date.now()}`;
@@ -1110,22 +954,17 @@ test('a draft row wears a badge and names its category by label, and its name is
   const [draftRow] = await rowShapes(page);
   expect(draftRow.badge).toBe('未公開');
   expect(draftRow.category).toBe('ブログ');
-  // The name is the title plus the draft note and nothing else — not the category, not the picture.
-  // `getByRole('button', { name })` is a full-string match, and the rows above are asked for that
-  // way by twelve other tests in this file.
+  // The name is the title plus the draft note only: `getByRole('button', { name })` is a full match,
+  // and other tests here select rows that way.
   expect(draftRow.label).toBe(`${draftTitle}（未公開）`);
   await expect(
     page.locator('.link-card-results').getByRole('button', { name: `${draftTitle}（未公開）` }),
   ).toBeVisible();
 
-  // And the other half: the seeded post is in the other category and draws that label.
+  // The seeded post draws the other category.
   await page.locator('.link-card-search').fill(CARD_TITLE);
-  // **Waiting for one row does not say it is the NEW one.** Both queries return exactly one, the
-  // search is asynchronous, and a count that is already right is reached without anything having
-  // changed — so `toHaveCount(1)` alone let the draft above be read back as the published post,
-  // and `badge` came out 未公開. Intermittent by construction: it depends on whether the second
-  // query has landed, which is why it survived every full run until 2026-09-12 and then failed
-  // one. The draft leaving is the event that actually separates the two.
+  // **One row is not necessarily the new one**: both queries return one, the search is async, and a
+  // count already right is reached with nothing changed. The draft leaving is the separating event.
   await expect(
     page.locator('.link-card-results').getByRole('button', { name: `${draftTitle}（未公開）` }),
   ).toHaveCount(0);
@@ -1135,11 +974,8 @@ test('a draft row wears a badge and names its category by label, and its name is
   expect(publishedRow.category).toBe('技術記事');
 });
 
-// §20 の 20f. The gutter the card holds open for its own picture must not be held open by the
-// picker, whose rows now contain pictures of their own.
-//
-// Both states in one test on purpose: "the picker has no gutter" alone would also pass if the rule
-// were deleted outright, and the resolved card would then draw its title under its own image.
+// §20 の 20f: the gutter the card keeps for its picture must not be kept by the picker. Both states
+// in one test: "no gutter" alone would pass with the rule deleted.
 test('the picker fills the card’s width, and the resolved card still reserves its picture (20f)', async ({
   page,
 }) => {
@@ -1159,25 +995,20 @@ test('the picker fills the card’s width, and the resolved card still reserves 
       .evaluate((el) => Math.round(el.getBoundingClientRect().width));
 
   expect(await gutter()).toBe('0px');
-  // The rows reach the far edge of the text column. `:has(img)` matched a row's own thumbnail and
-  // held 272px of a 766px card empty (measured 2026-09-02).
+  // The rows reach the text column's far edge (`:has(img)` once matched a row's thumbnail).
   expect(await rowWidth()).toBe(await bodyWidth());
 
-  // Searched, not picked off the default list: that list is capped at 20 newest-first, so a
-  // seeded post falls off it once enough specs have published. The query filters before the cap.
+  // Searched: the default list is capped at 20 newest-first.
   await page.locator('.link-card-search').fill(CARD_TITLE);
   await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
   await expect(page.locator('.link-card-view .link-card-title')).toHaveText(CARD_TITLE);
-  // And the other half: a resolved card keeps the room, or its title runs under its own picture.
+  // A resolved card keeps the room, or its title runs under its picture.
   expect(await gutter()).not.toBe('0px');
   await expect(page.locator('.link-card-view .link-card-image')).toBeVisible();
 });
 
-// §7.4.1. 「変更」 used to be `setHref('')` — an editing transaction in its own right, fired the
-// moment the button was pressed and before the author had picked anything to replace the card
-// with. The only way back from it was undo, and picking a new target first meant undoing twice.
-// This is the fix: opening the picker from a resolved card costs no transaction at all, so there
-// is nothing for these three exits to undo — each just redraws the same node.
+// §7.4.1: opening the picker from a resolved card dispatches nothing, so none of the three exits
+// has anything to undo.
 for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
   test(`「変更」 costs no undo step, and ${exit} restores the card intact (4m)`, async ({
     page,
@@ -1190,8 +1021,7 @@ for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
 
     await card(page).getByRole('button', { name: '変更' }).click();
     await expect(page.locator('.link-card-search')).toBeFocused();
-    // The whole point: the node's href is still what it was while the picker is up, not cleared
-    // the way `setHref('')` used to clear it — `markdown()` reads the live doc, not the chrome.
+    // The href is intact while the picker is up; `markdown()` reads the live doc.
     expect(await markdown(page)).toContain(CARD_MD);
     expect((await historyState(page)).undoDepth).toBe(before);
 
@@ -1200,22 +1030,18 @@ for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
     } else if (exit === 'Escape') {
       await page.keyboard.press('Escape');
     } else {
-      // Outside the card, and outside the picker's own search box — the post's title field is
-      // neither, and clicking it is a press a real author would make while abandoning the picker.
+      // Outside both card and picker: what an author abandoning the picker would press.
       await page.getByLabel('タイトル').click();
     }
 
     await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
     await expect(page.locator('.link-card-search')).toHaveCount(0);
     expect(await markdown(page)).toContain(CARD_MD);
-    // Nothing was ever dispatched, so there is nothing Ctrl+Z should undo here — the depth is
-    // unchanged from before 「変更」 was even pressed.
+    // Nothing was dispatched, so the depth is unchanged since before 「変更」.
     expect((await historyState(page)).undoDepth).toBe(before);
 
-    // §7.4.1's second half: the raw `dom.focus()` this used to end on revealed whatever the
-    // document's real selection still was — never moved by pressing 変更 in the first place — which
-    // is what sent the scrollbar somewhere the author was not looking. `cancelEditAndFocus` puts a
-    // NodeSelection on the card itself instead, for the two exits that mean "stay in the editor."
+    // §7.4.1's second half: `cancelEditAndFocus` puts a NodeSelection on the card, rather than
+    // `dom.focus()` revealing a stale selection and scrolling there.
     const selectedNode = await page.evaluate(() => {
       const el = document.querySelector('.ProseMirror') as
         | (Element & {
@@ -1226,8 +1052,7 @@ for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
       return node ? { type: node.type.name, attrs: node.attrs } : null;
     });
     if (exit === 'outside click') {
-      // The press that triggered this already said where the author wants to be — pulling
-      // selection back onto the card here would fight that press.
+      // The outside press already said where the author wants to be.
       await expect(page.getByLabel('タイトル')).toBeFocused();
       expect(selectedNode).toBeNull();
     } else {
@@ -1236,12 +1061,8 @@ for (const exit of ['cancel button', 'Escape', 'outside click'] as const) {
   });
 }
 
-// Found while retargeting other specs at 「変更」 once it became the only door to the picker
-// (§24.2): picking the SAME post a card already pointed at left the picker on screen forever, with
-// a document that already said the card had resolved. `setNodeAttribute` with an unchanged value
-// produces a node ProseMirror's own diff treats as `eq()` to the one before the transaction, so it
-// may never call this NodeView's `update` — and nothing else was redrawing it. Fixed by having
-// `setHref` call `render` itself rather than trust that callback to fire.
+// Picking the post the card already names left the picker up: an unchanged `setNodeAttribute`
+// is `eq()` to the old node, so `update` may never run. `setHref` calls `render` itself.
 test('「変更」, then picking the post the card already names, still redraws it (4o)', async ({
   page,
 }) => {
@@ -1249,7 +1070,7 @@ test('「変更」, then picking the post the card already names, still redraws 
   await card(page).getByRole('button', { name: '変更' }).click();
   await expect(page.locator('.link-card-search')).toBeFocused();
 
-  // Searched for the same reason as 20f above: the default list is capped at 20 newest-first.
+  // Searched, as in 20f.
   await page.locator('.link-card-search').fill(CARD_TITLE);
   await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
 
@@ -1258,14 +1079,8 @@ test('「変更」, then picking the post the card already names, still redraws 
   expect(await markdown(page)).toContain(CARD_MD);
 });
 
-// The other half of §7.4.1: a card that has never resolved has no card to cancel back to, and the
-// picker it already shows (§5.2-3, §7.5) must not grow a button that undoes nothing or, worse,
-// reads as a way to back out of the insertion itself.
-//
-// Arrived at via a hand-written empty `data-href`, not the slash menu: a fresh insert now goes
-// through the shared dialog (docs/embed-requirements.md §24.2) and lands with a resolved href
-// already, so the slash menu no longer produces an unresolved card at all — the only remaining
-// door to this state is a body written or pasted before this rule, or by hand (§7.5).
+// §7.4.1: a never-resolved card has nothing to cancel back to, so its picker has no キャンセル.
+// Reached by a hand-written empty `data-href`: a fresh insert now lands resolved (§24.2, §7.5).
 test('a freshly-inserted card’s picker has no キャンセル (4m)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -1276,6 +1091,6 @@ test('a freshly-inserted card’s picker has no キャンセル (4m)', async ({ 
   await expect(card(page).getByRole('button', { name: 'キャンセル' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.getByLabel('タイトル').click();
-  // Still there, still unresolved — Escape and an outside click are no-ops with no card behind them.
+  // Still unresolved: Escape and an outside click are no-ops here.
   await expect(page.locator('.link-card-search')).toBeVisible();
 });

@@ -12,14 +12,12 @@ async function getMarkdown(page: Page): Promise<string> {
   });
 }
 
-// A card the seeded DB can resolve (e2e/prepare-db.mts), in the stored reference-only form —
-// the same constants editor-link-card.spec.ts uses.
+// A card the seeded DB resolves (e2e/prepare-db.mts), as in editor-link-card.spec.ts.
 const CARD_HREF = '/posts/second-post';
 const CARD_TITLE = 'React Server Components を学ぶよ';
 const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
 
-// One handle per matching top-level node (components/editor/block-drag-handle.ts); a plain
-// paragraph gets none. Structural check, no dragging involved.
+// One handle per matching top-level node (block-drag-handle.ts); none for a paragraph.
 test('a handle appears before a target type, none before a paragraph', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -42,9 +40,7 @@ test('a handle appears before a target type, none before a paragraph', async ({ 
   expect(targets).toEqual(['DIV']);
 });
 
-// A blockquote nested inside a callout must not get its own handle — decorations() only scans
-// state.doc's direct children, so a nested instance is excluded by construction rather than by
-// an extra check. This is the behavior confirmed during the design discussion.
+// decorations() scans only the doc's direct children, so a nested blockquote gets no handle.
 test('a blockquote nested inside a callout gets no handle of its own', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -59,10 +55,8 @@ test('a blockquote nested inside a callout gets no handle of its own', async ({ 
   expect(handleCount).toBe(1); // the callout's own handle only
 });
 
-// mousedown on the handle must select the whole node — not just place a cursor in it. This also
-// covers the plain-click path: DragController only starts tracking movement (block-drag-handle.ts's
-// DRAG_THRESHOLD) once the pointer actually moves, so a bare mousedown+mouseup with no motion in
-// between — exactly what this test does — must leave the NodeSelection as the only effect.
+// mousedown selects the whole node. Also the plain-click path: DragController tracks movement
+// only past DRAG_THRESHOLD, so a still mousedown+mouseup leaves only the NodeSelection.
 test('mousedown on a handle creates a NodeSelection over its block', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -95,11 +89,8 @@ test('mousedown on a handle creates a NodeSelection over its block', async ({ pa
   await page.mouse.up();
 });
 
-// End-to-end reorder via the handle, covering the two structurally different cases: a plain node
-// (blockquote) and a node prosemirror-tables wraps in an extra `.tableWrapper` div (table). Dragging
-// is DragController's own mousemove/mouseup tracking (block-drag-handle.ts), not native HTML5
-// drag-and-drop, so a plain page.mouse sequence drives it end-to-end — no CDP-level drag synthesis
-// needed (contrast table-drop-guard.spec.ts, which still needs it for actual native DnD elsewhere).
+// Reorder via the handle for a plain node and one prosemirror-tables wraps in `.tableWrapper`.
+// DragController's own mousemove/mouseup, not native DnD, so page.mouse drives it end to end.
 for (const kind of ['blockquote', 'table'] as const) {
   test(`dragging a ${kind}'s handle past a following paragraph reorders it (not a copy)`, async ({
     page,
@@ -136,28 +127,24 @@ for (const kind of ['blockquote', 'table'] as const) {
 
     await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
     await page.mouse.down();
-    // Past DRAG_THRESHOLD so DragController treats it as a drag, then on to just past the
-    // following paragraph's bottom — findBoundary() resolves that to "insert after it".
+    // Past DRAG_THRESHOLD, then past the paragraph's bottom: findBoundary() says "insert after it".
     await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
       steps: 6,
     });
     await expect(page.locator('.block-drag-indicator')).toBeVisible();
-    // The pointer is now well past the source block, so CSS :hover/:has(+ :hover) no longer
-    // targets its handle — DragController's `is-dragging` class (block-drag-handle.ts) is what
-    // keeps it visible instead, matching how native HTML5 drag used to freeze :hover in place.
+    // Past the source block, so `is-dragging`, not :hover, keeps its handle visible.
     await expect(handle).toHaveClass(/is-dragging/);
     await expect(handle).toHaveCSS('opacity', '1');
-    // The cursor-following preview (block-drag-handle.ts's DragController.ensurePreview) is up too,
-    // showing a clone of what's actually being moved.
+    // The cursor-following preview (`ensurePreview`) is up too.
     const preview = page.locator('.block-drag-preview');
     await expect(preview).toBeVisible();
     await expect(preview.locator(kind === 'blockquote' ? 'blockquote' : 'table')).toHaveCount(1);
     await page.mouse.up();
     await expect(handle).not.toHaveClass(/is-dragging/);
-    // The drop path clears it too, not just Escape/abort (covered separately).
+    // The drop clears it too, not just Escape (tested separately).
     await expect(preview).toBeHidden();
 
-    // Moved, not copied: the block now comes after "後の段落", and there's exactly one of it.
+    // Moved, not copied: one copy, after "後の段落".
     await expect
       .poll(async () => {
         const md = await getMarkdown(page);
@@ -173,14 +160,9 @@ for (const kind of ['blockquote', 'table'] as const) {
   });
 }
 
-// The link card (docs/link-card-requirements.md §7.2), which is the one target type that is both an
-// atom and a NodeView. Three things at once, because they only hold together: the handle belongs to
-// the card, the drag reorders it, and the card comes out the other side still pointing at the same
-// post. The last one is the point — the card stores a reference and nothing a reader sees (§4.2), so
-// a move that dropped `data-href` would leave a card that had silently forgotten its target, which
-// is exactly the shape of the failure §7.1 recovered from the WAL. The reference is therefore
-// asserted on the saved markdown, not on the rendered title (which the NodeView refetches and would
-// happily redraw over an empty attribute).
+// The link card (docs/link-card-requirements.md §7.2), the one target that is an atom and a
+// NodeView: the handle is its own, the drag reorders it, and it keeps its post. The reference is
+// asserted on the saved markdown, since the NodeView would redraw a title over an empty attribute.
 test("dragging a link card's handle past a following paragraph reorders it, reference intact", async ({
   page,
 }) => {
@@ -193,8 +175,7 @@ test("dragging a link card's handle past a following paragraph reorders it, refe
   await editor.click();
   await loadMarkdown(page, `${CARD_MD}\n\n後の段落\n`);
 
-  // The handle exists and is the card's own: `decorations()` places it immediately before its
-  // target, so the sibling right after it is the thing it would drag.
+  // `decorations()` places the handle just before its target.
   const handle = editor.locator('.block-drag-handle');
   await expect(handle).toHaveCount(1);
   const targetClass = await page.evaluate(
@@ -204,8 +185,7 @@ test("dragging a link card's handle past a following paragraph reorders it, refe
   );
   expect(targetClass).toContain('link-card-view');
 
-  // Resolved first, so the preview assertion below is about a real card rather than a card still
-  // waiting on `/api/posts/search`.
+  // Resolved first, so the preview below carries a real card.
   await expect(editor.locator('.link-card-title')).toHaveText(CARD_TITLE);
 
   const handleBox = await handle.boundingBox();
@@ -214,10 +194,8 @@ test("dragging a link card's handle past a following paragraph reorders it, refe
   const targetBox = await targetPara.boundingBox();
   if (!handleBox || !cardBox || !targetBox) throw new Error('missing bounding box');
 
-  // alignHandles() pins each handle's `top` to its target's `offsetTop`, which is only the right
-  // number while the two share an offsetParent (`.ProseMirror`). Asserted for this type because the
-  // drag below cannot catch a misalignment — it aims at the handle's own box wherever that box has
-  // ended up, so a handle parked at the top of the document would still drive the whole gesture.
+  // alignHandles() sets `top` from the target's `offsetTop`, right only with a shared offsetParent.
+  // The drag below aims at the handle wherever it is, so it cannot catch a misplaced handle.
   expect(Math.abs(handleBox.y - cardBox.y)).toBeLessThan(8);
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
@@ -226,26 +204,20 @@ test("dragging a link card's handle past a following paragraph reorders it, refe
     steps: 6,
   });
   await expect(page.locator('.block-drag-indicator')).toBeVisible();
-  // The preview clones the NodeView's own DOM, so what follows the cursor is the card as drawn —
-  // not the empty `div.link-card` the document actually stores.
+  // The preview clones the NodeView's DOM: the card as drawn, not the stored empty div.
   const preview = page.locator('.block-drag-preview');
   await expect(preview.locator('.link-card-view')).toHaveCount(1);
   await expect(preview.locator('.link-card-title')).toHaveText(CARD_TITLE);
   await page.mouse.up();
 
   expect(errors).toEqual([]);
-  // Moved, not copied. TrailingNode adds the empty paragraph, since the card is now the last block.
+  // Moved, not copied; TrailingNode adds the empty paragraph.
   await expect.poll(() => docString(page)).toBe('doc(paragraph("後の段落"), linkCard, paragraph)');
   expect(await getMarkdown(page)).toContain(CARD_MD);
 });
 
-// The original reported bug, guarded directly: dropping on the very next indicator down (not the
-// one after that) must move the block by exactly one slot. Before findBoundary() excluded the
-// dragged node from its own candidates (block-drag-handle.ts), its still-full-size `from`/`to`
-// gaps sat a full block-height apart, so this exact drop was a no-op and you needed to cross both
-// before anything moved. No settle-then-remeasure dance needed here (contrast an earlier,
-// collapse-based version of this fix): nothing reflows anymore, so `boxB`'s position is stable for
-// the whole gesture.
+// Dropping on the very next indicator down moves the block one slot. findBoundary() excludes the
+// dragged node from its candidates; otherwise its own gaps sat a block apart and this was a no-op.
 test('dropping on the very next indicator down moves the block by exactly one slot', async ({
   page,
 }) => {
@@ -266,7 +238,7 @@ test('dropping on the very next indicator down moves the block by exactly one sl
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Into B's lower half — the very next indicator stop below the dragged blockquote.
+  // Into B's lower half: the next indicator stop below.
   await page.mouse.move(boxB.x + boxB.width / 2, boxB.y + boxB.height - 2, { steps: 6 });
   await expect(page.locator('.block-drag-indicator')).toBeVisible();
   await page.mouse.up();
@@ -274,11 +246,8 @@ test('dropping on the very next indicator down moves the block by exactly one sl
   expect(await getMarkdown(page)).toBe('B\n\n> A\n\nC');
 });
 
-// The indicator must stay hidden while the pointer is still over the dragged block's own
-// (unmoving) rect — the "inSourceBounds" check in handleMouseMove (block-drag-handle.ts). Without
-// it, right at drag start (pointer barely past the handle, still over the block's own top) the
-// indicator would already show at the nearest real candidate — semantically a no-op, but visually
-// far away for a tall block, reading as reacting before you've gone anywhere.
+// No indicator while the pointer is over the dragged block's own rect (`inSourceBounds`): at drag
+// start it would already show at the nearest candidate, far away for a tall block.
 test("the indicator stays hidden while the pointer is still over the dragged block's own rect", async ({
   page,
 }) => {
@@ -298,21 +267,18 @@ test("the indicator stays hidden while the pointer is still over the dragged blo
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Past DRAG_THRESHOLD but still within A's own rect (its bottom, minus a couple px).
+  // Past DRAG_THRESHOLD, still inside A's rect.
   await page.mouse.move(handleBox.x + handleBox.width / 2, boxA.y + boxA.height - 2, { steps: 3 });
   await expect(page.locator('.block-drag-indicator')).toBeHidden();
 
-  // Now into B's lower half — outside A's rect, a real candidate.
+  // Into B's lower half, a real candidate.
   await page.mouse.move(boxB.x + boxB.width / 2, boxB.y + boxB.height - 2, { steps: 6 });
   await expect(page.locator('.block-drag-indicator')).toBeVisible();
   await page.mouse.up();
 });
 
-// The mirror of the downward case above, exercising applyMove's *other* branch: dragging up to a
-// gap that sits before the dragged node, so `tr.mapping.map(target)` is a no-op (the delete happens
-// entirely after the target) rather than shifting it. Guards the off-by-one that a single-direction
-// test would miss. A blockquote after a paragraph, dragged onto the paragraph's top half, must land
-// before it.
+// Upward: applyMove's other branch, where `tr.mapping.map(target)` is a no-op. A one-direction test
+// would miss its off-by-one.
 test("dragging a block's handle above the preceding paragraph reorders it (not a copy)", async ({
   page,
 }) => {
@@ -335,15 +301,14 @@ test("dragging a block's handle above the preceding paragraph reorders it (not a
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Past DRAG_THRESHOLD, then into the preceding paragraph's top half — findBoundary() resolves
-  // that (clientY < the paragraph's vertical midpoint) to "insert before it".
+  // Past DRAG_THRESHOLD, into the preceding paragraph's top half: "insert before it".
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + 2, { steps: 6 });
   await expect(page.locator('.block-drag-indicator')).toBeVisible();
   await expect(handle).toHaveClass(/is-dragging/);
   await page.mouse.up();
   await expect(handle).not.toHaveClass(/is-dragging/);
 
-  // Moved, not copied: the blockquote now comes before "前の段落", and there's exactly one of it.
+  // Moved, not copied: one copy, before "前の段落".
   await expect
     .poll(async () => {
       const md = await getMarkdown(page);
@@ -353,10 +318,8 @@ test("dragging a block's handle above the preceding paragraph reorders it (not a
   await expect(editor.locator('blockquote')).toHaveCount(1);
 });
 
-// While dragging, the pointer sweeps over other blocks on its way to the drop target — a real
-// mousemove, unlike the frozen :hover of the old native-drag implementation, so without the
-// `body.block-dragging` CSS guard (globals.css) those blocks' own handles would pop up too via the
-// same :has(+ :hover) reveal that shows them on a plain hover.
+// While dragging, the pointer sweeps over other blocks; without the `body.block-dragging` CSS
+// guard (globals.css) their handles would pop up via the same :has(+ :hover) reveal.
 test("dragging past another block's handle doesn't reveal it", async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -386,12 +349,9 @@ test("dragging past another block's handle doesn't reveal it", async ({ page }) 
     steps: 6,
   });
   await expect(handleB).toHaveCSS('opacity', '0');
-  // `cursor` is set directly on .block-drag-handle, which normally beats an ancestor's
-  // `!important` (that only wins among rules targeting the same element) — pointer-events: none
-  // on non-dragged handles (globals.css) is what actually keeps the pointer from landing on B's
-  // handle at all, so elementFromPoint here must resolve to something else, and that resolved
-  // element (not handleB's own irrelevant computed style) is what the browser bases the visible
-  // cursor icon on.
+  // The handle's own `cursor` beats the body's `!important` (which ranks only rules on the same
+  // element); pointer-events: none on other handles (globals.css) is what keeps the pointer off B's
+  // handle, so elementFromPoint must resolve elsewhere, and that element sets the visible cursor.
   const hitAtHandleB = await page.evaluate(
     ([x, y]) => {
       const el = document.elementFromPoint(x, y);
@@ -411,8 +371,7 @@ test("dragging past another block's handle doesn't reveal it", async ({ page }) 
   await page.mouse.up();
 });
 
-// Escape must abort the drag without dispatching a transaction — no reorder, no stray undo-history
-// entry (block-drag-handle.ts's DragController.handleKeyDown).
+// Escape aborts with no transaction and no history entry (`handleKeyDown`).
 test('Escape cancels an in-progress drag, leaving the document unchanged', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -443,9 +402,7 @@ test('Escape cancels an in-progress drag, leaving the document unchanged', async
   expect(await getMarkdown(page)).toBe(before);
 });
 
-// The cursor-following preview (block-drag-handle.ts's DragController.ensurePreview) is a plain
-// DOM clone of the dragged node, not a decoration — no `view.dom` relationship to verify, just
-// that it shows the right content while dragging and is cleared once the session ends.
+// The preview is a plain DOM clone, not a decoration: right content mid-drag, gone after.
 test('a cursor-following preview of the dragged block appears mid-drag and clears on Escape', async ({
   page,
 }) => {
@@ -481,12 +438,9 @@ test('a cursor-following preview of the dragged block appears mid-drag and clear
   await page.mouse.up();
 });
 
-// Pressing an edit key mid-drag must neither crash nor mutate the doc. The dragged block carries a
-// NodeSelection, so without suppression ProseMirror's deleteSelection removes it on Delete: the doc
-// shrinks, and applyMove's mousedown-captured from/to (block-drag-handle.ts) then point past the
-// end → "Position … out of range" thrown from the mouseup handler (surfacing as a pageerror). The
-// plugin's handleKeyDown swallows edit keys for the drag's duration, so the block survives and the
-// drop still reorders it. Uses the table (the type from the original report) as the dragged block.
+// An edit key mid-drag must not crash or edit: Delete would remove the NodeSelection, and applyMove's
+// captured from/to would then throw "Position … out of range" on mouseup. handleKeyDown swallows
+// edit keys. The table is the reported type.
 test('pressing Delete mid-drag neither crashes nor deletes the block', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -521,11 +475,8 @@ test('pressing Delete mid-drag neither crashes nor deletes the block', async ({ 
   await expect(editor.locator('table')).toHaveCount(1); // the block survived
 });
 
-// The table's own floating toolbar (components/editor/TableToolbar.tsx, a TipTap BubbleMenu) is
-// anchored to the table's on-screen position and only re-checks that position/visibility on an
-// editor transaction — but nothing dispatches one for the length of a raw mousemove-driven drag
-// (block-drag-handle.ts), so without the `body.block-dragging` CSS suppression (globals.css) it
-// would just sit there, stale, next to the cursor-following drag preview for the whole gesture.
+// The table toolbar re-checks only on a transaction, and a drag dispatches none, so without the
+// `body.block-dragging` suppression (globals.css) it would sit stale beside the ghost.
 test('the table toolbar hides during a drag and returns after', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -557,19 +508,13 @@ test('the table toolbar hides during a drag and returns after', async ({ page })
   await expect(toolbar).toBeHidden();
   await page.mouse.up();
 
-  // The drop moved the table, so it's still node-selected and still a table — the toolbar returns.
+  // Still a node-selected table after the drop, so the toolbar returns.
   await expect(toolbar).toBeVisible();
 });
 
-// Regression for a follow-on bug in the fix above: hiding the toolbar during the drag isn't enough
-// on its own — endSession() lifts the `.table-toolbar` CSS suppression the instant the drag ends,
-// synchronously and before the drop's own transaction has repositioned the menu. With the bubble
-// menu's default 250ms updateDelay, that reposition is scheduled via setTimeout, so the menu would
-// reappear at its stale (pre-drag) spot and visibly jump to the new one up to 250ms later —
-// TableToolbar.tsx's `updateDelay={0}` routes the reposition through the plugin's synchronous
-// branch instead, landing it in the same synchronous-plus-microtask window as the drop, before any
-// paint. Asserted here by comparing the position read immediately after `mouse.up()` (no wait)
-// against the same read after settling — they must already match.
+// endSession() lifts the suppression before the drop repositions the menu; with the bubble menu's
+// default 250ms updateDelay it reappeared at the old spot. TableToolbar.tsx's `updateDelay={0}`
+// takes the synchronous path, so a read right after `mouse.up()` must already match a settled one.
 test("the table toolbar's post-drop position has no stale intermediate frame", async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -605,19 +550,10 @@ test("the table toolbar's post-drop position has no stale intermediate frame", a
   expect(immediateBox).toEqual(settledBox);
 });
 
-// Dragging onto the footnote definitions' section. `block+ footnoteSection?` (footnote-extension.ts)
-// pins the section past the last place a block may go, so the gap at `doc.content.size` — which
-// findBoundary() used to return for any pointer below the last child's midpoint — is not a legal
-// target. The failure was silent in the document and loud in the console: `tr.insert` refuses an
-// unfittable slice by adding no step at all (`replaceStep` returns null), so the doc came back
-// byte-identical and only `NodeSelection.create` reacted, throwing "Cannot read properties of null
-// (reading 'nodeSize')" out of the mouseup handler. A doc-shape assertion alone therefore passes
-// either way — the pageerror watch is what actually discriminates, so it leads here.
-//
-// Post-fix the whole band from the last real block downwards resolves to the gap *above* the
-// section, which is the only schema-valid answer. The drop target Y is derived from the section's
-// own rect rather than a fixed offset, so a change in the definitions' height can't quietly move
-// this test off the zone it means to cover.
+// `block+ footnoteSection?` (footnote-extension.ts) makes `doc.content.size` an illegal target.
+// The failure is silent in the doc: `tr.insert` adds no step (`replaceStep` returns null) and only
+// `NodeSelection.create` throws from mouseup, so **the pageerror watch is what discriminates**. The
+// whole band below the last block resolves above the section; the target Y comes from its rect.
 test('dragging a block onto the footnote section drops it above the definitions, not past them', async ({
   page,
 }) => {
@@ -637,23 +573,20 @@ test('dragging a block onto the footnote section drops it above the definitions,
 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Into the section's own lower half — the deepest the pointer can go and still be over content,
-  // and the position that used to resolve to "after the section".
+  // The section's lower half, which used to resolve to "after the section".
   await page.mouse.move(sectionBox.x + sectionBox.width / 2, sectionBox.y + sectionBox.height - 2, {
     steps: 8,
   });
   const indicator = page.locator('.block-drag-indicator');
   await expect(indicator).toBeVisible();
-  // The indicator is drawn at the last *block*'s bottom edge, so it never appears below the
-  // definitions promising a drop that cannot happen.
+  // Drawn at the last block's bottom, never below the definitions.
   const indicatorBox = await indicator.boundingBox();
   if (!indicatorBox) throw new Error('missing bounding box');
   expect(indicatorBox.y).toBeLessThanOrEqual(sectionBox.y);
   await page.mouse.up();
 
   expect(errors).toEqual([]);
-  // Moved, not copied, and landed above the section — which is still the document's last child.
-  // (TrailingNode adds the empty paragraph, since the blockquote is now the last block before it.)
+  // Moved, not copied, above the section, which stays last; TrailingNode adds the empty paragraph.
   await expect
     .poll(() => docString(page))
     .toBe(
@@ -661,10 +594,8 @@ test('dragging a block onto the footnote section drops it above the definitions,
     );
 });
 
-// The visual counterpart to the NodeSelection test above: clicking a handle (no drag) node-selects
-// the block, which must be visibly ringed (globals.css `.ProseMirror-selectednode` outline) so it's
-// clear which block is selected — and thus what a Delete would remove. Element-agnostic: assert on
-// the class, since which element carries it varies by type (a bare node vs a NodeView/table wrapper).
+// Clicking a handle rings the block (globals.css `.ProseMirror-selectednode`), so it is clear what
+// Delete would remove. Asserted on the class, whichever element carries it.
 for (const kind of ['blockquote', 'table'] as const) {
   test(`clicking a ${kind}'s handle rings the selected block`, async ({ page }) => {
     await page.goto('/admin/posts/new');
@@ -692,17 +623,10 @@ for (const kind of ['blockquote', 'table'] as const) {
   });
 }
 
-// A long document, where the block has to travel further than one screen. The drag is driven by
-// plain mousemove/mouseup (block-drag-handle.ts's DragController), so nothing scrolls on its own the
-// way a native HTML5 drag would: before AUTOSCROLL_ZONE existed, holding the pointer at the bottom
-// edge left the page exactly where it was, and a target below the fold could not be reached at all.
-// That is worse than a drag that refuses, because the whole time the editor is *modal* —
-// `body.block-dragging` takes the cursor and text selection and handleKeyDown swallows every key,
-// so an author who cannot finish the gesture is looking at an editor that answers nothing. Measured
-// before the fix: `scrollY` 276 → 276 after 600ms parked at the edge.
-//
-// The pointer is deliberately never moved after it reaches the edge: the scrolling, and the
-// indicator's tracking of it, both have to happen without a mouse event to hang off.
+// A target below the fold. The drag is plain mousemove/mouseup, so nothing scrolls by itself, and
+// the session is modal (cursor, selection and keys taken), so an unfinishable drag leaves an editor
+// that answers nothing. The pointer never moves after reaching the edge: scrolling and the
+// indicator's tracking must happen without mouse events (AUTOSCROLL_ZONE).
 test('holding at the bottom edge scrolls the page so a target below the fold is reachable', async ({
   page,
 }) => {
@@ -714,7 +638,7 @@ test('holding at the bottom edge scrolls the page so a target below the fold is 
   await loadMarkdown(page, `> 引用文です\n\n${paragraphs}\n`);
   await page.evaluate(() => window.scrollTo(0, 0));
 
-  // Not vacuous only if the destination really is off-screen to begin with.
+  // Vacuous unless the destination starts off-screen.
   const lastVisible = await editor
     .locator('p', { hasText: '段落40' })
     .evaluate((el) => el.getBoundingClientRect().top < window.innerHeight);
@@ -728,7 +652,7 @@ test('holding at the bottom edge scrolls the page so a target below the fold is 
   await page.mouse.move(handleBox.x + 200, (await page.evaluate(() => window.innerHeight)) - 3, {
     steps: 8,
   });
-  // Parked at the edge, no further pointer movement: the page keeps scrolling until it runs out.
+  // Parked: the page keeps scrolling until it runs out.
   await expect
     .poll(() =>
       page.evaluate(
@@ -738,22 +662,15 @@ test('holding at the bottom edge scrolls the page so a target below the fold is 
     .toBe(true);
   await page.mouse.up();
 
-  // Landed at the tail gap — after every paragraph. (TrailingNode's empty paragraph is the very
-  // last block, so the quote is the last thing with content in it.)
+  // Landed at the tail gap; TrailingNode's empty paragraph follows.
   const md = await getMarkdown(page);
   expect(md.indexOf('段落40')).toBeLessThan(md.indexOf('> 引用文です'));
   expect(md.trim().endsWith('> 引用文です')).toBe(true);
 });
 
-// The same "the page moved under a stationary pointer" question, asked of the wheel, which keeps
-// working during a drag. findBoundary() answers in viewport coordinates, so a scroll changes which
-// gap the pointer is over without any mouse event at all — and the indicator is what the author is
-// aiming with. Measured before handleScroll existed: the wheel scrolled the page 400px and the
-// indicator stayed at `top: 710.312px`, so the drop applied a boundary computed against the
-// pre-scroll layout — a block silently landing somewhere other than where the line was drawn.
-//
-// The assertion is that pairing, not a position: whichever paragraph the line ends up at is the one
-// the block must land in front of.
+// The wheel moves the page under a still pointer, and findBoundary() answers in viewport
+// coordinates, so the target must follow the scroll (`handleScroll`). The claim is the pairing:
+// the block lands before whichever paragraph the line is drawn at.
 test('the drop target follows a wheel-scroll made mid-drag', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -761,18 +678,15 @@ test('the drop target follows a wheel-scroll made mid-drag', async ({ page }) =>
   await editor.click();
   const paragraphs = Array.from({ length: 40 }, (_, i) => `段落${i + 1}`).join('\n\n');
   await loadMarkdown(page, `> 引用文です\n\n${paragraphs}\n`);
-  // No scrolling of its own: the post form's own fields fill the first screen, so the editor body
-  // is only on screen at all because clicking into it scrolled there.
+  // The form's fields fill the first screen; clicking into the body scrolled it into view.
 
   const handle = editor.locator('.block-drag-handle').first();
   const handleBox = await handle.boundingBox();
   if (!handleBox) throw new Error('missing bounding box');
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Onto a paragraph that is on screen and well clear of the autoscroll bands at either edge, so
-  // the wheel is the only thing moving the page here. Asserted rather than assumed: a point inside
-  // a band would scroll on its own, and one above the first paragraph's midpoint resolves to the
-  // dragged block's own gap, where the indicator is deliberately not drawn at all.
+  // A paragraph clear of the autoscroll bands, so only the wheel moves the page, and below the first
+  // paragraph's midpoint, which would resolve to the block's own gap (no indicator).
   const aimY = await page.evaluate(() => {
     const middle = window.innerHeight / 2;
     let best: number | null = null;
@@ -799,8 +713,7 @@ test('the drop target follows a wheel-scroll made mid-drag', async ({ page }) =>
     .poll(() => indicator.evaluate((el) => el.getBoundingClientRect().top))
     .not.toBe(beforeWheel);
 
-  // Which paragraph the line is now drawn at — findBoundary() puts it at the top edge of the block
-  // the drop would go before.
+  // The line sits at the top of the block the drop would precede.
   const aimedAt = await page.evaluate(() => {
     const line = document.querySelector('.block-drag-indicator') as HTMLElement;
     const top = line.getBoundingClientRect().top;
@@ -814,17 +727,13 @@ test('the drop target follows a wheel-scroll made mid-drag', async ({ page }) =>
   if (!aimedAt) throw new Error('no paragraph to aim at');
   expect(aimedAt.delta).toBeLessThan(2);
 
-  // Dropped with no further pointer movement, so nothing recomputes the target between the line
-  // being read above and the block landing.
+  // No movement before the drop, so the target cannot change after the read above.
   await page.mouse.up();
   expect(await getMarkdown(page)).toContain(`> 引用文です\n\n${aimedAt.text}`);
 });
 
-// mousedown on the handle never checked `event.button`, so the secondary button opened a full drag
-// session — measured: a right-drag reordered the blockquote outright, and the session is modal
-// (`body.block-dragging` takes the cursor and text selection, handleKeyDown swallows every key)
-// while the context menu the same click opens sits on top of it. The primary button is the only one
-// that means "pick this block up".
+// Only the primary button picks a block up; a right-drag used to open a full modal session under
+// the context menu.
 test('a right-button press on a handle starts no drag', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -849,17 +758,10 @@ test('a right-button press on a handle starts no drag', async ({ page }) => {
   expect(await getMarkdown(page)).toBe('> 引用文です\n\n後の段落');
 });
 
-// The reported freeze (2026-08-22): with the blue frame up, dragging the block left the editor
-// swallowing every key and refusing clicks. That is a DragController session that never ended —
-// while one is live, `body.block-dragging` holds `user-select: none` (so a click no longer places a
-// caret) and the plugin's handleKeyDown swallows every key. The only thing that can strand it is a
-// native HTML5 drag starting on top of it: its OS drag loop swallows `mousemove` and `mouseup` for
-// the rest of the gesture — measured in this harness, a native drag inside the editor logs
-// `mousedown → dragstart → drop` with no mouseup at all — so handleMouseUp never runs.
-//
-// The gesture cannot be driven the whole way here (page.mouse never enters the OS drag loop, see
-// e2e/native-drag.ts), so the two halves of the fix are asserted at the seam instead: the dragstart
-// is refused, and the session survives it as a live drag that still drops normally.
+// The reported freeze: a DragController session that never ended (`user-select: none`, keys
+// swallowed). A native drag starting on top strands it, since the OS drag loop swallows
+// `mousemove` and `mouseup`. page.mouse cannot enter that loop (e2e/native-drag.ts), so it is
+// asserted at the seam: the dragstart is refused and the session still drops.
 test('a native drag cannot start while a block drag is in progress', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -879,24 +781,21 @@ test('a native drag cannot start while a block drag is in progress', async ({ pa
   });
   await expect(page.locator('.block-drag-indicator')).toBeVisible();
 
-  // A cancellable dragstart, as the browser would raise it for whatever element prosemirror-view
-  // marked draggable when the press landed inside the NodeSelection.
+  // A cancellable dragstart, as for the element prosemirror-view marked draggable.
   const prevented = await handle.evaluate(
     (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
   );
   expect(prevented).toBe(true);
 
-  // Refused, not aborted: the drag the author is actually making carries on and still drops.
+  // Refused, not aborted: the real drag still drops.
   expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(true);
   await page.mouse.up();
   expect(await getMarkdown(page)).toBe('後の段落\n\n> 引用文です');
 });
 
-// The failsafe under that one, for a release nothing witnessed at all — a native drag that begins
-// before any cancellable dragstart, a button let go outside the window, a context menu. There is no
-// way to make Playwright actually lose a mouseup, so the state it leaves behind is what's staged
-// here: the session is live and the next movement arrives with no button down. prosemirror-view
-// keeps the same guard for its own MouseDown (`if (event.buttons == 0) this.done()`).
+// The failsafe for a release nothing witnessed (a native drag before any dragstart, a release
+// outside the window). A lost mouseup cannot be produced, so its aftermath is staged: a live
+// session, then a move with no button down (prosemirror-view: `if (event.buttons == 0) this.done()`).
 test('a mouse move with the button already released ends a stranded drag', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -920,11 +819,11 @@ test('a mouse move with the button already released ends a stranded drag', async
     window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, buttons: 0 })),
   );
 
-  // The modal state is gone: no body class, no ghost, and the keyboard reaches the document again.
+  // The modal state is gone: no body class, no ghost, keys reach the document.
   expect(await page.evaluate(() => document.body.classList.contains('block-dragging'))).toBe(false);
   await expect(page.locator('.block-drag-preview')).toBeHidden();
   await page.mouse.up(); // the real release, now finding nothing to finish
-  // Aborted, not applied — an unwitnessed release is not a drop.
+  // Aborted: an unwitnessed release is not a drop.
   expect(await getMarkdown(page)).toBe('> 引用文です\n\n後の段落');
 
   await editor.click();
@@ -933,14 +832,10 @@ test('a mouse move with the button already released ends a stranded drag', async
   await expect.poll(() => getMarkdown(page)).toContain('X');
 });
 
-// The reported freeze, at its source (2026-08-22). A block that has a handle is also, by
-// prosemirror-view's own doing, a native HTML5 drag source once it is ringed: `selectNode()` sets
-// `dom.draggable = true` and `LeftMouseDown` arms `mightDrag` for a press inside the NodeSelection.
-// From the author's browser that native drag froze the editor the instant it began — every key and
-// click ignored, Escape included, `view.dragging` left set because neither `drop` nor `dragend` ever
-// reached `view.dom`. It cannot be driven to that point here (page.mouse never enters Chrome's OS
-// drag loop, see e2e/native-drag.ts), so what is asserted is that the drag is never handed over:
-// the dragstart is refused, and the same press runs this plugin's own drag instead.
+// The freeze at its source: a ringed block is a native drag source by prosemirror-view's doing
+// (`selectNode()` sets `dom.draggable = true`, `mightDrag` arms for a press inside the selection),
+// and that drag froze the editor with `view.dragging` left set. Asserted at the seam
+// (e2e/native-drag.ts): the dragstart is refused and the press runs this plugin's drag instead.
 for (const kind of ['blockquote', 'table'] as const) {
   test(`pressing a ringed ${kind} starts no native drag, and moves it as the handle does`, async ({
     page,
@@ -958,7 +853,7 @@ for (const kind of ['blockquote', 'table'] as const) {
     const block = editor.locator(kind === 'blockquote' ? 'blockquote' : 'table');
     await expect(block).toBeVisible();
 
-    // Ring it the way an author does: a click on its handle, no drag.
+    // Ring it by a click on its handle.
     const handle = editor.locator('.block-drag-handle').first();
     const handleBox = await handle.boundingBox();
     if (!handleBox) throw new Error('missing bounding box');
@@ -967,17 +862,15 @@ for (const kind of ['blockquote', 'table'] as const) {
     await page.mouse.up();
     await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(1);
 
-    // prosemirror-view has marked it draggable — the state the freeze starts from.
+    // Marked draggable: the state the freeze starts from.
     expect(
       await editor
         .locator('.ProseMirror-selectednode')
         .evaluate((el) => el.getAttribute('draggable')),
     ).toBe('true');
 
-    // Refused: a cancellable dragstart from the ringed block gets no drag. Asserted here, with no
-    // press in progress, and that placement is the whole point — DragController cancels a dragstart
-    // too while a session of its own is live, so the same assertion made mid-press passes with this
-    // guard removed and proves nothing (measured).
+    // Refused, asserted with no press in progress: DragController also cancels a dragstart during its
+    // own session, so the same assertion mid-press passes without this guard.
     const prevented = await block.evaluate(
       (el) => !el.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })),
     );
@@ -987,7 +880,7 @@ for (const kind of ['blockquote', 'table'] as const) {
     const targetBox = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
     if (!blockBox || !targetBox) throw new Error('missing bounding box');
 
-    // And the press is this plugin's own drag instead — same chrome, same drop.
+    // And the press is this plugin's own drag.
     await page.mouse.move(blockBox.x + 40, blockBox.y + 8);
     await page.mouse.down();
     await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
@@ -1004,13 +897,9 @@ for (const kind of ['blockquote', 'table'] as const) {
   });
 }
 
-// The freeze's mechanism has no type or depth check at all — only the ORIGINAL report did (a
-// ringed, top-level DRAGGABLE_TYPES block). Ctrl/Cmd+click (prosemirror-view's own
-// `selectNodeModifier`) turns any selectable node into a NodeSelection, a plain paragraph and a
-// heading included, and neither is in `DRAGGABLE_TYPES` — so the first fix's `selectedHandledBlock`
-// scoping left them unguarded. Widened to "any NodeSelection" the same day (still 2026-08-22).
-// Asserted at the same seam as the loop above: no press is driven into the OS drag loop (Playwright
-// can't), just that the resulting NodeSelection is refused a native drag.
+// The mechanism has no type or depth check: Ctrl/Cmd+click (`selectNodeModifier`) node-selects a
+// paragraph or heading too, outside `DRAGGABLE_TYPES`, so the guard covers any NodeSelection.
+// Asserted at the same seam.
 for (const [label, markdown, selector] of [
   ['paragraph', '本文の段落です。\n', 'p'],
   ['heading', '## 見出しです\n', 'h2'],
@@ -1048,10 +937,8 @@ for (const [label, markdown, selector] of [
   });
 }
 
-// A plain click already makes a NodeSelection out of an inline atom (a footnote reference — how
-// it is picked for deletion, footnote-extension.ts §5.1), no modifier needed. Same mechanism,
-// reached through a completely different gesture and at a nonzero depth — the first fix's
-// `$from.depth === 0` scoping would have left this one unguarded too.
+// A plain click node-selects a footnote reference, an inline atom at nonzero depth: the same
+// mechanism by another gesture, which a depth-0 guard would miss.
 test('clicking a footnote reference to select it starts no native drag', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1071,24 +958,15 @@ test('clicking a footnote reference to select it starts no native drag', async (
   expect(prevented).toBe(true);
 });
 
-// The half of the mechanism no selection test can reach: `image`, `linkCard` and `embed` declare
-// `draggable: true`, so prosemirror-view marks their DOM a native drag source with nothing selected
-// at all. What that leaked was not the freeze but the drop overlay: Chrome builds the drag out of
-// the picture itself (measured 2026-09-08 — `dragstart`'s dataTransfer carries it as a File,
-// `image/png`, which `clearData()` does not remove), and useImageUpload's window listeners read
-// `types.includes('Files')` as a file arriving from outside. Reported 2026-09-08 against an image
-// wearing the サムネイル badge, which is exactly the state "marked, and carrying no NodeSelection" —
-// `.ProseMirror-selectednode` hides the badge (globals.css), so the badge showing IS the unringed
-// case, not a condition of its own.
-//
-// 390x220, already in data/uploads — the same fixture e2e/image-layout.spec.ts measures.
+// `image`, `linkCard` and `embed` declare `draggable: true`, so they are native drag sources with
+// nothing selected. Chrome drags the picture as a File, which `clearData()` does not remove, and
+// useImageUpload read it as an incoming file. The サムネイル badge showing is this unringed state
+// (the ring hides it). 390x220, already in data/uploads, as in e2e/image-layout.spec.ts.
 const UNRINGED_IMAGE =
   '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 
-// Both types the guard newly covers, since the refusal is written against the DOM attribute rather
-// than against a node type: the image is the reported one, the card is the one §7.2 measured moving
-// under a native drag back when nothing refused it. `embed` is the third and is left to the ringed
-// test above — reaching it needs the X stub, and it carries the same attribute for the same reason.
+// The guard is written against the DOM attribute, not a type: the image (reported) and the card
+// (§7.2). `embed` is covered by the ringed test, since it needs the X stub.
 for (const [kind, markdown, block, press] of [
   ['image', `![](${UNRINGED_IMAGE})\n\n後の段落\n`, '.image-block', '.image-block img'],
   ['link card', `${CARD_MD}\n\n後の段落\n`, '.link-card', '.link-card-title'],
@@ -1101,16 +979,13 @@ for (const [kind, markdown, block, press] of [
     await loadMarkdown(page, markdown);
     await expect(editor.locator(press)).toBeVisible({ timeout: 20_000 });
 
-    // Nothing is ringed — the state the guard above says nothing about, and the one the report was
-    // made in.
+    // Nothing ringed: the state the report was made in.
     await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(0);
-    // prosemirror-view has marked the block draggable anyway (`dom.draggable = true` for a node
-    // whose spec declares it). That attribute is the drag source Chrome would use.
+    // Marked draggable anyway (`dom.draggable = true` from the spec): Chrome's drag source.
     expect(await editor.locator(block).evaluate((el) => el.getAttribute('draggable'))).toBe('true');
 
-    // Dispatched on what a real press targets — the picture, the title — so the refusal has to find
-    // the source by walking up from there. Playwright cannot drive Chrome's OS drag loop
-    // (e2e/native-drag.ts), so this is asserted at the same seam as the tests above.
+    // On what a press really targets (picture, title), so the guard must walk up to the source.
+    // Asserted at the seam (e2e/native-drag.ts).
     const prevented = await editor
       .locator(press)
       .evaluate(
@@ -1120,11 +995,8 @@ for (const [kind, markdown, block, press] of [
   });
 }
 
-// The scope control for the test above, and the reason the refusal is written against the
-// `draggable` attribute rather than "the press landed inside a DRAGGABLE_TYPES block": a blockquote
-// IS one of those types, and dragging a text selection out of one is the gesture every drop guard
-// in this editor is built on (useDragContainment.ts, e2e/editor-drag-containment.spec.ts). A guard
-// scoped to the container would take it away, and this test goes red the moment one does.
+// The scope control: a text drag out of a blockquote is the gesture every drop guard is built on
+// (useDragContainment.ts), so the refusal is keyed on `draggable`, not the container type.
 test('a drag starting on text inside a blockquote is still allowed', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1142,19 +1014,11 @@ test('a drag starting on text inside a blockquote is still allowed', async ({ pa
   expect(prevented).toBe(false);
 });
 
-// Dragging a ringed block by its own body must not paint a text selection behind the pointer.
-//
-// Once that press became this plugin's drag rather than a native one, ProseMirror's own mousedown
-// turned the NodeSelection into a caret and the browser started selecting text as the pointer
-// travelled — `.ProseMirror-hideselection` (injected by @tiptap/core) stops applying the moment the
-// selection is a visible one. Reported 2026-08-22. Restoring the NodeSelection at DRAG_THRESHOLD
-// does not undo it — `selectionToDOM` declines to touch the DOM selection while a press is live
-// (measured) — so the mousedown is preventDefault-ed instead, the way the handle's own always was.
-//
-// Measured in pixels, because the thing reported is a thing seen: `getSelection()` reports the
-// NodeSelection's own DOM range either way, and `::selection` has no readable computed style. The
-// block's idle colour is the baseline the drag is compared against, taken in the same run so a
-// theme or font change cannot drift it.
+// Dragging a ringed block by its body must not paint a text selection. ProseMirror's mousedown
+// turns the NodeSelection into a caret and `.ProseMirror-hideselection` stops applying;
+// `selectionToDOM` will not fix the DOM selection mid-press, so the mousedown is preventDefault-ed.
+// Measured in pixels: `getSelection()` reports the node's range either way and `::selection` has
+// no readable style. The idle baseline is taken in the same run.
 test('dragging a ringed block by its body paints no text selection', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1165,7 +1029,7 @@ test('dragging a ringed block by its body paints no text selection', async ({ pa
   const block = editor.locator('blockquote');
   const blockBox = await block.boundingBox();
   if (!blockBox) throw new Error('missing bounding box');
-  // Inside the block, clear of its own 2px selected-node outline.
+  // Inside the block, clear of its 2px outline.
   const clip = {
     x: blockBox.x + 6,
     y: blockBox.y + 4,
@@ -1186,9 +1050,8 @@ test('dragging a ringed block by its body paints no text selection', async ({ pa
 
   await page.mouse.move(blockBox.x + 60, blockBox.y + 12);
   await page.mouse.down();
-  // A short move first, then the long one — and that shape is load-bearing, not incidental: a
-  // single jump straight to the target does not leave the browser a selection to paint, so the same
-  // test written that way passes with the fix removed (measured).
+  // A short move, then the long one: load-bearing, since a single jump leaves nothing to paint and
+  // passes with the fix removed.
   await page.mouse.move(blockBox.x + 70, blockBox.y + 16, { steps: 3 });
   await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
     steps: 10,
@@ -1197,14 +1060,12 @@ test('dragging a ringed block by its body paints no text selection', async ({ pa
   const dragging = await selectionBluePixels(page, clip);
   await page.mouse.up();
 
-  // Before the fix this read 3709 against an idle 188 — the block painted end to end.
+  // Before the fix: 3709 against an idle 188.
   expect(dragging).toBeLessThan(idle + 200);
 });
 
-// The caret must still be able to get into a ringed block — the guard for a regression this
-// plugin's mousedown introduced and had to give back (measured 2026-08-22): with `preventDefault`
-// on that press, `LeftMouseDown.up` never moved the selection, so a plain click left the
-// NodeSelection standing and the next keystroke replaced the whole block instead of typing into it.
+// A plain click must still put the caret in a ringed block: with the mousedown preventDefault-ed,
+// `LeftMouseDown.up` never moved the selection, and the next key replaced the whole block.
 test('a plain click inside a ringed block lands the caret in it', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1240,12 +1101,8 @@ test('a plain click inside a ringed block lands the caret in it', async ({ page 
   expect(await getMarkdown(page)).toContain('引用文がここにあります');
 });
 
-// An atom has no addressable interior, so the previous test's `Selection.near` answer is wrong
-// for it: a re-press on the blank band inside an already-ringed card or embed (the control band's
-// floor below the title, docs/link-card-requirements.md §16; an embed's box past a resized frame)
-// resolves through the *boundary* position next to the atom, and near() picks the nearest real
-// text on the far side — the following block. Measured 2026-08-25 before the fix: re-pressing
-// there moved the selection into the paragraph after it.
+// An atom has no interior, so `Selection.near` from the boundary beside it picks the next block's
+// text: a re-press on the blank band inside a ringed card or embed moved the selection away.
 test('a plain re-press on a ringed link card or embed keeps it selected', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1275,19 +1132,13 @@ test('a plain re-press on a ringed link card or embed keeps it selected', async 
     await target.scrollIntoViewIfNeeded();
     const box = await target.boundingBox();
     if (!box) throw new Error('missing bounding box');
-    // Just inside the box's bottom edge, in the blank band below the title/frame — the spot the
-    // dead-zone fix (§8.2) does not touch, since it is inside the box rather than beside it.
+    // The blank band inside the box's bottom edge, which the dead-zone fix (§8.2) does not touch.
     const x = box.x + box.width / 2;
     const y = box.y + box.height - 8;
 
-    // The first press is setup — it is the second one that this test is about. A just-loaded
-    // embed swallows a first click without making the NodeSelection: measured 2026-09-12 in
-    // `e2e/editor-embed.spec.ts`'s openSandbox (red at 0/50/100/200ms after load, green from
-    // 500ms, the node never replaced and the class never set), and reproduced here 2026-09-13 at
-    // 1 run in 4 with this spec run alone. Waiting on the frame's own box — which is all the
-    // setup above does — is far too early for it. So press until the ring is on, rather than
-    // waiting a measured-once number of milliseconds and hoping the next machine is no slower.
-    // On the ordinary path this clicks exactly once: poll checks after the first call.
+    // Setup: a just-loaded embed swallows a first click without selecting (also seen in
+    // editor-embed.spec.ts's openSandbox), and the frame's box appears too early to wait on. So press
+    // until the ring is on; normally that is one click.
     await expect
       .poll(async () => {
         await page.mouse.click(x, y);
@@ -1295,16 +1146,15 @@ test('a plain re-press on a ringed link card or embed keeps it selected', async 
       })
       .toMatch(/ProseMirror-selectednode/);
 
-    // And the claim: a plain re-press on the ring keeps it, rather than dropping to a TextSelection.
+    // The claim: a re-press keeps the ring.
     await page.mouse.click(x, y);
     await expect(target).toHaveClass(/ProseMirror-selectednode/);
     expect(await selectionType()).toBe('NodeSelection');
   }
 });
 
-// Selection-blue pixels inside `clip`, counted in the page (no image decoder in this harness).
-// "Blue" is the browser's own selection highlight, which is far bluer than anything the editor
-// draws: strongly blue, and clearly bluer than it is red or green.
+// Selection-blue pixels in `clip`, counted in the page (no image decoder here): the browser's
+// highlight is far bluer than anything the editor draws.
 async function selectionBluePixels(
   page: Page,
   clip: { x: number; y: number; width: number; height: number },
@@ -1337,24 +1187,13 @@ async function selectionBluePixels(
   );
 }
 
-// The dragged block's own `<iframe>` must not be the hit target while the drag is live
-// (docs/embed-requirements.md §8.1, criterion E12). The whole drag is `mousemove` on the *window*,
-// and an iframe swallows the pointer: the ghost freezes over the box, the drop indicator stops
-// answering, and the `mouseup` never arrives either, so the release is lost rather than applied.
+// The dragged embed's own `<iframe>` must not take the pointer (docs/embed-requirements.md §8.1,
+// criterion E12): the drag is window `mousemove`, and an iframe swallows it and the `mouseup`. The
+// frame is inert at rest, but the selected block's is live, and picking up selects.
 //
-// The frame is inert at rest (globals.css `.prose .embed-view .embed-frame iframe`), which is why
-// dragging any *other* block across an embed was already safe — but
-// `.ProseMirror-selectednode.embed-view … iframe` hands the pointer back for the selected block,
-// and picking a block up is what selects it. So the one embed certain to be live mid-drag is the
-// one being dragged, whose own box the pointer crosses in the first few pixels.
-//
-// **The computed style is what this asserts, not the freeze itself.** Playwright's mouse events go
-// in through CDP, which dispatches into the main frame's widget and bypasses the browser-side
-// hit-test routing an out-of-process frame relies on — so the parent keeps receiving `mousemove`
-// over a cross-origin iframe here whether the fix is in place or not, and a spec written against
-// the ghost's coordinates would pass on a broken build. The swallow was measured separately
-// (2026-08-25, a same-origin frame, where CDP does route into it: 32 moves sent, 0 received;
-// `pointer-events: none` restored 32/32).
+// **The computed style is asserted, not the freeze**: CDP input bypasses the hit-test routing an
+// out-of-process frame relies on, so the parent keeps getting moves over it either way. The swallow
+// was measured on a same-origin frame, where CDP does route into it.
 test('an embed being dragged does not let its own iframe take the pointer', async ({ page }) => {
   await stubX(page);
   await page.goto('/admin/posts/new');
@@ -1367,8 +1206,7 @@ test('an embed being dragged does not let its own iframe take the pointer', asyn
   await expect(frame).toBeVisible();
   const pointerEvents = () =>
     frame.evaluate((el) => getComputedStyle(el as HTMLElement).pointerEvents);
-  // At rest, with the caret in the paragraph rather than on the block, the frame is inert for its
-  // own reason — `loadMarkdown` leaves the selection on the embed, which is the state below.
+  // With the caret in the paragraph the frame is inert; `loadMarkdown` selects the embed.
   await editor.locator('p').first().click();
   await expect(editor.locator('.ProseMirror-selectednode')).toHaveCount(0);
   expect(await pointerEvents()).toBe('none');
@@ -1378,32 +1216,25 @@ test('an embed being dragged does not let its own iframe take the pointer', asyn
   if (!handleBox) throw new Error('missing bounding box');
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  // Past DRAG_THRESHOLD: `body.block-dragging` is set here, not at mousedown.
+  // Past DRAG_THRESHOLD, where `body.block-dragging` is set.
   await page.mouse.move(handleBox.x + 30, handleBox.y + 40);
   await expect
     .poll(() => page.evaluate(() => document.body.classList.contains('block-dragging')))
     .toBe(true);
-  // The block is now the NodeSelection — which is exactly what used to wake its frame up.
+  // Now the NodeSelection, which used to wake its frame.
   await expect(editor.locator('.ProseMirror-selectednode.embed-view')).toHaveCount(1);
   expect(await pointerEvents()).toBe('none');
 
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  // The drag is over and the block is still selected, so the player is reachable again.
+  // Over, still selected, so the player is reachable again.
   await expect(editor.locator('.ProseMirror-selectednode.embed-view')).toHaveCount(1);
   await expect.poll(pointerEvents).toBe('auto');
 });
 
-// What the cursor carries for a link card (docs/link-card-requirements.md §7.5): the card's face —
-// title, host, picture — and none of its controls. Before this the ghost's box, which sizes to its
-// content, could not fit the control band: the three buttons stacked vertically, 「リンクに戻す」
-// broke one character per line, and on an external card the band alone overran the 300px
-// `max-height` so `overflow: hidden` clipped the title and the host away entirely — a ghost that was
-// three unpressable buttons and nothing else.
-//
-// Both halves are asserted because both were wrong and each fails on its own: the controls have to
-// be gone, *and* the box has to be given a width, since the band was what had been holding it open
-// (114px without it — the same splinter docs/embed-requirements.md §10.10 hit at 92px).
+// The link card's ghost carries its face, not its controls (docs/link-card-requirements.md §7.5).
+// Both halves fail alone: the controls must go, and the box needs a width, since the band held it
+// open (the splinter of docs/embed-requirements.md §10.10).
 test('the card ghost carries the card’s face, not its controls', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1415,7 +1246,7 @@ test('the card ghost carries the card’s face, not its controls', async ({ page
       '段落B\n\n<div class="link-card" data-href=""></div>\n\n段落C\n',
   );
   await expect(editor.locator('.link-card-view')).toHaveCount(2);
-  // The resolved card has to have answered, or its title is not there to be carried.
+  // Resolved first, or there is no title to carry.
   await expect(editor.locator('.link-card-title').first()).toHaveText(CARD_TITLE);
 
   const ghost = page.locator('.block-drag-preview');
@@ -1446,15 +1277,10 @@ test('the card ghost carries the card’s face, not its controls', async ({ page
   expect(resolved.controls).toBe(0);
   expect(resolved.text).toBe(CARD_TITLE);
   expect(resolved.width).toBe(400);
-  // Shorter than the block it stands for. The card's box is built for the document — the margin
-  // between it and the paragraphs around it, and the floor that keeps the editor's cards matching
-  // each other — and neither means anything under the cursor. Before this the ghost was *taller*
-  // than the card itself.
+  // Shorter than the card: its document margin and floor mean nothing under the cursor.
   expect(resolved.height).toBeLessThan(cardBox.height);
 
-  // The picker has no face to carry — no title, no picture, no answer to have come back — so it is
-  // named instead, for the reason the embed's token is (docs/embed-requirements.md §10.10). Without
-  // this it would be an empty bordered box, which is the other failure that section names.
+  // The picker has no face, so it is named, as the embed's token is (§10.10).
   const picker = await carry(1);
   await drop();
   expect(picker.controls).toBe(0);
@@ -1462,13 +1288,9 @@ test('the card ghost carries the card’s face, not its controls', async ({ page
   expect(picker.width).toBe(400);
 });
 
-// The source block is drawn as cut out of the document for as long as the drag has a real target,
-// paired with the indicator at the destination (docs/link-card-requirements.md §7.6). It is bound
-// to the same answer as the line, so the two are on and off together — a drop whose only candidate
-// is the gap the block already sits in takes nothing out of anywhere, and marks neither end.
-//
-// Three states, because the mark is only right in one of them: off in the no-op stretch, on the
-// moment a real target exists, and gone when the session ends.
+// The source shows as cut while the drag has a real target, bound to the same answer as the line
+// (docs/link-card-requirements.md §7.6). Three states: off in the no-op stretch, on with a target,
+// gone when the session ends.
 test('the source block shows as cut only while the drop would move it', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -1481,13 +1303,9 @@ test('the source block shows as cut only while the drop would move it', async ({
   const handle = editor.locator(':scope > .block-drag-handle').first();
   const handleBox = await handle.boundingBox();
   if (!handleBox || !quoteBox) throw new Error('missing bounding box');
-  // The mark is a `position: fixed` box on <body>, not a class on the block (block-drag-handle.ts
-  // says why), so it is read as geometry: shown, and covering the block it speaks for.
-  // Read against the block it speaks for, in the same frame. The page autoscrolls during this drag,
-  // so `quoteBox` above — taken before the drag — is a different coordinate frame by the time the
-  // veil exists, and comparing the two was this spec failing on a loaded machine while the veil was
-  // correct (a 3-shard run, 2026-09-11). Live on both sides it also states the inflation exactly
-  // instead of "covers it somewhere".
+  // A box on <body>, not a class (block-drag-handle.ts says why), so it is read as geometry, against
+  // the block's live box in the same frame: the page autoscrolls, so a box taken before the drag is
+  // a different coordinate frame.
   const cut = () =>
     page.evaluate(() => {
       const el = document.querySelector('.block-drag-cut') as HTMLElement | null;
@@ -1510,24 +1328,22 @@ test('the source block shows as cut only while the drop would move it', async ({
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
 
-  // Just inside the block's own height: dropping here changes nothing, so neither end is marked.
+  // Inside the block's height: the drop changes nothing, so nothing is marked.
   await page.mouse.move(handleBox.x + 200, quoteBox.y + quoteBox.height / 2);
   expect(await lineShown()).toBe(false);
   expect(await cut()).toBeNull();
 
-  // Far enough down that a real gap wins: the line and the cut arrive together.
+  // Far enough for a real gap: line and cut arrive together.
   await page.mouse.move(handleBox.x + 200, quoteBox.y + quoteBox.height + 300);
   expect(await lineShown()).toBe(true);
   const veil = await cut();
   expect(veil).not.toBeNull();
-  // It speaks for the dragged block, so it covers that block's box and no other — the ring included,
-  // which is what `CUT_INFLATE` (block-drag-handle.ts) is for. Exact on every side, and the same at
-  // any frame rate: the veil is drawn in document coordinates, so a mid-drag autoscroll carries it
-  // with the block rather than sliding it off by a frame's worth of scroll.
+  // Exactly the block's box plus the ring (`CUT_INFLATE`), at any frame rate, since it is drawn in
+  // document coordinates.
   if (!veil) throw new Error('unreachable');
   expect([veil.top, veil.bottom, veil.left, veil.right]).toEqual([4, 4, 4, 4]);
 
-  // End the session while it is showing — the mark must not survive the drag.
+  // End the session while it shows: the mark must not survive.
   await page.keyboard.press('Escape');
   await page.mouse.up();
   expect(await cut()).toBeNull();
