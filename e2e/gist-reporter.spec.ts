@@ -43,15 +43,18 @@ test('the frame announces its height, answers an ask, and reports an empty gist 
         }
       });
     });
-    await page.evaluate((docs) => {
-      for (const doc of docs) {
-        const frame = document.createElement('iframe');
-        frame.setAttribute('sandbox', 'allow-scripts allow-popups');
-        frame.style.cssText = 'width:600px;height:200px;border:0;display:block';
-        frame.srcdoc = doc;
-        document.body.appendChild(frame);
-      }
-    }, [drawn, empty]);
+    await page.evaluate(
+      (docs) => {
+        for (const doc of docs) {
+          const frame = document.createElement('iframe');
+          frame.setAttribute('sandbox', 'allow-scripts allow-popups');
+          frame.style.cssText = 'width:600px;height:200px;border:0;display:block';
+          frame.srcdoc = doc;
+          document.body.appendChild(frame);
+        }
+      },
+      [drawn, empty],
+    );
 
     const reports = async () =>
       page.evaluate(() => (window as unknown as { reports: Report[] }).reports);
