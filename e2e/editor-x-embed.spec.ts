@@ -12,13 +12,10 @@ import {
   X_TALL_ID,
 } from './x-embed-stub';
 
-// The X embed in the live editor (docs/embed-requirements.md §10). Browser-only twice over: the
-// NodeView's height arrives in a postMessage, and §10.6's failure state is a DOM swap driven by one.
-//
-// **The editor is the third surface** (§10.6, amended 2026-08-23). The published page degrades an
-// unfetchable post to a plain link because the reader can do nothing about it; here the author can
-// still fix the reference, so it is told to them — the same shape §7.2 settled for a reference no
-// provider claims.
+// The X embed in the live editor (docs/embed-requirements.md §10): the height arrives by
+// postMessage, and §10.6's failure state is a DOM swap. **The editor is the third surface** (§10.6):
+// the published page degrades an unfetchable post to a link, but here the author can fix the
+// reference, so it is reported, as §7.2 does for an unclaimed one.
 
 async function openWith(page: Page, source: string): Promise<void> {
   await stubX(page);
@@ -34,7 +31,7 @@ const note = (page: Page) => page.locator('.ProseMirror .embed-note');
 test('the bubble offers an embed for a post (§10.4)', async ({ page }) => {
   await openWith(page, `<${X_RESIZE_URL}>\n\n本文\n`);
 
-  // A provider claims it, so the card is not even offered — one URL, one meaning (§5).
+  // Claimed, so no card is offered: one URL, one meaning (§5).
   await page.locator('.ProseMirror a').first().click();
   await expect(page.getByRole('button', { name: 'コピー' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'カードにする' })).toHaveCount(0);
@@ -43,8 +40,8 @@ test('the bubble offers an embed for a post (§10.4)', async ({ page }) => {
 });
 
 test('the bubble offers a card, not an embed, for the account (X2)', async ({ page }) => {
-  // **No provider claims a profile URL, and that null IS how the account gets a card** (§10.4).
-  // Nothing in the codebase decides this a second time, so the absence below is the whole feature.
+  // **No provider claims a profile URL, and that is how an account gets a card** (§10.4); the absence
+  // below is the whole feature.
   await openWith(page, `<https://x.com/ClaudeDevs>\n\n本文\n`);
 
   await page.locator('.ProseMirror a').first().click();
@@ -61,7 +58,7 @@ test('the block renders the post and takes the height it is told (§10.5)', asyn
 
   await expect(embed(page)).toHaveCount(1);
   const iframe = embed(page).locator('iframe');
-  // The id is minted per placement, so the message can be attributed (§10.5).
+  // Minted per placement, so messages can be attributed (§10.5).
   await expect(iframe).toHaveAttribute(
     'src',
     new RegExp(
@@ -69,18 +66,16 @@ test('the block renders the post and takes the height it is told (§10.5)', asyn
     ),
   );
 
-  // §10.8. The bar X's own document reserves takes no width under a headless browser's overlay
-  // scrollbars, so what is measurable here is the attribute that removes it, not its absence.
+  // §10.8: headless overlay scrollbars take no width, so the attribute is what is measurable.
   await expect(iframe).toHaveAttribute('scrolling', 'no');
 
-  // The box is published at a guess and corrected by the provider — the correction is the thing
-  // only a browser can show happening.
+  // Published at a guess, corrected by the provider: only a browser shows the correction.
   const frame = embed(page).locator('.embed-frame');
   await expect
     .poll(async () => Math.round((await frame.boundingBox())!.height), { timeout: 10_000 })
     .toBe(X_HEIGHT);
 
-  // The reference round-trips untouched whatever the iframe said (E1).
+  // The reference round-trips untouched (E1).
   expect(await markdown(page)).toBe(
     `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n本文`,
   );
@@ -95,12 +90,10 @@ test('the box ends where the player ends (§10.9)', async ({ page }) => {
   const box = (await embed(page).boundingBox())!;
   const frame = (await embed(page).locator('.embed-frame').boundingBox())!;
 
-  // Not vacuous: the column has to be wide enough that an uncapped box would be visibly wider.
+  // The column must be wide enough for an uncapped box to show.
   expect(Math.round(column.width - box.width)).toBeGreaterThan(100);
   expect(Math.round(frame.width)).toBe(550);
-  // The claim is the shape, not the pixel count: the band's border hugs the player by the same
-  // padding on both sides, rather than running out to the column edge on the right. Asserted this
-  // way so a change of font size does not have to be restated here.
+  // The shape: the band's border hugs the player by equal padding on both sides.
   const leftGap = Math.round(frame.x - box.x);
   const rightGap = Math.round(box.x + box.width - (frame.x + frame.width));
   expect(rightGap).toBe(leftGap);
@@ -117,13 +110,12 @@ test('an unfetchable post tells the author, and does not become a link (§10.6)'
   await expect(note(page)).toBeVisible({ timeout: 10_000 });
   await expect(note(page)).toContainText('取得できない投稿');
   await expect(note(page)).toContainText(X_MISSING_URL);
-  // **Not the published page's answer.** A plain link here would take the reference out of the
-  // author's reach at the one moment they could still correct it.
+  // **Not the published answer**: a link would take the reference from the one who can fix it.
   await expect(embed(page).locator('iframe')).toHaveCount(0);
   await expect(embed(page)).toHaveClass(/embed-unresolved/);
   await shot(page, '04-editor-missing-note');
 
-  // The document is unchanged — the note is a NodeView state, not an edit.
+  // Unchanged: the note is NodeView state, not an edit.
   expect(await markdown(page)).toBe(
     `<div class="embed" data-href="${X_MISSING_URL}"></div>\n\n本文`,
   );
@@ -132,15 +124,14 @@ test('an unfetchable post tells the author, and does not become a link (§10.6)'
 test('silence becomes the same note, once the block has been on screen (§10.6)', async ({
   page,
 }) => {
-  // What a changed entry point looks like: the iframe loads and never speaks (§10.3).
+  // A changed entry point: the iframe loads and never speaks (§10.3).
   await openWith(page, `<${X_SILENT_URL}>\n\n本文\n`);
   await page.locator('.ProseMirror a').first().click();
   await page.getByRole('button', { name: '埋め込みにする' }).click();
   await expect(embed(page).locator('iframe')).toHaveCount(1);
 
-  // Still a player well after a load-started clock would have expired, because the block was only
-  // just scrolled into view — and then the note, once the 8s the block has actually been visible
-  // for run out.
+  // Still a player after a load-started clock would have expired, since the block only just came into
+  // view; the note comes after 8s visible.
   await expect(note(page)).toHaveCount(0);
   await expect(note(page)).toBeVisible({ timeout: 20_000 });
   await expect(note(page)).toContainText('取得できない投稿');
@@ -150,8 +141,7 @@ test('リンクに戻す gives the reference back, from either state (§10.6)', 
   await openWith(page, `<${X_MISSING_URL}>\n\n本文\n`);
   await page.locator('.ProseMirror a').first().click();
   await page.getByRole('button', { name: '埋め込みにする' }).click();
-  // Undone from the failure state, which is the one an author actually wants to undo — and the
-  // control has to survive the swap between the two states to be reachable at all.
+  // Undone from the failure state, so the control must survive the swap.
   await expect(note(page)).toBeVisible({ timeout: 10_000 });
   await embed(page).getByRole('button', { name: 'リンクに戻す' }).click();
 
@@ -159,12 +149,9 @@ test('リンクに戻す gives the reference back, from either state (§10.6)', 
   expect(await markdown(page)).toBe(`<${X_MISSING_URL}>\n\n本文`);
 });
 
-// §10.10. **A copy of the block is not a copy of its frame.** The drag handle's preview is a
-// `cloneNode(true)` of the dragged block, and a cloned `<iframe>` gets a browsing context of its
-// own — it loads the same src, `embedId` and all. Measured 2026-08-24 before the fix: picking up an
-// X embed put a second frame on the page under the first one's name, and the block still sitting in
-// the document took the height that frame's narrower box called for (1550px → 1092px), in front of
-// the author, for the whole drag.
+// §10.10. **A copy of the block is not a copy of its frame**: the preview's `cloneNode(true)` gave a
+// cloned `<iframe>` its own browsing context under the same `embedId`, and its reply resized the
+// block in the document for the whole drag.
 test('dragging the block leaves its height alone (§10.10)', async ({ page }) => {
   await openWith(page, `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n後の段落\n`);
   const frame = embed(page).locator('.embed-frame');
@@ -182,18 +169,15 @@ test('dragging the block leaves its height alone (§10.10)', async ({ page }) =>
 
   const preview = page.locator('.block-drag-preview');
   await expect(preview).toBeVisible();
-  // What the cursor carries is a token naming the block, not a copy of it — and no browsing
-  // context of any kind. One frame on the page is the whole safety assertion: a second one is a
-  // second speaker.
+  // A token naming the block, no browsing context: one frame on the page is the safety assertion.
   await expect(preview.locator('iframe')).toHaveCount(0);
   await expect(page.locator('iframe')).toHaveCount(1);
-  // **Which post**, not what kind — the account comes out of the URL, so no fetch is involved, and
-  // 「X の投稿」 beside the X mark would be the same words on every post.
+  // **Which post**, from the URL, no fetch.
   await expect(preview.locator('.embed-drag-token-lead')).toHaveText('@ClaudeDevs');
   await expect(preview.locator('.embed-drag-token-detail')).toHaveCount(0);
   await expect(preview.locator('.embed-drag-token svg')).toHaveCount(1);
 
-  // Long enough for a clone's own reply (the stub answers 300ms after load).
+  // Long enough for a clone's reply (the stub answers ~600ms after load).
   await page.waitForTimeout(800);
   expect(Math.round((await frame.boundingBox())!.height)).toBe(X_HEIGHT);
   await shot(page, '08-dragging-keeps-height');
@@ -201,9 +185,8 @@ test('dragging the block leaves its height alone (§10.10)', async ({ page }) =>
   await page.mouse.up();
 });
 
-// The same rule from the other side, and the reason the fix is two things rather than one: the
-// `embedId` names a placement, so anything holding a copy of it can speak for that placement. The
-// clone is gone, but the NodeView now also asks whether the message came from ITS frame.
+// The other half: anything holding the `embedId` can speak for the placement, so the NodeView also
+// checks the message came from its own frame.
 test('a frame answering under this block’s embedId is ignored (§10.10)', async ({ page }) => {
   await openWith(page, `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n本文\n`);
   const frame = embed(page).locator('.embed-frame');
@@ -215,8 +198,7 @@ test('a frame answering under this block’s embedId is ignored (§10.10)', asyn
   const embedId = new URL(src!).searchParams.get('embedId');
   expect(embedId).toBeTruthy();
 
-  // A second frame at X's own origin, carrying this block's name and a height of its own. Counted
-  // as it arrives, so the assertion below cannot pass by the message never being sent.
+  // A second frame at X's origin with this block's name; counted, so the message surely arrived.
   await page.evaluate(
     ([id, tallId, height]) => {
       const w = window as unknown as { __tall: number };
@@ -241,9 +223,8 @@ test('a frame answering under this block’s embedId is ignored (§10.10)', asyn
   expect(Math.round((await frame.boundingBox())!.height)).toBe(X_HEIGHT);
 });
 
-// §8.2. The box stops at 550px and does not centre (§10.9), so a click in the band beside it —
-// still inside the column, at the embed's own row — used to fall through to the browser's own
-// caret search and land in the next block instead of selecting the embed.
+// §8.2: the box stops at 550px, left-aligned (§10.9), and a click beside it fell through to the
+// browser's caret search, landing in the next block.
 test('a click beside the box selects the embed, not the next block (§8.2)', async ({ page }) => {
   await openWith(page, `<div class="embed" data-href="${X_RESIZE_URL}"></div>\n\n後の段落\n`);
   const frame = embed(page).locator('.embed-frame');
@@ -253,8 +234,7 @@ test('a click beside the box selects the embed, not the next block (§8.2)', asy
 
   const box = (await embed(page).boundingBox())!;
   const column = (await page.locator('.ProseMirror').boundingBox())!;
-  // Not vacuous: there has to be a real gap between the box's right edge and the column's for a
-  // click to land beside it rather than on it.
+  // A real gap between the box and the column edge.
   expect(column.x + column.width - (box.x + box.width)).toBeGreaterThan(20);
 
   await page.mouse.click(
@@ -269,16 +249,10 @@ test('a click beside the box selects the embed, not the next block (§8.2)', asy
   expect(nextParaSelected).toBe(false);
 });
 
-// docs/embed-requirements.md §8.4 and the item §12 listed as unmeasured. Reordering blocks destroys
-// the jumped-over embed's NodeView and builds a new one, and **a rebuild resets `answered`, the
-// silence clock and `visible`** — so a frame that did not speak again within `EMBED_SILENCE_MS`
-// would turn a post the author had already seen into 「取得できない」. That is the failure this
-// measures the absence of, and it exists only for the two providers that answer back (§10.5, §18.5);
-// Figma and YouTube say nothing either way.
-//
-// The reorder is `moveBlockAbove` (editor-authoring.ts), which moves a block by transaction rather
-// than by the drag handle — see there for why. The marks below are what prove the rebuild actually
-// happened, so nothing here rests on the two gestures being equivalent.
+// docs/embed-requirements.md §8.4: a reorder rebuilds the jumped-over embed's NodeView, resetting
+// `answered`, `visible` and the silence clock, so a frame that did not speak again would become
+// 「取得できない」. Only X and gist answer back (§10.5, §18.5). `moveBlockAbove` (editor-authoring.ts)
+// reorders by transaction; the marks prove the rebuild.
 
 test('a frame rebuilt by a reorder announces its height again (§8.4)', async ({ page }) => {
   await openWith(
@@ -294,9 +268,8 @@ test('a frame rebuilt by a reorder announces its height again (§8.4)', async ({
   const firstEmbedId = new URL((await iframe.getAttribute('src'))!).searchParams.get('embedId');
   expect(firstEmbedId).toBeTruthy();
 
-  // Both elements are stamped: the iframe is what §8.4 marked, and the `.embed-frame` div is what
-  // carries the inline height. If the div survived, a height still reading X_HEIGHT afterwards
-  // would be the old inline style rather than a new announce.
+  // Both stamped: the iframe (§8.4) and the `.embed-frame` div with the inline height, which, if kept,
+  // would fake a new announce.
   await page.evaluate(() => {
     document.querySelector('.embed-view iframe')?.setAttribute('data-mark', '1');
     document.querySelector('.embed-view .embed-frame')?.setAttribute('data-mark', '1');
@@ -304,24 +277,19 @@ test('a frame rebuilt by a reorder announces its height again (§8.4)', async ({
 
   await moveBlockAbove(page, '後の段落', 'embed');
 
-  // **The gate.** Row 1 of §8.4's table is the reorder that rebuilds the *embed*; the other
-  // direction rebuilds the moved block instead and would leave this whole test measuring nothing.
+  // **The gate** (§8.4 row 1): the other direction rebuilds the moved block instead.
   await expect(embed(page).locator('[data-mark]')).toHaveCount(0);
-  // A new NodeView mints a new `instanceId` and bakes it into the src, which is the fact both
-  // answering providers depend on — the frame echoes the name back, so a stale id would be ignored
-  // by `onMessage` and read as silence.
+  // A new `instanceId` in the src: the frame echoes it, and a stale id would read as silence.
   const secondEmbedId = new URL((await iframe.getAttribute('src'))!).searchParams.get('embedId');
   expect(secondEmbedId).toBeTruthy();
   expect(secondEmbedId).not.toBe(firstEmbedId);
 
-  // The height comes back on a box that has never carried an inline style, so it was announced.
+  // The height lands on a box with no inline style, so it was announced.
   await expect
     .poll(async () => Math.round((await frame.boundingBox())!.height), { timeout: 10_000 })
     .toBe(X_HEIGHT);
 
-  // And the clock, re-armed by the rebuild, expires without firing. Waited out rather than asserted
-  // immediately: `toHaveCount(0)` on a note that has not appeared yet resolves at once and would
-  // pass however this went.
+  // The re-armed clock expires without firing. Waited out: `toHaveCount(0)` passes at once.
   await page.waitForTimeout(9_000);
   await expect(note(page)).toHaveCount(0);
   await expect(frame).toBeVisible();
