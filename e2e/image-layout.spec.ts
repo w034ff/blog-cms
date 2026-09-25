@@ -1,13 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 
-// Where a body image sits, and what the block around it buys (docs/link-card-requirements.md §22).
-// Both facts are geometry: the DOM, the transaction and the saved markdown are identical whether
-// the picture is centred or not, so only a rendered measurement can hold them.
+// Where a body image sits and what its block buys (docs/link-card-requirements.md §22): geometry,
+// invisible to the DOM, transaction and markdown.
 
-// 390x220 and 768x403, both already in data/uploads. The pair is the point — one is clearly
-// narrower than the 50rem column and the other nearly fills it, and every claim below is about
-// the difference between them. A single image measures nothing here.
+// 390x220 and 768x403, in data/uploads: one well narrower than the column, one nearly filling it.
 const NARROW = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 const WIDE = '/uploads/531f1bd7bc8be82b6f3aa910ff3c6ec45d3572033db26d10bec768eae58a6652.webp';
 
@@ -17,10 +14,7 @@ async function openWithBothImages(page: Page): Promise<void> {
   await page.locator('.ProseMirror').click();
   await loadMarkdown(page, `![](${NARROW})\n\n本文\n\n![](${WIDE})\n\n後の段落\n`);
   await expect(page.locator('.ProseMirror img')).toHaveCount(2, { timeout: 20_000 });
-  // Present is not loaded, and every claim here is a measured box: an `<img>` that has not
-  // decoded yet is 0 wide, so the wide one reads as narrow and "fills the column" fails. Waited
-  // on `naturalWidth` for the same reason e2e/editor-link-card.spec.ts's rowShapes does — the src
-  // attribute is exactly as asserted either way.
+  // Wait on `naturalWidth`: an undecoded `<img>` is 0 wide.
   await expect
     .poll(
       () =>
@@ -32,9 +26,7 @@ async function openWithBothImages(page: Page): Promise<void> {
     .toBe(true);
 }
 
-// An `<img>` is inline by default, so `margin-inline: auto` alone does nothing — the `display`
-// beside it is what makes the centring happen. A spec that only asserts "the rule is present"
-// would pass with the image still on the left edge, which is why this measures boxes.
+// Inline by default, so `margin-inline: auto` needs the `display`; boxes are measured, not rules.
 test('a picture narrower than the column is centred in it', async ({ page }) => {
   await openWithBothImages(page);
 
@@ -53,29 +45,20 @@ test('a picture narrower than the column is centred in it', async ({ page }) => 
   );
 
   const [narrow, wide] = boxes;
-  // The narrow one leaves real room, and sits in the middle of it.
+  // Room either side, centred.
   expect(narrow.picWidth).toBeLessThan(narrow.blockWidth - 100);
   expect(narrow.picLeft - narrow.blockLeft).toBeCloseTo(
     (narrow.blockWidth - narrow.picWidth) / 2,
     -0.5,
   );
-  // The wide one fills the column, so centring has nothing to do — the control that shows the
-  // assertion above is about centring rather than about any offset at all.
+  // The wide one fills the column: the control.
   expect(wide.picLeft).toBe(wide.blockLeft);
 });
 
-// Why the picture is wrapped in a column-wide block at all.
-//
-// NOT for the drag handle's x: `.block-drag-handle` is `position: absolute; left: -0.2rem`
-// (globals.css), a fixed offset, and `alignHandles` sets only its `top`. That was measured wrong
-// once — `document.querySelector` returns the FIRST handle and there is one per block, so reading
-// it twice reads the same element and any two blocks look identical.
-//
-// What the block actually buys is the reveal area. The handle appears through
-// `:has(+ :hover)` on the element right after it, so that element's box is what the pointer has
-// to be inside. Centred, a 390px picture leaves ~188px of the column empty on each side; with the
-// column-wide block that space still belongs to the image, and with a shrink-wrapped box alone it
-// would not.
+// Why the picture is wrapped in a column-wide block at all: not the handle's x (a fixed
+// `left: -0.2rem`; `alignHandles` sets only `top`), but the reveal area. `:has(+ :hover)` needs the
+// pointer inside the next element, and the block makes the empty column beside a centred picture
+// part of it.
 test('the handle appears from the empty column beside a centred picture', async ({ page }) => {
   await openWithBothImages(page);
 
@@ -84,8 +67,7 @@ test('the handle appears from the empty column beside a centred picture', async 
   const pic = await page.locator('.ProseMirror .image-box').first().boundingBox();
   if (!box || !pic) throw new Error('no boxes');
 
-  // The premise: there is real empty column to aim at, and the point chosen is outside the
-  // picture but inside the block.
+  // The premise: empty column to aim at, outside the picture, inside the block.
   const gap = pic.x - box.x;
   expect(gap).toBeGreaterThan(100);
   const aimX = gap / 2;

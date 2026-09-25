@@ -9,27 +9,17 @@ import {
   type Point,
 } from './native-drag';
 
-// The code block header's controls are not a drop target for content dragged out of this document
-// (refuseEditorDrag in components/editor/code-block-extension.ts).
-//
-// The filename <input> is a natively droppable text control, and the NodeView's `stopEvent` keeps
-// ProseMirror out of every event over the header — so prosemirror-view's `eventBelongsToView` stops
-// short of the view and a drop there misses ProseMirror's drop path entirely: no `handleDrop` prop
-// runs, and no transaction removes the dragged range. What Chrome does with the drop it is left
-// holding is the reported bug, and it is worse than a bad filename. Measured on this document, with
-// a selection running from inside the code body into the paragraph below it:
+// The code block header's controls refuse drops of content dragged from this document
+// (`refuseChromeDrops`, useDragContainment.ts, used by code-block-extension.ts). The NodeView's
+// `stopEvent` keeps ProseMirror out of the header, so a drop on the filename <input> misses
+// `handleDrop`, and Chrome's own move deletes the range:
 //
 //   before  doc(paragraph("前の段落です"), codeBlock("const x = 1;\n"), paragraph("後の段落です"))
 //   after   doc(paragraph("前の段落です"), codeBlock("c"), paragraph)
 //   field   ""
 //
-// The dragged range is gone from the document — Chrome ran its own move and deleted the source out
-// of the contenteditable, which ProseMirror never authorized and cannot undo as one step — and it
-// did not arrive in the field either. The text is simply destroyed. Hence the document assertion
-// below is the primary one and the field's value is the secondary check.
-//
-// Same machinery as the table and callout drop guards; see e2e/native-drag.ts, which also owns the
-// fixture and the selection this file and editor-drag-containment.spec.ts both start from.
+// The text is destroyed, so the document is the primary assertion. Machinery and fixture:
+// e2e/native-drag.ts.
 
 async function openEditor(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');
@@ -56,15 +46,12 @@ test('a selection spanning the code body and the prose cannot be dropped on the 
 
   await dragOntoFilenameField(page, await selectAcrossCodeEdge(page));
 
-  // Nothing landed in the field…
+  // Nothing in the field…
   await expect(filename).toHaveValue('');
-  // …and — the half that matters more — the document is untouched. Chrome's native move would have
-  // deleted the dragged range straight out of the contenteditable, which ProseMirror never
-  // authorized and the NodeView's ignoreMutation would have partly hidden from it.
+  // …and, more to the point, the document is untouched.
   expect(await docString(page)).toBe(CODE_EDGE_DOC);
   await expect(editor.locator('.code-block')).toHaveCount(1);
-  // The field commits on blur, so a value that landed but hadn't committed yet would still be
-  // waiting. Focusing and leaving is what would flush it.
+  // It commits on blur, so focus and leave to flush anything pending.
   await filename.click();
   await filename.blur();
   await expect(filename).toHaveValue('');
@@ -78,10 +65,8 @@ test('the filename field still accepts typing after a refused drop', async ({ pa
 
   await dragOntoFilenameField(page, await selectAcrossCodeEdge(page));
 
-  // The refusal is scoped to the drag; the control itself is untouched. Without this, blocking the
-  // drop by disabling the field would look like a pass. Asserting the value *after* blur also
-  // reads the model, not the keystrokes: the NodeView's sync() rewrites the field from the node's
-  // attrs whenever the input is unfocused, so a commit that never happened would blank it here.
+  // Scoped to the drag: disabling the field would also pass. Read after blur, since sync() rewrites
+  // an unfocused field from the attrs, blanking a commit that never happened.
   await filename.fill('index.ts');
   await filename.blur();
   await expect(filename).toHaveValue('index.ts');

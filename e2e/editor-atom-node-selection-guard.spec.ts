@@ -1,20 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, selectNode } from './editor-authoring';
 
-// linkCard and embed are atoms (link-card-extension.ts, embed-extension.ts): selecting one gives a
-// NodeSelection whose range is exactly that node, with no content inside it. setCallout,
-// insertTable, toggleBlockquote and setImage each ran their normal insert/wrap path over that
-// range instead of refusing, which either replaced the card/embed outright (callout, table,
-// image) or wrapped it in a blockquote it was never meant to sit inside (reported 2026-09-05). All
-// four now guard on the node's type name the same way they already guard 'table' etc.
+// A node-selected atom (linkCard, embed, image) is a range with no inside: setCallout, insertTable,
+// toggleBlockquote and setImage replaced or wrapped it. All four guard on the type name
 // (callout-extension.ts, table-extensions.ts, blockquote-extension.ts, useImageUpload.ts).
 
 const CARD_HREF = '/posts/second-post';
 const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
 const EMBED_MD =
   '<div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo"></div>';
-// A real upload rather than one of the 1x1 fixtures: the paste below inserts a 1x1, so a picture
-// that is also 1x1 would leave the two indistinguishable if the guard ever let the swap through.
+// A real upload: the pasted 1x1 would be indistinguishable from a 1x1 original.
 const IMAGE_MD =
   '![](/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png)';
 
@@ -34,8 +29,7 @@ async function pasteImage(page: Page): Promise<void> {
   }, PNG_1x1_BASE64);
 }
 
-// `blockedLabel` is the row's own name in IMAGE_BLOCKED_HOSTS — the refusal notice quotes it, and
-// asserting the exact string is what keeps this test from passing on some *other* refusal.
+// The row's name in IMAGE_BLOCKED_HOSTS, quoted exactly so another refusal cannot pass.
 for (const { label, typeName, markdown, viewClass, blockedLabel } of [
   {
     label: 'a link card',
@@ -51,9 +45,7 @@ for (const { label, typeName, markdown, viewClass, blockedLabel } of [
     viewClass: 'embed-view',
     blockedLabel: '埋め込み',
   },
-  // A body image is the same shape — a selectable block atom — and was left out of all four guards
-  // until 2026-09-08. It differs from the two above in that its losses were visible rather than
-  // silent, which is why it was not part of the original report; the refusal is uniform anyway.
+  // A body image is the same shape; its losses were visible rather than silent.
   {
     label: 'an image',
     typeName: 'image',
@@ -86,26 +78,14 @@ for (const { label, typeName, markdown, viewClass, blockedLabel } of [
     await expect(quoteButton).toBeDisabled();
     await expect(imagePicker).toBeDisabled();
 
-    // Disabled buttons refuse the click at the browser level, so this also proves the guard: were
-    // it not disabled, the click would run the command and the assertions below would catch the
-    // node vanishing or getting wrapped.
+    // A disabled button refuses the click; enabled, the command would run and fail below.
     await calloutButton.click({ force: true });
     await tableButton.click({ force: true });
     await quoteButton.click({ force: true });
 
-    // Paste has no toolbar affordance to grey out, so it has to be exercised directly rather than
-    // inferred from a disabled control (useImageUpload.ts's own reasoning for the table/code-block
-    // cases this mirrors).
-    //
-    // **The refusal is asserted first, and that is what makes the rest of this a real reading.**
-    // A blocked paste is declined synchronously and never reaches /api/uploads; one that gets
-    // through has to round-trip the upload before it changes anything. So a document assertion
-    // taken straight after the gesture is green either way. Measured 2026-09-08 by deleting
-    // `image` from IMAGE_BLOCKED_HOSTS: every assertion below still passed, including the src
-    // comparison written to catch exactly that. The notice is the synchronous half.
-    //
-    // The srcs and not a count, for the image row: a guard that failed there swaps the selected
-    // picture for the pasted 1x1 and leaves the count at 1.
+    // Paste has no control to grey, so it is exercised. **The refusal is asserted first**: it is
+    // synchronous, while a paste that gets through waits on the upload, so an immediate document check
+    // passes either way. srcs, not a count: a failed guard swaps the picture and keeps one.
     const srcs = () =>
       page
         .locator('.ProseMirror img')

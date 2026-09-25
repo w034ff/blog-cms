@@ -10,16 +10,12 @@ import {
   tagsField,
 } from './editor-authoring';
 
-// 記事の設定 collapses the metadata fields behind a toggle on the editor's pinned bar. Two
-// things have to hold for that to be safe, and neither is visible from the markup: the fields
-// must still reach the server while the group is closed, and Enter in one must not publish.
+// 記事の設定 hides the metadata fields behind a toggle. Safe only if the fields still reach the server
+// while closed, and Enter in one does not publish.
 
-// useAutosave snapshots the live form (`new FormData(form)`) and publish reads the same DOM, so
-// a field that leaves the document leaves the payload. `hidden` only hides its children — this
-// is the spec that would go red if it were ever rewritten as `{open && …}`, which looks
-// equivalent and silently resets カテゴリ to not chosen and drops the thumbnail. カテゴリ is the
-// witness because it is detectable: set to ブログ, a dropped field comes back unchosen and the
-// publish is refused (§12.32).
+// Autosave and publish read `new FormData(form)`, so a field leaving the DOM leaves the payload.
+// `hidden` keeps it; `{open && …}` would look equivalent and drop カテゴリ and the thumbnail.
+// カテゴリ is the witness: dropped, it comes back unchosen and publish is refused (§12.32).
 test('values set inside 記事の設定 survive a publish made while it is closed', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -28,13 +24,11 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await openPostSettings(page);
   const blog = page.getByRole('radio', { name: 'ブログ', exact: true });
   await blog.check();
-  // Two tags the seeded dictionary has (drizzle/0010 admitted the ones already in use).
+  // Two seeded dictionary tags (drizzle/0010).
   await addTag(page, 'rea', 'react');
   await addTag(page, 'rsc');
 
-  // The drawer is modal (PostSettingsPanel.tsx): its own backdrop catches a click into the body
-  // and closes the drawer rather than letting it through, so the panel has to be closed explicitly
-  // before typing — closing it here is also the state the assertions right below want to check.
+  // The modal drawer blocks the body, so close it before typing; also the state checked below.
   await closePostSettings(page);
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Collapsed publish.');
@@ -44,15 +38,12 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await expectAutosaved(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
-  // Before the reload too: React 19 resets a form after its action runs, and a radio the reset
-  // unchecked would send nothing on the next autosave, which the server files as not chosen —
-  // the reload alone reads back what publish stored, not what the page now holds. By selector, not
-  // by role: the drawer is closed, and `getByRole` does not see into a hidden subtree.
+  // Before the reload too: React 19 resets the form after its action, and an unchecked radio would
+  // send nothing on the next autosave. By selector: `getByRole` does not see the hidden drawer.
   await expect(page.locator('input[name="category"][value="blog"]')).toBeChecked();
   await expect(tagsField(page)).toHaveValue('react,rsc');
 
-  // Round-trip through the server: reload the edit page and read the fields back. A payload
-  // that dropped them would come back with no category and no tags.
+  // Through the server: a dropped payload returns no category or tags.
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await openPostSettings(page);
@@ -61,9 +52,8 @@ test('values set inside 記事の設定 survive a publish made while it is close
   await expect(page.getByRole('button', { name: '「react」を外す' })).toBeVisible();
 });
 
-// A new post starts with no category, and 投稿 is where it has to be chosen (§12.32). The refusal
-// leaves the post a draft and opens 記事の設定 onto the field, with the message under it; choosing
-// one lets the same post publish.
+// A new post has no category, and 投稿 asks for it (§12.32): the refusal opens 記事の設定 with the
+// message under the field; choosing one lets it publish.
 test('a new post has no category until one is chosen, and 投稿 asks for it', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -75,8 +65,7 @@ test('a new post has no category until one is chosen, and 投稿 asks for it', a
 
   await page.getByRole('button', { name: '投稿' }).click();
   await expectDraft(page);
-  // 記事の設定 opens by itself, with the message under カテゴリ and not in the header, where it
-  // would sit dimmed behind the modal drawer, repeating it.
+  // It opens itself, the message under カテゴリ, not in the dimmed header.
   await expect(page.getByRole('button', { name: '記事の設定' })).toHaveAttribute(
     'aria-expanded',
     'true',
@@ -87,7 +76,7 @@ test('a new post has no category until one is chosen, and 投稿 asks for it', a
   await expect(page.getByText('カテゴリを選んでください。')).toHaveCount(1);
   await expect(page.getByRole('radio', { name: '技術記事', exact: true })).not.toBeChecked();
   await page.getByRole('radio', { name: 'ブログ', exact: true }).check();
-  // Choosing is an edit, which clears the refusal.
+  // Choosing is an edit, clearing the refusal.
   await expect(page.locator('#post-settings-panel').getByRole('alert')).toHaveCount(0);
   await closePostSettings(page);
   await page.getByRole('button', { name: '投稿' }).click();
@@ -95,11 +84,9 @@ test('a new post has no category until one is chosen, and 投稿 asks for it', a
   await expect(page.locator('input[name="category"][value="blog"]')).toBeChecked();
 });
 
-// The publish button sits on the same pinned bar as the metadata fields' own toggle, a keystroke
-// away from them. Enter in one of them would otherwise activate it — the browser's implicit
-// submission picks the form's first submit button, which is 投稿. The guard is bound to two
-// wrappers now, not one: the panel left the block that used to carry it. タグ's text box is the
-// field pressed in the panel: a text field is what implicit submission starts from.
+// Enter in a field would implicitly submit via the form's first submit button, 投稿. The guard is on
+// two wrappers now, the panel having left the first. タグ's text box: implicit submission starts
+// from a text field.
 test('Enter in a metadata field does not publish', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -108,10 +95,10 @@ test('Enter in a metadata field does not publish', async ({ page }) => {
   await page.getByLabel('タイトル').press('Enter');
   await openPostSettings(page);
   await tagCombobox(page).press('Enter');
-  // And on a カテゴリ button: it is a radio underneath, an input like the rest.
+  // And a カテゴリ button, a radio underneath.
   await page.getByRole('radio', { name: 'ブログ', exact: true }).press('Enter');
 
-  // Still a draft: the button would have relabelled to 更新 had the form gone through.
+  // Still a draft: a submit would have relabelled it 更新.
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
   await expectDraft(page);
 });
