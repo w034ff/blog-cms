@@ -2,21 +2,16 @@
 
 import { useEffect } from 'react';
 
-// The reading preview for published footnotes (docs/footnote-popover-requirements.md).
-//
-// The whole feature is an addition to markup that already works: remark-gfm gives every reference
-// an `href` pointing at its definition's `id` on the same page, so the popover's content is a clone
-// of a node that is already here (§2) and the reference stays an ordinary anchor. Nothing below
-// rewrites `href` or `id` — with no script the page behaves exactly as it did (§3.4).
+// The reading preview for published footnotes (docs/footnote-popover-requirements.md). An addition
+// to markup that already works: remark-gfm links each reference to its definition's `id`, so the
+// content is a clone of a node on the page (§2). Nothing rewrites `href` or `id`; without script
+// the page is unchanged (§3.4).
 
 const OPEN_DELAY_MS = 200; // §6: a `sup` is a small target, and a pointer on its way elsewhere crosses it
-// §6: the preview can be entered now, so leaving the reference cannot close it at once — the
-// pointer has to cross the gap that keeps the box off the reference (§5.3) to get there.
+// §6: the preview is enterable, so leaving the reference must allow crossing the gap (§5.3).
 const CLOSE_DELAY_MS = 200;
-// §6: how far the page must move before a PINNED popover gives up. Touch has no "the pointer left"
-// to close on, so a scroll is the reader's way of saying they have moved on. Not zero, because iOS
-// emits scroll for an address bar collapsing or a rubber band — neither is a reader deciding
-// anything. One line of body text is the initial value.
+// §6: how far the page must move before a pinned popover gives up: touch has no pointer leave, so a
+// scroll means the reader moved on. Not zero: iOS scrolls for an address bar or a rubber band.
 const SCROLL_DISMISS_PX = 24;
 const VIEWPORT_MARGIN = 16; // 1rem — the same number as the width's `calc(100vw - 2rem)` (§5.2.1)
 const REFERENCE_GAP = 8; // §5.3: the popover must not cover the reference the reader is about to click
@@ -28,8 +23,8 @@ type PopoverElement = HTMLDivElement & {
 
 type PopoverKind = 'preview' | 'pinned';
 
-// `#user-content-fn-<label>`, percent-encoded when the label is not ASCII (a hand-written note can
-// carry one — the editor's own labels are generated hex, docs/footnote-requirements.md §4).
+// `#user-content-fn-<label>`, percent-encoded for a non-ASCII hand-written label (the editor's are
+// hex, docs/footnote-requirements.md §4).
 function definitionFor(reference: HTMLAnchorElement): HTMLElement | null {
   const href = reference.getAttribute('href');
   if (!href?.startsWith('#')) return null;
@@ -43,32 +38,27 @@ function definitionFor(reference: HTMLAnchorElement): HTMLElement | null {
   return document.getElementById(id) ?? document.getElementById(raw);
 }
 
-// Builds the popover's content from the definition, or answers false when there is nothing to show
-// (§3.6: a reference whose definition is missing keeps its plain-anchor behaviour).
+// The content from the definition, or false when there is none (§3.6: a plain anchor stays).
 function fill(popover: PopoverElement, reference: HTMLAnchorElement, kind: PopoverKind): boolean {
   const definition = definitionFor(reference);
   if (!definition) return false;
 
   const note = definition.cloneNode(true) as HTMLElement;
-  // `↩` means "back to where you are standing" in here, so it has nothing to say (§4.1).
+  // `↩` means "back to where you are" here, so it goes (§4.1).
   note.querySelectorAll('a[data-footnote-backref]').forEach((backref) => backref.remove());
   if (!note.textContent?.trim()) return false;
 
-  // The clamp goes on the note's own <p>, never on a wrapper: a `-webkit-box` holding block
-  // children counts lines unreliably, and §4.3.2's 184px was measured on the paragraph itself.
-  //
-  // A definition is inline-only (docs/footnote-requirements.md §2), so that paragraph is the whole
-  // note and this loses nothing. Only externally authored markdown can put more blocks in a
-  // footnote, and there the tail is dropped rather than clamped block-by-block — eight lines per
-  // paragraph would let one note cover the page, which is the thing §1 exists to prevent, and the
-  // full note is still one jump away.
+  // The clamp goes on the note's own <p>: a `-webkit-box` around blocks counts lines unreliably,
+  // and §4.3.2 measured the paragraph. Definitions are inline-only (docs/footnote-requirements.md
+  // §2); external markdown's extra blocks are dropped, since eight lines each could cover the page
+  // (§1) and the full note is one jump away.
   const body = note.firstElementChild ?? note;
   body.classList.add('footnote-popover-note');
   popover.replaceChildren(body);
 
   if (kind === 'pinned') {
-    // §4.2: the jump this design left on the reference for desktop, given back to touch — and the
-    // only way to reach a clamped note's remainder there (§4.3.1).
+    // §4.2: the reference's jump, given back to touch; the only way to a clamped note's rest
+    // (§4.3.1).
     const jump = document.createElement('a');
     jump.className = 'footnote-popover-jump';
     jump.href = reference.getAttribute('href') ?? '';
@@ -78,17 +68,15 @@ function fill(popover: PopoverElement, reference: HTMLAnchorElement, kind: Popov
   return true;
 }
 
-// Above the reference, centred on it, flipped below when it does not fit (§5.2). Everything is in
-// viewport coordinates: the popover is in the top layer, so no ancestor's scroll or offset parent
-// enters into it (§5.2.3).
+// Above the reference, centred, flipped below if it does not fit (§5.2). Viewport coordinates: the
+// top layer escapes every ancestor's scroll and offset (§5.2.3).
 function place(popover: PopoverElement, reference: HTMLAnchorElement): void {
   popover.style.maxHeight = '';
   const ref = reference.getBoundingClientRect();
   const view = document.documentElement;
   const box = popover.getBoundingClientRect();
 
-  // Centre, then move inward by the overflow — near a viewport edge the two cannot both hold, and
-  // a box off screen cannot be read while an off-centre one can (§5.2.1).
+  // Centre, then pull inward: an off-centre box can be read, an off-screen one cannot (§5.2.1).
   const rightMost = Math.max(VIEWPORT_MARGIN, view.clientWidth - VIEWPORT_MARGIN - box.width);
   const left = Math.min(
     Math.max(ref.left + ref.width / 2 - box.width / 2, VIEWPORT_MARGIN),
@@ -103,9 +91,8 @@ function place(popover: PopoverElement, reference: HTMLAnchorElement): void {
   } else if (box.height <= spaceBelow) {
     top = ref.bottom + REFERENCE_GAP;
   } else if (spaceAbove >= spaceBelow) {
-    // Neither side fits (§5.2.2). The clamp's own media query has already shortened the note by
-    // here; this is the last resort, and it is the one case where a height cap is allowed to take
-    // over from the line clamp.
+    // Neither side fits (§5.2.2): after the media query has shortened the note, the one case where
+    // a height cap may take over from the line clamp.
     popover.style.maxHeight = `${Math.max(spaceAbove, 0)}px`;
     top = VIEWPORT_MARGIN;
   } else {
@@ -120,8 +107,8 @@ function place(popover: PopoverElement, reference: HTMLAnchorElement): void {
 type Controller = {
   open: (reference: HTMLAnchorElement) => void;
   close: () => void;
-  // Half of the hover bridge: the reference schedules on the way out and cancels on the way back,
-  // and so does the popover itself.
+  // The hover bridge: leaving schedules, returning cancels, for the reference and the popover
+  // alike.
   scheduleClose: () => void;
   cancelClose: () => void;
   isOpen: () => boolean;
@@ -131,15 +118,12 @@ type Controller = {
 
 function createPopover(kind: PopoverKind): Controller {
   const popover = document.createElement('div') as PopoverElement;
-  // `manual` for the preview, `auto` for the pinned one (§5.1.1): auto's light dismiss and Escape
-  // are what a pinned popover wants, and one close condition too many for a preview that already
-  // closes when the pointer leaves. The cost is that manual gives up Escape too — the document
-  // listener below is what pays it (WCAG SC 1.4.13 Dismissible).
+  // `manual` for the preview, `auto` for the pinned one (§5.1.1): light dismiss and Escape suit a
+  // pinned popover and are one close condition too many for a preview. Manual loses Escape too; the
+  // document listener below restores it (WCAG SC 1.4.13 Dismissible).
   popover.setAttribute('popover', kind === 'preview' ? 'manual' : 'auto');
   popover.className = `footnote-popover footnote-popover--${kind} prose prose-zinc dark:prose-invert`;
-  // Neither popover is hidden from assistive technology any more (§3.5.1, revised 2026-08-09): the
-  // preview can be entered, so its cloned links are real targets, and `aria-hidden` or `inert` over
-  // reachable controls is the pairing that section rules out.
+  // Not hidden from assistive technology (§3.5.1): the preview is enterable, its links reachable.
   document.body.appendChild(popover);
 
   let anchor: HTMLAnchorElement | null = null;
@@ -168,9 +152,8 @@ function createPopover(kind: PopoverKind): Controller {
     });
   };
 
-  // The pinned popover is dismissed by a scroll instead of following it (§6). The preview still
-  // follows, because there the pointer resting in the box is the reader saying they are still
-  // reading — a state touch has no equivalent of.
+  // A scroll dismisses the pinned popover (§6); the preview follows it, since a pointer resting in
+  // the box means the reader is still reading.
   const onScroll = () => {
     if (kind === 'pinned' && anchor && Math.abs(window.scrollY - openedAt) > SCROLL_DISMISS_PX) {
       close();
@@ -179,17 +162,15 @@ function createPopover(kind: PopoverKind): Controller {
     reposition();
   };
 
-  // Resize never dismisses. It can move the page without the reader scrolling (a phone's address
-  // bar collapsing is exactly that), so the baseline moves with it or the next scroll check would
-  // read someone else's movement as the reader's.
+  // Resize never dismisses (an address bar can cause it) and resets the baseline, so the next
+  // scroll check measures only the reader.
   const onResize = () => {
     openedAt = window.scrollY;
     reposition();
   };
   const scrollOptions: AddEventListenerOptions = { passive: true, capture: true };
 
-  // Scroll and resize move it, never close it — the close conditions are §6's and nowhere else
-  // (§5.2.3).
+  // Scroll and resize move it; closing is §6's alone (§5.2.3).
   const listen = () => {
     window.addEventListener('scroll', onScroll, scrollOptions);
     window.addEventListener('resize', onResize);
@@ -201,9 +182,7 @@ function createPopover(kind: PopoverKind): Controller {
     window.removeEventListener('resize', onResize);
   };
 
-  // Following 「定義へ」 is a same-page hash jump, so nothing unloads and light dismiss never fires
-  // (the click is inside the popover) — it would be left hanging over the definition it just
-  // travelled to.
+  // 「定義へ」 is a same-page hash jump inside the popover: no unload, no light dismiss, so close it.
   if (kind === 'pinned') {
     popover.addEventListener('click', (event) => {
       if (event.target instanceof HTMLElement && event.target.closest('.footnote-popover-jump')) {
@@ -212,8 +191,7 @@ function createPopover(kind: PopoverKind): Controller {
     });
   }
 
-  // The pinned popover can also be closed by the platform (light dismiss, Escape), which does not
-  // come back through close() — keep our own state in step with the element's.
+  // The platform can close it too (light dismiss, Escape), bypassing close(): keep state in step.
   popover.addEventListener('toggle', () => {
     if (popover.matches(':popover-open')) return;
     anchor = null;
@@ -228,10 +206,8 @@ function createPopover(kind: PopoverKind): Controller {
     popover.hidePopover();
   };
 
-  // The hover bridge (§6). The reference and the popover are two boxes with a gap between them, and
-  // a pointer travelling from one to the other is outside both for a moment — so leaving either
-  // only schedules the close, and arriving at the other cancels it. This is the machinery §9 spent
-  // a while avoiding; it exists because the preview is enterable, and only for that reason.
+  // The hover bridge (§6): leaving either box only schedules the close, and reaching the other
+  // cancels it. It exists only because the preview is enterable.
   if (kind === 'preview') {
     popover.addEventListener('pointerenter', cancelClose);
     popover.addEventListener('pointerleave', scheduleClose);
@@ -241,15 +217,14 @@ function createPopover(kind: PopoverKind): Controller {
     open(reference) {
       cancelClose();
       if (anchor === reference) return;
-      // Reopening for another reference has to go through close(): `showPopover()` throws on an
-      // element that is already showing, and `manual` has no "only one at a time" rule to lean on
-      // (§5.1.1). Guarded here rather than at the call sites — there are three of them.
+      // Through close(): `showPopover()` throws on a showing element, and `manual` has no
+      // one-at-a-time rule (§5.1.1). Guarded here for all three callers.
       if (anchor) close();
       if (!fill(popover, reference, kind)) return;
       anchor = reference;
       openedAt = window.scrollY; // the baseline the pinned dismissal measures against
-      // Measured before it can be seen: the size is only knowable once it is in the top layer, and
-      // `visibility` keeps that first frame from landing at the UA's centred position.
+      // Measured unseen: size is known only in the top layer, and `visibility` hides the first
+      // frame's UA centring.
       popover.style.visibility = 'hidden';
       popover.showPopover();
       place(popover, reference);
@@ -268,10 +243,8 @@ function createPopover(kind: PopoverKind): Controller {
   };
 }
 
-// Enhances the server-rendered post body (`#${targetId}`) with a footnote preview. Same shape as
-// CodeCopyButtons: the body stays server-rendered, this only attaches behaviour after mount and
-// puts every bit of it back on cleanup. Renders nothing into the React tree — the two popover
-// elements are created imperatively, one each for the whole document (§7).
+// Enhances `#${targetId}` with footnote previews, as CodeCopyButtons does: behaviour attached after
+// mount and removed on cleanup. The two popovers are created imperatively, one each (§7).
 export function FootnotePopover({ targetId }: { targetId: string }) {
   useEffect(() => {
     const root = document.getElementById(targetId);
@@ -287,8 +260,7 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
       reference.dataset.footnotePopover = 'on';
 
       let openTimer = 0;
-      // Set on every pointerdown, so a mouse click can never inherit an earlier tap's type — that
-      // would eat a plain desktop click, which is the property §3.1 is built to protect.
+      // Set on every pointerdown, so a mouse click never inherits a tap's type (§3.1).
       let pointerType = '';
 
       const cancelOpen = () => {
@@ -301,10 +273,8 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
         cancelOpen();
         // Coming back to the reference from the popover is the other half of the bridge.
         preview.cancelClose();
-        // Another reference's note is dropped at once rather than after this one's open delay:
-        // otherwise the previous note hangs over the reference now under the pointer for 200ms,
-        // and — where a pinned popover makes the timer below return early — with no close pending
-        // at all. Two references in one sentence is enough to meet both.
+        // Another reference's note drops at once, or it would hang over this one for the open
+        // delay, and with a pinned popover the timer below returns early and nothing closes it.
         if (!preview.isOpenFor(reference)) preview.close();
         openTimer = window.setTimeout(() => {
           openTimer = 0;
@@ -339,8 +309,8 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
         const wasTouch = pointerType === 'touch';
         pointerType = '';
         if (!wasTouch) {
-          // Untouched: the anchor jumps, and modifier-click, middle-click and "open in new tab"
-          // keep working because nothing here calls preventDefault (§3.1, §3.3).
+          // Untouched: the anchor jumps, and modifier/middle click keep working (no preventDefault,
+          // §3.1, §3.3).
           preview.close();
           return;
         }
@@ -368,8 +338,7 @@ export function FootnotePopover({ targetId }: { targetId: string }) {
       });
     });
 
-    // The preview's Escape (§6). `manual` gets no light dismiss, and content shown on hover or
-    // focus has to be dismissable without moving either — so focus stays on the reference here.
+    // The preview's Escape (§6): `manual` has no light dismiss, and focus stays on the reference.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') preview.close();
     };
