@@ -67,7 +67,7 @@ function parseContent(formData: FormData): DraftContent | null {
 
 // Inert today: nothing uses the Data Cache and `staleTimes.dynamic` is 0
 // (e2e/revalidate-client-cache.spec.ts). Kept as the hook a module-scope cache would need, for the
-// same reason as `force-dynamic` (docs/cms-features.md §7.1).
+// same reason as `force-dynamic` (docs/cms-features.md「RSS/Atom フィード」§7.1).
 function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }

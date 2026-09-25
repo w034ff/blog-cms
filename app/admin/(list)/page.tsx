@@ -66,8 +66,9 @@ export default async function AdminHome() {
           {posts.map((post) => (
             <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
               <div className='flex min-w-0 items-center gap-3'>
-                {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader sees. The
-                    slot is always drawn so the titles stay aligned; 「なし」 means no image at all. */}
+                {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader
+                    sees. The slot is always drawn so the titles stay aligned; 「なし」 means no
+                    image at all. */}
                 <AdminThumbnail src={resolveThumbnail(post)} />
                 <div className='min-w-0'>
                   <div className='flex items-center gap-2'>
@@ -107,10 +108,10 @@ export default async function AdminHome() {
                 </div>
               </div>
               <div className='flex shrink-0 items-center gap-4'>
-                {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address previews
-                    for this session (app/(site)/posts/[slug]/page.tsx), so one 表示 covers both states;
-                    the destination's banner and the 下書き badge already say which. Here rather than
-                    in the editor, where it would navigate away from a mounted editor. */}
+                {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address
+                    previews for this session (app/(site)/posts/[slug]/page.tsx), so one 表示
+                    covers both states; the destination's banner and the 下書き badge say which.
+                    Here rather than in the editor, where it would navigate away from it. */}
                 {post.slug && (
                   <a
                     href={`/posts/${post.slug}`}

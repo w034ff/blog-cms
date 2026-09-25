@@ -1,7 +1,7 @@
 import { getAllPosts } from '@/lib/posts';
 import { buildRssFeed } from '@/lib/rss';
 
-// A plain Route Handler: no file convention covers RSS (docs/cms-features.md §2). `force-dynamic`
+// A plain Route Handler: no file convention covers RSS (docs/cms-features.md「RSS/Atom フィード」§2). `force-dynamic`
 // only marks consistency with the public pages; route handlers are uncached anyway (§7).
 export const dynamic = 'force-dynamic';
 

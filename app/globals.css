@@ -33,11 +33,11 @@ html {
   --background: #ffffff;
   --foreground: #171717;
   /* The editor's sticky header height, which the format toolbar pins under. Measured at runtime by
-       useMeasuredHeight.ts (the bar wraps); this is the first paint's value. Too small is safe (one
-       frame too high); too large would leave a gap. */
+     useMeasuredHeight.ts (the bar wraps); this is the first paint's value. Too small is safe (one
+     frame too high); too large would leave a gap. */
   --editor-header-h: 2.75rem;
   /* The format toolbar's height, which the post pads under on a phone (§12.5). Measured by the same
-       hook, since it wraps at 320px. */
+     hook, since it wraps at 320px. */
   --editor-toolbar-h: 2.25rem;
 }
 
@@ -47,14 +47,14 @@ html {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   /* The site's one content column: `max-w-site`, SiteHeader/SiteFooter's inner box, and the post
-       page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
-       landing on the same left edge as a plain `mx-auto` box. */
+     page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
+     landing on the same left edge as a plain `mx-auto` box. */
   --container-site: 50rem;
   /* Below this the ToC rail is too narrow to be worth showing, and the post uses the mobile
-       <details> (components/TocNav.tsx). Readability only: the rail is `1fr`, so it cannot overflow.
-       Used as `toc:` in three places (the grid, TocNavMobile's hide, TocNavDesktop's show).
-       The rail gets `(container − --container-site) / 2` minus `ml-6`, so widening the column
-       narrows the rail: raise this with it, or headings get truncated. */
+     <details> (components/TocNav.tsx). Readability only: the rail is `1fr`, so it cannot overflow.
+     Used as `toc:` in three places (the grid, TocNavMobile's hide, TocNavDesktop's show).
+     The rail gets `(container − --container-site) / 2` minus `ml-6`, so widening the column
+     narrows the rail: raise this with it, or headings get truncated. */
   --breakpoint-toc: 77rem;
 }
 
@@ -80,7 +80,7 @@ body {
   border-radius: 0.5rem;
   overflow: hidden;
   /* The background lives on the rounded element; a child with its own would bleed past the
-       corners. */
+     corners. */
   background: #161b22;
   color: #e6edf3;
 }
@@ -88,7 +88,7 @@ body {
   margin: 0;
   background: transparent;
   /* The figure's foreground, not Typography's grey `--tw-prose-pre-code`: a plaintext block emits no
-       `--shiki-*` var and would fall back to that grey, looking washed out. */
+     `--shiki-*` var and would fall back to that grey, looking washed out. */
   color: inherit;
   padding: 1rem;
   overflow-x: auto;
@@ -178,7 +178,7 @@ body {
     border-radius: 9999px;
   }
   /* 18px, half the box (as GitHub's 16/32, Material's 24/48); 16 looks adrift. Pointer only: the
-       touch header's ＋ keeps 16px and the others match it there. */
+     touch header's ＋ keeps 16px and the others match it there. */
   .editor-back-link svg,
   .editor-help-button svg,
   .editor-settings-link svg {
@@ -187,11 +187,11 @@ body {
   }
   .editor-back-link {
     /* The box holds its 18px glyph 9px in; this keeps the arrow flush with the title input.
-           Change with the glyph size. */
+       Change with the glyph size. */
     margin-left: -9px;
   }
   /* Not at the column's edge (the divider and 投稿 follow), so no negative margin: pulled in, the
-       36px box overlaps the divider. */
+     36px box overlaps the divider. */
   .editor-settings-link {
     margin-right: 0;
   }
@@ -218,8 +218,8 @@ body {
 
 @media (hover: none) {
   /* The ＋ drawer's rows (§12.19): flat, full-width, left-aligned list rows at 44px, not the 40px
-       floor elsewhere. The selector also reaches 囲み枠/表's `ToolbarDropdown` triggers, which nest
-       their `ToolbarButton` here, so no component needs a prop. */
+     floor elsewhere. The selector also reaches 囲み枠/表's `ToolbarDropdown` triggers, which nest
+     their `ToolbarButton` here, so no component needs a prop. */
   .insert-menu-rows .toolbar-button {
     min-height: 44px;
   }
@@ -238,14 +238,14 @@ body {
   }
 
   /* 囲み枠/表 open a picker (insert-menu-nav.ts), so a disclosure ＞ rather than ⌄. `open` never turns
-       true here, so the chevron's own rotation never applies. */
+     true here, so the chevron's own rotation never applies. */
   .insert-menu-rows .toolbar-button .chevron-icon {
     transform: rotate(-90deg);
   }
 
   /* A drilled-into picker (insert-menu-nav.ts): its `.dropdown-item`s widened to the row list's
-       padding and divided like it. The sibling selector keeps 表's grid, which has no
-       `.dropdown-item`s, out. */
+     padding and divided like it. The sibling selector keeps 表's grid, which has no
+     `.dropdown-item`s, out. */
   .insert-menu-drilldown .dropdown-item {
     padding-left: 1rem;
     padding-right: 1rem;
@@ -400,17 +400,17 @@ body {
     min-height: 40px;
   }
   /* Undo and redo at 40px both ways; kept apart from `.toolbar-button-wide` only for the flex
-       centring below. */
+     centring below. */
   .toolbar-button-history {
     min-width: 40px;
     /* The icon is a block-level `<svg>`: the width `min-width` adds lands to its right unless flex
-           centres it. */
+       centres it. */
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
   /* Every mark in the scroll strip (§12.11), which no longer wraps, so width costs nothing. Flex
-       centring for the same reason as `.toolbar-button-history`. */
+     centring for the same reason as `.toolbar-button-history`. */
   .toolbar-button-wide {
     min-width: 40px;
     display: inline-flex;
@@ -420,7 +420,7 @@ body {
   .toolbar-button-round {
     min-width: 40px;
     /* A button centres its content vertically but not a block-level `<svg>` horizontally, so the
-           `min-width` padding would all go right of it. The absolute tooltip span is not a flex item. */
+       `min-width` padding would all go right of it. The absolute tooltip span is not a flex item. */
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -442,7 +442,7 @@ body {
   }
   .editor-header-bar .editor-publish-button {
     /* `py-2` plus the 20px line-height is already 36px, so the floor alone never binds; zeroing the
-           vertical padding lets it. */
+       vertical padding lets it. */
     padding-top: 0;
     padding-bottom: 0;
     min-height: 34px;
@@ -469,7 +469,7 @@ body {
     display: none;
   }
   /* The H3/B divider (Toolbar.tsx) stands in for the ring §12.12 removed on touch; a pointer still
-       has `hover:bg-zinc-100` to mark a button's edges. */
+     has `hover:bg-zinc-100` to mark a button's edges. */
   .toolbar-mark-divider {
     display: none;
   }
@@ -484,21 +484,21 @@ body {
     inset-inline: 0;
     top: auto;
     /* 0 until a keyboard opens: measured on iOS (useKeyboardInset.ts), ~0 on Android, whose
-           layout viewport shrinks instead (app/admin/posts/layout.tsx). */
+       layout viewport shrinks instead (app/admin/posts/layout.tsx). */
     bottom: var(--editor-kb-inset, 0px);
     /* Level with the page header, below the drop overlay and dropdown panels (z-50);
-           components/PostEditor.tsx. */
+       components/PostEditor.tsx. */
     z-index: 40;
     border-top: 1px solid #d4d4d8; /* zinc-300 */
     border-bottom: none;
     border-radius: 0;
     /* The container's `px-2` stacked with the first wide mark's centring gap; zeroed so the first
-           glyph gets the clearance every other one does. */
+       glyph gets the clearance every other one does. */
     padding-left: 0;
   }
   /* One non-wrapping, scrolling strip (§12.11), overriding the pointer's `flex-wrap`. Undo/redo
-       sit at its far end, as in note's toolbar: the marks ahead of them are used far more often.
-       The mask is a static fade, shown even at the scroll's end. `-webkit-` for Safari. */
+     sit at its far end, as in note's toolbar: the marks ahead of them are used far more often.
+     The mask is a static fade, shown even at the scroll's end. `-webkit-` for Safari. */
   .toolbar-scroll {
     flex-wrap: nowrap;
     overflow-x: auto;
@@ -511,7 +511,7 @@ body {
     padding-bottom: var(--editor-toolbar-h);
   }
   /* Opens upward: the bar's bottom edge is the screen's, and `top-full` would be under the
-       keyboard. */
+     keyboard. */
   .editor-toast {
     top: auto;
     bottom: 100%;
@@ -519,7 +519,7 @@ body {
     margin-bottom: 0.5rem;
   }
   /* The ＋ menu's rows are one column with one left edge. Here rather than in the components, which
-       are a wrapping row of icons on a pointer. */
+     are a wrapping row of icons on a pointer. */
   .insert-menu-rows > *,
   .insert-menu-rows .toolbar-button {
     width: 100%;
@@ -528,21 +528,21 @@ body {
     justify-content: flex-start;
   }
   /* The chevron at the row's trailing edge, settings-row style. `:has(.chevron-icon)` reaches only
-       ToolbarDropdown's trigger span. */
+     ToolbarDropdown's trigger span. */
   .insert-menu-rows .toolbar-button > span:has(.chevron-icon) {
     width: 100%;
     justify-content: space-between;
   }
   /* 囲み枠/表 wrap their button in a `relative flex` div (ToolbarDropdown.tsx) whose flex sizing
-       comes out a fraction of a pixel off the plain rows; an explicit `height` avoids it. **Keep it
-       equal to `.insert-menu-rows .toolbar-button`'s `min-height`**: shorter, the button overflows
-       its wrapper and the row looks shifted down. */
+     comes out a fraction of a pixel off the plain rows; an explicit `height` avoids it. **Keep it
+     equal to `.insert-menu-rows .toolbar-button`'s `min-height`**: shorter, the button overflows
+     its wrapper and the row looks shifted down. */
   .insert-menu-rows > * {
     height: 2.75rem;
   }
 
   /* The autosave status shortens on a phone. The way out is the arrow alone (§12.6), round, with a
-       `min-width` centred by flex (the icon is a block-level <svg>). */
+     `min-width` centred by flex (the icon is a block-level <svg>). */
   .autosave-status-full {
     display: none;
   }
@@ -561,7 +561,7 @@ body {
     border-radius: 9999px;
   }
   /* Without a ring the 40px box is invisible, so the `gap-2` between ＋ and the gear reads as ~32px
-       of blank; this pulls that one seam in. */
+     of blank; this pulls that one seam in. */
   .insert-menu {
     margin-right: -4px;
   }
@@ -627,7 +627,7 @@ body {
   ); /* zinc-700-ish; same shade at rest as on hover, just no background */
   cursor: grab;
   /* Never a native drag source: an HTML5 drag starting over DragController's own mousemove/mouseup
-       drag swallows those events and the session never ends (block-drag-handle.ts). */
+     drag swallows those events and the session never ends (block-drag-handle.ts). */
   -webkit-user-drag: none;
   opacity: 0;
   transition:
@@ -690,7 +690,7 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
    CUT_INFLATE so the outline lands on the block's real edge. */
 .block-drag-cut {
   /* `absolute`, unlike the indicator and ghost: this one marks a block, and document coordinates
-       keep it on the block through a mid-drag autoscroll, which `fixed` lagged by a frame. */
+     keep it on the block through a mid-drag autoscroll, which `fixed` lagged by a frame. */
   position: absolute;
   z-index: 39;
   display: none;
@@ -881,7 +881,7 @@ body.link-menu-open .table-toolbar {
    `fitMenuToPicture` after commit, since it compares against the menu's own width. */
 .image-bubble.is-outside {
   /* An 8px gap instead of the y-trick; the x offset stays, or the menu would sit beside a narrow
-       picture. */
+     picture. */
   transform: translate(var(--anchor-left, 0px), calc(var(--anchor-top, 0px) - 8px));
 }
 .image-bubble .toolbar-button {
@@ -990,7 +990,7 @@ body.link-menu-open .table-toolbar {
   margin-left: auto;
   cursor: pointer;
   /* The chosen language is read at a glance, so bright at rest, with its own tint and border to
-       mark it clickable. */
+     mark it clickable. */
   color: #e6edf3;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(160, 160, 160, 0.25);
@@ -1019,7 +1019,7 @@ body.link-menu-open .table-toolbar {
   align-items: center;
   gap: 0.375rem;
   /* Sized to its text, unlike the field it replaces: a link's whole area opens a tab. The controls
-       stay right by the `<select>`'s `margin-left: auto`; `min-width: 0` lets a long name truncate. */
+     stay right by the `<select>`'s `margin-left: auto`; `min-width: 0` lets a long name truncate. */
   flex: 0 1 auto;
   min-width: 0;
   padding: 0.125rem 0.375rem;
@@ -1047,7 +1047,7 @@ body.link-menu-open .table-toolbar {
   stroke: none;
 }
 /* One colour for the whole name, so repository and path read as one reference; the separator
-     stays muted. The colour is the published side's. */
+   stays muted. The colour is the published side's. */
 .prose .code-block-header .code-block-source-repo {
   flex: 0 1 auto;
   min-width: 0;
@@ -1071,7 +1071,7 @@ body.link-menu-open .table-toolbar {
   font-size: 1.2em;
   line-height: 1;
   /* Keeps the hover underline off the chevron. `text-decoration: none` would not: the `<a>` paints
-       the line over its descendants, but not into an atomic inline. */
+     the line over its descendants, but not into an atomic inline. */
   display: inline-block;
 }
 
@@ -1179,7 +1179,7 @@ body.link-menu-open .table-toolbar {
   white-space: nowrap;
   border-radius: 0.25rem;
   /* ToolbarButton's tooltip chip: a fixed dark bubble, not the header's background, which it would
-       blend into. The light query overrides. */
+     blend into. The light query overrides. */
   background: #3f3f46;
   color: #ffffff;
   font-size: 0.6875rem;
@@ -1225,7 +1225,7 @@ body.link-menu-open .table-toolbar {
     color: #57606a;
   }
   /* Light values for the source header and its button (without them, the dark #adbac7 showed on
-       the light #eaeef2). */
+     the light #eaeef2). */
   .prose .code-block-header .code-block-source {
     color: #24292f;
   }
@@ -1336,7 +1336,7 @@ body.link-menu-open .table-toolbar {
   gap: 0.375rem;
   padding: 0.4rem 1rem;
   /* Beats `.prose a`'s blue and Typography's weight and underline, as `.prose a.link-card` does.
-       Stated, not `inherit`: that reaches the figcaption's faint `--tw-prose-captions` grey. */
+     Stated, not `inherit`: that reaches the figcaption's faint `--tw-prose-captions` grey. */
   color: #e6edf3;
   font-weight: inherit;
   text-decoration: none;
@@ -1467,7 +1467,7 @@ body.link-menu-open .table-toolbar {
   border-radius: 0.25rem;
   background: rgba(127, 127, 127, 0.08);
   /* Not italic, not 500: Japanese fonts have neither face, and the synthesized ones read poorly. The
-       tint and glyph mark the quote; .markdown-alert uses the same 400. */
+     tint and glyph mark the quote; .markdown-alert uses the same 400. */
   font-style: normal;
   font-weight: 400;
 }
@@ -1610,7 +1610,7 @@ dialog.image-zoom {
   padding: 1.5rem;
   border: 0;
   /* The page's own ground, translucent, as Zenn does, not a black scrim. On the dialog, not
-       `::backdrop`, which cannot be relied on to inherit custom properties. */
+     `::backdrop`, which cannot be relied on to inherit custom properties. */
   background: color-mix(in srgb, var(--background) 80%, transparent);
   backdrop-filter: blur(2px);
 }
@@ -2195,8 +2195,8 @@ dialog.image-zoom img {
   padding: 0.75em 1em;
   position: relative;
   /* §16's floor here too (§16.4), restated because §16 keys on the anchor. A floor, not a height:
-       the control band makes the editor's card taller than the published one; what this removes is
-       editor cards differing from each other. */
+     the control band makes the editor's card taller than the published one; what this removes is
+     editor cards differing from each other. */
   min-height: 8.5rem;
   border: 1px solid #d0d7de;
   border-radius: 6px;
@@ -2228,7 +2228,7 @@ dialog.image-zoom img {
 .prose .link-card-head {
   display: flex;
   /* Top, as at `.prose .embed-head`: centred, the band's slack split and the top half joined the
-       card's padding. Both states take it, so the controls and the picker's search box sit alike. */
+     card's padding. Both states take it, so the controls and the picker's search box sit alike. */
   align-items: flex-start;
   gap: 0.5em;
   min-height: 2.2em;
@@ -2431,7 +2431,7 @@ dialog.image-zoom img {
     padding: 0.5em;
   }
   /* Icons only on the narrowest cards. The label stays as the accessible name, hidden visually rather
-       than with `display: none` (§7.4). */
+     than with `display: none` (§7.4). */
   .prose .link-card-head button {
     padding: 0.25em;
     line-height: 0;
@@ -2457,7 +2457,7 @@ dialog.image-zoom img {
     display: block;
   }
   /* The repository half goes rather than both truncating into names that identify nothing; the
-       path is what tells blocks apart, and the whole reference is in the link's `title`. */
+     path is what tells blocks apart, and the whole reference is in the link's `title`. */
   .prose .code-block-header .code-block-source-repo {
     display: none;
   }
@@ -2574,14 +2574,14 @@ dialog.image-zoom img {
    post paints its own light card. */
 .prose .embed-x {
   /* The widget's own cap. One value, so the published frame and the editor's box end together
-       (§10.9). */
+     (§10.9). */
   --embed-x-width: 550px;
 }
 .prose .embed-x .embed-frame {
   height: 250px;
   background: transparent;
   /* §10.9: the card stops at 548px, so a full-width frame leaves dead iframe that swallows the
-       pointer. Left, not centred, as a narrow image is. */
+     pointer. Left, not centred, as a narrow image is. */
   max-width: var(--embed-x-width);
 }
 /* The editor's box takes the cap too, plus .embed-view's padding and border, so its visible frame
@@ -2611,7 +2611,7 @@ dialog.image-zoom img {
 .prose .embed-head {
   display: flex;
   /* Top, not centre: centring split the band's slack and put the button nearer the player than the
-       box edge, reading as the video's control. The card band does the same. */
+     box edge, reading as the video's control. The card band does the same. */
   align-items: flex-start;
   justify-content: flex-end;
   gap: 0.5em;
