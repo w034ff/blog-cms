@@ -2,9 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 import { caretAtLineStart, docString, selectionClassName, settle } from './editor-probe';
 
-// The position of a code block's first character — the caret spot every test below acts on. Named
-// by walking the document rather than by arithmetic, so a fixture that nests the block one level
-// deeper doesn't silently point somewhere else.
+// A code block's first character, found by walking the document so a deeper fixture still works.
 function codeContentStart(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as Element & {
@@ -20,25 +18,17 @@ function codeContentStart(page: Page): Promise<number> {
   });
 }
 
-// A keyboard `Home` moves the caret natively; ProseMirror syncs its internal selection from the
-// `selectionchange` event on a 20ms debounce (DOMObserver.flushSoon). A Backspace inside that
-// window bypasses every keymap and the browser's native edit corrupts the document (see the
-// callout boundary spec for the full story). The wait is `caretAtLineStart` in editor-probe.ts,
-// which asks the editor rather than the DOM — see there for why the DOM's offset cannot answer it.
+// A native `Home` reaches state through the 20ms debounce; a Backspace inside it bypasses every keymap
+// (docs/editor-pitfalls.md §1.1, editor-callout-boundary.spec.ts). The wait is `caretAtLineStart`.
 
-// The same 20ms selectionchange debounce (DOMObserver.flushSoon) that caretAtLineStart guards, but
-// after a native ArrowUp/End move whose settled offset is line-dependent — there's no fixed value
-// to poll for, so a flat wait past the debounce is the only option. Without it a Delete fired inside
-// the debounce window acts on ProseMirror's stale selection and corrupts the doc. The natural gap
-// between the End keypress and Delete usually clears the debounce on its own, but not reliably —
-// this makes it deterministic rather than leaning on incidental timing margin.
+// A flat wait past the 20ms sync after a native ArrowUp/End, whose settled offset is not known;
+// a Delete inside it acts on the stale selection.
 async function caretSettled(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 70)));
 }
 
-// The code block is `isolating` (components/editor/code-block-extension.ts), so a block below it
-// can't be merged into the code, and the shared Backspace shortcut steps the caret into the code
-// block's end instead of node-selecting it. Browser-only — this is live-editor edit behavior.
+// The code block is `isolating` (code-block-extension.ts): the block below cannot merge into it, and
+// Backspace steps the caret to the code's end instead of node-selecting it.
 test('a paragraph after a code block is not merged into it by Backspace at its start', async ({
   page,
 }) => {
@@ -47,15 +37,14 @@ test('a paragraph after a code block is not merged into it by Backspace at its s
   await expect(editor).toBeVisible();
   await editor.click();
 
-  // Code block, then a paragraph directly after it (ArrowDown exits the code block — exitOnArrowDown
-  // must still work with `isolating` on).
+  // A code block, then a paragraph (exitOnArrowDown must still work with `isolating`).
   await page.keyboard.type('```ts ');
   await page.keyboard.type('const x = 1');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.type('あとの段落');
 
   const codeBody = editor.locator('.code-block code');
-  // Precondition: exitOnArrowDown made a separate paragraph — the text is NOT in the code body.
+  // Precondition: the text is not in the code body.
   await expect(codeBody).toHaveText('const x = 1');
   await expect(editor).toContainText('あとの段落');
 
@@ -63,23 +52,19 @@ test('a paragraph after a code block is not merged into it by Backspace at its s
   await caretAtLineStart(page);
   await page.keyboard.press('Backspace');
 
-  // Not merged: one code block, its body unchanged, the paragraph still present.
+  // Not merged: one block, body unchanged, paragraph present.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   await expect(codeBody).toHaveText('const x = 1');
   await expect(editor).toContainText('あとの段落');
 
-  // The caret landed at the *end of the code body*, so typing appends there (into the code).
+  // The caret is at the code's end, so typing appends to the code.
   await page.keyboard.type(';');
   await expect(codeBody).toHaveText('const x = 1;');
   await expect(editor).toContainText('あとの段落');
 });
 
-// Unlike the non-empty case above, an *empty* line right after the code block carries nothing
-// that could corrupt the code, so stepIntoPreviousIsolating deletes it outright (matching
-// blockquote's plain join, where the empty line just disappears) instead of leaving it stranded.
-// A second, non-empty paragraph below proves the delete really happened: with the doc's last
-// block already a paragraph, StarterKit's TrailingNode has nothing to refill, so a stale line
-// would otherwise still be there to count.
+// An empty line after the block can corrupt nothing, so stepIntoPreviousIsolating deletes it. The
+// paragraph below keeps TrailingNode from refilling it.
 test('Backspace on an empty line after a code block deletes that line', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -99,22 +84,19 @@ test('Backspace on an empty line after a code block deletes that line', async ({
 
   await page.keyboard.press('Backspace');
 
-  // The empty line is gone — only the non-empty paragraph remains, directly after the code block.
+  // The empty line is gone.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   await expect(codeBody).toHaveText('const x = 1');
   await expect(editor.locator('p')).toHaveCount(1);
   await expect(editor.locator('p')).toHaveText('次の段落');
 
-  // Caret landed at the code body's end, same as the non-empty case.
+  // The caret is at the code's end.
   await page.keyboard.type(';');
   await expect(codeBody).toHaveText('const x = 1;');
 });
 
-// The Delete-direction mirror of the "not merged" test above: at the code block's own end,
-// Delete must not pull in the following non-empty paragraph. `isolating` already blocks
-// joinForward for this (prosemirror-commands' findCutAfter refuses to cross it), so this is a
-// plain no-op with no custom command involved — but it's exactly the case stepIntoNextIsolating
-// must also leave alone, so it's covered here alongside its empty-line counterpart below.
+// Delete at the code's end must not pull in the next paragraph. `isolating` already refuses
+// joinForward (`findCutAfter`), but stepIntoNextIsolating must leave it alone too.
 test('a paragraph after a code block is not merged into it by Delete at the code block end', async ({
   page,
 }) => {
@@ -136,21 +118,18 @@ test('a paragraph after a code block is not merged into it by Delete at the code
   const codeBody = editor.locator('.code-block code');
   await page.keyboard.press('Delete');
 
-  // Nothing merged, nothing deleted: one code block, its body unchanged, the paragraph intact.
+  // Nothing merged or deleted.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   await expect(codeBody).toHaveText('const x = 1');
   await expect(editor).toContainText('あとの段落');
 
-  // The caret is still at the code body's end, so typing appends there.
+  // The caret is still at the code's end.
   await page.keyboard.type(';');
   await expect(codeBody).toHaveText('const x = 1;');
 });
 
-// The Delete-direction mirror of the empty-line Backspace test above: at the code block's own
-// end, an empty line right after it carries nothing that could corrupt the code, so
-// stepIntoNextIsolating (isolating-boundary.ts) deletes it outright. A second, non-empty
-// paragraph proves the delete happened (TrailingNode has nothing to refill, so a stale line
-// would otherwise still be there to count).
+// Delete at the end removes an empty line after it (stepIntoNextIsolating); the paragraph below
+// keeps TrailingNode from refilling it.
 test('Delete at a code block end deletes an empty line right after it', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -172,21 +151,19 @@ test('Delete at a code block end deletes an empty line right after it', async ({
 
   await page.keyboard.press('Delete');
 
-  // The empty line is gone — only the non-empty paragraph remains, directly after the code block.
+  // The empty line is gone.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   await expect(codeBody).toHaveText('const x = 1');
   await expect(editor.locator('p')).toHaveCount(1);
   await expect(editor.locator('p')).toHaveText('次の段落');
 
-  // Caret stayed at the code body's end, so typing appends there.
+  // The caret stayed at the code's end.
   await page.keyboard.type(';');
   await expect(codeBody).toHaveText('const x = 1;');
 });
 
-// Regression: `isolating` must not trap the code block — Backspace from inside an empty block
-// must still remove it. Right after typing the fence it takes the fence-undo path (the literal
-// ``` text comes back, see fenceUndoKey in the extension); once the record has expired, the
-// inherited empty → clear kicks in instead (covered in editor-codeblock-language.spec.ts).
+// `isolating` must not trap the block: right after the fence, Backspace restores the literal text
+// (fenceUndoKey); later the empty → clear path applies (editor-codeblock-language.spec.ts).
 test('Backspace in a just-typed empty code block restores the fence text', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -201,12 +178,9 @@ test('Backspace in a just-typed empty code block restores the fence text', async
   await expect(editor).toContainText('```');
 });
 
-// Backspace at the *start of the code itself*, in a non-empty block. Base CodeBlock's own
-// Backspace handler tests `$anchor.pos === 1` — true only when the code block is the document's
-// very first node — and answered it with `clearNodes()`: the block was destroyed, its language and
-// filename went with it, and multi-line code landed in one paragraph holding literal \n characters
-// (which re-parses as headings/lists on the next load). It now *selects* the block instead, in every
-// position, so the document is untouched and a second Backspace removes the whole thing.
+// Backspace at the start of non-empty code. Base CodeBlock tests `$anchor.pos === 1` (the doc's first
+// node only) and ran `clearNodes()`, destroying language, filename and line structure. It now
+// selects the block everywhere; a second Backspace removes it.
 async function typeTwoLineBlock(page: Page): Promise<void> {
   await page.keyboard.type('```ts:index.ts '); // language *and* filename, so attr loss is visible
   await page.keyboard.type('const a = 1');
@@ -214,7 +188,7 @@ async function typeTwoLineBlock(page: Page): Promise<void> {
   await page.keyboard.type('const b = 2');
   await page.keyboard.press('ArrowUp'); // onto the first line
   await page.keyboard.press('Home'); // …and to the code's very start
-  // The code body is one DOM text node, so offset 0 is the start of the code, not just of a line.
+  // The code body is one text node, so offset 0 is the code's start.
   await caretAtLineStart(page);
 }
 
@@ -239,17 +213,16 @@ test('Backspace at the start of the code selects the block, it is not destroyed 
 
   await page.keyboard.press('Backspace');
 
-  // The document is untouched; only the selection changed.
+  // Only the selection changed.
   await expectBlockIntact(page);
   expect(await selectionClassName(page)).toBe('NodeSelection');
 
-  // …and the second press removes the whole block, which is the route out.
+  // The second press removes the block.
   await page.keyboard.press('Backspace');
   await expect(editor.locator('.code-block')).toHaveCount(0);
 });
 
-// The control: the identical keystroke one paragraph further down the document, where
-// `$anchor.pos === 1` is false. Both positions must behave the same way.
+// Control: one paragraph down, where `$anchor.pos === 1` is false, the same result.
 test('Backspace at the start of the code selects the block (paragraph above it)', async ({
   page,
 }) => {
@@ -274,23 +247,20 @@ test('Backspace at the start of the code selects the block (paragraph above it)'
   await expect(editor.locator('p').first()).toHaveText('前の段落');
 });
 
-// The same keystroke, in the containers a code block actually lives in. `isolating` makes
-// prosemirror-commands' findCutBefore return null, and joinBackward reads that as "nothing to join
-// across" rather than "refuse" — falling through to blockRange() + liftTarget, which tore the block
-// out of its container. A callout was already safe (liftTarget breaks on an isolating ancestor and
-// the callout is one); listItem, blockquote and details are not isolating, so all three broke.
-// docString rather than element counts: what went wrong is the *shape* of the document.
+// In containers: `isolating` makes `findCutBefore` return null, which joinBackward reads as
+// nothing to join, falling through to blockRange() + liftTarget, tearing the block out. listItem,
+// blockquote and details are not isolating. docString: the shape is what went wrong.
 const NESTED: { name: string; md: string; doc: string }[] = [
   {
     name: 'a list item',
     md: '- 項目\n\n  ```ts:index.ts\n  const a = 1\n  const b = 2\n  ```\n',
-    // The whole listItem used to be lifted out — `- 項目` came back as a bare `項目`.
+    // The listItem used to be lifted out.
     doc: 'doc(bulletList(listItem(paragraph("項目"), codeBlock("const a = 1\\nconst b = 2\\n"))), paragraph)',
   },
   {
     name: 'a blockquote',
     md: '> 引用\n>\n> ```ts:index.ts\n> const a = 1\n> const b = 2\n> ```\n',
-    // The code block used to escape the quote and land as a top-level sibling.
+    // The block used to escape the quote.
     doc: 'doc(blockquote(paragraph("引用"), codeBlock("const a = 1\\nconst b = 2\\n")), paragraph)',
   },
 ];
@@ -316,18 +286,13 @@ for (const { name, md, doc } of NESTED) {
     expect(await docString(page)).toBe(doc); // …and the keystroke changed nothing
     await expect(editor.locator('.code-block-lang')).toHaveValue('ts');
     await expect(editor.locator('.code-block-filename')).toHaveValue('index.ts');
-    // What it did instead: selected the block, so the author is one press from removing it.
+    // It selects the block instead.
     expect(await selectionClassName(page)).toBe('NodeSelection');
   });
 }
 
-// The third container, and the one no markdown fixture reaches: `:::details` doesn't parse back
-// through loadMarkdown (it arrives as a literal paragraph), so the accordion is built by typing the
-// way editor-details-view.spec.ts does. `details` is not `isolating` either, so before the guard it
-// lifted the code block straight out of the accordion body.
-//
-// The document is captured rather than spelled out — the point is that the keystroke changes
-// nothing, and naming the accordion's internal node structure here would only couple this test to it.
+// The accordion, typed since `:::details` does not reparse (as in editor-details-view.spec.ts);
+// `details` is not isolating either. The document is captured, not spelled out.
 test('Backspace at the start of the code does not lift the block out of an accordion', async ({
   page,
 }) => {
@@ -357,25 +322,16 @@ test('Backspace at the start of the code does not lift the block out of an accor
   await expect(editor.locator('.code-block-lang')).toHaveValue('ts');
   await expect(editor.locator('.code-block-filename')).toHaveValue('index.ts');
 
-  // The guard returns true without ever touching `tr`, so it must leave nothing on the history
-  // stack — an empty transaction there would spend the author's next Ctrl+Z undoing nothing. This
-  // is the one case in this file that can ask: the document was *typed*, so undo has a real step to
-  // reach, and reaching it proves the Backspace didn't insert one of its own in front. (The
-  // fixtures above arrive via setContent, which is a single history event, so the same press there
-  // would clear the whole document either way and prove nothing.)
+  // The guard touches no `tr`, so no empty history step: undo must reach the typed document. Only a
+  // typed fixture can ask (setContent is one event).
   await page.keyboard.press('Control+z');
   await settle(page);
   expect(await docString(page)).not.toBe(before);
 });
 
-// Getting rid of a fence inside a quote, which is what the author actually does — and which the
-// first version of the guard (a bare no-op at the block's start) made impossible.
-//
-// The trap is the trailing newline: a block loaded from markdown carries one (markdown-it
-// terminates fence content with it), so deleting the visible code leaves `codeBlock("\n")` — empty
-// on screen, `content.size === 1` in the document. The empty→paragraph escape declines there, and a
-// refusal at the start then swallowed every further Backspace, leaving no way out at all. Selecting
-// the block instead covers that state without having to decide which whitespace counts as empty.
+// Removing a fence inside a quote. A loaded block ends in `\n`, so deleting the code leaves
+// `codeBlock("\n")`, which the empty escape declines; a bare refusal at the start then trapped
+// every Backspace. Selecting the block covers it.
 test('a code block inside a quote can be removed with Backspace, trailing newline and all', async ({
   page,
 }) => {
@@ -393,7 +349,7 @@ test('a code block inside a quote can be removed with Backspace, trailing newlin
     'doc(blockquote(paragraph("引用"), codeBlock("const a = 1\\n")), paragraph)',
   );
 
-  // Select the visible code and delete it — the state that used to become a dead end.
+  // Delete the visible code: the old dead end.
   const start = await codeContentStart(page);
   await setRange(page, start, start + 'const a = 1'.length);
   await settle(page);
@@ -413,8 +369,7 @@ test('a code block inside a quote can be removed with Backspace, trailing newlin
   expect(await docString(page)).toBe('doc(blockquote(paragraph("引用")), paragraph)');
 });
 
-// Empty an already-settled code block (the fence-undo record has to be gone, or Backspace takes
-// that path instead) and press Backspace: the block goes back to being a paragraph.
+// Empty a settled block (no fence-undo record) and Backspace: it becomes a paragraph.
 async function typeSettledEmptyBlock(page: Page): Promise<void> {
   await page.keyboard.type('```ts ');
   await page.keyboard.type('x');
@@ -422,15 +377,10 @@ async function typeSettledEmptyBlock(page: Page): Promise<void> {
   await settle(page);
 }
 
-// The reported crash. Base CodeBlock answers the empty block with TipTap's `clearNodes()`, which
-// takes `contentMatchAt(index).defaultType` unchecked — and this document is `block+
-// footnoteSection?`, so at every top-level position past the first child that default is
-// `footnoteSection`. Setting a code block to a node whose content is `footnoteDefinition+` threw
-// "RangeError: Invalid content for node type footnoteSection", uncaught, and the block could not be
-// removed with Backspace at all.
-//
-// The pageerror listener is the point of this test: the throw left the document *untouched*, so a
-// spec asserting only the document reads the failure as "nothing happened" and passes either way.
+// The reported crash: `clearNodes()` takes `contentMatchAt(index).defaultType` unchecked, which past
+// the first child of `block+ footnoteSection?` is `footnoteSection`, throwing "RangeError: Invalid
+// content for node type footnoteSection". **The pageerror listener is the point**: the throw left
+// the document untouched.
 test('Backspace clears an empty code block below a paragraph without throwing', async ({
   page,
 }) => {
@@ -452,19 +402,15 @@ test('Backspace clears an empty code block below a paragraph without throwing', 
 
   expect(errors).toEqual([]);
   expect(await docString(page)).toBe('doc(paragraph("前の段落"), paragraph, paragraph)');
-  // The caret came with it, so typing continues in the paragraph the fence became.
+  // The caret came along.
   await page.keyboard.type('ふつうの文');
   expect(await docString(page)).toBe(
     'doc(paragraph("前の段落"), paragraph("ふつうの文"), paragraph)',
   );
 });
 
-// The same escape inside a list item — where it never threw (clearNodes asks the *listItem's*
-// content expression, which has no footnoteSection in reach) but did something else: `clearNodes`
-// also lifts, so the block used to leave the bullet on its way to becoming a paragraph.
-// clearEmptyCodeBlock only re-marks the node, so it stays in the item, which is what emptying any
-// other block there does. Asserted as a document rather than a block count, because both behaviours
-// remove the `.code-block`.
+// In a list item `clearNodes` did not throw but lifted the block out of the bullet.
+// clearEmptyCodeBlock only re-marks the node. Asserted as a document: both remove `.code-block`.
 test('Backspace clears an empty code block inside a list item, leaving it in the list', async ({
   page,
 }) => {
@@ -493,11 +439,8 @@ test('Backspace clears an empty code block inside a list item, leaving it in the
   );
 });
 
-// Regression: deleting the block's final character used to be left to the browser, and
-// Chrome's native edit folded the emptied <pre><code> into the ce=false header — removing
-// the code body from the DOM while ignoreMutation hid the damage from ProseMirror (the
-// header remained but the block was uneditable until a reload). deleteSoleCodeChar in the
-// extension now performs that one deletion through ProseMirror.
+// The browser's own deletion of the last character folded the empty <pre><code> into the ce=false
+// header, hidden by ignoreMutation; deleteSoleCodeChar does it through ProseMirror.
 test('deleting the last character keeps the code body editable', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');

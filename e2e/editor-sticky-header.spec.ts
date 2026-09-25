@@ -7,18 +7,10 @@ import {
   ensureCategory,
 } from './editor-authoring';
 
-// The editor's chrome is two stacked sticky layers: the page header (記事一覧 / the autosave
-// state / 記事の設定 / 更新) and the format toolbar inside the editor frame. The toolbar pins
-// against the header's *measured* height (components/editor/useMeasuredHeight.ts), because
-// the header wraps at narrow widths and no written-down constant survives that.
-//
-// Everything here is geometry, an Enter that must not reach a submit button, and a control that
-// moved behind a disclosure — none of it is a claim about a Slice, so none of it can be a vitest
-// case (AGENTS.md, "Where an editor test goes").
+// Two stacked sticky layers: the page header and the format toolbar, which pins against the header's
+// measured height (useMeasuredHeight.ts), since the header wraps. Geometry, not a Slice (AGENTS.md).
 
-// The two sticky layers, located as what they are. The toolbar's own buttons sit a couple of
-// pixels inside their sticky box (`py-0.5`), and it is the box's edge that has to meet the
-// header's, so the boxes are what get measured.
+// The sticky boxes themselves: the toolbar's buttons sit inside theirs (`py-0.5`).
 const header = (page: Page) => page.locator('[data-publish-state]');
 const toolbar = (page: Page) => page.locator('div.sticky:not([data-publish-state])');
 
@@ -39,35 +31,28 @@ test('both sticky layers survive the middle of a long post, stacked and not over
   await page.getByLabel('タイトル').fill('E2E sticky header');
   await loadMarkdown(page, LONG_POST);
 
-  // Scroll to the middle by moving the document, not the window: what is being measured is where
-  // the two bars end up once the page's own content has gone past them.
+  // Move the document, so its content goes past the bars.
   await page.locator('.ProseMirror p', { hasText: '段落 30 の本文。' }).scrollIntoViewIfNeeded();
 
   const headerBox = await box(page, header(page));
   const toolbarBox = await box(page, toolbar(page));
 
-  // The header is at the viewport top. It is the form's direct child, which is the whole reason
-  // it is still here: pinned inside the metadata wrapper it would have come unstuck as soon as
-  // the settings panel scrolled past, which is well above 段落 30.
+  // The header is the form's direct child, so it stays stuck past the settings panel.
   expect(headerBox.y).toBeLessThanOrEqual(1);
 
-  // The toolbar sits directly under it — no overlap, and no gap for the post to show through.
-  // The tolerance is a pixel because offsetHeight is an integer and the layout is not.
+  // Directly under it; a pixel's tolerance, as offsetHeight is an integer.
   expect(toolbarBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
   expect(toolbarBox.y).toBeLessThanOrEqual(headerBox.y + headerBox.height + 1);
 
-  // Both are reachable, which is the point of pinning either of them.
+  // Both reachable.
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
   await expect(page.getByRole('button', { name: '太字' })).toBeVisible();
 });
 
 test('the header stands as tall as SiteHeader, on a pointer', async ({ page }) => {
-  // A pointer never hits the 34px touch floor (app/globals.css, `@media (hover: none)`), so
-  // without its own padding bump the editor's header settles on 投稿's 36px content height (53px
-  // border-box) against SiteHeader's 61px (`py-4` plus `text-lg`'s line-height,
-  // components/SiteHeader.tsx) — a jump felt moving between 記事一覧 and the editor (requested
-  // 2026-09-21). The two headers are never on screen together, so this is two navigations, not
-  // one box compared against a sibling.
+  // A pointer never hits the 34px touch floor (app/globals.css, `@media (hover: none)`), so the
+  // header gets its own padding to match SiteHeader's 61px (components/SiteHeader.tsx). Two
+  // navigations: the headers are never on screen together.
   await page.goto('/');
   const siteHeaderHeight = (await box(page, page.locator('header'))).height;
 
@@ -79,11 +64,8 @@ test('the header stands as tall as SiteHeader, on a pointer', async ({ page }) =
 });
 
 test('記事の設定 dims the full screen, not a margin-shortened strip of it', async ({ page }) => {
-  // The backdrop and the drawer (PostSettingsPanel.tsx) are `position: fixed` with `bottom-0`,
-  // which resolves against their own margin box — a `space-y-*` ancestor giving them an inherited
-  // `margin-bottom` (as a non-last flow child) silently shortens that box short of the true
-  // viewport bottom. Measured 788px against an 800px screen the first time this shipped, with the
-  // last ~12px of the page left undimmed. `!mb-0` in the component is the fix; this is the guard.
+  // The drawer's `fixed` `bottom-0` resolves against its margin box, which an inherited `space-y-*`
+  // margin shortened, leaving the page bottom undimmed. `!mb-0` fixes it; this guards it.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -100,9 +82,7 @@ test('記事の設定 dims the full screen, not a margin-shortened strip of it',
 test("記事の設定 gets a background fill while open, ToolbarButton's own active state", async ({
   page,
 }) => {
-  // This toggle predates ToolbarButton and never picked up its `active` prop (ToolbarButton.tsx's
-  // own `bg-zinc-200`/`dark:bg-zinc-700`), so it was the one control in the header with no visible
-  // sign of being open beyond `aria-expanded` (requested 2026-09-21).
+  // This toggle predates ToolbarButton's `active`, so it showed no open state beyond `aria-expanded`.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   const toggle = page.getByRole('button', { name: '記事の設定' });
@@ -119,10 +99,8 @@ test("記事の設定 gets a background fill while open, ToolbarButton's own act
 test('記事の設定 stops being modal once the drawer clears the editor column (§12.25)', async ({
   page,
 }) => {
-  // `min-width: 100rem` (app/globals.css) is chosen with margin past the measured crossover
-  // (1545px of clientWidth on an empty post), not the crossover itself — see that rule's own
-  // comment for why a literal pixel isn't the right target. 1280 stays well under it and must stay
-  // modal; 1700 clears it with room to spare and must stop being one.
+  // `min-width: 100rem` (app/globals.css) is chosen with margin past the measured crossover (~1545px),
+  // not the crossover itself. 1280 stays modal; 1700 must not be.
   await page.setViewportSize({ width: 1700, height: 900 });
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -134,9 +112,8 @@ test('記事の設定 stops being modal once the drawer clears the editor column
     .evaluate((el) => getComputedStyle(el).pointerEvents);
   expect(pointerEvents).toBe('none');
 
-  // The claim that matters: the editor is still reachable and the drawer does not close on its
-  // own — useDismiss's outside-click listener has to read the same computed style, not just the
-  // backdrop's own onClick, since the press reaches the editor rather than the backdrop at all.
+  // The editor is reachable and the drawer stays: `useDismiss` reads the same computed style, since
+  // the press reaches the editor, not the backdrop.
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Still editing at 1700px.');
   await expect(page.locator('.ProseMirror')).toContainText('Still editing at 1700px.');
@@ -145,24 +122,17 @@ test('記事の設定 stops being modal once the drawer clears the editor column
     'true',
   );
 
-  // The page itself is also free to scroll here — this is the one piece that tracks the
-  // breakpoint through live React state rather than a computed-style read at event time, since it
-  // has to hold or release continuously rather than answer a single press (PostSettingsPanel.tsx's
-  // own comment on why). A resize back under the line has to re-lock it just as live.
+  // The page scrolls too: the lock follows the breakpoint through React state
+  // (PostSettingsPanel.tsx says why), so a resize back under it must relock.
   expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
 });
 
 test('closing 記事の設定 at that width never flashes black (§12.25)', async ({ browser }) => {
-  // Needs real motion: this reproduced only mid-transition, with a `reducedMotion: 'reduce'`
-  // context (the project default, playwright.config.ts) never entering the animated branch at all
-  // and so never seeing it. `background-color: transparent` was first written scoped to `.is-open`
-  // (app/globals.css §12.25) — the class React removes the instant a close starts, while `opacity`
-  // (the only property that actually animates) had not yet begun its own fade. The result was one
-  // frame where the backdrop was solid `bg-black/40` again, briefly, before fading back out —
-  // reported 2026-09-21. Moving the transparency onto the bare `.post-settings-backdrop` class
-  // means it no longer depends on `.is-open` at all at this width, so nothing reverts on close.
+  // Needs real motion (the project default is `reducedMotion: 'reduce'`). Transparency scoped to
+  // `.is-open` (docs/editor-requirements.md §12.25) reverted the instant a close started, before
+  // `opacity` faded; on the bare class nothing reverts.
   const context = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await context.newPage();
   await page.setViewportSize({ width: 1700, height: 900 });
@@ -172,9 +142,7 @@ test('closing 記事の設定 at that width never flashes black (§12.25)', asyn
   await expect(page.getByLabel('カテゴリ')).toBeVisible();
 
   await page.getByRole('button', { name: '閉じる' }).click();
-  // Sampled as soon as possible after the click, before the 200ms fade has any chance to hide a
-  // one-frame revert — a `background-color` transition would be forgiving of this; the bug this
-  // guards is that there wasn't one, so any non-transparent read here is the failure.
+  // Sampled at once: `background-color` is not transitioned, so any non-transparent read fails.
   const backgroundColor = await page.evaluate(() => {
     const el = document.querySelector('.post-settings-backdrop') as HTMLElement;
     return getComputedStyle(el).backgroundColor;
@@ -185,30 +153,21 @@ test('closing 記事の設定 at that width never flashes black (§12.25)', asyn
 });
 
 test('the header rule spans the window while its contents keep the column', async ({ page }) => {
-  // A viewport wider than the column (max-w-site is 50rem), or the two are the same box and the
-  // claim is vacuous.
+  // Wider than the column (50rem), or the claim is vacuous.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
 
   const headerBox = await box(page, header(page));
   const titleBox = await box(page, page.getByLabel('タイトル'));
-  // The page's own usable width — `document.body.clientWidth`, measured at 1265 against a 1280
-  // viewport. Neither `page.viewportSize()` nor `documentElement.clientWidth` is the reference
-  // here: both report 1280, while <html>, <body> and <main> all lay out at 1265, and an element
-  // that spans the page is not supposed to reach under the scrollbar anyway.
+  // `document.body.clientWidth` (1265 at 1280): the viewport figures include the scrollbar.
 
-  // Edge to edge: the bar cancels PageMain's px-4 with -mx-4, which only reaches the window
-  // because the editor's layout hands it a bare PageMain with no column around the form.
+  // Edge to edge: `-mx-4` reaches the window only with a bare PageMain around the form.
   expect(headerBox.x).toBeLessThanOrEqual(1);
   const pageWidth = await page.evaluate(() => document.body.clientWidth);
   expect(headerBox.width).toBeGreaterThanOrEqual(pageWidth - 1);
 
-  // The contents did not go with it: 記事一覧 still starts where the title does. Measured on the
-  // glyph, not on its box — since 2026-09-21 the control is a 36px circle pulled left by 9px so
-  // that the 18px icon inside it lands on the column's edge (docs/editor-requirements.md §12.6).
-  // Those two numbers move together with the glyph's size, and the claim here is about neither:
-  // it is that the arrow and the title share a left edge.
+  // 記事一覧's glyph, not its box, shares the title's left edge (§12.6).
   const glyphBox = await box(page, page.getByRole('link', { name: '記事一覧' }).locator('svg'));
   expect(Math.abs(glyphBox.x - titleBox.x)).toBeLessThanOrEqual(1);
   expect(titleBox.width).toBeLessThan(pageWidth);
@@ -225,9 +184,7 @@ test('the toolbar follows the header when a narrow viewport wraps it', async ({ 
   const headerBox = await box(page, header(page));
   const toolbarBox = await box(page, toolbar(page));
 
-  // Not asserting *that* it wrapped — that is a fact about label widths, and a viewport where it
-  // happens not to wrap would make the assertion a lie rather than a failure. What must hold is
-  // that the offset is whatever the header actually measures, at any height it takes.
+  // Not that it wrapped (label widths decide), but that the offset follows the header's height.
   expect(toolbarBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height - 1);
   expect(toolbarBox.y).toBeLessThanOrEqual(headerBox.y + headerBox.height + 1);
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
@@ -237,10 +194,8 @@ test('Enter in the title does not reach 投稿', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
 
-  // 投稿 is the form's first submit button and the header is the form's first child, so an
-  // implicit submit from a metadata field would publish. blockImplicitSubmit on the wrapper the
-  // title still lives in is what stops it — the buttons moved out of that wrapper, the fields
-  // did not.
+  // 投稿 is the form's first submit, so an implicit submit from a field would publish;
+  // blockImplicitSubmit on the fields' wrapper stops it.
   await page.getByLabel('タイトル').fill('E2E implicit submit');
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('Body.');
@@ -249,14 +204,13 @@ test('Enter in the title does not reach 投稿', async ({ page }) => {
   await page.getByLabel('タイトル').click();
   await page.keyboard.press('Enter');
 
-  // Still a draft, and still on the editor. A published post would also have navigated nowhere,
-  // so the state is the claim, not the URL.
+  // Still a draft: the state is the claim, not the URL.
   await expectDraft(page);
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
 });
 
-// 記事の設定's 公開 switch (docs/editor-requirements.md §12.27). The switch is the server's answer,
-// not the click: `aria-checked` follows `isPublished`, which only a settled action moves.
+// 記事の設定's 公開 switch (docs/editor-requirements.md §12.27): `aria-checked` follows
+// `isPublished`, the server's answer.
 test('公開 in 記事の設定 appears after the first 投稿, then unpublishes and publishes again', async ({
   page,
 }) => {
@@ -267,7 +221,7 @@ test('公開 in 記事の設定 appears after the first 投稿, then unpublishes
   await page.keyboard.type('Take me down.');
   await expectAutosaved(page);
 
-  // Never published: the first publish stamps a date for good, so it belongs to 投稿 alone.
+  // Never published: the first publish, which stamps the date, is 投稿's alone.
   await page.getByRole('button', { name: '記事の設定' }).click();
   await expect(page.getByRole('switch', { name: '公開' })).toHaveCount(0);
   await page.getByRole('button', { name: '閉じる' }).click();
@@ -277,12 +231,11 @@ test('公開 in 記事の設定 appears after the first 投稿, then unpublishes
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
 
-  // It is not on the header bar: a pinned unpublish would sit one click away for the whole
-  // writing session, and it is never wanted from the middle of a post.
+  // Not on the header bar, one click away all session.
   await expect(header(page).getByRole('switch')).toHaveCount(0);
 
   await page.getByRole('button', { name: '記事の設定' }).click();
-  // On a pointer the close button is 36px, 記事一覧's arrow's size (§12.28, CloseButton.tsx).
+  // 36px on a pointer (§12.28, CloseButton.tsx).
   const closeBox = (await page.getByRole('button', { name: '閉じる' }).boundingBox())!;
   expect([closeBox.width, closeBox.height]).toEqual([36, 36]);
   const toggle = page.getByRole('switch', { name: '公開' });
@@ -292,15 +245,14 @@ test('公開 in 記事の設定 appears after the first 投稿, then unpublishes
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByRole('button', { name: '投稿' })).toBeVisible();
 
-  // The drawer stays open through the action, so the same switch takes it back up.
+  // The drawer stays open, so the same switch reverses it.
   await toggle.click();
   await expectPublished(page);
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
 });
 
-// A refused publish leaves the switch off and says why inside the drawer — the header carries the
-// same message, but the modal drawer's backdrop dims it. A reference with no note is refused by
-// the server (lib/footnotes.ts `incompleteFootnotes`), past the browser's own `required` check.
+// A refusal says why in the drawer, whose backdrop dims the header's copy. A note-less reference is
+// refused server-side (`incompleteFootnotes`).
 test('a refused 公開 leaves the switch off and shows the reason in the drawer', async ({
   page,
 }) => {
@@ -333,10 +285,9 @@ test('a refused 公開 leaves the switch off and shows the reason in the drawer'
   await expectDraft(page);
 });
 
-// A refused first 投稿 on a post begun at /admin/posts/new, without a reload. Autosave has rewritten
-// the URL to /edit by then, and the refusal used to vanish: the proxy's session refresh made every
-// action a full-page revalidation, which swapped in the edit page and remounted the editor
-// (proxy.ts's `next-action` check, §12.27).
+// A refused first 投稿 from /admin/posts/new: autosave has moved the URL to /edit, and the proxy's
+// session refresh used to revalidate the page and remount the editor (proxy.ts's `next-action`
+// check, §12.27).
 test('a refused first 投稿 keeps its message and the editor', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -353,12 +304,12 @@ test('a refused first 投稿 keeps its message and the editor', async ({ page })
 
   await expect(header(page).getByText('脚注が 1 件、空のままです。')).toBeVisible();
   await expectDraft(page);
-  // The same <form> element: a remount would have replaced it without the marker.
+  // The same <form>: a remount would drop the marker.
   await expect(page.locator('form[data-mount-probe="kept"]')).toHaveCount(1);
 });
 
-// 記事の設定's focus (docs/editor-requirements.md §12.29). Opening moves focus to the drawer itself;
-// every way of closing it returns focus to the gear; while modal, Tab stays inside.
+// 記事の設定's focus (docs/editor-requirements.md §12.29): into the drawer on open, back to the gear
+// on close, trapped while modal.
 test.describe('記事の設定 focus', () => {
   const panelHasFocus = (page: Page) =>
     page.evaluate(() => Boolean(document.activeElement?.closest('#post-settings-panel')));
@@ -374,7 +325,7 @@ test.describe('記事の設定 focus', () => {
     await expect(drawer).toBeFocused();
     await expect(drawer).toHaveAttribute('aria-modal', 'true');
 
-    // More presses than the drawer has stops, in both directions: none may land outside it.
+    // More presses than stops, both ways.
     for (let i = 0; i < 8; i++) {
       await page.keyboard.press('Tab');
       expect(await panelHasFocus(page)).toBe(true);
@@ -398,9 +349,7 @@ test.describe('記事の設定 focus', () => {
     await expect(gear).toBeFocused();
   });
 
-  // Past `min-width: 100rem` the drawer is not modal (§12.25): no trap, a press into the editor
-  // leaves it open, and Escape closes it only from inside — one pressed in the editor is the
-  // editor's.
+  // Past 100rem not modal (§12.25): no trap, and Escape in the editor is the editor's.
   test('past the modal width, Escape closes it only from inside', async ({ page }) => {
     await page.setViewportSize({ width: 1700, height: 900 });
     await page.goto('/admin/posts/new');
@@ -424,10 +373,8 @@ test.describe('記事の設定 focus', () => {
   });
 });
 
-// 投稿 with no title, from deep in a long post (docs/editor-requirements.md §12.34). The browser
-// refuses the form on the title's `required`, scrolls the field into view and shows its bubble —
-// scrolling the minimum, which put the field under the sticky header, where the bubble pointed at
-// nothing the author could read. The measurement is where the field landed, not that it moved.
+// 投稿 with no title deep in a post (docs/editor-requirements.md §12.34): the browser's minimal scroll
+// put the field under the sticky header. Measured where the field lands.
 test('a 投稿 refused for an empty title brings the title out from under the header', async ({
   page,
 }) => {
@@ -436,7 +383,7 @@ test('a 投稿 refused for an empty title brings the title out from under the he
   await loadMarkdown(page, LONG_POST);
   await page.locator('.ProseMirror p', { hasText: '段落 30 の本文。' }).scrollIntoViewIfNeeded();
   const title = page.getByLabel('記事タイトル');
-  // Scrolled out of sight above, so the browser has to move the page to show it.
+  // Out of sight above, so the browser must scroll.
   expect((await box(page, title)).y).toBeLessThan(0);
 
   await ensureCategory(page);
@@ -450,7 +397,7 @@ test('a 投稿 refused for an empty title brings the title out from under the he
     'タイトルを入力してください。',
   );
 
-  // Typing clears it, or the field would stay invalid with a title in it.
+  // Typing clears the invalid state.
   await title.fill('E2E title required');
   expect(await title.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(true);
 });
