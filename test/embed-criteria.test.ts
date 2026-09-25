@@ -2,14 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Keeps docs/embed-requirements.md's acceptance criteria honest about what measures them.
-//
-// The criteria are the only testable part of that document (118 rows across §11 and the per-provider
-// §N.8 tables), and every row's 測り方 column names the file that measures it. Nothing checked that
-// the named file exists, or that it can be found from the id — so a spec could be renamed, or a row
-// added with a plausible-looking file beside it, and the document would keep asserting coverage that
-// is not there. Two of this document's superlative claims were already found stale on 2026-09-01;
-// this is the same failure mode one column to the left, and unlike those it is mechanically checkable.
+// Keeps docs/embed-requirements.md's acceptance criteria honest about what measures them: every
+// row's 測り方 column names a file, and nothing checked that it exists or can be found from the id.
 //
 // Three things are enforced:
 //
@@ -18,12 +12,10 @@ import { join } from 'node:path';
 //   2. Every file so named exists.
 //   3. §3.4's index of where the criteria live agrees with the tables it indexes.
 //
-// The fourth thing — whether the named file mentions the id — is a ledger rather than a rule, because
-// the convention is applied unevenly: lib/speakerdeck-snippet.test.ts and e2e/gist-reporter.spec.ts
-// put the id in the test title, while e2e/editor-github-blob.spec.ts cites section numbers and no ids
-// at all. UNCITED is that gap as measured on 2026-09-01. A new criterion whose spec never names it
-// lands here and fails; wiring an old one up also fails, until its entry is deleted. Both directions
-// are deliberate — the list is meant to shrink, and to never grow silently.
+// Whether the named file mentions the id is a ledger, not a rule, since the convention is uneven
+// (some specs cite ids in titles, e2e/editor-github-blob.spec.ts only sections). UNCITED is that
+// gap: a new uncited criterion fails, and so does wiring an old one up until its entry goes. The
+// list may shrink, never grow silently.
 
 const DOC = join(process.cwd(), 'docs', 'embed-requirements.md');
 
@@ -41,7 +33,7 @@ const REASON = /手動確認|未測|[A-Z]{1,2}\d{1,2}/;
 // Japanese in e2e/editor-fragment-encode.spec.ts — from reading as citations of E8 and E5.
 const citation = (id: string) => new RegExp(`(?<![A-Za-z0-9%])${id}(?![A-Za-z0-9])`);
 
-// Criteria whose measuring file does not name them, measured 2026-09-01. Shrink, never grow.
+// Criteria whose measuring file does not name them. Shrink, never grow.
 const UNCITED: string[] = [
   'B3 e2e/editor-github-blob.spec.ts',
   'B6 e2e/editor-github-blob.spec.ts',
@@ -138,13 +130,9 @@ describe('embed acceptance criteria (docs/embed-requirements.md)', () => {
   });
 });
 
-// §3.4's two other tables restate values that live somewhere else — the mark table restates what
-// components/editor/svg/icon-shapes.ts and lib/embed-provider.ts declare, and the reader-cost table
-// restates the numbers measured in the §N.5 sections. Both were written on 2026-09-01 to stop each
-// provider section from re-listing every other one, and a restatement that can drift is the thing
-// this document is worst at: two superlative claims (§20.8, §21.8) were found stale the same day.
-// Neither third-party measurement is checkable from here — nothing but a browser knows what
-// slideshare.net costs — but the agreement between the copies is.
+// §3.4's other two tables restate values declared elsewhere: marks from icon-shapes.ts and
+// lib/embed-provider.ts, reader costs from the §N.5 sections. The third-party costs cannot be
+// checked here, but the copies' agreement can.
 
 const MARK_SHAPES = join(process.cwd(), 'components', 'editor', 'svg', 'icon-shapes.ts');
 const PROVIDERS = join(process.cwd(), 'lib', 'embed-provider.ts');
@@ -203,10 +191,9 @@ describe('§3.4’s cross-provider index (docs/embed-requirements.md)', () => {
     const literal = [...marks.matchAll(MARK_ROW)]
       .map((row) => row[2].match(/`([^`]*)`/)?.[1] ?? '')
       .filter((lead) => lead.length > 0 && !lead.includes('<'));
-    // Either spelling counts, because since 2026-09-02 there is only one: the leads that are the
-    // provider's own name read `Provider.name` instead of repeating the string (§3.4's naming
-    // table, §24.1). What must still hold is that the doc quotes a string this file actually
-    // contains — `embed-provider.test.ts` is what ties `name` back to the lead a URL produces.
+    // Either spelling, though leads named after the provider now read `Provider.name` (§3.4's
+    // naming table, §24.1). The doc must quote a string this file contains; embed-provider.test.ts
+    // ties `name` to the lead.
     expect(
       literal.filter(
         (lead) => !providers.includes(`lead: '${lead}'`) && !providers.includes(`name: '${lead}'`),
