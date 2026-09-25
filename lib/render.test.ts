@@ -96,7 +96,7 @@ describe('renderMdxToHtml — GFM pipe tables', () => {
   });
 });
 
-// The post page's table of contents (app/posts/[slug]/page.tsx) is built from this, not from
+// The post page's table of contents (app/(site)/posts/[slug]/page.tsx) is built from this, not from
 // re-parsing the rendered HTML — so the id rehype-slug assigns and the id collected here must
 // be the exact same one the heading renders with.
 describe('renderMdxToHtml — table of contents', () => {
@@ -222,7 +222,7 @@ describe('renderMdxToHtml — in-page links', () => {
 describe('renderMdxToHtml — link cards', () => {
   const CARD = '<div class="link-card" data-href="/posts/abc123"></div>';
 
-  // Stands in for the DB. The real one closes over getPostBySlug (app/posts/[slug]/page.tsx);
+  // Stands in for the DB. The real one closes over getPostBySlug (app/(site)/posts/[slug]/page.tsx);
   // this is the whole reason the resolver is injected rather than imported (§6, criterion 5a).
   const resolveCard = async (href: string) =>
     href === '/posts/abc123' ? { title: '参照先の記事', description: '説明文', image: null } : null;
@@ -440,7 +440,7 @@ describe('renderMdxToHtml — link cards', () => {
 //
 // **The reader's request never fetches anything** (§14.1). Nothing in this file could tell the
 // difference on its own, so the criterion is pinned where it is decided instead: the resolver is
-// injected, and the published page hands over one that only reads (app/posts/[slug]/page.tsx).
+// injected, and the published page hands over one that only reads (app/(site)/posts/[slug]/page.tsx).
 // What is measured here is that the stage asks the resolver and nothing else — a card whose URL
 // has no row renders the fallback link rather than reaching for the page.
 describe('renderMdxToHtml — external link cards', () => {
@@ -477,7 +477,7 @@ describe('renderMdxToHtml — external link cards', () => {
 
   it('shows the target’s picture through this site, never from its CDN (14j)', async () => {
     // §14.4: the card does show the target's og:image, but the `<img src>` is this site's own
-    // signed proxy path — the value the resolver hands over is what app/posts/[slug]/page.tsx
+    // signed proxy path — the value the resolver hands over is what app/(site)/posts/[slug]/page.tsx
     // builds with `linkImageSrc`. What must never appear here is the third party's URL: that would
     // be hotlinking, which lib/thumbnail.ts refuses in the same words.
     const withImage = async () => ({

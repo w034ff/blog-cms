@@ -26,8 +26,8 @@ merge, not before a commit.
 
 ```bash
 npx playwright test e2e/editor-embed.spec.ts          # one file — the default
-npx playwright test e2e/a.spec.ts e2e/b.spec.ts       # several: one command, one boot
-npx playwright test e2e/editor-embed.spec.ts:658      # one test, by line
+npx playwright test e2e/<a>.spec.ts e2e/<b>.spec.ts   # several: one command, one boot
+npx playwright test e2e/<name>.spec.ts:<line>         # one test, by line
 npx playwright test e2e/editor-embed.spec.ts --repeat-each=5   # is it flaky?
 npm run test:e2e                                      # the whole suite
 ```

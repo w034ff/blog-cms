@@ -68,7 +68,7 @@ const schema: SanitizeSchema = {
 // it), so the fragment-link rewrite can't drift from it.
 const idClobberPrefix = schema.clobber?.includes('id') ? (schema.clobberPrefix ?? '') : '';
 
-// The published side's pipeline, called only by `app/posts/[slug]/page.tsx`; the editor agrees with
+// The published side's pipeline, called only by `app/(site)/posts/[slug]/page.tsx`; the editor agrees with
 // it through the stored markdown, not by sharing this module.
 //
 // Now that non-admin users can author posts, raw HTML (e.g. <script>, <iframe>, onerror=…) is not
