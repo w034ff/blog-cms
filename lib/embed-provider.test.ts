@@ -983,7 +983,7 @@ describe('EMBED_PROVIDERS — what the insert dialog can name', () => {
     // §16.10. Speaker Deck's row is the only one an author cannot act on by copying the address
     // bar: the deck page at `speakerdeck.com/<user>/<slug>` carries no id, so nothing there
     // resolves and `/player/<id>` is reachable only from inside the embed code. The dialog draws
-    // this in parentheses after the kind (`e2e/editor-embed-insert.spec.ts`, 24h); what is held
+    // this in parentheses after the kind (`e2e/editor-insert-dialog.spec.ts`, 24h); what is held
     // here is that the registry owns it.
     const noted = EMBED_PROVIDERS.filter((provider) => provider.note !== undefined);
     expect(noted.map((provider) => provider.name)).toEqual(['Speaker Deck']);
