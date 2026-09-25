@@ -3,25 +3,15 @@ import { docString } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
 import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
-// A NodeView's own controls are not a drop target for content dragged out of this document
-// (refuseChromeDrops in components/editor/useDragContainment.ts).
-//
-// The same exposure the code block header has (e2e/codeblock-header-drop-guard.spec.ts), reached
-// through the other two NodeViews that claim their controls with `stopEvent`. The claim is what
-// creates it: prosemirror-view's `eventBelongsToView` walks up from `event.target` and gives up as
-// soon as a `stopEvent` claims it, so ProseMirror's drop path never runs for those events and the
-// browser's own default is the whole answer. Measured on the link card's picker before the guard:
+// A NodeView's controls refuse drops of content from this document (`refuseChromeDrops`,
+// useDragContainment.ts), as the code block header does: `stopEvent` makes `eventBelongsToView`
+// give up, so ProseMirror's drop path never runs and Chrome moves the text. On the card's picker:
 //
 //   before  doc(paragraph("前の段落です"), linkCard, paragraph("後の段落です"))
 //   after   doc(paragraph("です"),        linkCard, paragraph("後の段落です"))   search box: 前の段落
 //
-// The document's text is moved out of the contenteditable by Chrome — a change ProseMirror never
-// authorized and cannot undo as one step. The document assertion is therefore the primary one; the
-// control's own value is the secondary check.
-//
-// Both cards are covered rather than the one that was measured to lose text: the exposure comes
-// from *claiming events*, not from what the control happens to be, so a spec naming only the input
-// would keep passing if a droppable control were added to the other band later.
+// The document is the primary assertion. Both cards are covered: the exposure comes from claiming
+// events, not from the control.
 
 const CARD_EMPTY = '<div class="link-card" data-href=""></div>';
 const CARD = '<div class="link-card" data-href="/posts/second-post"></div>';
@@ -69,9 +59,8 @@ for (const { name, md, control, doc } of CASES) {
       el instanceof HTMLInputElement ? el.value : (el.textContent ?? ''),
     );
 
-    // Endpoints measured on the rendered text rather than taken as pixel offsets (caretPoint,
-    // e2e/native-drag.ts) — a drag that selected nothing would make every assertion below pass
-    // vacuously, so the selection is checked before the gesture is driven.
+    // Measured caret boundaries (e2e/native-drag.ts), checked before the gesture: an empty drag would
+    // pass everything.
     const from = await dragSelect(
       page,
       await caretPoint(editor.getByText('前の段落です'), 0),

@@ -10,13 +10,12 @@ import {
   ensureCategory,
 } from './editor-authoring';
 
-// /admin/tags (docs/editor-requirements.md §12.33): the wiring of its forms, and that a display
-// name, a changed identifier, a merge and a delete each reach the post. The rules themselves —
-// the three copies rewritten, `updatedAt` untouched — are lib/tags.test.ts. The tags here are made
-// by the spec: the seeded ones are shared with every other spec running against the same DB.
+// /admin/tags (docs/editor-requirements.md §12.33): the forms' wiring, and that a display name, a
+// changed identifier, a merge and a delete each reach the post (the rules: lib/tags.test.ts). Tags
+// are made here, since the seeded ones are shared with every spec.
 
-// Opens a tag's row for editing and returns its two fields. One row is open at a time, so the
-// labels are unambiguous — `exact`, since the add form's 新しいタグの識別子 contains 識別子.
+// Opens a row (one at a time, so labels are unambiguous; `exact`, since 新しいタグの識別子 contains
+// 識別子) and returns its two fields.
 async function edit(page: Page, slug: string) {
   await page.getByRole('button', { name: `「${slug}」を編集` }).click();
   return {
@@ -50,8 +49,7 @@ test('a tag is added, given a display name, moved to another identifier, merged 
 
   await page.goto('/admin/tags');
   await add(first);
-  // Symbols are refused as they are typed, as in the editor — said when nothing matched, since
-  // text that finds tags is a search. No tag in the real dictionary contains `qz`.
+  // Symbols are refused as typed, said only when nothing matched. No real tag contains `qz`.
   await page.getByLabel('タグを探す、または新しい識別子を入力').fill('qz#');
   await expect(page.getByRole('alert').filter({ hasText: '記号やスペース' })).toBeVisible();
   await expect(page.getByRole('button', { name: '追加', exact: true })).toBeDisabled();
@@ -73,8 +71,8 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await expectPublished(page);
   const editPath = new URL(page.url()).pathname;
 
-  // A display name: the row shows it beside the identifier, the tag page keeps its URL and takes
-  // the name, and the editor's list shows it beside the identifier.
+  // A display name shows beside the identifier in the row, on the tag page (same URL) and in the
+  // editor.
   await page.goto('/admin/tags');
   let fields = await edit(page, first);
   await fields.name.fill(shown);
@@ -88,8 +86,8 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await tagCombobox(page).fill(first);
   await expect(page.getByRole('option', { name: `${first} ${shown}` })).toBeVisible();
 
-  // A new identifier: the note says what happens before it is sent, the post follows it, the
-  // display name stays, and the old identifier stays behind as an alias whose URL redirects.
+  // A new identifier: the note warns first, the post follows, the name stays, and the old one becomes a
+  // redirecting alias.
   await page.goto('/admin/tags');
   fields = await edit(page, first);
   await fields.slug.fill(moved);
@@ -117,9 +115,8 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await page.getByRole('button', { name: '統合して保存' }).click();
   await expect(editButton(moved)).toHaveCount(0);
   expect(await tagsOf(page, editPath)).toBe(other);
-  // Both earlier identifiers now lead to the tag they were merged into — in the editor, where the
-  // old word finds that tag's own row and no second tag is offered, and by URL. On a
-  // new post: the post above already carries the tag, and a chosen tag is not offered again.
+  // Both old identifiers lead to the merged tag, in the editor (its own row, no second offer) and by
+  // URL. A new post, since the one above already carries it.
   await page.goto('/admin/posts/new');
   await openPostSettings(page);
   await tagCombobox(page).fill(first);

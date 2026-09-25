@@ -2,14 +2,9 @@ import { test, expect } from '@playwright/test';
 import { expectAutosaved, expectDraft, expectPublished, ensureCategory } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 
-// A draft is served at its own `/posts/<slug>` — the address every row gets at creation — but only
-// to a request carrying an admin session. The session is the credential, not the URL, which is the
-// whole difference from 限定公開, where knowing the address is enough.
-//
-// Both halves have to be measured here. The render is the easy one; the refusal is the claim, and
-// it is only a claim in a context that has no session — the rest of the suite shares the saved
-// admin storageState (e2e/auth.setup.ts), under which a 404 test would pass without proving
-// anything.
+// A draft is served at its `/posts/<slug>` only to an admin session: the session is the credential,
+// unlike 限定公開. The refusal is the claim, and needs a context without the suite's saved session
+// (e2e/auth.setup.ts).
 
 // Publishes a post, takes it back to a draft, and returns its public address.
 async function draftWithSlug(page: import('@playwright/test').Page, title: string) {
@@ -20,8 +15,7 @@ async function draftWithSlug(page: import('@playwright/test').Page, title: strin
   await page.keyboard.type('本文です。');
   await expectAutosaved(page);
 
-  // Published first, then unpublished: that is the state an author reaches by turning 公開 off, and it
-  // is the one where a stale public address could still be in someone's hands.
+  // Published, then unpublished: where a stale public address could be in someone's hands.
   await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
@@ -52,16 +46,14 @@ test('the 記事一覧 row links a draft to the same 表示 a published post get
   const path = await draftWithSlug(page, title);
   const row = page.locator('li', { hasText: title });
 
-  // One label for both states: the link can no longer land on a 404, so nothing has to be said
-  // ahead of the click. What still separates the states is the 下書き badge — and not the date,
-  // which is stamped at first publish and stays through an unpublish.
+  // One 表示 for both states; the 下書き badge distinguishes them, not the date (kept through an
+  // unpublish).
   await expect(row.getByRole('link', { name: '表示' })).toHaveAttribute('href', path);
   await expect(row).toContainText('下書き');
 });
 
 test.describe('with no session', () => {
-  // The saved admin session is what every other spec runs under; dropping it is what makes the
-  // assertions below say anything at all.
+  // Without the saved session, or the assertions say nothing.
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('the same draft address 404s, and says nothing about the post', async ({
@@ -79,8 +71,7 @@ test.describe('with no session', () => {
 
     const response = await page.goto(path);
     expect(response?.status()).toBe(404);
-    // Nothing leaked on the way to the refusal: not the body, and not the banner that would
-    // confirm a draft exists at this address.
+    // Nothing leaked: no body, no banner confirming a draft exists.
     await expect(page.locator('#post-body')).toHaveCount(0);
     await expect(page.getByText('下書きのプレビュー')).toHaveCount(0);
   });
