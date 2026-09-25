@@ -3,21 +3,13 @@ import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from '
 import { STORAGE_STATE } from './constants';
 import { publishedPath } from './published-post';
 
-// The published footnote preview (docs/footnote-popover-requirements.md §8). Every criterion in
-// that list is a decision made somewhere in §3-§6, so this file is arranged the way the decisions
-// are: what the pointer does, where the box goes, what the keyboard does, and what touch does.
-//
-// The post is published once for the whole file. Publishing is the slow part and none of these
-// tests write to the document — they read a page that is already public.
-//
-// §8 recorded the touch criteria (5, 6, 22) as 未確認, with CDP named as the fallback. They are
-// measured here: a probe confirmed `page.touchscreen.tap()` under `hasTouch` reaches the page as
-// `pointerdown` with `pointerType === 'touch'`, which is the only thing the tap path keys on.
+// The published footnote preview (docs/footnote-popover-requirements.md §8), arranged as §3-§6
+// are: pointer, placement, keyboard, touch. Published once for the file; no test writes. The touch
+// criteria (5, 6, 22) are measured: `page.touchscreen.tap()` under `hasTouch` arrives as
+// `pointerdown` with `pointerType === 'touch'`, which is all the tap path keys on.
 
-// Long enough to be clipped: the budget is ~31 full-width characters per line at the popover's
-// 480px, so eight lines is ~248 and this is ~400. It opens with a link, inline code and bold
-// because criterion 14 is about those surviving inside `-webkit-box`, and only what is left
-// visible after the clamp can say so.
+// Clipped: ~31 characters per line at 480px, eight lines ~248, this ~400. It opens with a link,
+// code and bold for criterion 14, which only the visible part after the clamp can show.
 const LONG_NOTE = `**強調**と[リンク](https://example.com/)と\`code\`で始まる長い注釈。${'この注釈は八行の上限を超えるだけの長さを持っている。'.repeat(14)}`;
 const FILLER = `${'本文の埋め草。'.repeat(24)}\n\n`;
 
@@ -50,8 +42,7 @@ test.beforeAll(async ({ browser }) => {
   await context.close();
 });
 
-// The enhancer marks each reference it has taken on, so a test never races the effect. It is also
-// the observable half of §3.6: a reference with no definition on the page is left unmarked.
+// The enhancer's mark, so no test races the effect; unmarked means no definition (§3.6).
 async function openPost(page: Page): Promise<void> {
   await page.goto(postHref);
   await page.waitForFunction(
@@ -86,8 +77,7 @@ test('hover previews the note, and the plain click it is added to is untouched',
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('注釈に');
 
-  // The content is the definition's own HTML, minus the one part that means nothing in here: `↩`
-  // points back to where the reader is already standing (§4.1).
+  // The definition's HTML minus `↩`, which points where the reader already is (§4.1).
   await expect(preview.locator('a[data-footnote-backref]')).toHaveCount(0);
   await expect(
     preview.locator('.footnote-popover-note a[href="https://example.com/"]'),
@@ -95,27 +85,24 @@ test('hover previews the note, and the plain click it is added to is untouched',
   await expect(preview.locator('.footnote-popover-note code')).toHaveCount(1);
   await expect(preview.locator('.footnote-popover-note strong')).toHaveCount(1);
 
-  // Reachable, so hidden from nobody: the preview can be entered and its links used (§4.1.1), and
-  // `aria-hidden` or `inert` over usable controls is the pairing §3.5.1 rules out.
+  // Enterable with usable links (§4.1.1), so not `aria-hidden` or `inert` (§3.5.1).
   await expect(preview).not.toHaveAttribute('aria-hidden', 'true');
   await expect(preview).not.toHaveAttribute('inert', '');
   await expect(preview).not.toHaveCSS('pointer-events', 'none');
 
-  // No internal scrolling (§4.3.1). The `[popover]` UA rule is `overflow: auto`, so this is a real
-  // thing to hold down rather than a property that comes for free. Measured in the ordinary case;
-  // §5.2.2's last-resort height cap is a different branch, and criterion 25 is what covers it.
+  // No internal scrolling (§4.3.1): the `[popover]` UA rule is `overflow: auto`. §5.2.2's height cap is
+  // criterion 25's.
   const scrolls = await preview.evaluate((el) => el.scrollHeight > el.clientHeight);
   expect(scrolls).toBe(false);
 
-  // Above the reference and clear of it (§5.2, §5.3) — the reader is about to click that anchor.
+  // Above and clear of the reference (§5.2, §5.3), which the reader is about to click.
   const box = await rects(page, '.footnote-popover--preview');
   const ref = await rects(page, '#post-body a[data-footnote-ref]');
   expect(box.bottom).toBeLessThan(ref.top);
-  // Centred on it, with room to spare on both sides at this width (§5.2.1's clamp does not bite).
+  // Centred on it (§5.2.1's clamp does not bite here).
   expect((box.left + box.right) / 2).toBeCloseTo((ref.left + ref.right) / 2, 0);
 
-  // The look itself is not assertable, so it is written out the way the definition-layout spec
-  // writes its markers: something to open when the question is "what does this actually look like".
+  // The look is not assertable, so a screenshot to open when asking what it looks like.
   await page.screenshot({
     path: 'e2e/.tmp/public-footnote-popover.png',
     clip: { x: 0, y: Math.max(box.top - 24, 0), width: 1280, height: ref.bottom - box.top + 48 },
@@ -124,10 +111,8 @@ test('hover previews the note, and the plain click it is added to is untouched',
   await page.mouse.move(0, 0);
   await expect(preview).toBeHidden();
 
-  // The property this whole design is built around (§3.1): the reference is still an anchor, and
-  // hovering it first — the way a reader actually arrives at the click — changes nothing. With
-  // `pointer-events: none` gone (§4.1.1), the only thing keeping the box out of that click's way is
-  // where it is put, which is why this and criterion 16 above are now one pair.
+  // §3.1: the reference stays an anchor, and hovering first changes nothing. With `pointer-events:
+  // none` gone (§4.1.1), placement alone keeps the box out of the click; paired with criterion 16.
   await rich.hover();
   await expect(preview).toBeVisible();
   await rich.click();
@@ -135,9 +120,8 @@ test('hover previews the note, and the plain click it is added to is untouched',
 });
 
 test('the pointer can travel into the preview and use the note’s link', async ({ page }) => {
-  // WCAG SC 1.4.13 Hoverable, and the reason the close delay exists (§6.1). The reference and the
-  // box are separated by a gap that keeps the box off the click (§5.3), so the pointer is briefly
-  // over neither — an immediate close would make the preview unreachable in principle.
+  // WCAG SC 1.4.13 Hoverable and the close delay (§6.1): the gap keeping the box off the click (§5.3)
+  // leaves the pointer over neither, so an immediate close would make the preview unreachable.
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
   await refs(page).first().hover();
@@ -147,29 +131,28 @@ test('the pointer can travel into the preview and use the note’s link', async 
   const link = preview.locator('.footnote-popover-note a[href="https://example.com/"]');
   const linkBox = await link.boundingBox();
 
-  // Cross the gap the way a hand does — through the dead zone, not by teleporting inside.
+  // Cross the gap as a hand does, through the dead zone.
   await page.mouse.move((box.left + box.right) / 2, box.bottom + 4);
   await page.mouse.move(linkBox!.x + linkBox!.width / 2, linkBox!.y + linkBox!.height / 2);
-  // Longer than the close delay: a preview that merely closes late would pass a shorter wait.
+  // Longer than the close delay, so a merely late close fails.
   await page.waitForTimeout(600);
   await expect(preview).toBeVisible();
 
-  // Reachable, not just visible: the link under the pointer is what a click would land on.
+  // Reachable: the link is what a click there would hit.
   const hit = await link.evaluate((el) => {
     const r = el.getBoundingClientRect();
     return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
   });
   expect(hit).toBe(true);
 
-  // And it still closes once the pointer leaves for good — the delay is a bridge, not a latch.
+  // It still closes once the pointer leaves: a bridge, not a latch.
   await page.mouse.move(0, 0);
   await expect(preview).toBeHidden();
 });
 
 test('the open preview takes the pointer away from the body it covers', async ({ page }) => {
-  // §4.1.1's fourth cost, and the one with no answer: `pointer-events: none` also kept whatever the
-  // box overlaid alive, and it is gone. Pinned as the INTENDED state rather than a good one — this
-  // goes red if the declaration comes back, and whoever brings it back reads the section.
+  // §4.1.1's fourth cost, unanswered: the box now blocks what it overlays. Pinned as the intended
+  // state; it goes red if `pointer-events: none` returns.
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
   const long = refs(page).nth(1); // the tall note, so the box covers several lines of prose
@@ -179,8 +162,7 @@ test('the open preview takes the pointer away from the body it covers', async ({
   const box = await rects(page, '.footnote-popover--preview');
   const spot = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
 
-  // What is under that point with the box gone, and with it there. Read at the same coordinates,
-  // so the two answers are about the same place on the page.
+  // The same point with the box gone and present.
   await page.mouse.move(0, 0);
   await expect(preview).toBeHidden();
   const uncovered = await page.evaluate(
@@ -199,9 +181,8 @@ test('the open preview takes the pointer away from the body it covers', async ({
 });
 
 test('moving to another reference drops the previous note at once', async ({ page }) => {
-  // §6.1's last rule. Without it the note just left hangs over the reference now under the pointer
-  // for the length of the open delay — and where a pinned popover makes the open path return early,
-  // with no close pending at all.
+  // §6.1's last rule: otherwise the old note hangs over the new reference through the open delay, and
+  // a pinned popover returns early with no close pending.
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
 
@@ -209,9 +190,8 @@ test('moving to another reference drops the previous note at once', async ({ pag
   await expect(preview).toContainText('注釈に'); // the `rich` note
 
   await refs(page).nth(1).hover();
-  // Immediately: inside the open delay, so the box is either gone or already showing the new note —
-  // what it must not be is the previous note sitting over this reference. Read as "open AND still
-  // the old text", because a closed popover keeps its last content until the next open fills it.
+  // Inside the open delay: gone or already the new note, never open with the old text (a closed
+  // popover keeps its last content).
   const stale = await preview.evaluate(
     (el) => el.matches(':popover-open') && (el.textContent ?? '').includes('注釈に'),
   );
@@ -220,9 +200,8 @@ test('moving to another reference drops the previous note at once', async ({ pag
 });
 
 test('the preview follows its reference while the pointer stays in it', async ({ page }) => {
-  // Criterion 20, measured on the preview now that the pinned box answers a scroll by closing (§6).
-  // It has to be measured with the pointer parked INSIDE the box: with the pointer on the
-  // reference, the page sliding out from under it is a genuine leave, and the box closes.
+  // Criterion 20 on the preview (§6), with the pointer inside the box: on the reference, the page
+  // moving is a genuine leave.
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
   await refs(page).nth(1).hover();
@@ -248,10 +227,8 @@ test('the preview follows its reference while the pointer stays in it', async ({
 
 test('a modifier click is left for the browser', async ({ page }) => {
   await openPost(page);
-  // Read `defaultPrevented` from a document listener, which runs after the enhancer's own — then
-  // cancel it here so Chrome does not open the background tab the modifier asks for. A real
-  // ctrl+click rather than a synthetic event: the enhancer keys on the pointerdown that precedes
-  // it, and a dispatched click has none.
+  // `defaultPrevented` from a later document listener, which then cancels the background tab. A real
+  // ctrl+click: the enhancer keys on the preceding pointerdown.
   type ProbeWindow = Window & { __footnoteClickPrevented?: boolean };
   await page.evaluate(() => {
     document.addEventListener(
@@ -287,14 +264,11 @@ test('a long note is clipped to eight lines with its elements intact', async ({ 
     };
   });
   expect(clamp.lines).toBe('8');
-  // Clipped, not merely long: `-webkit-line-clamp` leaves the rest in the box and hides it, which
-  // is also what puts the `…` on the last visible line.
+  // Clipped: the clamp hides the rest in the box and puts `…` on the last line.
   expect(clamp.scrollHeight).toBeGreaterThan(clamp.clientHeight);
   expect(clamp.clientHeight).toBeCloseTo(clamp.lineHeight * 8, 0);
 
-  // The mechanism could have flattened these — that is the reason §4.3.2 measured it before
-  // choosing, and the reason it is measured again here on the clipped note rather than only on the
-  // short one above.
+  // The clamp could have flattened these (§4.3.2), so checked on the clipped note.
   await expect(note.locator('a[href="https://example.com/"]')).toHaveCount(1);
   await expect(note.locator('code')).toHaveCount(1);
   await expect(note.locator('strong')).toHaveCount(1);
@@ -303,7 +277,7 @@ test('a long note is clipped to eight lines with its elements intact', async ({ 
 test('the preview flips below a reference near the top of the viewport', async ({ page }) => {
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
-  // Put the reference ~40px down the viewport: nothing the popover's height could fit above.
+  // ~40px down: no room above for the popover.
   await refs(page)
     .nth(1)
     .evaluate((el) => {
@@ -320,8 +294,7 @@ test('the preview flips below a reference near the top of the viewport', async (
 test('a narrow viewport clamps the box inside the screen instead of centring it', async ({
   page,
 }) => {
-  // Where centring and staying on screen cannot both hold (§5.2.1). On a phone the width is
-  // `100vw - 2rem`, so the clamp wins for almost every reference — the box is nearly the screen.
+  // Centring vs staying on screen (§5.2.1): at `100vw - 2rem` the clamp nearly always wins.
   await page.setViewportSize({ width: 400, height: 900 });
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
@@ -334,8 +307,7 @@ test('a narrow viewport clamps the box inside the screen instead of centring it'
 });
 
 test('a short viewport drops the line count rather than capping the height', async ({ page }) => {
-  // Landscape-phone shaped. §4.3.2 forbids mixing a height cap with the clamp — a box cut by
-  // `max-height` shows no `…` — so the media query shortens the note first (§5.2.2's ordering).
+  // Landscape phone. A height cap shows no `…` (§4.3.2), so the note shortens first (§5.2.2).
   await page.setViewportSize({ width: 800, height: 380 });
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
@@ -346,15 +318,13 @@ test('a short viewport drops the line count rather than capping the height', asy
   const box = await rects(page, '.footnote-popover--preview');
   expect(box.top).toBeGreaterThanOrEqual(-0.5);
   expect(box.bottom).toBeLessThanOrEqual(380 + 0.5);
-  // The clamp did the work on its own here: no height cap was needed, which is the ordering
-  // §5.2.2 asks for.
+  // The clamp alone sufficed, no height cap (§5.2.2).
   expect(await preview.evaluate((el) => el.style.maxHeight)).toBe('');
 });
 
 test('with room on neither side the height is capped as a last resort', async ({ page }) => {
-  // §5.2.2's third branch, which the ordering above is meant to reach only when it has to: shorter
-  // than the shortened note plus its margins on either side of the reference. Measured separately
-  // because the branch that never runs is the one nobody notices is wrong.
+  // §5.2.2's third branch, reached only when the shortened note still does not fit; the branch that
+  // never runs is the one nobody notices is wrong.
   await page.setViewportSize({ width: 800, height: 240 });
   await openPost(page);
   const preview = page.locator('.footnote-popover--preview');
@@ -374,8 +344,7 @@ test('the keyboard previews on focus, dismisses on Escape and still jumps on Ent
   const preview = page.locator('.footnote-popover--preview');
   const rich = refs(page).first();
 
-  // A real Tab, not `.focus()`: the enhancer asks `:focus-visible`, which is exactly the state a
-  // scripted focus is allowed not to enter (a click focuses the anchor too, and that path jumps).
+  // A real Tab: the enhancer asks `:focus-visible`, which scripted focus need not enter.
   await expect
     .poll(
       async () => {
@@ -387,8 +356,7 @@ test('the keyboard previews on focus, dismisses on Escape and still jumps on Ent
     .toBe(true);
   await expect(preview).toBeVisible();
 
-  // WCAG SC 1.4.13: content shown on focus has to be dismissable without moving focus — and a
-  // `manual` popover gets no Escape from the platform, so this is the enhancer's own listener.
+  // WCAG SC 1.4.13: dismissable without moving focus; a `manual` popover gets no platform Escape.
   await page.keyboard.press('Escape');
   await expect(preview).toBeHidden();
   expect(await rich.evaluate((el) => el === document.activeElement)).toBe(true);
@@ -398,12 +366,9 @@ test('the keyboard previews on focus, dismisses on Escape and still jumps on Ent
 });
 
 test('a reference whose definition is missing keeps its plain anchor', async ({ page }) => {
-  // §3.6. The editor cannot publish this shape — it refuses a post with an incomplete footnote —
-  // so the definition's `id` is renamed in flight instead, in both the HTML and the RSC payload
-  // that carries the same markup. The reference's `href` is left pointing where it pointed.
-  // Renamed in the DOM as it is parsed rather than in the response body: the markup arrives twice
-  // (the served HTML, and the RSC payload React hydrates from), and an observer catches the
-  // definition the moment it exists — well before the effect that would enhance its reference.
+  // §3.6: the editor refuses an incomplete footnote, so the definition's `id` is renamed in the DOM as
+  // it is parsed: the markup arrives twice (HTML and RSC payload), and an observer catches it before
+  // the enhancer runs.
   await page.addInitScript(() => {
     const rename = (root: ParentNode): boolean => {
       const definition = root.querySelector('#user-content-fn-rich');
@@ -430,8 +395,7 @@ test('a reference whose definition is missing keeps its plain anchor', async ({ 
   await expect(rich).not.toHaveAttribute('data-footnote-popover', 'on');
   await rich.hover();
   await expect(page.locator('.footnote-popover--preview')).toBeHidden();
-  // Still an anchor, doing what an anchor does — which is the whole reason nothing here rewrites
-  // `href` or `id` (§3.4).
+  // Still an anchor: nothing rewrites `href` or `id` (§3.4).
   await rich.click();
   await expect.poll(() => page.evaluate(() => location.hash)).toBe('#user-content-fn-rich');
 });
@@ -449,12 +413,10 @@ test.describe('touch', () => {
     const box = await ref.boundingBox();
     await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await expect(pinned).toBeVisible();
-    // The tap did NOT jump: this is the one place the design intervenes, and it is the only place
-    // a modifier click cannot exist (§3.3).
+    // The tap did not jump: the one intervention, where no modifier click exists (§3.3).
     expect(await page.evaluate(() => location.hash)).toBe('');
 
-    // It holds a link, so it is not hidden from assistive technology the way the preview is — a
-    // focusable element inside `aria-hidden` is present to Tab and absent to a screen reader.
+    // It holds a link, so not `aria-hidden`.
     await expect(pinned).not.toHaveAttribute('aria-hidden', 'true');
     await expect(pinned).not.toHaveAttribute('inert', '');
 
@@ -462,12 +424,8 @@ test.describe('touch', () => {
     await expect(jump).toHaveText('定義へ');
     await expect(jump).toHaveAttribute('href', '#user-content-fn-rich');
 
-    // Resize moves it and does not close it — the viewport changing shape is not the reader saying
-    // anything, and on a phone it is often just the address bar (§6).
-    //
-    // Measured as the gap to whichever side it is on, not as a signed offset: the box is allowed to
-    // flip below when the room above runs out (§5.2), and a side-specific number would fail a
-    // correct flip.
+    // A resize (often the address bar) moves it, not closes it (§6). Measured as the gap on whichever
+    // side, since it may flip below (§5.2).
     const gap = async () => {
       const p = await rects(page, '.footnote-popover--pinned');
       const r = await rects(page, '#post-body a[data-footnote-ref]');
@@ -478,25 +436,21 @@ test.describe('touch', () => {
     await expect(pinned).toBeVisible();
     await expect.poll(gap).toBe(8);
 
-    // Touch has no click to fall back on, so this link is the only way to the rest of a clipped
-    // note (§4.3.1) — and following it closes the box rather than leaving it over the destination.
+    // On touch this link is the only way to the rest of a clipped note (§4.3.1), and it closes the box.
     await jump.tap();
     await expect.poll(() => page.evaluate(() => location.hash)).toBe('#user-content-fn-rich');
     await expect(pinned).toBeHidden();
   });
 
   test('scrolling dismisses the pinned note, but a nudge does not', async ({ page }) => {
-    // Touch has no "the pointer left", so the pinned box had no way out except a deliberate tap —
-    // it rode along over the article for as long as the reader kept reading (§6). A scroll is that
-    // reader saying they have moved on.
+    // Touch has no leave, so a scroll is the reader moving on (§6).
     await openPost(page);
     const pinned = page.locator('.footnote-popover--pinned');
     const box = await refs(page).first().boundingBox();
     await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await expect(pinned).toBeVisible();
 
-    // Under the threshold: what an address bar collapsing or a rubber band produces, and not a
-    // decision. The box stays and keeps its place beside the reference.
+    // Under the threshold (an address bar, a rubber band): the box stays.
     await page.evaluate(() => window.scrollBy(0, 12));
     await page.waitForTimeout(250);
     await expect(pinned).toBeVisible();
@@ -513,7 +467,7 @@ test.describe('touch', () => {
     await page.touchscreen.tap(box!.x + box!.width / 2, box!.y + box!.height / 2);
     await expect(pinned).toBeVisible();
 
-    // Light dismiss, which is what `popover="auto"` was chosen for (§5.1.1).
+    // Light dismiss, why `popover="auto"` was chosen (§5.1.1).
     await page.touchscreen.tap(5, 5);
     await expect(pinned).toBeHidden();
   });
@@ -533,8 +487,7 @@ test.describe('the dark scheme', () => {
 });
 
 test('without JavaScript the reference is still a working anchor', async ({ browser }) => {
-  // Progressive enhancement (§3.4), and it is free rather than built: the markup is untouched, so
-  // the page that never runs the enhancer is the page as it was before this feature.
+  // Progressive enhancement (§3.4): without the enhancer the page is as before.
   const context = await browser.newContext({
     storageState: STORAGE_STATE,
     javaScriptEnabled: false,

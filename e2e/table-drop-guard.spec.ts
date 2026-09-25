@@ -3,27 +3,12 @@ import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 import { docString, markdown } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
 
-// PROTOTYPE (試作): a regression guard for 43f9917 "keep table drag-and-drop from
-// growing the table", the case the E2E harness deliberately left for later because
-// Playwright's mouse API can't drive a native HTML5 drag to completion.
-//
-// The 43f9917 fix is a ProseMirror `handleDrop` hook (tableDropGuard in
-// components/editor/table-extensions.ts) that blocks the two drops which turn a text
-// move into table structure. Each has its own test below:
-//   1. a drop in a table but not in any cell (a cell/row boundary) → ProseMirror
-//      fits the slice into a stray cell, which fixTables rectangularizes into a
-//      whole spurious column/row (the table *grows*);
-//   2. a drop in a cell but at block level (its top/bottom edge) → a second
-//      paragraph is added to the cell, which forces the table out of the clean GFM
-//      pipe form into an HTML fallback.
-//
-// handleDrop fires on the *native* `drop` DOM event, which the normal mouse API can
-// never produce — see e2e/native-drag.ts for why, and for the CDP machinery
-// cdpNativeDrag uses to get one.
+// Drops into a table (tableDropGuard, components/editor/table-extensions.ts, from 43f9917):
+//   1. in the table but not a cell: the slice fills a stray cell and fixTables adds a row/column;
+//   2. in a cell at block level: a second paragraph, forcing the table out of GFM pipe form.
+// handleDrop fires only on a native `drop`: CDP via e2e/native-drag.ts.
 
-// Structural fingerprint of the first table in the editor. 43f9917's two failure
-// modes both show up here: a stray column/row grows columns/rows/cells; a cell's
-// block-level drop adds a second <p> (which is what forces the GFM→HTML fallback).
+// The first table's shape: case 1 grows it, case 2 adds a second <p> to a cell.
 async function tableShape(page: Page) {
   const editor = page.locator('.ProseMirror');
   const columns = await editor.locator('tr').first().locator('th,td').count();
@@ -35,18 +20,14 @@ async function tableShape(page: Page) {
   return { columns, rows, cells, maxParagraphsPerCell };
 }
 
-// New editor + a draggable "DRAGME" paragraph above a fresh 3×3 table, with that
-// word already selected and ready to drag. Returns the editor and the on-screen
-// centre of the selection to start the drag from.
+// A "DRAGME" paragraph above a fresh 3×3 table, selected; returns the drag start.
 async function seedTableAndSelectSource(page: Page): Promise<{ editor: Locator; source: Point }> {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
   await editor.click();
 
-  // A draggable source paragraph above a 3×3 table (picked from the toolbar's
-  // size grid). Enter first, so insertTable lands in the empty paragraph and
-  // leaves "DRAGME" as its own block above the table.
+  // Enter first, so insertTable lands in the empty paragraph below "DRAGME".
   await page.keyboard.type('DRAGME');
   await page.keyboard.press('Enter');
   await page.getByRole('button', { name: '表', exact: true }).click();
@@ -54,11 +35,8 @@ async function seedTableAndSelectSource(page: Page): Promise<{ editor: Locator; 
   await expect(editor.locator('table')).toBeVisible();
   await expect(editor.locator('table').getByText('DRAGME')).toHaveCount(0);
 
-  // Select the source word so ProseMirror will drag it (dragstart only fires on a
-  // mousedown inside a live selection). Do it via the keyboard: insertTable leaves
-  // the cursor in a cell, which shows the table BubbleMenu right over "DRAGME" and
-  // would intercept a mouse click — ArrowUp exits the table so the menu hides, and
-  // it stays hidden through the drag since the selection never re-enters the table.
+  // Select the word (dragstart needs a live selection) by keyboard: the table's BubbleMenu covers
+  // "DRAGME" while the caret is in a cell; ArrowUp leaves the table and hides it.
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('End');
   await page.keyboard.press('Shift+Home');
@@ -67,25 +45,20 @@ async function seedTableAndSelectSource(page: Page): Promise<{ editor: Locator; 
   return { editor, source: { x: box.x + box.width / 2, y: box.y + box.height / 2 } };
 }
 
-// prosemirror-dropcursor's indicator, under either of the two classes it toggles between.
+// prosemirror-dropcursor's indicator, block or inline.
 const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
 
-// The refusal notice, shared with the paste guard: it is one rule about what a cell may hold, so it
-// gets one message, worded for both gestures.
+// Shared with the paste guard: one rule about what a cell may hold.
 const NOTICE = '表のセルにはこの要素を入れられません';
 
 const TABLE_MD = '| 見出しA | 見出しB |\n| --- | --- |\n| セルの中身 | 二つ目 |';
 
-// A document with `block` between a paragraph and a table, and `text` the line inside that block to
-// drag-select into. Dragging *into* the block is what puts the block node in the slice — the same
-// shape a copy of the same range puts on the clipboard, which is why paste and drop have to answer
-// it the same way.
+// `block` between a paragraph and a table; selecting into it puts the block in the slice, the same
+// shape a copy makes, so paste and drop must agree.
 const BLOCKS = {
   blockquote: { block: '> 引用の中身です', text: '引用の中身です' },
-  // The isolating one, and the reason it is in this loop rather than represented by the quote: a
-  // selection crossing a code block's edge is clamped by isolating-boundary.ts, which performs the
-  // drop *itself* and so is asked before this guard. Without the fall-through it added, this drag
-  // split the table while the identical paste was refused.
+  // Isolating: isolating-boundary.ts performs such a drop itself, before this guard; without its
+  // fall-through the drag split the table while the paste was refused.
   codeBlock: { block: '```ts:a.ts\nconst x = 1;\n```', text: 'const x = 1;' },
   bulletList: { block: '- 箇条書きの項目', text: '箇条書きの項目' },
 } as const;
@@ -99,24 +72,15 @@ async function openWithBlockAbove(page: Page, block: string): Promise<Locator> {
   return editor;
 }
 
-// The centre of the body cell 「セルの中身」's own text — inside the textblock, not at the cell's
-// block edge, so it is the *slice* being refused here and not the position (which case 2 above
-// already covers).
+// Inside the cell's text, so the slice is refused, not the position (case 2).
 async function bodyCellText(editor: Locator): Promise<Point> {
   const cell = await editor.getByText('セルの中身').boundingBox();
   if (!cell) throw new Error('body cell not found');
   return { x: cell.x + cell.width / 2, y: cell.y + cell.height / 2 };
 }
 
-// A cell is `paragraph+`, so a block dropped into one splits the table in two around it — exactly
-// what tableCellPasteGuard refuses on the paste path, reached by a different gesture. Measured
-// before the guard covered it, dropping a quote into 「セルの中身」's text:
-//
-//   table(row(th, th), row(td("セルの中身の段落です"), td EMPTY)),
-//   blockquote(paragraph("引用")), table(row(td("二つ目")))
-//
-// — the host table torn in two, a cell emptied, and the trailing fragment headerless and so saved
-// as raw HTML.
+// A cell is `paragraph+`, so a dropped block tears the table in two around it, emptying a cell and
+// leaving a headerless fragment saved as raw HTML; tableCellPasteGuard's refusal, by drop.
 for (const [name, { block, text }] of Object.entries(BLOCKS)) {
   test(`dropping a ${name} into a cell's text is refused`, async ({ page }) => {
     const editor = await openWithBlockAbove(page, block);
@@ -132,23 +96,19 @@ for (const [name, { block, text }] of Object.entries(BLOCKS)) {
     );
 
     await cdpNativeDrag(page, dragFrom, await bodyCellText(editor), async () => {
-      // Refused before the mouse comes up: the indicator never promises this landing.
+      // Refused before release: no indicator.
       await expect(page.locator(DROP_CURSOR)).toHaveCount(0);
     });
 
-    // A refused drop is a no-op — the source is not deleted either, since the deletion is the
-    // drop's own — so the whole document is the assertion.
+    // A no-op: the source is not deleted either, so the whole document is the assertion.
     expect(await docString(page)).toBe(before);
     expect(await markdown(page)).not.toContain('<table');
     await expect(page.getByRole('status')).toHaveText(NOTICE);
   });
 }
 
-// The fourth block, and the one the paste path deliberately does *not* refuse: a whole table.
-// prosemirror-tables' own handlePaste claims every table-carrying paste and merges it cell-wise —
-// that is what makes cell-to-cell paste work — but it hooks no drop, so a dropped table slice goes
-// in through ordinary fitting and tears the host table like any other block. Measured: it left a
-// headerless `table(tableRow(tableCell("元二")))` fragment behind, saved as raw HTML.
+// A whole table: prosemirror-tables' handlePaste merges pasted tables cell-wise but hooks no drop, so
+// a dropped table tore the host like any block.
 test('dropping a whole table into a cell is refused', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -160,8 +120,7 @@ test('dropping a whole table into a cell is refused', async ({ page }) => {
   );
   const before = await docString(page);
 
-  // Selecting from the paragraph above the second table to the one below it covers that table
-  // end-to-end, so the slice carries the whole node.
+  // From above the second table to below it: the whole node in the slice.
   const above = await editor.getByText('前の段落です').boundingBox();
   const below = await editor.getByText('後の段落です').boundingBox();
   if (!above || !below) throw new Error('missing boxes');
@@ -178,16 +137,11 @@ test('dropping a whole table into a cell is refused', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
-// A callout above the table with a paragraph after it, so a selection can be made either *inside*
-// the box or right past it — the two slices that both "contain a callout" and must be answered
-// differently.
+// A callout, then a paragraph, so a selection can be inside the box or past it: two slices that
+// contain a callout and need different answers.
 const CALLOUT_MD = `前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n間の段落です\n\n${TABLE_MD}`;
 
-// Opened on both sides, the callout in this slice is never placed — only the text is (see
-// components/editor/slice-placement.ts). A guard reading the slice's raw content refused this,
-// which had the rule exactly backwards: the harmless slice was turned away while the edge-crossing
-// one, which really does carry a box, was let in because the callout repair had already flattened
-// it to paragraphs.
+// Open on both sides, only the text is placed (slice-placement.ts), so it lands.
 test('text dragged from inside a callout into a cell still lands', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -210,7 +164,7 @@ test('text dragged from inside a callout into a cell still lands', async ({ page
 
   const after = await docString(page);
   expect(after, after).not.toBe(before);
-  // Text, not a box: still one callout, one table of four cells, and still a pipe table.
+  // Text: one callout, a four-cell pipe table.
   await expect(editor.locator('.markdown-alert')).toHaveCount(1);
   await expect(editor.locator('table')).toHaveCount(1);
   await expect(editor.locator('th,td')).toHaveCount(4);
@@ -218,9 +172,7 @@ test('text dragged from inside a callout into a cell still lands', async ({ page
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 
-// The other side of that distinction, and what stops the fix above from being a hole: a selection
-// running from before the callout to after it covers the box end-to-end, so it sits *closed* in the
-// slice and would really be placed. A cell cannot hold one, so this stays refused.
+// Covered end to end, the callout is closed in the slice and would be placed: refused.
 test('a whole callout dragged into a cell is refused', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -244,9 +196,7 @@ test('a whole callout dragged into a cell is refused', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
-// The other half of the rule, and the one that would break if the guard refused by position or by
-// "the slice mentions a block": ordinary text dragged into a cell is a normal edit. It lands, the
-// indicator says so beforehand, and the table keeps its pipe form.
+// Ordinary text still lands in a cell, the indicator shows first, and the pipe form stays.
 test('plain text can still be dragged into a cell', async ({ page }) => {
   const editor = await openWithBlockAbove(page, '> 引用の中身です');
   const before = await docString(page);
@@ -270,9 +220,7 @@ test('plain text can still be dragged into a cell', async ({ page }) => {
   expect(await markdown(page)).not.toContain('<table');
 });
 
-// Case 1 — a drop in the table's structure, not a cell: the seam between the header
-// row and the first body row. 43f9917 without the guard turns this into a stray cell
-// that fixTables squares off into a whole extra row/column.
+// Case 1: the seam between the header row and the first body row.
 test('a native drop at a table cell/row boundary does not grow the table', async ({ page }) => {
   const { editor, source } = await seedTableAndSelectSource(page);
 
@@ -287,17 +235,13 @@ test('a native drop at a table cell/row boundary does not grow the table', async
     y: headerBox.y + headerBox.height, // the header/body row boundary
   });
 
-  // The guard cancels the drop, so the table keeps its exact shape and the source
-  // text stays put (a cancelled drop is a no-op, not a move that deletes the source).
+  // Cancelled: same shape, and the source stays (a cancelled drop does not delete it).
   expect(await tableShape(page)).toEqual(before);
   await expect(editor.getByText('DRAGME', { exact: true })).toBeVisible();
 });
 
-// Case 2 — a drop inside a cell but at block level: its top edge, just under the
-// border. 43f9917 without the guard adds a *second* paragraph to that cell, and a
-// two-block cell can't serialize as a GFM pipe row, so the whole table falls back to
-// an HTML <table> (dropping column alignment on the sanitized public page). The
-// second <p> is the DOM tell, caught by tableShape's maxParagraphsPerCell.
+// Case 2: a cell's top edge, at block level; a second <p> (tableShape's maxParagraphsPerCell) would
+// push the table to HTML.
 test('a native drop at a cell block edge does not add a second paragraph', async ({ page }) => {
   const { editor, source } = await seedTableAndSelectSource(page);
 
@@ -312,8 +256,7 @@ test('a native drop at a cell block edge does not add a second paragraph', async
     y: cellBox.y + 3, // the cell's top block edge, above its paragraph's text
   });
 
-  // The guard cancels the drop: the cell keeps a single paragraph (still GFM), the
-  // table is otherwise untouched, and the source text stays put.
+  // Cancelled: one paragraph per cell, the source in place.
   expect(await tableShape(page)).toEqual(before);
   await expect(editor.getByText('DRAGME', { exact: true })).toBeVisible();
 });
