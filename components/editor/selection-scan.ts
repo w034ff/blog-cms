@@ -21,3 +21,11 @@ export function selectionTouches(state: EditorState, ...typeNames: string[]): bo
   });
   return found;
 }
+
+// The block atoms a selection can hold whole. The four insert controls (setCallout, insertTable,
+// toggleBlockquote, setImage) refuse over any of them as one predictable rule: insertContent
+// replaces a selected linkCard or embed, and wrapIn quotes one, which no author asks for. `image`
+// is refused too, though inserting over it is not always destructive, so the rule has no exception
+// to learn. Cost: a text selection running across a picture cannot be quoted either.
+export const BLOCK_ATOMS = ['linkCard', 'embed', 'image'] as const;
+export type BlockAtom = (typeof BLOCK_ATOMS)[number];

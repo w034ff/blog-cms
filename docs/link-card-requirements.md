@@ -1287,7 +1287,7 @@ session cookie は `sameSite: 'lax'` だが、これは他所のページが著�
 | 22f | メニューが後から再配置されない（リサイズで動かない）                              | 同上                                                                                                                                 |
 | 22o | トグルを押してもページがスクロールしない（focus は戻る）                          | `e2e/thumbnail-marker.spec.ts`（2026-09-08 追加。絵の下端をはみ出させてから押す。既定の `focus()` に戻すと赤）                       |
 | 22p | 保存済みのサムネイルがリロード後もバッジを持つ（画像より前に段落を置く）          | `e2e/thumbnail-marker.spec.ts`（2026-09-08 追加。`storage.path` と描画の両方を見る。`editorRef.current` に戻すと赤）                 |
-| 22q | 画像を選ぶと囲み枠・表・引用・画像の 4 つが無効になり、貼り付けも絵を置き換えない | `e2e/editor-atom-node-selection-guard.spec.ts`（2026-09-08 に行を追加。`IMAGE_BLOCKED_HOSTS` から `image` を外すと赤）               |
+| 22q | 画像を選ぶと囲み枠・表・引用・画像の 4 つが無効になり、貼り付けも絵を置き換えない | `e2e/editor-atom-node-selection-guard.spec.ts`（2026-09-08 に行を追加。`BLOCK_ATOMS`（`selection-scan.ts`）から `image` を外すと赤） |
 | 22r | 別枠で選んだ本文に無いサムネイルが、本文の編集でもリロード後の編集でも残る        | `e2e/thumbnail.spec.ts`（2026-09-08 追加。本文には別の画像を置くので、外れればフォールバックが出る。単なる不在で外す条件に戻すと赤） |
 
 ### 22.1 本文画像の見え方とエディタのクロム（2026-09-07 実装）

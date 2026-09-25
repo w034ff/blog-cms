@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
 import { pasteRegex } from '@tiptap/extension-link';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
-import { replaceSelectionClamped } from './isolating-boundary';
+import { asPaste, replaceSelectionClamped } from './isolating-boundary';
 
 // `Link`'s `linkOnPaste` marks the selection rather than replacing it (`pasteHandler`, the
 // `handlePasteLink` PluginKey), so pasting a URL over a Ctrl+A selection linked every paragraph
@@ -41,12 +41,7 @@ export const LinkPasteParagraphGuard = Extension.create({
             const selectedText = state.doc.textBetween(selection.from, selection.to, '\n');
             if (!selectedText.includes('\n')) return false;
 
-            view.dispatch(
-              replaceSelectionClamped(state, slice)
-                .scrollIntoView()
-                .setMeta('paste', true)
-                .setMeta('uiEvent', 'paste'),
-            );
+            view.dispatch(asPaste(replaceSelectionClamped(state, slice)));
             return true;
           },
         },

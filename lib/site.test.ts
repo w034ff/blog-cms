@@ -76,3 +76,29 @@ describe('siteIndexable', () => {
     expect(await loadSiteIndexable('')).toBe(false);
   });
 });
+
+describe('isOwnOrigin', () => {
+  async function loadIsOwnOrigin(value?: string) {
+    vi.resetModules();
+    if (value === undefined) delete process.env.SITE_ORIGIN;
+    else process.env.SITE_ORIGIN = value;
+    return (await import('@/lib/site')).isOwnOrigin;
+  }
+
+  it('matches the Host the browser addressed, port included', async () => {
+    const isOwnOrigin = await loadIsOwnOrigin('https://blog.example.com');
+    expect(isOwnOrigin(new URL('http://127.0.0.1:3001/posts/a'), '127.0.0.1:3001')).toBe(true);
+    expect(isOwnOrigin(new URL('http://127.0.0.1:3002/posts/a'), '127.0.0.1:3001')).toBe(false);
+  });
+
+  it('matches SITE_ORIGIN while served from another host', async () => {
+    const isOwnOrigin = await loadIsOwnOrigin('https://blog.example.com');
+    expect(isOwnOrigin(new URL('https://blog.example.com/posts/a'), 'localhost:3001')).toBe(true);
+    expect(isOwnOrigin(new URL('http://blog.example.com/posts/a'), 'localhost:3001')).toBe(false);
+  });
+
+  it('is false for an external URL, and without a Host header', async () => {
+    const isOwnOrigin = await loadIsOwnOrigin('https://blog.example.com');
+    expect(isOwnOrigin(new URL('https://example.org/'), null)).toBe(false);
+  });
+});

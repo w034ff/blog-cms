@@ -178,14 +178,14 @@ function createDragController(view: EditorView): DragController {
     return preview;
   }
 
-  // `to` (and `from`, which findBoundary no longer offers) is a no-op, so no transaction.
+  // `to` is a no-op, so no transaction. `from` never arrives: findBoundary skips the dragged node.
   //
   // The dragged node is excluded from findBoundary's candidates, or its own two no-op gaps sat a
   // block-height apart. Collapsing its layout instead was tried and reverted (the reflow was hard to
   // follow); exclusion alone once made the indicator jump ahead while the pointer was over the
   // source. It works now with the cursor-following preview and the suppressed no-op indicator.
   function applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
-    if (target === from || target === to) return;
+    if (target === to) return;
     const tr = view.state.tr.delete(from, to);
     const pos = tr.mapping.map(target);
     // `Transform.insert` refuses silently (no step added), and NodeSelection.create below then threw

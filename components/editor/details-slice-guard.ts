@@ -2,7 +2,7 @@ import { Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { createBoxSliceRepair } from './box-slice-repair';
 import { resolveDropTarget } from './drop-target';
-import { replaceSelectionClamped } from './isolating-boundary';
+import { asPaste, replaceSelectionClamped } from './isolating-boundary';
 
 // What a *slice* carrying an accordion may do — the questions calloutSliceGuard answers, with
 // different answers: an accordion may only be placed at the top level
@@ -121,12 +121,7 @@ export function detailsSliceGuard(notify: (message: string) => void): Plugin {
         if (!wouldNestDetails($from, slice)) return false;
         const repaired = flattenClosedDetails(slice);
         if (repaired === slice) return false;
-        view.dispatch(
-          replaceSelectionClamped(view.state, repaired)
-            .scrollIntoView()
-            .setMeta('paste', true)
-            .setMeta('uiEvent', 'paste'),
-        );
+        view.dispatch(asPaste(replaceSelectionClamped(view.state, repaired)));
         return true;
       },
       handleDrop(view, event, slice, moved) {

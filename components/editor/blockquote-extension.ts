@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core';
 import { Blockquote as BaseBlockquote } from '@tiptap/extension-blockquote';
 import type { NodeType } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
-import { selectionTouches } from './selection-scan';
+import { BLOCK_ATOMS, selectionTouches } from './selection-scan';
 
 // Custom Backspace join for blockquotes, replacing upstream's `handleBackspace`, which merges only
 // when the preceding quote's last child is a textblock and otherwise lifts. With nested quotes
@@ -52,12 +52,10 @@ export const Blockquote = BaseBlockquote.extend({
     const parent = this.parent?.();
     return {
       ...parent,
-      // Upstream's wrapIn happily wraps a selected `linkCard`/`embed` atom in a quote, which no
-      // author asks for. `image` is refused too, though wrapping it is not destructive, so the
-      // four insert controls refuse over a selected block atom as one predictable rule. Cost: a
-      // text selection running across a picture can no longer be quoted either.
+      // Refused over a selected block atom (BLOCK_ATOMS, selection-scan.ts): upstream's wrapIn
+      // would quote one.
       toggleBlockquote: () => (props) => {
-        if (selectionTouches(props.state, 'linkCard', 'embed', 'image')) return false;
+        if (selectionTouches(props.state, ...BLOCK_ATOMS)) return false;
         return parent?.toggleBlockquote?.()(props) ?? false;
       },
     };

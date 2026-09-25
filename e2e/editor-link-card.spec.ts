@@ -548,8 +548,8 @@ test('an absolute href survives the round trip with its query and fragment (14a)
   page,
 }) => {
   // §14.2 assumed §4.1 holds for absolute URLs; link-requirements.md §2.2.2 is the reason to doubt
-  // it. This is the raw-HTML attribute path (`escapeHref` writes, markdown-it parses): watch the `&`
-  // and the multibyte fragment.
+  // it. This is the raw-HTML attribute path (`escapeAttribute` writes, markdown-it parses): watch
+  // the `&` and the multibyte fragment.
   const messy = 'https://example.com/a?b=1&c=2#見出し';
   const card = `<div class="link-card" data-href="${messy}"></div>`;
   await page.goto('/admin/posts/new');

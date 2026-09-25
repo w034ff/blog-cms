@@ -5,7 +5,7 @@ import type { ChangeEvent, RefObject } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Selection } from '@tiptap/pm/state';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
-import { selectionTouches } from './selection-scan';
+import { selectionTouches, type BlockAtom } from './selection-scan';
 
 const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
 
@@ -19,16 +19,20 @@ export function imageFilesFromList(list: FileList | null | undefined): File[] {
 // merely reaches into a table without the author noticing. No 「中」: the caret need not be inside.
 // Built from the hosts touched rather than one constant per combination; the names match the other
 // guards' (docs/accordion-requirements.md §7.3).
+//
+// A Record over BLOCK_ATOMS (selection-scan.ts), so an atom added there cannot be missed here.
+// 「画像ブロック」 so the joined sentence reads (「画像には画像を挿入できません」 does not).
+const BLOCK_ATOM_NAMES: Record<BlockAtom, string> = {
+  linkCard: 'リンクカード',
+  embed: '埋め込み',
+  image: '画像ブロック',
+};
+
 export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
   table: '表のセル',
   codeBlock: 'コードブロック',
   detailsSummary: 'アコーディオンのタイトル',
-  // Atoms: a NodeSelection on one is replaced wholesale by setImage's insertContent.
-  linkCard: 'リンクカード',
-  embed: '埋め込み',
-  // Refused for consistency with the other atoms. 「画像ブロック」 so the joined sentence reads
-  // (「画像には画像を挿入できません」 does not).
-  image: '画像ブロック',
+  ...BLOCK_ATOM_NAMES,
 };
 
 function imageBlockedMessage(hosts: string[]): string {

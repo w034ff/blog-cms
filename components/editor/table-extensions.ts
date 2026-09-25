@@ -6,7 +6,7 @@ import { Plugin, PluginKey, Selection, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { resolveDropTarget } from './drop-target';
-import { selectionTouches } from './selection-scan';
+import { BLOCK_ATOMS, selectionTouches } from './selection-scan';
 import { pasteIntoCellRefused, selectionInsideCell, tableDropRefusal } from './table-cell-rules';
 
 // A column's text alignment. `null` is GFM's default (`---`, renders left) and is
@@ -333,10 +333,8 @@ export const MarkdownTable = Table.extend<MarkdownTableOptions>({
       insertTable:
         (options?: { rows?: number; cols?: number; withHeaderRow?: boolean }) => (props) => {
           // Also an accordion title (`text*`; the body still takes a table,
-          // docs/accordion-requirements.md §6.3) and a selected block atom, as in setCallout.
-          if (
-            selectionTouches(props.state, 'table', 'detailsSummary', 'linkCard', 'embed', 'image')
-          )
+          // docs/accordion-requirements.md §6.3) and a selected block atom (BLOCK_ATOMS).
+          if (selectionTouches(props.state, 'table', 'detailsSummary', ...BLOCK_ATOMS))
             return false;
           return parent?.insertTable?.(options)(props) ?? false;
         },

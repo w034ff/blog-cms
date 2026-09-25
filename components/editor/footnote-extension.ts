@@ -5,6 +5,8 @@ import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { escapeAttribute } from './html-escape';
+import { asPaste } from './isolating-boundary';
 import { hasUndoableInputRule } from './input-rule-undo';
 import { selectionTouches } from './selection-scan';
 import type MarkdownIt from 'markdown-it';
@@ -29,11 +31,6 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 const FOOTNOTE_REF_TAG = 'sup[data-footnote-ref]';
 const FOOTNOTE_DEF_TAG = 'div[data-footnote-def]';
 const FOOTNOTE_SECTION_TAG = 'div[data-footnote-section]';
-
-// HTML attribute escaping, since labels reach the DOM through an attribute.
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
 
 // `^[inline note]` has no `meta.label`. A non-goal (§1), but it parses, so it gets a label derived
 // from `meta.id`: a counter would give the reference and the definition (rendered by different
@@ -763,13 +760,7 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         const flattened = mapReferences(slice, view.state, (node) =>
           view.state.schema.text(`[^${node.attrs.label as string}]`),
         );
-        view.dispatch(
-          view.state.tr
-            .replaceSelection(flattened)
-            .scrollIntoView()
-            .setMeta('paste', true)
-            .setMeta('uiEvent', 'paste'),
-        );
+        view.dispatch(asPaste(view.state.tr.replaceSelection(flattened)));
         onBlocked(ACCORDION_TITLE_REFUSAL);
         return true;
       },

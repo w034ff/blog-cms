@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { fetchLinkTitle, normalizeTitle } from '@/lib/link-title';
 import { getPostBySlug } from '@/lib/posts';
-import { siteOrigin } from '@/lib/site';
+import { isOwnOrigin } from '@/lib/site';
 
 // The title for the card's top line (docs/link-requirements.md §5.5.10). `lib/link-title.ts` holds
 // the fetch and the address guard; this is the gate, the cache and the own-link case. The admin gate
@@ -74,11 +74,9 @@ export async function GET(req: NextRequest) {
   const hit = cached(key);
   if (hit) return NextResponse.json(hit);
 
-  // Own link? Compared against the Host the browser addressed: `req.nextUrl.origin` normalises
-  // (`localhost` for `127.0.0.1`), which would make every internal link external and refused as
-  // loopback. `SITE_ORIGIN` covers a pasted published URL while working locally.
-  const isOwn = target.host === req.headers.get('host') || target.origin === siteOrigin.origin;
-  const title = isOwn ? await ownTitle(target) : await fetchLinkTitle(target.toString());
+  const title = isOwnOrigin(target, req.headers.get('host'))
+    ? await ownTitle(target)
+    : await fetchLinkTitle(target.toString());
   remember(key, title);
   return NextResponse.json({ title });
 }

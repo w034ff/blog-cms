@@ -3,8 +3,9 @@
 import type { ReactNode } from 'react';
 import { EditorTooltip } from './EditorTooltip';
 
-// The guard only keeps an SSR pass from throwing. Exported so WritingHelpDialog makes the same
-// ⌘/Ctrl choice.
+// prosemirror-keymap's own `mac` test, which decides what `Mod` means, so the label names the key
+// the keymap answers to. The guard only keeps an SSR pass from throwing. Exported so
+// WritingHelpDialog makes the same ⌘/Ctrl choice.
 export function isMac(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Mac|iP(hone|ad|od)/.test(navigator.platform);

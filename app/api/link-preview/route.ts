@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { linkImageSrc } from '@/lib/link-image';
 import { resolveLinkPreview } from '@/lib/link-previews';
-import { siteOrigin } from '@/lib/site';
+import { isOwnOrigin } from '@/lib/site';
 
 // What an external link card shows (docs/link-card-requirements.md §14.5). The published page never
 // calls this (§14.1); `lib/link-previews.ts` decides between a SELECT and a fetch.
@@ -30,11 +30,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ preview: null });
   }
 
-  // Never fetch this blog's own URL (a loop through the Funnel). Compared against the Host the browser
-  // addressed, because `req.nextUrl.origin` normalises (`localhost` for `127.0.0.1`).
-  // No `ownTitle` fallback, unlike /api/link-title: an own-origin `/posts/…` URL is rewritten into an
-  // internal card before this (§14.5.1), so what reaches here names no post.
-  if (target.host === req.headers.get('host') || target.origin === siteOrigin.origin) {
+  // Never fetch this blog's own URL (a loop through the Funnel). No `ownTitle` fallback, unlike
+  // /api/link-title: an own-origin `/posts/…` URL is rewritten into an internal card before this
+  // (§14.5.1), so what reaches here names no post.
+  if (isOwnOrigin(target, req.headers.get('host'))) {
     return NextResponse.json({ preview: null });
   }
 

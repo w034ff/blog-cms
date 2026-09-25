@@ -5,7 +5,7 @@ import { TextSelection } from '@tiptap/pm/state';
 import { CALLOUT_NAME, calloutSliceGuard } from './callout-slice-guard';
 import { findWrapping } from '@tiptap/pm/transform';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
-import { selectionTouches } from './selection-scan';
+import { BLOCK_ATOMS, selectionTouches } from './selection-scan';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import {
   CALLOUT_CLASS,
@@ -289,19 +289,8 @@ export const Callout = TiptapNode.create<CalloutOptions>({
           //    author's aside (docs/editor-pitfalls.md §6.1);
           //  - an accordion title, which is `text*`, so the fitter would split the accordion
           //    (docs/accordion-requirements.md §6.5). Never `details`: its body takes a callout;
-          //  - a selected block atom (linkCard, embed, image), which insertContent would replace.
-          //    `image` is refused for consistency across the four insert controls.
-          if (
-            selectionTouches(
-              state,
-              'table',
-              'blockquote',
-              'detailsSummary',
-              'linkCard',
-              'embed',
-              'image',
-            )
-          )
+          //  - a selected block atom (BLOCK_ATOMS, selection-scan.ts).
+          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary', ...BLOCK_ATOMS))
             return false;
           return commands.insertContent({
             type: this.name,

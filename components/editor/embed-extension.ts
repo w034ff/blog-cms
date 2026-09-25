@@ -14,6 +14,7 @@ import {
   X_PROVIDER,
 } from '@/lib/embed-message';
 import { canPlaceAfterCaret } from './code-block-extension';
+import { escapeAttribute } from './html-escape';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { buildIcon, UNLINK_SHAPES } from './svg/icon-shapes';
 import { refuseChromeDrops } from './useDragContainment';
@@ -37,14 +38,9 @@ export type InsertDialogDetail = { at: number };
 // start time survives and 「リンクに戻す」 returns what the author wrote. **Nothing here fetches**
 // (§3.2), unlike the link card.
 
-// HTML attribute escaping (the line is raw HTML), `&` first, as the card's serializer does.
-function escapeHref(href: string): string {
-  return href.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
-
 function serializeEmbed(state: MarkdownSerializerState, node: PMNode): void {
   const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
-  state.write(`<div class="embed" data-href="${escapeHref(href)}"></div>`);
+  state.write(`<div class="embed" data-href="${escapeAttribute(href)}"></div>`);
   // Closes the block, or whatever follows is glued onto this line.
   state.closeBlock(node);
 }

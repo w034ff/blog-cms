@@ -172,6 +172,13 @@ export function deleteSelectionClamped(state: EditorState): Transaction {
   return clampedSelectionDeletion(state) ?? state.tr.deleteSelection();
 }
 
+// What prosemirror-view's own `doPaste` adds to its transaction, for a handlePaste that dispatches
+// in its place. prosemirror-history reads `uiEvent` to keep the paste out of the preceding typing's
+// undo event.
+export function asPaste(tr: Transaction): Transaction {
+  return tr.scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste');
+}
+
 // Put `slice` over the selection, clamped. Exported for the slice guards' own handlePaste, since
 // only one handlePaste runs.
 export function replaceSelectionClamped(state: EditorState, slice: Slice): Transaction {
@@ -227,12 +234,7 @@ function handleCompositionStartClamped(view: EditorView): boolean {
 // themselves, since `someProp` stops at the first true.
 function handlePasteClamped(view: EditorView, _event: ClipboardEvent, slice: Slice): boolean {
   if (!clampedSelectionRanges(view.state)) return false;
-  view.dispatch(
-    replaceSelectionClamped(view.state, slice)
-      .scrollIntoView()
-      .setMeta('paste', true)
-      .setMeta('uiEvent', 'paste'),
-  );
+  view.dispatch(asPaste(replaceSelectionClamped(view.state, slice)));
   return true;
 }
 

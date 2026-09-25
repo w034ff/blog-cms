@@ -19,6 +19,7 @@ import {
   type IconShape,
 } from './svg/icon-shapes';
 import { canPlaceAfterCaret } from './code-block-extension';
+import { escapeAttribute } from './html-escape';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
 
@@ -36,14 +37,9 @@ import { refuseChromeDrops } from './useDragContainment';
 // escapes `[` unconditionally (§4.1 (b)); markdown-it runs with `html: true` and the public side
 // with rehype-raw, as for accent emphasis.
 
-// HTML attribute escaping (the line is raw HTML), `&` first so later entities aren't re-escaped.
-function escapeHref(href: string): string {
-  return href.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
-
 function serializeLinkCard(state: MarkdownSerializerState, node: PMNode): void {
   const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
-  state.write(`<div class="link-card" data-href="${escapeHref(href)}"></div>`);
+  state.write(`<div class="link-card" data-href="${escapeAttribute(href)}"></div>`);
   // Closes the block, or whatever follows is glued onto this line.
   state.closeBlock(node);
 }

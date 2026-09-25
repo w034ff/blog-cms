@@ -2,7 +2,7 @@ import { Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { createBoxSliceRepair } from './box-slice-repair';
 import { resolveDropTarget } from './drop-target';
-import { replaceSelectionClamped } from './isolating-boundary';
+import { asPaste, replaceSelectionClamped } from './isolating-boundary';
 import { dropOpenWrappers } from './slice-placement';
 
 // The rules for what a *slice* carrying a callout may do — the one repair and the one refusal —
@@ -96,12 +96,7 @@ export function calloutSliceGuard(notify: (message: string) => void): Plugin {
         // ProseMirror's own paste, metas included, with the selection clamped to isolating edges.
         // The clamp is applied here because `someProp` stops at the first handlePaste returning
         // true, so isolating-boundary.ts never sees this paste.
-        view.dispatch(
-          replaceSelectionClamped(view.state, repaired)
-            .scrollIntoView()
-            .setMeta('paste', true)
-            .setMeta('uiEvent', 'paste'),
-        );
+        view.dispatch(asPaste(replaceSelectionClamped(view.state, repaired)));
         return true;
       },
       handleDrop(view, event, slice, moved) {

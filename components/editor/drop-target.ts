@@ -3,8 +3,10 @@ import { dropPoint } from '@tiptap/pm/transform';
 import type { EditorView } from '@tiptap/pm/view';
 import { deleteSelectionClamped } from './isolating-boundary';
 
-// Which modifier turns a drag into a copy, as prosemirror-view decides it. Read at call time so an
-// SSR pass can't freeze the wrong answer.
+// Which modifier turns a drag into a copy, as prosemirror-view decides it. Kept apart from isMac
+// (ToolbarButton.tsx), which follows prosemirror-keymap: the two upstreams test Mac differently
+// (prosemirror-view's `mac` is `ios || /Mac/.test(...)`). Read at call time so an SSR pass can't
+// freeze the wrong answer.
 function dragCopyModifier(): 'altKey' | 'ctrlKey' {
   if (typeof navigator === 'undefined') return 'ctrlKey';
   return /Mac|iP(hone|ad|od)/.test(navigator.platform) ? 'altKey' : 'ctrlKey';
