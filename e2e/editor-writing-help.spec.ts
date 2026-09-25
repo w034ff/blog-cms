@@ -3,12 +3,9 @@ import { SHORTCUT_CATALOG } from '../components/editor/shortcut-catalog';
 import { selectionSpan } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
 
-// ヘルプ — the reference sheet in the page header (docs/cms-features.md「書き方ヘルプ」§7, criteria
-// 3a–3e). What only a browser answers here is the wiring: the dialog's four exits, where focus
-// lands afterwards, that the sheet is absent on touch, and that what it draws is the catalog rather
-// than a list re-written in the component. The catalog's own shape (no duplicate id or token, no
-// key literal left in Toolbar.tsx) is data and is measured in
-// components/editor/shortcut-catalog.test.ts instead.
+// ヘルプ (docs/cms-features.md「書き方ヘルプ」§7, criteria 3a–3e): the dialog's exits, where focus
+// lands, its absence on touch, and that it draws the catalog. The catalog's shape is
+// shortcut-catalog.test.ts's.
 
 async function openHelp(page: Page) {
   const button = page.getByRole('button', { name: 'ヘルプ' });
@@ -18,8 +15,7 @@ async function openHelp(page: Page) {
   return { button, sheet };
 }
 
-// 3a. All four exits in one navigation: a spec is ~2.3s of preamble for ~0ms of claim, and these
-// are four spellings of one predicate rather than four claims.
+// 3a: four spellings of one predicate, one navigation.
 test('the sheet opens from the header and closes four ways', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const { sheet } = await openHelp(page);
@@ -32,31 +28,22 @@ test('the sheet opens from the header and closes four ways', async ({ page }) =>
   await expect(sheet).toBeHidden();
 
   await openHelp(page);
-  // The backdrop, which is the dialog's parent box: pressed at the top-left corner, outside the
-  // centred panel. `mousedown` is what the overlay listens for (a control that unmounts on
-  // mousedown lets the mouseup fall through), and `click()` sends both.
+  // The backdrop, at the corner outside the panel. It listens for `mousedown`.
   await page.mouse.click(8, 8);
   await expect(sheet).toBeHidden();
 });
 
-// 3b. The sheet is a reference, so opening and closing it must leave the post exactly as it was.
-// **This is the measurable half of "Escape does not reach the editor".** The other half has no
-// reachable scenario today: every editor-side Escape consumer is either bound to the editor's own
-// DOM (ProseMirror's handlers, the slash menu's `onKeyDown`) and so silent once focus moves to the
-// dialog, or closed by the very mousedown that opens this sheet (`useDismiss`'s outside-pointer
-// handler). The `stopPropagation` in WritingHelpDialog stays as a cheap guard against a future
-// document-level listener, not because a spec can see it today.
+// 3b: opening and closing leaves the post as it was, **the measurable half of "Escape does not reach
+// the editor"**. Every editor Escape consumer is bound to editor DOM or closed by the opening
+// mousedown; WritingHelpDialog's `stopPropagation` guards a future document listener.
 test('opening and closing leaves the document and the caret untouched', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
   await editor.click();
   await loadMarkdown(page, '一行目\n\n二行目');
-  // The paragraph's box runs the column's full width, so a click at its centre lands past the text
-  // and the caret settles at the end of 一行目 (pos 4). Waited for as a predicate on the editor's
-  // own selection: a click reaches `state.selection` through ProseMirror's 20ms DOMObserver
-  // debounce, and reading it any sooner returns where the caret was before the click
-  // (editor-probe.ts's `caretAtLineStart` records the same trap).
+  // A centred click lands past the text, at the end of 一行目 (pos 4); waited on the editor's own
+  // selection (docs/editor-pitfalls.md §1.1).
   await page.locator('.ProseMirror p').first().click();
   await expect.poll(() => selectionSpan(page)).toEqual([4, 4]);
 
@@ -69,9 +56,8 @@ test('opening and closing leaves the document and the caret untouched', async ({
   await expect(page.locator('.ProseMirror')).toContainText('一行目');
 });
 
-// 3c. Focus goes back to the button that opened the sheet — and nothing scrolls on the way. Handing
-// focus to the editor instead is what would move the page: a NodeSelection scrolls its whole block
-// into view, under a sticky header that does not know it is covering the top of the viewport.
+// 3c: focus returns to the button without scrolling; the editor's NodeSelection would scroll its
+// block under the sticky header.
 test('closing returns focus to the button without scrolling the page', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -90,9 +76,7 @@ test('closing returns focus to the button without scrolling the page', async ({ 
   expect(await page.evaluate(() => window.scrollY)).toBe(scrolled);
 });
 
-// 3e. The sheet draws the catalog, not a list of its own: the spec imports the same module, so a key
-// added there and forgotten in the component fails here. `Mod-k` and `Mod-e` are the reason — they
-// have no toolbar button, so nothing else in the suite would notice them disappearing.
+// 3e: the same module drives the spec, so a forgotten key fails; `Mod-k` and `Mod-e` have no button.
 test('the shortcut section draws every catalog entry', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const { sheet } = await openHelp(page);
@@ -102,14 +86,12 @@ test('the shortcut section draws every catalog entry', async ({ page }) => {
   for (const entry of SHORTCUT_CATALOG) {
     await expect(rows.filter({ hasText: entry.label }).first()).toBeVisible();
   }
-  // The keys themselves, one cap per key on this platform (⌘⇧S stays one cap on a Mac).
+  // One cap per key here (⌘⇧S is one cap on a Mac).
   await expect(rows.filter({ hasText: 'リンク' }).locator('kbd')).toHaveText(['Ctrl', 'K']);
 });
 
-// 3d. Touch has neither a keyboard nor the tooltips this sheet is a second opinion on, and the
-// header is the one place with no room to spare. Emulated rather than narrowed: a small viewport
-// still reports `hover: hover`, which would leave this testing a button that is painted after all.
-// The five keys below are editor-narrow-menus.spec.ts's PHONE, for the reason stated there.
+// 3d: touch has no keyboard or tooltips, and the header no room. Emulated: a small viewport still
+// reports `hover: hover`. The five keys are editor-narrow-menus.spec.ts's PHONE.
 const PIXEL_7 = devices['Pixel 7'];
 test.describe('touch', () => {
   test.use({

@@ -8,14 +8,11 @@ import {
   tagsField,
 } from './editor-authoring';
 
-// 記事の設定's タグ field (components/editor/TagField.tsx, docs/editor-requirements.md §12.33): tags
-// are picked from the dictionary, and a name it lacks is added only through its own row. The
-// seeded dictionary is the tags already in use when it was created (drizzle/0010): blog, mdx,
-// nextjs, react, rsc. What only a browser answers is here — the keys, the list, the chips and the
-// round trip through the form; the dictionary's own rules are lib/tags.test.ts.
+// 記事の設定's タグ field (TagField.tsx, docs/editor-requirements.md §12.33): tags come from the
+// dictionary (seeded by drizzle/0010: blog, mdx, nextjs, react, rsc), and new names only through
+// their own row. Keys, list, chips and the form round trip here; the rules in lib/tags.test.ts.
 
-// Options are matched on their identifier alone: one whose display name differs carries it after
-// the identifier, and the seeded DB is the real one, whose names can be changed at any time.
+// Matched on the identifier: display names in the real seeded DB can change.
 const listbox = (page: Page) => page.getByRole('listbox', { name: 'タグ' });
 const createRow = (page: Page) =>
   listbox(page).getByRole('option', { name: /を新しいタグとして追加$/ });
@@ -32,23 +29,22 @@ test('a dictionary tag is found by part of its name, whatever the case, and is n
   page,
 }) => {
   await newPostWithSettings(page, `E2E tag pick ${Date.now()}`);
-  // Part of the name finds it, and the typed text is still offered as a tag of its own, last — even
-  // when it is the start of a tag, or `go` beside `golang` could not be made here.
+  // A partial match finds it, and the typed text is still offered last, or `go` beside `golang`
+  // could not be made.
   await tagCombobox(page).fill('rea');
   await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toBeVisible();
   await expect(createRow(page)).toHaveText('「rea」を新しいタグとして追加');
   await expect(listbox(page).getByRole('option').last()).toHaveText(
     '「rea」を新しいタグとして追加',
   );
-  // The whole name in another case is the tag itself, so the row offering to add it is gone.
+  // The whole name in another case is the tag, so no add row.
   await tagCombobox(page).fill('REACT');
   await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toBeVisible();
   await expect(createRow(page)).toHaveCount(0);
   await tagCombobox(page).press('Enter');
   await expect(tagsField(page)).toHaveValue('react');
 
-  // Chosen once, it leaves the list, and nothing offers to make it again. Other tags may still
-  // match — `rsc` is shown as React Server Components — so the list itself is not asked about.
+  // Chosen, it leaves the list; other matches may remain (`rsc` is React Server Components).
   await tagCombobox(page).fill('react');
   await expect(listbox(page).getByRole('option', { name: /^react\b/ })).toHaveCount(0);
   await expect(createRow(page)).toHaveCount(0);
@@ -58,7 +54,7 @@ test('a name the dictionary lacks is added only through its own row, and stays a
   page,
 }) => {
   await newPostWithSettings(page, `E2E tag create ${Date.now()}`);
-  // Typed with capitals: the identifier, and so the chip, is lowercase. 14 characters of 18.
+  // Capitals typed, a lowercase identifier; 14 of 18 characters.
   const name = `N${Date.now()}`;
   await tagCombobox(page).fill(name);
   await expect(createRow(page)).toHaveText(`「${name}」を新しいタグとして追加`);
@@ -68,12 +64,12 @@ test('a name the dictionary lacks is added only through its own row, and stays a
   await expect(tagsField(page)).toHaveValue(slug);
   await expectAutosaved(page);
 
-  // Saved, and named by the dictionary rather than by what the field happened to hold.
+  // Saved, named by the dictionary.
   await page.reload();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await openPostSettings(page);
   await expect(page.getByRole('button', { name: `「${slug}」を外す` })).toBeVisible();
-  // Now a dictionary tag like any other: typing it offers it, not a second one.
+  // Now a dictionary tag: offered, not added again.
   await closePostSettings(page);
   await page.goto('/admin/posts/new');
   await openPostSettings(page);
@@ -95,9 +91,8 @@ test('a name with a symbol is refused as it is typed, and the tag it was reachin
   await expect(tagsField(page)).toHaveValue('nextjs');
   await expect(refusal).toHaveCount(0);
 
-  // With nothing to offer, the refusal alone: no row, and Enter adds nothing. Text no tag in the
-  // real dictionary contains (the seeded DB is a copy of it): `C#`'s key `c` finds `rsc`, and a
-  // lone `q` finds `sql`.
+  // Nothing to offer: the refusal, and Enter adds nothing. Text no real tag contains (`C#`'s `c` finds
+  // `rsc`, `q` finds `sql`).
   await tagCombobox(page).fill('qz#');
   await expect(refusal).toBeVisible();
   await expect(listbox(page)).toBeHidden();
@@ -129,8 +124,7 @@ test('Backspace in the empty box and a chip’s × both remove a tag, and the sa
 
   await tagCombobox(page).press('Backspace');
   await expect(tagsField(page)).toHaveValue('react');
-  // A chip leaving is not an `input` event. Waiting for the save it should cause, not for the
-  // 保存済み state — that is still showing from the save above, and would pass with nothing sent.
+  // Removing a chip is no `input` event: wait for the save itself, since 保存済み still shows.
   const saved = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/drafts') &&
@@ -152,12 +146,12 @@ test('a sixth tag is refused as it is typed, and the refusal goes when the text 
   await expect(tagCombobox(page)).toHaveAttribute('placeholder', 'タグを 5 つまで入力');
   for (const tag of ['blog', 'mdx', 'nextjs', 'react', 'rsc']) await addTag(page, tag);
   const limit = page.getByRole('alert').filter({ hasText: 'タグは 5 つまで設定できます。' });
-  // Nothing says so until a sixth is attempted.
+  // Silent until a sixth is attempted.
   await expect(limit).toHaveCount(0);
-  // The fifth was added from the box, and focus stays there.
+  // Focus stays in the box.
   await expect(tagCombobox(page)).toBeFocused();
 
-  // `n` would otherwise offer 「n」を新しいタグとして追加 — the list stays shut instead.
+  // The list stays shut rather than offering to add 「n」.
   await tagCombobox(page).fill('n');
   await expect(limit).toBeVisible();
   await expect(listbox(page)).toBeHidden();
@@ -170,9 +164,7 @@ test('a sixth tag is refused as it is typed, and the refusal goes when the text 
   await expect(limit).toBeVisible();
   await page.getByRole('button', { name: '「mdx」を外す' }).click();
   await expect(limit).toHaveCount(0);
-  // Pressing × took focus out of the box, which shuts the list; typing again opens it — `md`, for
-  // the tag just taken back. Something other than the `n` already there: filling the same value
-  // changes nothing, so React reports no change and nothing opens.
+  // × took focus away and shut the list; typing reopens it. Not `n` again: the same value is no change.
   await tagCombobox(page).fill('md');
   await expect(listbox(page)).toBeVisible();
 });
@@ -180,11 +172,8 @@ test('a sixth tag is refused as it is typed, and the refusal goes when the text 
 test('an Enter that confirms an IME composition chooses nothing', async ({ page }) => {
   await newPostWithSettings(page, `E2E tag ime ${Date.now()}`);
   await tagCombobox(page).focus();
-  // Synthesized over CDP: `keyboard.type` never composes, so a spec written with it would pass
-  // against a field that ignores `isComposing` (the keydown below arrives with it true — probed
-  // 2026-09-23). The composed text matches a dictionary tag on purpose: choosing an existing row
-  // is synchronous, so a wrongly taken Enter shows at once. A text that only matched the add row
-  // would pass either way, the assertions below landing before the add's fetch did (measured).
+  // Composed over CDP: `keyboard.type` never composes, so a field ignoring `isComposing` would pass.
+  // The text matches an existing tag, whose choice is synchronous, so a wrong Enter shows at once.
   const client = await page.context().newCDPSession(page);
   await client.send('Input.imeSetComposition', { text: 'rs', selectionStart: 2, selectionEnd: 2 });
   await expect(listbox(page).getByRole('option', { name: /^rsc\b/ })).toBeVisible();
@@ -198,7 +187,7 @@ test('an Enter that confirms an IME composition chooses nothing', async ({ page 
   await expect(tagCombobox(page)).toHaveValue('rs');
   await expect(tagsField(page)).toHaveValue('');
 
-  // The Enter after the composition is a choice again.
+  // After composing, Enter chooses again.
   await tagCombobox(page).press('Enter');
   await expect(tagsField(page)).toHaveValue('rsc');
 });

@@ -2,10 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 import { publishedPath } from './published-post';
 
-// Clicking a body image on a published post opens it full-window (docs/cms-features.md「画像の拡大」).
-// Everything here needs a browser: the dialog lives in the top layer, the close paths are Escape,
-// the backdrop and the history entry, and the scoping claim — that none of it reaches the editor —
-// can only be checked by opening the editor.
+// A body image opens full-window on click (docs/cms-features.md「画像の拡大」): top layer, Escape,
+// backdrop, history, and not in the editor.
 const PNG_1x1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -13,21 +11,19 @@ const PNG_1x1 = Buffer.from(
 
 const zoom = (page: Page) => page.locator('dialog.image-zoom');
 
-// A computed colour's three channels on 0-255, whichever notation the engine chose:
-// `rgb(255, 255, 255)` / `rgba(…)` carry 0-255 already, while Chrome serializes a `color-mix()`
-// result as `color(srgb 1 1 1 / 0.8)` with 0-1 floats.
+// A colour's channels on 0-255: `rgb(…)` already is, Chrome's `color(srgb 1 1 1 / 0.8)` is 0-1.
 function channels(value: string): number[] {
   const numbers = (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
   return value.startsWith('color(') ? numbers.map((n) => Math.round(n * 255)) : numbers;
 }
 
-// The alpha, or 1 when the notation carries none.
+// The alpha, or 1.
 function alphaOf(value: string): number {
   const parts = value.match(/[\d.]+/g) ?? [];
   return parts.length > 3 ? Number(parts[3]) : 1;
 }
 
-// A published post whose body is a paragraph, a captioned image, and a paragraph.
+// Paragraph, captioned image, paragraph.
 async function publishWithImage(page: Page, caption: string): Promise<string> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -58,24 +54,21 @@ test('a body image opens full-window and carries its caption', async ({ page }) 
   const href = await publishWithImage(page, '図1 キャプション');
   await page.goto(href);
 
-  // Offered on every author image, note's way — no test of whether the column shrinks it.
+  // Every author image, as note does.
   const image = page.locator('#post-body figure.image-figure > img');
   await expect(image).toHaveCSS('cursor', 'zoom-in');
-  // The dialog is built at mount and waits closed, so what is asserted before the click is that
-  // it is not showing — not that it is absent.
+  // Built at mount and closed: not showing, not absent.
   await expect(zoom(page)).toBeHidden();
 
   await image.click();
   await expect(zoom(page)).toBeVisible();
-  // Modal, not just shown: `showModal()` is what brings Escape, the backdrop and the inert page.
+  // Modal: `showModal()` brings Escape, backdrop and inertness.
   expect(await zoom(page).evaluate((el: HTMLDialogElement) => el.matches(':modal'))).toBe(true);
-  // The caption travels with the picture, and names the dialog — an uploaded image has no alt to
-  // do it (useImageUpload.ts).
+  // The caption names the dialog; uploads have no alt (useImageUpload.ts).
   await expect(page.locator('.image-zoom-caption')).toHaveText('図1 キャプション');
   await expect(zoom(page)).toHaveAttribute('aria-label', '図1 キャプション');
 
-  // The way out is on screen, and it is where the focus already is: `showModal()` takes the first
-  // focusable child, which is why the button is built first.
+  // Focus starts on the close button: `showModal()` focuses the first focusable child.
   const closeButton = zoom(page).getByRole('button', { name: '閉じる' });
   await expect(closeButton).toBeVisible();
   await expect(closeButton).toBeFocused();
@@ -85,8 +78,7 @@ test('a body image opens full-window and carries its caption', async ({ page }) 
   await image.click();
   await expect(zoom(page)).toBeVisible();
 
-  // The magnifier sits on the picture, and the picture is what closes it. The space around it
-  // keeps the plain arrow even though a press there closes it too.
+  // The magnifier is on the picture, which closes it; the space around keeps the arrow.
   await expect(zoom(page).locator('img')).toHaveCSS('cursor', 'zoom-out');
   await expect(zoom(page)).toHaveCSS('cursor', 'auto');
   await zoom(page).locator('img').click();
@@ -103,13 +95,12 @@ test('the backdrop and the back button both close it', async ({ page }) => {
   await page.goto(href);
   const image = page.locator('#post-body figure.image-figure > img');
 
-  // The empty space around the picture is the dialog's own box, so a press there is the backdrop.
+  // Around the picture is the dialog's own box: the backdrop.
   await image.click();
   await expect(zoom(page)).toBeVisible();
   await zoom(page).click({ position: { x: 4, y: 4 } });
   await expect(zoom(page)).toBeHidden();
-  // Closing that way takes back the history entry opening pushed, so the reader is still on the
-  // post — otherwise the next Back press would appear to do nothing.
+  // Closing pops the pushed history entry, or the next Back would seem dead.
   await expect(page).toHaveURL(new RegExp(`${href}$`));
 
   await image.click();
@@ -121,7 +112,7 @@ test('the backdrop and the back button both close it', async ({ page }) => {
 
 test('the article does not scroll under the picture', async ({ page }) => {
   const href = await publishWithImage(page, '図1');
-  // Short enough that the post certainly overflows it, which is what makes the control below real.
+  // The post overflows, so the control is real.
   await page.setViewportSize({ width: 1280, height: 400 });
   await page.goto(href);
 
@@ -131,8 +122,7 @@ test('the article does not scroll under the picture', async ({ page }) => {
   await page.waitForTimeout(200);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
-  // The control: with the picture closed the same gesture does scroll, so the assertion above is
-  // about the overlay and not about a page that could never move.
+  // Control: closed, the same gesture scrolls.
   await page.keyboard.press('Escape');
   await expect(zoom(page)).toBeHidden();
   await page.mouse.wheel(0, 600);
@@ -140,10 +130,8 @@ test('the article does not scroll under the picture', async ({ page }) => {
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 });
 
-// The wash is the page's own ground made translucent, which is what both sites do (measured
-// 2026-09-08 with the scheme switched: note paints its body colour at .9, Zenn at .8 with a 2px
-// blur). So the assertion is a relation — overlay follows page — rather than a colour literal, and
-// it is checked in both schemes because a fixed light or dark value passes one and fails the other.
+// The wash is the page's own ground, translucent: a relation, in both schemes, since a fixed
+// value passes one.
 for (const scheme of ['light', 'dark'] as const) {
   test(`the overlay takes the page's own ground (${scheme})`, async ({ page }) => {
     const href = await publishWithImage(page, '図1');
@@ -158,14 +146,12 @@ for (const scheme of ['light', 'dark'] as const) {
       background: getComputedStyle(el).backgroundColor,
       blur: getComputedStyle(el).backdropFilter,
     }));
-    // Same three channels as the page, and translucent — `color-mix(… 80%, transparent)`. The two
-    // values arrive in different notations (`rgb(255, 255, 255)` against Chrome's serialization of
-    // a mix, `color(srgb 1 1 1 / 0.8)`), so both are normalised to 0-255 before comparing.
+    // The page's channels at `color-mix(… 80%, transparent)`, both normalized to 0-255.
     expect(channels(wash.background)).toEqual(channels(pageGround));
     expect(alphaOf(wash.background)).toBeCloseTo(0.8, 2);
     expect(wash.blur).toBe('blur(2px)');
 
-    // And the chrome on top of it reads: the caption is the page's foreground, not a fixed light.
+    // The caption is the page's foreground.
     const foreground = await page.evaluate(() => getComputedStyle(document.body).color);
     await expect(page.locator('.image-zoom-caption')).toHaveCSS('color', foreground);
   });
@@ -181,8 +167,7 @@ test('an uncaptioned image opens with the fallback name and no caption line', as
 });
 
 test('the editor is untouched: no zoom cursor, no dialog', async ({ page }) => {
-  // The scoping claim. `.prose` is shared by both surfaces, so a rule written there would follow
-  // the editor, where a click on an image already means "select this node".
+  // The scoping claim: `.prose` is shared, and in the editor a click selects the image.
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -197,6 +182,6 @@ test('the editor is untouched: no zoom cursor, no dialog', async ({ page }) => {
   await expect(image).not.toHaveCSS('cursor', 'zoom-in');
   await image.click();
   await expect(zoom(page)).toHaveCount(0);
-  // And the click still does what the editor means by it.
+  // The click still selects.
   await expect(page.locator('.image-bubble')).toBeVisible();
 });
