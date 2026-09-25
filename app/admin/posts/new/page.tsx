@@ -3,14 +3,10 @@ import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
 import { listDictionary } from '@/lib/tags';
 
-// The h1 that used to say this is gone — the editor's own title field says which post this
-// is, and a heading repeating the screen's purpose was one more band between the top of the
-// page and the post. The label moves to the tab title, which is all that still separates a
-// new post from an edit — two open edits read alike there, which is what the title field is for.
+// No h1: the editor's title field names the post. The tab title tells new from edit.
 export const metadata: Metadata = { title: '新規記事' };
 
-// The page reads the tag dictionary, which /admin/tags and the editor itself change at any time;
-// left static, a production build would hand every new post the dictionary as it was at build.
+// The tag dictionary changes at any time; static, a build would freeze it.
 export const dynamic = 'force-dynamic';
 
 const emptyInitial: PostEditorInitial = {

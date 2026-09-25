@@ -20,11 +20,9 @@ export const metadata: Metadata = { title: 'リビジョン履歴' };
 
 const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs';
 
-// One row: the live post or a revision. The padding is the row's, not the box's, so the dividers
-// and the hover background both run to the box's edges; the box rounds its end rows' corners to
-// keep that background inside its own. Not `overflow-hidden` on the box: that cut off the
-// 編集中と同じ tooltip, which hangs below the row. Both open a preview, so both end in › — the only sign a
-// row goes anywhere on a touch screen, where there is no hover.
+// One row: the live post or a revision. The padding is the row's, so the dividers and hover run
+// to the box's edges; the box rounds its end rows instead of `overflow-hidden`, which would clip
+// the 編集中と同じ tooltip. Both kinds open a preview, hence the › for touch screens.
 function Row({
   href,
   heading,
@@ -35,12 +33,10 @@ function Row({
   href: string;
   heading: string;
   badge: RevisionKind | null;
-  // Shown only where it differs from the title in the editor now: titles rarely change between
-  // versions, and on every row it would identify none of them.
+  // Only where it differs from the editor's title now; on every row it would identify none.
   title: string | null;
-  // The content is what the editor holds now: restoring it would change nothing, which the
-  // preview says with a disabled button — this says it before the row is opened. An icon, not a
-  // badge, so it reads apart from the kind; the words ride along for a screen reader and a pointer.
+  // Restoring this would change nothing, as the preview's disabled button says; this says it before
+  // the row is opened. An icon, so it reads apart from the kind badge.
   current: boolean;
 }) {
   return (
@@ -68,8 +64,8 @@ function Row({
   );
 }
 
-// The page a revision is chosen from (§5). Nothing here writes: each row opens the revision's
-// preview, which is where 「復元する」 is, so a version is always read before it is restored.
+// The page a revision is chosen from (§5). Nothing here writes: 「復元する」 is on the preview, so a
+// version is always read before it is restored.
 export default async function RevisionsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const postId = Number(id);
@@ -79,16 +75,14 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
   // What the editor opens with: the working copy when there is one.
   const current = post.draftContent ?? liveContent(post);
   const revisions = listRevisions(post.id);
-  // The preview's own test for a disabled 復元する, so the mark and the button cannot disagree —
-  // over a CRLF body a publish left behind, say.
+  // The preview's own test for a disabled 復元する, so the mark and the button cannot disagree.
   const isCurrent = (content: DraftContent) => diffRevision(current, content).identical;
   const differingTitle = (content: DraftContent) =>
     content.title !== current.title ? content.title : null;
 
   return (
     <>
-      {/* The editor's header, as the preview wears it: the way back is the editor's ←, in its
-          place, since this page is opened from the editor and nowhere else. */}
+      {/* The editor's header; ← goes back to the editor, the only place this page opens from. */}
       <RevisionHeaderBar>
         <Link
           href={`/admin/posts/${post.id}/edit`}
@@ -105,9 +99,8 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
           {current.title.trim() || '（無題）'}
         </p>
 
-        {/* The live version is the post's own row, not a revision (§4) — the present, not a point
-          in the past, so it stands apart from the list. It is also how pending edits are
-          discarded. A draft has none. */}
+        {/* The live version is the post's own row, not a revision (§4), and is how pending edits
+            are discarded. A draft has none. */}
         {!post.draft && (
           <section className='mt-6' aria-label='公開中の記事'>
             <div className='rounded border border-zinc-200 dark:border-zinc-800 [&>a]:rounded'>

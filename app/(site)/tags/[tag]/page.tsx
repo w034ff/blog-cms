@@ -16,9 +16,8 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const name = tagNames().get(decodeURIComponent(tag));
   if (name === undefined) return {};
   const title = `#${name}`;
-  // og:title does NOT follow `title` — a page that leaves `openGraph` unset
-  // inherits the layout's whole object, so a shared tag page would announce
-  // itself as the site's front page.
+  // `openGraph` left unset inherits the layout's whole object, so a shared tag page would announce
+  // itself as the front page.
   return { title, openGraph: { ...sharedOpenGraph, title, url: `/tags/${tag}` } };
 }
 

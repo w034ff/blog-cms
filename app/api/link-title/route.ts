@@ -4,24 +4,14 @@ import { fetchLinkTitle, normalizeTitle } from '@/lib/link-title';
 import { getPostBySlug } from '@/lib/posts';
 import { siteOrigin } from '@/lib/site';
 
-// The title of the page a link points at, for the card's top line (docs/link-requirements.md
-// §5.5.10). `lib/link-title.ts` holds the fetch and the address guard; this is the gate, the cache
-// and the one case that must not be fetched at all.
-//
-// Admin-only, like every other route the editor calls. That gate is also most of the answer to
-// "this endpoint makes the server fetch a URL its caller chose": the only caller is the author,
-// who already has more power over this server than the route grants, and the session cookie is
-// `sameSite: 'lax'`, so a cross-site page cannot make the author's browser call it either. The
-// address guard exists anyway, because "the only user is trusted" stops being true the day a
-// credential leaks, and the server sits on a home network behind Tailscale Funnel.
+// The title for the card's top line (docs/link-requirements.md §5.5.10). `lib/link-title.ts` holds
+// the fetch and the address guard; this is the gate, the cache and the own-link case. The admin gate
+// does not stop a cross-site top-level GET, so the guard is load-bearing
+// (docs/link-card-requirements.md §14.5.2).
 
-// Titles change rarely and a caret can land on the same link many times a minute. A server fetch
-// gets none of the browser caching the favicon leans on, so the cache is here.
-//
-// Failures are cached too, and that is not symmetry for its own sake: the measured failures are
-// Cloudflare challenges, which fail fast and would otherwise be re-fetched on every caret
-// placement into that link. Shorter, because a 403 is more likely to stop being true than a title
-// is to change.
+// A caret lands on the same link many times a minute, and a server fetch gets no browser cache.
+// Failures (typically Cloudflare challenges) are cached too, for less time: they fail fast, but are
+// likelier to clear than a title is to change.
 const OK_TTL_MS = 6 * 60 * 60 * 1000;
 const FAIL_TTL_MS = 10 * 60 * 1000;
 const MAX_ENTRIES = 200;
@@ -39,8 +29,7 @@ function cached(key: string): { title: string | null } | null {
 }
 
 function remember(key: string, title: string | null): void {
-  // Insertion-ordered, so the oldest key is the first one — enough of an eviction policy for a
-  // map that exists to spare a handful of repeat fetches.
+  // Insertion-ordered: the first key is the oldest.
   if (cache.size >= MAX_ENTRIES) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
@@ -48,10 +37,8 @@ function remember(key: string, title: string | null): void {
   cache.set(key, { title, expires: Date.now() + (title === null ? FAIL_TTL_MS : OK_TTL_MS) });
 }
 
-// A link to this blog is answered from the database, never fetched. That is a security property
-// rather than a shortcut: fetching it would have the server request its own public URL back
-// through the Funnel, which is a loop waiting to happen and the one request the address guard
-// cannot reason about.
+// Answered from the database, never fetched: the server would request its own URL back through the
+// Funnel, the one request the address guard cannot reason about.
 async function ownTitle(target: URL): Promise<string | null> {
   const slug = /^\/posts\/([^/]+)\/?$/.exec(target.pathname)?.[1];
   if (!slug) return null;
@@ -87,13 +74,9 @@ export async function GET(req: NextRequest) {
   const hit = cached(key);
   if (hit) return NextResponse.json(hit);
 
-  // "Is this a link to us?" is answered against the Host the browser actually addressed, not
-  // against `req.nextUrl.origin`. The client builds the URL from `window.location.origin`, so its
-  // host is by construction the one the request carries — while `nextUrl` normalises, and measured
-  // 2026-08-16 it reported `localhost` for a request the browser sent to `127.0.0.1`. The two then
-  // disagree, the link counts as external, and the guard refuses it as loopback: no internal link
-  // shows a title anywhere. `SITE_ORIGIN` is checked as well, for the author who pastes a full
-  // published URL while working locally.
+  // Own link? Compared against the Host the browser addressed: `req.nextUrl.origin` normalises
+  // (`localhost` for `127.0.0.1`), which would make every internal link external and refused as
+  // loopback. `SITE_ORIGIN` covers a pasted published URL while working locally.
   const isOwn = target.host === req.headers.get('host') || target.origin === siteOrigin.origin;
   const title = isOwn ? await ownTitle(target) : await fetchLinkTitle(target.toString());
   remember(key, title);

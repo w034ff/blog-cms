@@ -9,12 +9,9 @@ import { resolveThumbnail } from '@/lib/thumbnail';
 
 export const dynamic = 'force-dynamic';
 
-// One row's picture, at the size the row already is (two lines of text) so adding it does not
-// change the list's rhythm. `object-cover` because every other surface crops — the public list
-// (components/PostCard.tsx), the link card (globals.css `.link-card-image`) and the editor's
-// field (components/editor/ThumbnailField.tsx) — and a preview that cropped differently would
-// describe a card nobody sees. The bare `<img>` is the same choice, and for the reason spelled
-// out at ThumbnailField.tsx: the four surfaces are drawn by one hand.
+// Two text lines tall, so it keeps the list's rhythm. `object-cover` and a bare `<img>` like every
+// other surface (components/PostCard.tsx, globals.css `.link-card-image`,
+// components/editor/ThumbnailField.tsx says why), so the preview crops as the cards do.
 function AdminThumbnail({ src }: { src: string | null }) {
   if (src === null) {
     return (
@@ -39,11 +36,9 @@ export default async function AdminHome() {
 
   return (
     <section>
-      {/* Both live on this row rather than in a nav band over every admin screen
-          (app/admin/layout.tsx says why). The list is the hub both belong to — and it keeps
-          the empty-state sentence below, which names 「新規記事」, pointing at something on the
-          same screen. No サイトを見る: SiteHeader's own 「Tech Blog」 is above this row and goes
-          to the same place (app/admin/(list)/layout.tsx). */}
+      {/* On this row rather than a nav band over every admin screen (app/admin/layout.tsx), so the
+          empty-state sentence's 「新規記事」 points at something on screen. No サイトを見る:
+          SiteHeader's 「Tech Blog」 goes there (app/admin/(list)/layout.tsx). */}
       <div className='mb-6 flex items-center justify-between gap-4'>
         <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
         <div className='flex items-center gap-4 text-sm'>
@@ -71,21 +66,15 @@ export default async function AdminHome() {
           {posts.map((post) => (
             <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
               <div className='flex min-w-0 items-center gap-3'>
-                {/* The card image, resolved the same way every other surface resolves it
-                    (lib/thumbnail.ts) — so what shows here is what a reader would see, not the
-                    stored column. The slot is always drawn, unlike the public list's: the rows
-                    here are one text block tall and a picture that came and went would make the
-                    titles ragged. 「なし」 therefore means the post has no image AT ALL, an
-                    explicit choice and a body image being equally an image. */}
+                {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader sees. The
+                    slot is always drawn so the titles stay aligned; 「なし」 means no image at all. */}
                 <AdminThumbnail src={resolveThumbnail(post)} />
                 <div className='min-w-0'>
                   <div className='flex items-center gap-2'>
                     <Link
                       href={`/admin/posts/${post.id}/edit`}
                       className='truncate font-medium hover:underline'>
-                      {/* A titleless draft would render an empty, unclickable link
-                          (publish requires a title, so only drafts reach here);
-                          show a placeholder so it stays reachable from the list. */}
+                      {/* Only a draft can lack a title; a placeholder keeps it clickable. */}
                       {post.title.trim() ? (
                         post.title
                       ) : (
@@ -97,21 +86,17 @@ export default async function AdminHome() {
                         下書き
                       </span>
                     )}
-                    {/* Only ever on a published row — a draft's autosave writes the live columns,
-                        so draft_content stays null (lib/posts.ts listAllPosts). It is here rather
-                        than only in the editor because forgetting happens days later: inside the
-                        editor the same state is the publish button being pressable, which you
-                        have to be in the editor to see. Sky, so it reads apart from 下書き's amber. */}
+                    {/* Published rows only: a draft's autosave writes the live columns (lib/posts.ts
+                        listAllPosts). Shown here because the author forgets days later, away from the
+                        editor. Sky, apart from 下書き's amber. */}
                     {post.hasPendingEdits && (
                       <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                         未公開の変更
                       </span>
                     )}
                   </div>
-                  {/* No slug. It is a 20-hex random string (lib/slug.ts) that names nothing a
-                      reader of this list is looking for, and it was the widest thing on the
-                      line — the title it sits under is what identifies the row. Reaching the
-                      public URL is the 表示 link's job now. */}
+                  {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of this
+                      list. The 表示 link reaches the public URL. */}
                   <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
                     {formatPostDate(post.date) || '未公開'}
                     {hasVisibleUpdate(post.date, post.updatedAt) && (
@@ -122,19 +107,10 @@ export default async function AdminHome() {
                 </div>
               </div>
               <div className='flex shrink-0 items-center gap-4'>
-                {/* Moved off the editor's pinned publish row, where it was a same-tab navigation
-                    out of a mounted editor. Every row has a slug from the moment autosave created
-                    it (lib/db/schema.ts), drafts included, and the address now answers the author
-                    for a draft too — app/(site)/posts/[slug]/page.tsx serves one to a request
-                    carrying this session. So one word covers both: the action is the same, and it
-                    can no longer land on a 404.
-
-                    Not 表示 / プレビュー. That split was worth having only while a draft's link
-                    was a trap; with the preview in place the two labels would differ just to say
-                    ahead of time what the destination says on arrival (its 下書きのプレビュー
-                    banner), and the row already carries the state — the 下書き badge above. (Not
-                    the date column: `date` is stamped at first publish and never cleared, so a
-                    post taken back to a draft still shows one.) */}
+                {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address previews
+                    for this session (app/(site)/posts/[slug]/page.tsx), so one 表示 covers both states;
+                    the destination's banner and the 下書き badge already say which. Here rather than
+                    in the editor, where it would navigate away from a mounted editor. */}
                 {post.slug && (
                   <a
                     href={`/posts/${post.slug}`}

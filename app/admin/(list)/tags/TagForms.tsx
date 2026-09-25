@@ -24,13 +24,9 @@ const secondaryButtonClass =
   'shrink-0 rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
 const primaryButtonClass =
   'shrink-0 rounded bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300';
-// One grey for everything secondary on this page (`zinc-500`, `zinc-400` in dark) and the body
-// colour for the rest: shades picked one by one had made five greys that meant nothing apart. A
-// row's data — identifier, display name, count — is all body colour, the identifier alone a little
-// heavier as the row's key; the column headings and each row's 編集, repeated down the right edge,
-// stay grey so the data reads before the chrome.
-//
-// One grid for the header and every row, so the columns line up down the page.
+// One grey (`zinc-500`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
+// body colour for the data, so the data reads first. One grid for the header and every row, so the
+// columns line up.
 const columnsClass =
   'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3.5rem_3.5rem] items-center gap-x-4';
 
@@ -45,18 +41,12 @@ function ErrorLine({ message }: { message: string | undefined | null }) {
   );
 }
 
-// The page's one field searches and adds (requested 2026-09-24, when the dictionary grew past what
-// scrolls comfortably). Typing narrows the table to the tags the text finds — by identifier,
-// display name or alias, the way the editor's field finds them (`tagSearchKey`), so `golang` keeps
-// `go` and `C#` keeps `csharp`. 追加 is open only when no tag already is that word, so a new tag is
-// only ever made with its likely duplicates in view. The text stays after an add, which leaves the
-// new row on screen as the answer.
+// One field both searches and adds. It narrows the table the way the editor's field finds tags
+// (`tagSearchKey`: identifier, display name or alias). 追加 opens only when no tag is that word, so a
+// new tag is made with its likely duplicates in view; the text stays, leaving the new row on screen.
 //
-// The table is read-only — identifier, display name, how many posts carry it — with one row open
-// for editing at a time. Every field, save button and 削除 used to sit open on every row at once,
-// which is what made the page read as clutter (2026-09-23). It sorts by identifier, or by post
-// count from its 記事 heading: most-used first, and pressed again, least-used first — which brings
-// the tags registered ahead of any post to the top, the ones to review.
+// Read-only rows, one open for editing at a time. Sorted by identifier, or by 記事 count: most first,
+// then least first, which brings up the tags no post uses.
 export function TagDirectory({
   tags,
   usage,
@@ -282,9 +272,7 @@ function TagEditor({
             onChange={(event) => setTo(event.target.value)}
             className={inputClass}
           />
-          {/* Only what a change will do that the author could not take for granted — the posts
-              following the identifier they already expect; the URL moving, they may not. What the
-              field is, the page's own first line says. */}
+          {/* Only what the author could not take for granted: the URL moving, or the merge. */}
           {moving && (
             <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
               {merging

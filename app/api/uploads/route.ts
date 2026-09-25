@@ -5,9 +5,8 @@ import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
 
-// Runtime data, beside the DB — not `public/`, whose static handler only serves what was
-// on disk when the server booted. `app/uploads/[name]/route.ts` serves these back and
-// holds the measurement; `scripts/gc-uploads.mts` sweeps the same directory.
+// Runtime data beside the DB, not `public/` (app/uploads/[name]/route.ts serves these and says
+// why); `scripts/gc-uploads.mts` sweeps the same directory.
 const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
 
 export async function POST(req: NextRequest) {
@@ -34,10 +33,8 @@ export async function POST(req: NextRequest) {
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
-  // Content-addressed name: re-uploading the same image resolves to the same
-  // file, so identical content is stored once (dedup). Skip the write when the
-  // file already exists. Deletion must stay reference-based (the GC sweep is),
-  // since one file can now be referenced by multiple posts.
+  // Content-addressed, so identical images are stored once and one file may serve several posts:
+  // deletion must stay reference-based (the GC sweep is).
   const name = `${createHash('sha256').update(bytes).digest('hex')}.${ext}`;
   const filePath = path.join(UPLOAD_DIR, name);
   await mkdir(UPLOAD_DIR, { recursive: true });

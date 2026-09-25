@@ -4,12 +4,9 @@ import { redirect } from 'next/navigation';
 import { verifySession } from '@/lib/dal';
 import { restoreRevision, type RestoreTarget } from '@/lib/revisions';
 
-// The history's one write (docs/revision-requirements.md §5). The editor is not on screen when this
-// runs — it is reached from the revision's preview — so the result is shown by navigating to the
-// editor, which mounts fresh on the restored content. No revalidateBlog(): nothing public changed.
-//
-// A refused restore (the post or revision is gone) lands on the history page, which then shows what
-// is actually there to choose from.
+// The history's one write (docs/revision-requirements.md §5). Reached from the preview, so the
+// result is shown by navigating to the editor, which mounts on the restored content. No
+// revalidateBlog(): nothing public changed. A refused restore lands on the history page.
 function parseTarget(raw: FormDataEntryValue | null): RestoreTarget | null {
   if (raw === 'live') return 'live';
   if (typeof raw !== 'string') return null;

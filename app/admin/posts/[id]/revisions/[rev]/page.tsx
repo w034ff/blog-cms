@@ -30,8 +30,7 @@ type Version = {
   content: DraftContent;
   // The button's words: what pressing it does. Restoring the live version is discarding.
   action: string;
-  // The 差分 view's words, in the same act's terms (§9): the sentence over the diff, and what it
-  // says instead when pressing would change nothing.
+  // The 差分 view's sentence over the diff, and its no-op form, in the same act's terms (§9).
   diffLead: string;
   unchanged: string;
   // Only `live` can be a no-op: with no pending edits there is nothing to discard.
@@ -44,8 +43,8 @@ function versionOf(post: PostForEdit, rev: string): Version | null {
     return {
       target: 'live',
       content: liveContent(post),
-      // Not 未公開の変更を破棄: at 156px it put the header on two lines up to ~455px wide. What is
-      // discarded is said by the 差分 view's sentence; 破棄する alone would read as deleting the post.
+      // Not 未公開の変更を破棄: too long for one header line on a phone. The 差分 sentence says what is
+      // discarded; 破棄する alone would read as deleting the post.
       action: '変更を破棄',
       diffLead: '未公開の変更を破棄すると、次のように変わります。',
       unchanged: '破棄しても何も変わりません。',
@@ -65,10 +64,9 @@ function versionOf(post: PostForEdit, rev: string): Version | null {
   };
 }
 
-// A revision drawn as the post would read (§5), under a header in place of the site's: the
-// preview is a step in editing, so it wears the editor's chrome — pinned, so 本文 / 差分 and the
-// restore stay in reach however far down the version is read — and not the reader's navigation.
-// Under app/admin, so the admin layout's session check covers it.
+// A revision drawn as the post would read (§5), under the editor's pinned chrome rather than the
+// reader's navigation, since previewing is a step in editing. The admin layout's session check
+// covers it.
 export default async function RevisionPreviewPage({
   params,
   searchParams,
@@ -90,14 +88,13 @@ export default async function RevisionPreviewPage({
     ...version.content,
     tagList: resolveTags(version.content.tags, names),
   };
-  // What the editor opens with: the working copy when there is one. The 差分 view runs from it to
-  // the version — what pressing the button would change (§9).
+  // What the editor opens with: the working copy when there is one. 差分 runs from it to the version
+  // (§9).
   const current = post.draftContent ?? liveContent(post);
-  // 差分 is the default: the question a preview is opened with is whether to press the button, and
-  // the diff answers it where the rendered body does not (§9). 本文 is `?view=body`.
+  // 差分 by default: it answers whether to press the button, which the body does not (§9).
   const showDiff = (await searchParams).view !== 'body';
-  // Computed on both views: the button reads it too. Restoring a version the editor already holds
-  // would change nothing, so the button stays in place but cannot be pressed.
+  // Both views need it: restoring what the editor already holds would change nothing, so the button
+  // is shown disabled.
   const diff = diffRevision(current, version.content, names);
   const { html, toc } = showDiff
     ? { html: '', toc: [] }
@@ -107,9 +104,8 @@ export default async function RevisionPreviewPage({
   return (
     <>
       <RevisionHeaderBar>
-        {/* The two ways out, as the editor's header shows its own: icons named by aria-label
-              and the editor's tooltip. The first is the editor's ←, in its place: one step back, to the
-              list this version was opened from. */}
+        {/* The editor's header shape: icons named by aria-label and the tooltip. ← goes back one step,
+            to the list. */}
         <Link
           href={`/admin/posts/${post.id}/revisions`}
           aria-label='リビジョン履歴'
@@ -124,9 +120,7 @@ export default async function RevisionPreviewPage({
           <PencilIcon />
           <EditorTooltip label='編集に戻る' />
         </Link>
-        {/* No page name, as neither the editor's header nor the history's has one: the ← and
-            差分 / 本文 say what page this is. No kind and no time either — the author picked this
-            version from a list that named it. */}
+        {/* No page name, kind or time: ←, 差分 / 本文 and the list it came from say it. */}
         {/* 本文 / 差分: the same version read two ways. Links, since each is its own URL. */}
         <nav
           aria-label='表示'
@@ -144,8 +138,8 @@ export default async function RevisionPreviewPage({
             );
           })}
         </nav>
-        {/* Restores without asking: what it replaces is kept as a revision first, so the
-              restore can itself be undone from the same list (§2). The editor's 投稿 shape. */}
+        {/* Restores without asking: what it replaces is kept as a revision first, so it can be
+            undone from the same list (§2). */}
         {version.restorable && (
           <form action={restoreRevisionAction} className='ml-auto'>
             <input type='hidden' name='postId' value={post.id} />

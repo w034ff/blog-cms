@@ -9,15 +9,14 @@ type Params = { category: string };
 
 export const dynamic = 'force-dynamic';
 
-// Addressed by id (`/categories/tech`), titled by label. An id off the list is a 404 before the
-// query runs — the free-text era's URLs (`/categories/tech-notes`) end here too.
+// Addressed by id (`/categories/tech`), titled by label. An id off the list, including the
+// free-text era's (`/categories/tech-notes`), is a 404 before the query runs.
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { category } = await params;
   const id = decodeURIComponent(category);
   if (!isCategoryId(id)) return {};
   const title = categoryLabel(id);
-  // See the note in app/tags/[tag]/page.tsx: openGraph is replaced, not merged,
-  // so leaving it unset here would label this page with the site's own title.
+  // As in app/(site)/tags/[tag]/page.tsx: an unset openGraph would carry the site's own title.
   return { title, openGraph: { ...sharedOpenGraph, title, url: `/categories/${category}` } };
 }
 

@@ -8,10 +8,8 @@ export const metadata: Metadata = { title: 'タグ' };
 
 export const dynamic = 'force-dynamic';
 
-// The tag dictionary's own screen (docs/editor-requirements.md §12.33): the editor admits tags as
-// they are written, and this is where they are tidied — a display name given, an identifier
-// changed or merged into another, a tag removed from every post. The two names are the page's
-// whole difficulty, so it says in one line which is which before anything else.
+// The tag dictionary's screen (docs/editor-requirements.md §12.33): the editor admits tags, this
+// tidies them. The two names are the page's whole difficulty, so its first line says which is which.
 export default async function AdminTagsPage() {
   await verifyAdmin();
   const tags = listDictionary();

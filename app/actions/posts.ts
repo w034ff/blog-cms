@@ -13,10 +13,8 @@ import { knownTagSlugs } from '@/lib/tags';
 import { isUploadPath } from '@/lib/thumbnail';
 import type { DraftContent } from '@/lib/types';
 
-// Editable content (no slug; publish date and the draft/publish flag live outside this schema, set
-// by which button was pressed rather than a field here). Strict: this runs only when the author
-// explicitly publishes/unpublishes, so required fields are enforced here — autosave (app/api/drafts)
-// stays lenient so partial work is never lost.
+// Strict: runs only on an explicit publish/unpublish. Autosave (app/api/drafts) stays lenient so
+// partial work is never lost. Slug, date and the draft flag are not fields here.
 const contentSchema = z.object({
   title: z.string().min(1),
   // Refused rather than normalized: an id off the list reaches here only from a crafted form.
@@ -24,24 +22,18 @@ const contentSchema = z.object({
   category: z.custom<PostCategory>((value) => value === '' || isCategoryId(value)),
   tags: z.array(z.string()),
   body: z.string(),
-  // Not strict, unlike its neighbours here: an unusable path normalizes to ''
-  // (the "author chose none" state) rather than refusing the publish. The image
-  // is decoration on a card, and no picture is a normal outcome — failing the
-  // whole publish over one would be the wrong trade. `isUploadPath` is what
-  // keeps an off-site URL out of `<img src>` and `og:image`.
+  // Normalized, not refused: no picture is a normal outcome, not worth failing a publish over.
+  // `isUploadPath` keeps an off-site URL out of `<img src>` and `og:image`.
   thumbnail: z.string().transform((value) => (isUploadPath(value) ? value : '')),
 });
 
 export type PostFormState = {
   error?: string;
-  // The session lapsed mid-edit (14-day cookie expired). Returned instead of a
-  // /login redirect so the editor stays mounted and the unsaved draft survives;
-  // the client prompts a re-login.
+  // The session lapsed mid-edit. Returned instead of a /login redirect so the editor, and the
+  // unsaved draft, stay mounted.
   sessionExpired?: boolean;
-  // Set on a successful publish/unpublish so the editor can react without
-  // navigating away: adopt the row id (create-and-publish materializes it here),
-  // learn the finalized slug, reset the pending-changes baseline, and flash an
-  // indicator. `at` makes each result a distinct state object.
+  // A successful publish/unpublish, which the editor adopts without navigating away. `at` makes
+  // each result a distinct state object.
   saved?: { id: number; slug: string | null; published: boolean; at: number };
   // The refusal is for カテゴリ not chosen (§12.32): the editor opens 記事の設定 onto it.
   missingCategory?: true;
@@ -73,49 +65,31 @@ function parseContent(formData: FormData): DraftContent | null {
   return parsed.success ? parsed.data : null;
 }
 
-// Measured inert on this site, and kept for the same reason `force-dynamic` is (docs/cms-features.md
-// §7.1): `revalidatePath` reaches `fetch()`'s Data Cache, which nothing here uses, and the browser's
-// Client Cache, which holds nothing because `staleTimes.dynamic` defaults to 0 and every route is
-// dynamic. A/B'd 2026-09-14 against a production build — with this body and without it, a just-
-// published edit is visible on /admin, / and /posts/[slug] reached by <Link> alone
-// (e2e/revalidate-client-cache.spec.ts). It is the invalidation hook a module-scope cache would
-// need, so it stays where the four call sites already are.
+// Inert today: nothing uses the Data Cache and `staleTimes.dynamic` is 0
+// (e2e/revalidate-client-cache.spec.ts). Kept as the hook a module-scope cache would need, for the
+// same reason as `force-dynamic` (docs/cms-features.md §7.1).
 function revalidateBlog(): void {
   revalidatePath('/', 'layout');
 }
 
-// Make a post public with the current editor content. The opaque slug is
-// assigned once at row creation, so publish never touches it — it only flips
-// visibility and refreshes the live columns. The public date is captured here at
-// first publish (`existing.date` is the '' sentinel until then) and preserved on
-// every later publish, so it reflects when the post first went live; the
-// timestamp is UTC, rendered as the Asia/Tokyo date at display time. Two cases,
-// told apart by whether the row already exists:
-//  - existing row (draft or published) → commit the live content; the slug it
-//    was born with stays its permanent URL, and its date is kept once set.
-//  - no row yet → create-and-publish (the author clicked 投稿 before autosave
-//    materialized the row): create it with a fresh opaque slug and today's date,
-//    already public.
+// The slug is fixed at row creation, so publish only flips visibility and commits the live content.
+// The date is stamped at first publish (`existing.date` is '' until then) and kept on every later
+// one. With no row yet (投稿 before autosave created one), create-and-publish.
 async function publish(formData: FormData): Promise<PostFormState> {
   const content = parseContent(formData);
   if (!content) {
     return { error: '入力が不正です。タイトルは必須です。' };
   }
-  // A new post starts with no category (§12.32), and publishing is where it has to be chosen. The
-  // editor opens 記事の設定 on `missingCategory` and says this under the field, so it need not
-  // name where the field is.
+  // §12.32: a new post has no category until here. The editor opens 記事の設定 on `missingCategory`.
   if (content.category === '') {
     return { error: 'カテゴリを選んでください。', missingCategory: true };
   }
-  // docs/footnote-requirements.md §5.2's third layer. Autosave and 下書き保存 stay lenient — a note
-  // half-written is work in progress, and refusing to store it is how drafts get lost — but an
-  // empty one is meaningless to a reader, so publishing is where it has to be finished. The number
-  // is what the author sees on screen; the label never is, so it is no use in the message.
-  // The editor's field stops at MAX_TAGS; this is the same line for a request that did not come
-  // through it. Publish only: autosave and 下書きに戻す keep what they are given.
+  // The editor's field stops at MAX_TAGS; this holds for a request that bypassed it. Publish only.
   if (content.tags.length > MAX_TAGS) {
     return { error: `タグは ${MAX_TAGS} つまで設定できます。` };
   }
+  // docs/footnote-requirements.md §5.2's third layer: a draft may hold an empty note, a published
+  // post may not. The message gives the count, since the author never sees the label.
   const incomplete = incompleteFootnotes(content.body);
   if (incomplete.length > 0) {
     return {
@@ -145,9 +119,7 @@ async function publish(formData: FormData): Promise<PostFormState> {
   return { saved: { id: newId, slug, published: true, at: Date.now() } };
 }
 
-// Take a published post down (back to a draft) while keeping the current content
-// and its slug (so re-publishing reuses the same URL). Only offered for existing
-// published posts, so the row must exist.
+// Back to a draft, keeping the content and the slug, so re-publishing reuses the URL.
 async function unpublish(formData: FormData): Promise<PostFormState> {
   const content = parseContent(formData);
   if (!content) {
@@ -173,9 +145,7 @@ export async function submitPostAction(
   _prev: PostFormState,
   formData: FormData,
 ): Promise<PostFormState> {
-  // Don't redirect on an expired session — that would discard the in-progress
-  // editor content. Signal the client instead so it keeps the draft and prompts
-  // a re-login. (Admin pages still use verifySession's redirect.)
+  // No redirect on an expired session: it would discard the editor's content (`sessionExpired`).
   if (!(await getOptionalSession())) {
     return { sessionExpired: true };
   }

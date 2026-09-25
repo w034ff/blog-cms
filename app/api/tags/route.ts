@@ -3,11 +3,9 @@ import { z } from 'zod';
 import { getOptionalSession } from '@/lib/dal';
 import { createTag } from '@/lib/tags';
 
-// Admit a tag into the dictionary from the editor's tag field (docs/editor-requirements.md §12.33),
-// when the author confirms a name the dictionary does not have. A route handler rather than a
-// server action: an action re-renders the page it is called from, and the editor is not a page to
-// re-render mid-edit. Answers the tag that now exists — the new one, or the one the name already
-// resolved to — so the field adds whichever it is.
+// Admit a tag from the editor's tag field (docs/editor-requirements.md §12.33). A route, not a
+// server action: an action re-renders its page, and the editor must not re-render mid-edit.
+// Answers the tag that now exists, new or the one the name already resolved to.
 const bodySchema = z.object({ name: z.string() });
 
 export async function POST(req: NextRequest) {

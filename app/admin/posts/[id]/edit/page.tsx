@@ -7,10 +7,7 @@ import { listDictionary } from '@/lib/tags';
 
 export const dynamic = 'force-dynamic';
 
-// The h1 that used to say this is gone — the editor's own title field says which post this
-// is, and a heading repeating the screen's purpose was one more band between the top of the
-// page and the post. The label moves to the tab title, which is all that still separates a
-// new post from an edit — two open edits read alike there, which is what the title field is for.
+// No h1: the editor's title field names the post. The tab title tells new from edit.
 export const metadata: Metadata = { title: '記事を編集' };
 
 export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,11 +16,9 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
 
-  // Resume from the private working copy (pending edits) when present; otherwise
-  // load the published content.
+  // The private working copy (pending edits) when present, else the live content.
   const content = post.draftContent ?? liveContent(post);
-  // slug is null while a draft — the editor derives an editable preview from the
-  // title and finalizes it at publish.
+  // Non-null for every row since creation (app/api/drafts/route.ts); the column is nullable only.
   const initial: PostEditorInitial = { id: post.id, slug: post.slug ?? '', ...content };
 
   return (

@@ -15,19 +15,10 @@ type Params = { slug: string };
 
 export const dynamic = 'force-dynamic';
 
-// What this URL serves, and to whom. A published post (unlisted included — its slug is its only
-// gate) answers everyone. A draft answers nobody, unless the request carries an admin session, and
-// then it is a preview: same URL, same rendering path, so what the author checks is literally what
-// will ship rather than a second implementation of it.
-//
-// The session is the credential, not the URL. That is the difference from 限定公開, where knowing
-// the address is enough — a leaked draft address still 404s.
-//
-// `getOptionalSession` and not `verifySession`: this route must refuse, not redirect to /login. A
-// stranger who guesses a draft's slug learns nothing, including that it exists.
-//
-// Asked only when the published lookup misses, so an ordinary read of an ordinary post pays one
-// query and no cookie parse.
+// A published post (unlisted included) answers everyone. A draft answers only an admin session, as a
+// preview on the same URL and rendering path, so what the author checks is what will ship.
+// `getOptionalSession`, not `verifySession`: a stranger gets a 404, not a /login redirect revealing
+// that the draft exists. Asked only on a published miss, so an ordinary read parses no cookie.
 async function readablePost(slug: string): Promise<{ post: Post; preview: boolean } | null> {
   const published = await getPostBySlug(slug);
   if (published) return { post: published, preview: false };
@@ -55,27 +46,18 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     title: post.title,
     description,
     openGraph: {
-      // Spread, not replaced: setting `openGraph` here overrides the layout's
-      // object wholesale, so siteName and locale have to come along or this one
-      // page quietly loses them (see app/shared-metadata.ts).
+      // Spread, not replaced: `openGraph` here replaces the layout's wholesale
+      // (app/shared-metadata.ts).
       ...sharedOpenGraph,
-      // The post's own image when it has one, otherwise the site card the spread
-      // above supplies. Declared without width/height, unlike /og.png: these are
-      // author uploads of unknown dimensions, and a wrong declared size is worse
-      // than none — a consumer laying the card out from it gets a distorted box.
-      //
-      // A relative path, resolved against metadataBase like `url` below. og:image
-      // must be absolute in the emitted tag, and metadataBase is what makes that
-      // one host, from SITE_ORIGIN, rather than something baked in here.
+      // Without width/height, unlike /og.png: uploads are of unknown size, and a wrong one distorts
+      // the card. Relative; metadataBase (SITE_ORIGIN) makes it absolute.
       ...(thumbnail ? { images: [{ url: thumbnail, alt: post.title }] } : {}),
       type: 'article',
       title: post.title,
       description,
-      // Relative, resolved against metadataBase — the canonical address of the
-      // post, so a share from a proxied or query-decorated URL still points here.
+      // The canonical address, resolved against metadataBase.
       url: `/posts/${slug}`,
-      // The publish date, which is immutable once set (lib/posts-write.ts). Stored
-      // UTC; the tag wants ISO 8601 and a bare YYYY-MM-DD is valid as one.
+      // Immutable once set (lib/posts-write.ts); ISO 8601, UTC.
       publishedTime: post.date,
     },
   };
@@ -94,16 +76,8 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
 
   return (
     <>
-      {/* A preview is otherwise indistinguishable from the live post — same URL, same markup —
-          and mistaking one for the other is the whole failure mode of previewing in place. So the
-          banner is the feature, not decoration around it: it carries the one piece of information
-          the same-URL design throws away.
-
-          Which is also why it says only that. It used to spell out that the post is unpublished
-          and that the URL answers nobody else — true, but read once and noise thereafter, to an
-          author who already knows how their own editor works. 下書きのプレビュー is the whole
-          claim; the link is the next thing an author wants. Outside the <article>, because it is
-          not part of the post. */}
+      {/* Without this banner a preview is indistinguishable from the live post, so it is the
+          feature, not decoration. Outside the <article>: it is not part of the post. */}
       {preview && (
         <div
           role='status'
