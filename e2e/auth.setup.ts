@@ -11,8 +11,7 @@ setup('authenticate as admin', async ({ page }) => {
   await page.getByLabel('パスワード').fill(TEST_ADMIN.password);
   await page.getByRole('button', { name: 'ログイン' }).click();
 
-  // A successful login redirects to /admin; reaching it (past verifySession's
-  // /login redirect) proves the session cookie was set and is valid.
+  // Reaching /admin, past verifySession's redirect, proves the cookie is set and valid.
   await page.waitForURL('**/admin');
   await expect(page).toHaveURL(/\/admin$/);
 

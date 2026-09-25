@@ -1,7 +1,5 @@
-// Prepare an isolated, seeded copy of the blog DB for the Playwright E2E server.
-// Runs as the first step of the webServer command (before `next dev`), so the
-// copy exists before the app opens it. Reads only process.env — it is spawned by
-// node (not the Playwright loader), so every input arrives via the webServer env.
+// An isolated, seeded copy of the blog DB for the E2E server, made before `next dev` opens it.
+// Spawned by node, not Playwright's loader, so every input arrives via the webServer env.
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -21,9 +19,8 @@ if (!dest || !username || !password || !authorUsername || !authorPassword) {
   process.exit(1);
 }
 
-// Next patches the tsconfig it uses to register generated types. The E2E server
-// is pointed at this throwaway file (next.config typescript.tsconfigPath) so the
-// real tsconfig.json stays untouched; it must extend the base to inherit @/* paths.
+// Next patches its tsconfig to register generated types, so the E2E server gets this throwaway one
+// (next.config `typescript.tsconfigPath`); it extends the base for the @/* paths.
 const e2eTsconfig = path.join(process.cwd(), process.env.NEXT_TSCONFIG_PATH ?? 'tsconfig.e2e.json');
 if (!fs.existsSync(e2eTsconfig)) {
   fs.writeFileSync(e2eTsconfig, `${JSON.stringify({ extends: './tsconfig.json' }, null, 2)}\n`);
@@ -50,10 +47,8 @@ src.close();
 const db = new Database(dest);
 db.pragma('journal_mode = WAL');
 
-// Bring the copy up to the schema this checkout declares. The source is the real DB, which is
-// migrated by hand (`npm run db:migrate`, scripts/migrate-db.mts) and can lag a branch that adds a
-// migration — without this every spec touching the new table fails as if the harness were broken.
-// Only the copy is touched; the source was opened read-only above.
+// Migrate the copy: the real DB is migrated by hand (`npm run db:migrate`) and can lag a branch that
+// adds a migration. The source was opened read-only.
 migrate(drizzle(db), { migrationsFolder: path.join(process.cwd(), 'drizzle') });
 db.prepare(
   `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')
@@ -65,13 +60,9 @@ db.prepare(
    ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
 ).run(authorUsername, bcrypt.hashSync(authorPassword, 12));
 
-// Two rows for the external link card (docs/link-card-requirements.md §14.9). The published page
-// never fetches (§14.1) and the editor's route answers from this table while the row is fresh, so
-// seeding them is what lets the whole feature be measured without a single request leaving the
-// machine — `fetchedAt` is now, and the TTL is a week.
-//
-// A `failed` row is seeded as well because that state has its own card (§14.7) and is otherwise
-// reachable only by actually failing to reach a host.
+// External link card rows (docs/link-card-requirements.md §14.9): the published page never
+// fetches (§14.1) and the editor answers from fresh rows, so no request leaves the machine. The
+// `failed` row is the only way to reach that card's state (§14.7) without failing a real host.
 const now = Date.now();
 const preview = db.prepare(
   `INSERT INTO link_previews (url, title, description, image, status, fetched_at, version)
@@ -80,11 +71,8 @@ const preview = db.prepare(
      image=excluded.image, status=excluded.status, fetched_at=excluded.fetched_at,
      version=excluded.version`,
 );
-// The image is a loopback literal, on purpose. The card's `<img>` is a real element and the browser
-// really requests it, so a reachable value would put an outbound fetch in every run — and what is
-// measured is the shape of the src and the signature check, neither of which depends on what comes
-// back (§14.9). An IP literal is refused by the address guard before any resolver is asked, so this
-// costs the run no DNS either.
+// A loopback literal on purpose: the browser really requests the image, and what is measured is the
+// src and the signature (§14.9). The address guard refuses an IP literal before any DNS lookup.
 preview.run(
   'https://example.com/article',
   '外部ページの見出し',
@@ -94,9 +82,8 @@ preview.run(
   now,
 );
 preview.run('https://unreachable.example/x', '', '', '', 'failed', now);
-// A row from an older version of the reader, which must not be used however fresh it is (§14.3.1).
-// `version` defaults to 0 and the current one is 1, so this row is stale by construction — and its
-// URL is a loopback literal, so re-reading it costs no network and lands on a known answer.
+// An older reader's row (`version` 0 against 1), which must not be used however fresh (§14.3.1).
+// Loopback, so re-reading it costs no network.
 db.prepare(
   `INSERT INTO link_previews (url, title, description, image, status, fetched_at, version)
      VALUES (?, ?, ?, ?, ?, ?, 0)

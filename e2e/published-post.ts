@@ -2,21 +2,10 @@ import Database from 'better-sqlite3';
 import { expect, type Page } from '@playwright/test';
 import { TEST_DB_PATH } from './constants';
 
-// The opaque public slug of the post the editor currently holds.
-//
-// It is assigned at row creation — the first autosave, drafts included — and never changed
-// (app/api/drafts/route.ts's `generateUniqueSlug` call, and the note on `slug` in lib/db/schema.ts),
-// so this answers as soon as the editor has a row id and does not wait for a publish.
-//
-// Nothing on the editor screen shows it. The 表示 link used to, and 17 specs read its href for
-// exactly this; it now sits on the 記事一覧 row instead, which is a navigation away from the post
-// under test. `components/PostEditor.tsx` keeps `slug` in state only to feed the link card's
-// self-reference guard, so the page cannot be asked for it at all.
-//
-// Two reads, no page load:
-//   - the row id from the hidden `id` input, which is the identity the form itself submits
-//   - the slug from the harness's own seeded DB copy (e2e/prepare-db.mts made it, and the test
-//     server is its only writer)
+// The opaque public slug of the post the editor holds. Assigned at row creation, drafts included,
+// and never changed (app/api/drafts/route.ts, the note on `slug` in lib/db/schema.ts), so no
+// publish is needed. The editor screen does not show it, so it is read from the hidden `id` input
+// and the harness's own DB copy (e2e/prepare-db.mts), whose only writer is the test server.
 export async function postSlug(page: Page): Promise<string> {
   const id = await page.locator('input[name="id"]').inputValue();
   expect(id, 'the editor has no row id yet — has the first autosave landed?').toMatch(/^\d+$/);
@@ -27,7 +16,7 @@ export async function postSlug(page: Page): Promise<string> {
       | { slug: string | null }
       | undefined;
     expect(row, `no post row with id ${id}`).toBeTruthy();
-    // The shape the specs' own `expect(href).toMatch(/^\/posts\/[0-9a-f]+$/)` used to assert.
+    // The slug's shape.
     expect(row?.slug, `post ${id} has no slug`).toMatch(/^[0-9a-f]+$/);
     return row?.slug as string;
   } finally {

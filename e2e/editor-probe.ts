@@ -1,15 +1,9 @@
 import { expect, type Page } from '@playwright/test';
 
-// Shared read-only probes into the *live* TipTap editor. TipTap 3 hangs the Editor instance off
-// the .ProseMirror DOM node, so any spec can read the running editor state via page.evaluate —
-// the only way to observe browser-only editor behaviour (neither tsc nor vitest sees the runtime).
-// Everything here is side-effect free except pressKeyUntil, which is the "does this action make
-// progress?" primitive (drive a key and watch where the caret lands).
-//
-// These exist to catch two bug classes we've actually hit (see components/editor/blockquote-
-// extension.ts): duplicate module instances that break `instanceof` — spotted via the bundler-
-// renamed constructor name (`_TextSelection`) from selectionClassName — and boundary/nesting
-// logic that never converges (oscillation), spotted via pressKeyUntil timing out.
+// Read-only probes into the live TipTap editor, which TipTap 3 hangs off the .ProseMirror node —
+// the only way to observe browser-only editor behaviour. Side-effect free except pressKeyUntil.
+// Two bug classes they catch (components/editor/blockquote-extension.ts): a duplicated module
+// that breaks `instanceof` (selectionClassName), and logic that never converges (pressKeyUntil).
 
 // `editor.state.doc.toString()` — ProseMirror's compact tree, e.g.
 // `doc(blockquote(paragraph("aaa"), blockquote(paragraph("bbb"))))`. Ideal for asserting structure.
@@ -23,10 +17,8 @@ export function docString(page: Page): Promise<string> {
   });
 }
 
-// The markdown the editor would save — `editor.storage.markdown.getMarkdown()`, which is what
-// PostEditor mirrors into its hidden `body` input. docString says what the document *is*; this says
-// what gets stored, and the two can disagree (a table with no GFM pipe form still looks like a
-// table on screen while saving as raw HTML).
+// The markdown PostEditor saves (`editor.storage.markdown.getMarkdown()`). It can disagree with
+// docString: a table with no GFM pipe form looks like a table but saves as raw HTML.
 export function markdown(page: Page): Promise<string> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -37,9 +29,8 @@ export function markdown(page: Page): Promise<string> {
   });
 }
 
-// The runtime class name of the current selection. A canonical selection reads `TextSelection`;
-// a duplicate prosemirror-state copy shows the bundler-renamed `_TextSelection` (or `TextSelection2`
-// …) — the signature of an `instanceof`-breaking module duplication.
+// The selection's runtime class: a duplicated prosemirror-state shows as `_TextSelection` or
+// `TextSelection2`.
 export function selectionClassName(page: Page): Promise<string> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -69,9 +60,8 @@ export function caret(page: Page): Promise<string> {
   });
 }
 
-// The caret's absolute document position (`selection.from`). caret() above is the readable probe and
-// should be preferred; this is for the cases it cannot decide — when two candidate landing places
-// hold the same text, or both are non-empty and the question is which *block* the caret is in.
+// The caret's absolute position (`selection.from`), for when caret() cannot decide: two landing
+// places with the same text, or which block the caret is in.
 export function caretPos(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -82,11 +72,9 @@ export function caretPos(page: Page): Promise<number> {
   });
 }
 
-// `[from, to]` of the current selection. **The probe a spec needs when the gesture under test is a
-// range**: a Shift-arrow selection reaches ProseMirror's state through the 20ms DOM-sync debounce,
-// so a spec that pastes in the same tick is measuring a collapsed caret and can pass for the wrong
-// reason (the paste-over-selection specs, 2026-09-03). Asserting `to > from` after `settle` is what
-// makes those measurements non-vacuous.
+// `[from, to]` of the selection. **For a gesture that is a range**: a Shift-arrow selection reaches
+// state through the 20ms debounce (docs/editor-pitfalls.md §1.1), so assert `to > from` after
+// `settle`, or a same-tick paste measures a collapsed caret.
 export function selectionSpan(page: Page): Promise<[number, number]> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -98,11 +86,9 @@ export function selectionSpan(page: Page): Promise<[number, number]> {
   });
 }
 
-// How many *document-changing* transactions an action dispatches. **The probe for a handler that
-// stages an edit and then decides not to make it**: the end state cannot tell "the transaction was
-// dropped whole" from "it was dispatched and the fall-through did the same thing", and the count
-// can. Selection-only transactions are ignored, so ProseMirror's DOM-sync traffic cannot make the
-// number wobble.
+// How many document-changing transactions an action dispatches: **for a handler that stages an
+// edit and then declines it**, where the end state cannot tell a dropped transaction from a
+// fall-through that did the same thing. Selection-only transactions are ignored.
 export async function countDocChanges(page: Page, action: () => Promise<void>): Promise<number> {
   await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -126,19 +112,13 @@ export async function countDocChanges(page: Page, action: () => Promise<void>): 
   return page.evaluate(() => (window as Window & { __docChanges?: number }).__docChanges ?? -1);
 }
 
-// As much of prosemirror-history's plugin state as these tests need: `undoDepth`'s
-// `hist.done.eventCount`, and the grouping clock (`this.prevTime = prevTime`) that decides whether
-// the next change joins the event before it or starts its own — `newGroup = history.prevTime == 0 ||
-// (… history.prevTime < (tr.time || 0) - options.newGroupDelay …)`.
+// prosemirror-history's state: `undoDepth` (`hist.done.eventCount`) and `prevTime`, the clock in
+// `newGroup = history.prevTime == 0 || (… history.prevTime < (tr.time || 0) - options.newGroupDelay …)`.
+// The depth says "this cost one undo" without waiting out `newGroupDelay`; closeHistory() in
+// editor-authoring.ts is the write side.
 //
-// Reading the depth is how a spec says "this gesture cost exactly one undo" without waiting out
-// `newGroupDelay: config.newGroupDelay || 500`. A pause can only *hope* the grouping window has
-// closed, and a slow-enough test passes such an assertion for the wrong reason; the count states it.
-// closeHistory() in editor-authoring.ts is the write-side companion, and prevTime is what it checks.
-//
-// The plugin is matched by its exact key. `historyKey = new PluginKey("history")`, and
-// prosemirror-state's `createKey` turns that name into the string "history$" (`return name + "$"`).
-// Exact, not a prefix: "history$1" would be a *second* key of that name, i.e. not this one.
+// Matched by exact key: `new PluginKey("history")` is "history$" (`return name + "$"`); "history$1"
+// would be a second key of that name.
 export function historyState(page: Page): Promise<{ undoDepth: number; prevTime: number }> {
   return page.evaluate(() => {
     type HistoryPluginState = { done: { eventCount: number }; prevTime: number };
@@ -158,39 +138,22 @@ export function historyState(page: Page): Promise<{ undoDepth: number; prevTime:
   });
 }
 
-// Let ProseMirror's 20ms selection-sync debounce (DOMObserver.flushSoon) settle WITHOUT recreating
-// the selection — a page-side timeout, never an arrow/click (those take the DOM-readback path and
-// would paper over a stuck/foreign selection).
+// Let the 20ms selection sync settle with a page-side timeout, never an arrow or click, which would
+// take the DOM-readback path and hide a stuck selection.
 export function settle(page: Page): Promise<void> {
   return page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
 }
 
-// Wait until the caret is at the start of its textblock, asked of **the editor's own selection**.
-//
-// A native `Home` moves the DOM selection; ProseMirror learns about it through `selectionchange` on
-// a 20ms debounce (DOMObserver.flushSoon), and a key pressed inside that window bypasses every
-// keymap while the browser's native edit mutates the DOM — re-parsing that mutation is what nested
-// the following block inside a callout.
-//
-// **Polling the DOM's offset does not close that window, and this is why** (measured 2026-09-11).
-// While the editor's state still holds the old position, the sync can go the other way: ProseMirror
-// writes its own selection back onto the DOM and `Home` is simply undone. The DOM poll sees the 0
-// that existed for those few milliseconds, passes, and the following wait makes the bounce *more*
-// likely rather than less — `editor-callout-boundary.spec.ts`'s head-of-callout case failed about
-// half the time on an idle machine, at every commit it has ever had.
-//
-// Asked of the editor there is no window at all: once `state.selection` reads 0, the flush has
-// happened and nothing is left to write back. The old page-side 50ms tail is gone with the race it
-// was guarding.
+// Wait until the caret is at its textblock's start, asked of **the editor's own selection**. A key
+// inside the 20ms sync window after `Home` bypasses every keymap. Polling the DOM offset is not
+// enough: while state holds the old position ProseMirror can write it back and undo `Home`, after
+// the poll saw 0 (docs/editor-pitfalls.md §1.1).
 export async function caretAtLineStart(page: Page): Promise<void> {
   await expect.poll(() => caret(page)).toMatch(/@0$/);
 }
 
-// Press `key` repeatedly (settling between presses) until the caret reaches `wantCaret` (a value
-// from caret()), or the budget runs out. Returns the caret where it stopped, so a test can assert
-// convergence: `expect(await pressKeyUntil(page, 'Backspace', 'bbb@3')).toBe('bbb@3')`. A handler
-// that oscillates or no-ops never reaches the target, so the assertion fails instead of hanging —
-// this is how the nested-blockquote Backspace oscillation is guarded.
+// Press `key` (settling between presses) until caret() reads `wantCaret` or the budget runs out;
+// returns where it stopped, so an oscillating or no-op handler fails instead of hanging.
 export async function pressKeyUntil(
   page: Page,
   key: string,
@@ -215,18 +178,13 @@ export async function expectCanonicalSelection(
   expect(await selectionClassName(page)).toBe(className);
 }
 
-// An optional screenshot, for *looking at* a change rather than asserting one. Writes nothing
-// unless `E2E_SHOT_DIR` names a directory, so an ordinary suite run is unaffected and a
-// verification pass can ask for exactly the frames it wants without a spec of its own — which is
-// what keeps a session-specific output path out of the tracked specs.
+// An optional screenshot for looking at a change. Writes only when `E2E_SHOT_DIR` is set, which
+// keeps session-specific paths out of the specs.
 export async function shot(page: Page, name: string): Promise<void> {
   const dir = process.env.E2E_SHOT_DIR;
   if (!dir) return;
-  // A frame worth looking at is a settled one: a third-party iframe photographed the instant an
-  // assertion passes is a black box, which says nothing about whether it works. Bounded and
-  // swallowed, because a page carrying an embedded player may never go quiet — and because this
-  // wait must never be able to fail a spec that is otherwise green. Nothing here runs unless the
-  // screenshots were asked for.
+  // A settled frame (an iframe shot too early is a black box). Bounded and swallowed: an embedded
+  // player may never go quiet, and this must never fail a green spec.
   await page.waitForLoadState('networkidle', { timeout: 5_000 }).catch(() => {});
   await page.screenshot({ path: `${dir}/${name}.png` });
 }
