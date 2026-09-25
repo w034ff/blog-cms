@@ -286,7 +286,7 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 
 `thumbnail` 列（`lib/db/schema.ts`）より後ろ、テーブル定義の最後に置く。理由は `draftContent`・`thumbnail` と同じ制約——このテーブルは drizzle-kit push が壊れており、ALTER TABLE ADD COLUMN として末尾に足す形以外のスキーマ変更は本番 DB に反映できない（`lib/db/schema.ts` の `draftContent`・`thumbnail` のコメント）。
 
-**実行手順は検証済み**（2026-09-06）。このリポジトリは `drizzle-kit push` を使わず、`scripts/migrate-db.mts:11-16` のコメントに理由がある——`push` は本番DBを直接diffし、SQLiteがその場でALTERできない変更は「テーブル作り直し」(create→copy→drop→rename)にすり替える。`posts` テーブルではユニークインデックスを2回発行して途中で止まる。代わりのワークフローは `lib/db/schema.ts` を編集 → `npx drizzle-kit generate`（`drizzle/NNNN_*.sql` を生成） → 生成されたSQLを目視確認 → `npm run db:backup && npm run db:migrate`。
+**実行手順は検証済み**（2026-09-06）。このリポジトリは `drizzle-kit push` を使わず、`scripts/migrate-db.mts` の冒頭コメントに理由がある——`push` は本番DBを直接diffし、SQLiteがその場でALTERできない変更は「テーブル作り直し」(create→copy→drop→rename)にすり替える。`posts` テーブルではユニークインデックスを2回発行して途中で止まる。代わりのワークフローは `lib/db/schema.ts` を編集 → `npx drizzle-kit generate`（`drizzle/NNNN_*.sql` を生成） → 生成されたSQLを目視確認 → `npm run db:backup && npm run db:migrate`。
 
 末尾への列追加はこの本番DBに対してすでに3回実績がある——`drizzle/0002_thin_starfox.sql`（`thumbnail` 追加）、`0004`・`0005`（`link_previews` への列追加）はいずれも素の `ALTER TABLE ... ADD ... NOT NULL DEFAULT ...` で、適用済み。`unlisted` も同じ形（`ALTER TABLE posts ADD unlisted integer DEFAULT false NOT NULL`）になる見込みで、安全に進められる。
 
