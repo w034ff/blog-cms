@@ -2,24 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { caret, docString } from './editor-probe';
 import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 
-// A cell is `paragraph+` (ParagraphTableCell in components/editor/table-extensions.ts), so pasting
-// any other block into one splits the table in two around it — ProseMirror closes the table before
-// the block and opens a fresh, headerless one after. Measured before the guard existed, pasting a
-// callout into the body cell 「セルの中身」:
-//
-//   before  table(row(th, th), row(td("セルの中身"), td("二つ目")))
-//   after   table(row(th, th), row(td("セル"), td)), callout(…), table(row(td("の中身"), td("二つ目")))
-//
-// tableCellPasteGuard refuses those and raises the editor's refusal notice.
-//
-// The predicate is the *slice*, not the position — which is why the drop guard's position rule was
-// never enough on its own. A caret always sits inside a cell's paragraph, so a position test reports
-// "allowed" for every paste into a cell and would guard nothing. The ordinary-paste tests at the
-// bottom are what hold that line: they are the cases a position-based guard would have broken. The
-// drop path now asks this same slice question (see table-drop-guard.spec.ts) — one rule, two
-// gestures — with one difference stated where it lives (table-cell-rules.ts): a table-carrying
-// *paste* belongs to prosemirror-tables' own handlePaste, and a table-carrying *drop* to nobody, so
-// only the drop refuses it.
+// A cell is `paragraph+` (ParagraphTableCell, table-extensions.ts), so pasting another block into
+// one splits the table around it, the second half headerless. tableCellPasteGuard refuses and
+// raises the notice. **The predicate is the slice, not the position**: a caret is always in a
+// cell's paragraph, so a position test guards nothing, and the ordinary-paste tests below hold that
+// line. The drop path asks the same question (table-drop-guard.spec.ts), except that a table-carrying
+// paste belongs to prosemirror-tables' handlePaste and a dropped one to nobody (table-cell-rules.ts).
 
 const MD = [
   '| 見出しA | 見出しB |',
@@ -46,7 +34,7 @@ const MD = [
   '',
 ].join('\n');
 
-// Worded for both gestures: the drop guard raises the same one for the same slice.
+// Worded for both gestures; the drop guard raises it too.
 const NOTICE = '表のセルにはこの要素を入れられません';
 
 async function openEditor(page: Page): Promise<void> {
@@ -57,9 +45,7 @@ async function openEditor(page: Page): Promise<void> {
   await loadMarkdown(page, MD);
 }
 
-// The middle of the body cell 「セルの中身」 — the position the report describes. Start and end
-// behave identically; the middle is used because it is the one that visibly cuts the cell's text in
-// half when the guard is off, so a regression is unmistakable in the failure output.
+// The middle of 「セルの中身」, as reported: a regression visibly halves the text.
 function bodyCellMiddle(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as Element & {
@@ -84,9 +70,7 @@ async function copyNodeThenPasteIntoCell(page: Page, typeName: string): Promise<
   await page.keyboard.press('Control+v');
 }
 
-// Every block a cell cannot hold. `image` is here alongside the three text-bearing ones precisely
-// because it is what rules out repairing instead of refusing: it has no text to keep, so no
-// unwrap-to-paragraphs rule could cover it.
+// Every block a cell cannot hold. `image` has no text to keep, which rules out repairing instead.
 for (const typeName of ['callout', 'blockquote', 'codeBlock', 'image'] as const) {
   test(`pasting a ${typeName} into a table cell is refused`, async ({ page }) => {
     await openEditor(page);
@@ -95,12 +79,12 @@ for (const typeName of ['callout', 'blockquote', 'codeBlock', 'image'] as const)
 
     await copyNodeThenPasteIntoCell(page, typeName);
 
-    // The table is whole: one table, two rows, four cells, and the cell's own text uncut.
+    // Whole: one table, two rows, four cells, text uncut.
     await expect(editor.locator('table')).toHaveCount(1);
     await expect(editor.locator('tr')).toHaveCount(2);
     await expect(editor.locator('th,td')).toHaveCount(4);
     expect(await docString(page)).toBe(before);
-    // A refused paste changes nothing, so the notice is the only feedback there is.
+    // A refusal changes nothing, so the notice is the only feedback.
     await expect(page.getByRole('status')).toHaveText(NOTICE);
   });
 }
@@ -110,8 +94,7 @@ test('a bullet list is refused too, though it has no drag handle', async ({ page
   const editor = page.locator('.ProseMirror');
   const before = await docString(page);
 
-  // The rule is "any block a cell can't hold", not "the blocks with a floating handle" — a list
-  // has no handle (DRAGGABLE_TYPES in block-drag-handle.ts) and split the table just the same.
+  // Any block a cell cannot hold, not only those with a drag handle: a list split it too.
   await copyNodeThenPasteIntoCell(page, 'bulletList');
 
   await expect(editor.locator('table')).toHaveCount(1);
@@ -119,8 +102,7 @@ test('a bullet list is refused too, though it has no drag handle', async ({ page
   await expect(page.getByRole('status')).toHaveText(NOTICE);
 });
 
-// The other half of the rule, and the one that would break if the guard keyed off position: an
-// ordinary paste into a cell must still land.
+// Ordinary pastes into a cell still land: a position-keyed guard would break these.
 async function copyRangeThenPasteIntoCell(
   page: Page,
   pick: (paragraphs: { from: number; to: number }[]) => { from: number; to: number },
@@ -167,35 +149,17 @@ test('pasting a whole paragraph into a cell still works', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveCount(0);
 });
 
-// Wait for a *click* to land in the editor's state, for the one test below that moves the caret by
-// clicking rather than by setRange — which is what made it flaky (issue #6). A click moves the
-// browser's DOM selection; ProseMirror reads that back through DOMObserver's 20ms selectionchange
-// debounce, so for a moment `state.selection` is still whatever it was before. A Ctrl+V landing in
-// that window is not dropped: with the pre-click CellSelection still current, prosemirror-tables'
-// handlePaste takes its `sel instanceof CellSelection` branch and writes the copied cells back over
-// themselves, leaving the document byte-identical and the intended target cells untouched — which
-// reads as "the paste didn't happen". Measured: 2 of 6 runs of the unpolled gesture failed (the
-// report's own count was 3 in 12), every one of them with `CellSelection from=21 to=25` at paste
-// time, and with text/html present on the clipboard in all 12 runs of that session — so it was
-// never the clipboard-readiness race the report first guessed at.
-//
-// Poll the *state* caret, not the DOM one: that waits for the readback itself rather than for the
-// DOM event that triggers it, so no trailing sleep is needed — unlike caretAtLineStart in
-// e2e/editor-callout-boundary.spec.ts, which polls window.getSelection() and must then let
-// ProseMirror catch up. caret() names the cell as well as the selection kind, so a caret settled in
-// the *wrong* cell doesn't satisfy it. Measured convergence: 6–112ms — that outlier is why a flat
-// wait past the 20ms debounce would not have been enough either.
+// Wait for a click to reach state (the 20ms sync). A Ctrl+V sooner met the old CellSelection, and
+// prosemirror-tables' handlePaste (`sel instanceof CellSelection`) wrote the copied cells over
+// themselves: an unchanged document that read as a lost paste. The state caret, which names the
+// cell, converged in 6-112ms, so no flat wait would do.
 function caretInBodyCell(page: Page, text: string): Promise<void> {
   return expect.poll(() => caret(page)).toMatch(new RegExp(`^${text}@`));
 }
 
-// Table content is exempt from this guard, and both halves of that need pinning.
-//
-// The half that must keep working: prosemirror-tables' own handlePaste owns cell-to-cell paste,
-// which rewrites the target cells in place and stays a clean pipe table. A guard that refused every
-// non-paragraph block would have caught this too, because a CellSelection copies as a `table` slice.
-//
-// The click here stays deliberately — it is the file's only pointer-then-paste-in-a-table coverage.
+// Table content is exempt: prosemirror-tables' handlePaste owns cell-to-cell paste, and a
+// CellSelection copies as a `table` slice, which a blanket block refusal would catch. The click is
+// this file's only pointer-then-paste coverage.
 test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -207,7 +171,7 @@ test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   const c2 = await editor.getByText('c2').boundingBox();
   const d1 = await editor.getByText('d1').boundingBox();
   if (!c1 || !c2 || !d1) throw new Error('missing boxes');
-  // Drag across two body cells — a CellSelection, not a TextSelection.
+  // Two body cells: a CellSelection.
   await page.mouse.move(c1.x + 5, c1.y + c1.height / 2);
   await page.mouse.down();
   await page.mouse.move(c2.x + 5, c2.y + c2.height / 2, { steps: 8 });
@@ -225,12 +189,8 @@ test('cell-to-cell copy/paste inside a table still works', async ({ page }) => {
   );
 });
 
-// The two pastes this guard deliberately does not refuse. Both keep the table whole — no split —
-// and both used to cost it its GFM pipe form on save, which is a milder and separate defect; they
-// are repaired after the fact instead, by tablePasteRepair. Here that means only "no notice, and the
-// table is still one table": what the repair makes of them, and every case it must not touch, is
-// e2e/table-pipe-form.spec.ts. Pinned in both places because they are two rules, not one — the
-// exemption is what lets the repair be the thing that answers them.
+// Not refused: these keep the table whole, and tablePasteRepair restores the pipe form after
+// (table-pipe-form.spec.ts). Two rules, so pinned in both files.
 test('a whole table pasted into a cell is not refused by this guard', async ({ page }) => {
   await openEditor(page);
   const editor = page.locator('.ProseMirror');
@@ -239,8 +199,7 @@ test('a whole table pasted into a cell is not refused by this guard', async ({ p
 
   await expect(editor.locator('table')).toHaveCount(1);
   await expect(page.getByRole('status')).toHaveCount(0);
-  // The copied header row landed in the body and was demoted there, so the table keeps exactly one
-  // header row — the shape isPipeTable accepts.
+  // The copied header row is demoted: one header row, as isPipeTable accepts.
   expect(await docString(page)).toContain(
     'tableRow(tableHeader(paragraph("見出しA")), tableHeader(paragraph("見出しB"))), ' +
       'tableRow(tableCell(paragraph("見出しA")), tableCell(paragraph("見出しB")))',
@@ -258,7 +217,7 @@ test('a two-paragraph paste is not refused by this guard', async ({ page }) => {
 
   await expect(editor.locator('table')).toHaveCount(1);
   await expect(page.getByRole('status')).toHaveCount(0);
-  // One paragraph, the two joined by the hard break Shift+Enter would have made by hand.
+  // Joined by the hard break Shift+Enter would make.
   expect(await docString(page)).toContain(
     'tableCell(paragraph("セル一つ目の段落です", hardBreak, "二つ目の段落ですの中身"))',
   );

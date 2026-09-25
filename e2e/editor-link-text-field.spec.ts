@@ -2,14 +2,9 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString, historyState, markdown, settle } from './editor-probe';
 import { closeHistory, loadMarkdown, setRange } from './editor-authoring';
 
-// The link card's テキスト field (components/editor/LinkBubble.tsx, docs/link-requirements.md
-// §5.5.13): rewriting what a link *says*, from the card, without touching the body.
-//
-// The body was always able to do it — the link text is marked text, not an atom — but that is not
-// the route an author takes to a link they are already editing from the card. What the field buys
-// is that route; what it must not do is flatten a link whose text has structure inside it. A mark
-// that holds over the whole range is carried through the replacement instead, so the absence is
-// narrower than it was: it is for text whose marks change partway, and for text that is not text.
+// The link card's テキスト field (LinkBubble.tsx, docs/link-requirements.md §5.5.13): rewriting what
+// a link says from the card. It must not flatten structured text: a mark held over the whole range
+// is carried; text whose marks change partway, or non-text, gets no field.
 
 const MD = '前[リンク](https://example.com "タイトル")後\n';
 const IN_LINK = 3;
@@ -46,7 +41,7 @@ async function openEditor(page: Page, md: string): Promise<void> {
   await loadMarkdown(page, md);
 }
 
-// Into the card's edit mode over the link at `pos`, the way an author gets there.
+// Into edit mode over the link at `pos`.
 async function openEdit(page: Page, pos: number): Promise<void> {
   await setRange(page, pos);
   await expect(card(page)).toBeVisible();
@@ -59,9 +54,8 @@ test('the field opens carrying the link text', async ({ page }) => {
   await openEdit(page, IN_LINK);
   await expect(textField(page)).toHaveValue('リンク');
   await expect(hrefField(page)).toHaveValue('https://example.com');
-  // Each field says which one it is, in text the author can see (§5.5.13). Every selector in this
-  // file resolves a field by that name, so without this assertion the labels could be taken away
-  // and the whole file would fail as "the card never opened" instead.
+  // Visible labels (§5.5.13); every selector here uses them, so without this a lost label reads as
+  // "the card never opened".
   await expect(textField(page)).toHaveAccessibleName('テキスト');
   await expect(hrefField(page)).toHaveAccessibleName('リンク先');
 });
@@ -69,9 +63,7 @@ test('the field opens carrying the link text', async ({ page }) => {
 test('a new text is written into the document, and the href and title survive', async ({
   page,
 }) => {
-  // The title is the part that would go silently: it is on the mark, not in the text, and a
-  // replacement that rebuilt the mark from the href alone would drop it — a silent edit of a
-  // published post (§5.3-3).
+  // The title is on the mark, and rebuilding the mark from the href would drop it (§5.3-3).
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await textField(page).fill('新しいリンク');
@@ -82,9 +74,7 @@ test('a new text is written into the document, and the href and title survive', 
 });
 
 test('the text and the href change together, in one undo', async ({ page }) => {
-  // One chain, so one transaction. Asserted on the history depth rather than by pressing Ctrl+Z
-  // and looking: a save that cost two events would still *look* right after one undo if the second
-  // event were the one that mattered.
+  // One transaction, by history depth: an undo can look right while a second event hides.
   await openEditor(page, MD);
   await closeHistory(page);
   const before = await historyState(page);
@@ -98,13 +88,9 @@ test('the text and the href change together, in one undo', async ({ page }) => {
 });
 
 test('the card still describes the link after the text is replaced', async ({ page }) => {
-  // The replacement moves both the selection and the `<a>` the card is anchored to, which is the
-  // shape §5.5.7 records as "the card slides / the tint detaches" — and no assertion about the
-  // document can see it.
-  //
-  // An href nothing can answer for, so the card's first line is the URL rather than a fetched page
-  // title (§5.5.10). With `example.com` this test read "Example Domain" on a machine with a network
-  // and the URL on one without.
+  // The replacement moves the selection and the anchoring `<a>`, which §5.5.7 records and no document
+  // assertion sees. An unanswerable href keeps a fetched title from replacing the URL line (§5.5.10);
+  // with `example.com` this read differently with and without a network.
   await openEditor(page, '前[リンク](http://127.0.0.1:1/x "タイトル")後\n');
   await openEdit(page, IN_LINK);
   await textField(page).fill('新しいリンク');
@@ -118,8 +104,7 @@ test('the card still describes the link after the text is replaced', async ({ pa
 });
 
 test('an unchanged text costs nothing', async ({ page }) => {
-  // Leaving the field alone must not rewrite the text node: the comparison against the value the
-  // field opened with is what keeps a plain href edit exactly what it was before this existed.
+  // An untouched field leaves the text node alone.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await hrefField(page).fill('/posts/hello');
@@ -129,8 +114,7 @@ test('an unchanged text costs nothing', async ({ page }) => {
 });
 
 test('an emptied text field is refused, and changes nothing', async ({ page }) => {
-  // Emptying the *URL* already means "remove this link". Giving the adjacent field the same meaning
-  // would make one gesture answer two questions, so this one refuses out loud instead.
+  // An empty URL removes the link, so an empty テキスト refuses aloud instead.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await textField(page).fill('');
@@ -142,9 +126,7 @@ test('an emptied text field is refused, and changes nothing', async ({ page }) =
 });
 
 test('a refused href leaves the text alone', async ({ page }) => {
-  // The reason the whole save is gated *before* it runs: a chain dispatches the commands that did
-  // succeed even when a later one refuses, so a rejected scheme would otherwise have left the text
-  // rewritten and the link still pointing where it always did.
+  // Gated before running: a chain dispatches what succeeded before a refusal.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await textField(page).fill('新しいリンク');
@@ -156,26 +138,20 @@ test('a refused href leaves the text alone', async ({ page }) => {
 });
 
 test('a uniformly bold link keeps its bold through the rewrite', async ({ page }) => {
-  // The reported case (2026-08-18): a link pasted from another site as `[**打率.077**](…)` opened
-  // with no テキスト field at all. The bold never made the replacement unsafe — the replacement was
-  // carrying the link mark alone — so the whole mark set travels with the new text now.
+  // The reported case: a bold link (`[**打率.077**](…)`) got no field. The whole mark set travels.
   await openEditor(page, '前[**リンク**](https://example.com "タイトル")後\n');
   await openEdit(page, IN_LINK);
   await expect(textField(page)).toHaveValue('リンク');
   await textField(page).fill('新しいリンク');
   await page.keyboard.press('Enter');
   await settle(page);
-  // The markdown is what says the bold is still there and still inside the link: a replacement that
-  // dropped it would round-trip as `[新しいリンク](…)` and read as a success everywhere else.
+  // The markdown shows the bold kept inside the link.
   expect(await markdown(page)).toBe('前[**新しいリンク**](https://example.com "タイトル")後');
 });
 
 test('a uniformly 強調 link keeps its mark through the rewrite', async ({ page }) => {
-  // 強調 nests inside a link — `accentEmphasis.excludes` omits `link` (§7.1) — so this is reachable
-  // rather than hypothetical, and it is the mark with no markdown syntax of its own: it round-trips
-  // as raw inline HTML (accent-emphasis-extension.ts), so the fixture is written the way the
-  // serializer writes it. Worth its own case because that is a different path back into the
-  // document than bold's `**`.
+  // 強調 nests in a link (§7.1) and round-trips as raw inline HTML (accent-emphasis-extension.ts): a
+  // different path than `**`.
   await openEditor(
     page,
     '前[<span class="accent-emphasis">強調リンク</span>](https://example.com)後\n',
@@ -191,15 +167,8 @@ test('a uniformly 強調 link keeps its mark through the rewrite', async ({ page
 });
 
 test('a bold link inside a footnote definition is editable too', async ({ page }) => {
-  // The shape the report actually arrived in (2026-08-18): the link was in a `[^fn]:` definition,
-  // and the author's first guess was that the paste, or the footnote, was the cause. Neither was —
-  // but `editableLinkText` walks `nodesBetween` from the doc root, and the footnote section is the
-  // one place in this schema whose parent is not an ordinary block (`block+ footnoteSection?`), so
-  // "the block context cannot matter" is exactly the argument that has been wrong here before.
-  //
-  // Reached by clicking the link rather than by a position, which is also how the report was made:
-  // the definitions live at the end of the document and their positions are the footnote
-  // extension's business, not this file's.
+  // As reported, in a footnote definition: `editableLinkText` walks `nodesBetween` from the root,
+  // and the section's parent is not an ordinary block. Reached by clicking, as reported.
   await openEditor(
     page,
     '本文[^fn-a]\n\n[^fn-a]: 注[**打率.077**](https://example.com "グロ")後\n',
@@ -215,15 +184,12 @@ test('a bold link inside a footnote definition is editable too', async ({ page }
 });
 
 test("the field is absent when the text's marks change partway", async ({ page }) => {
-  // Half the link 強調, half not. This is the case the replacement genuinely cannot carry — one
-  // text node has one mark set — so the card does not offer the field rather than flattening the
-  // link into whichever set came first.
+  // Half 強調: one text node has one mark set, so no field rather than flattening.
   await openEditor(
     page,
     '前[<span class="accent-emphasis">強調</span>リンク](https://example.com)後\n',
   );
-  // Asserted, because a fixture that quietly failed to carry the mark would leave this test
-  // passing for the opposite reason.
+  // Asserted, or a fixture that lost the mark would pass for the opposite reason.
   expect(await docString(page)).toBe(
     'doc(paragraph("前", link(accentEmphasis("強調")), link("リンク"), "後"))',
   );
@@ -233,8 +199,7 @@ test("the field is absent when the text's marks change partway", async ({ page }
 });
 
 test('the field is absent while a link is being made', async ({ page }) => {
-  // `Mod-k` requires a non-empty selection, so the text already exists and the author has just
-  // chosen it: a field there would only offer to replace what they picked.
+  // `Mod-k` needs a selection: the author just picked the text, so no field.
   await openEditor(page, '前リンク後\n');
   await setRange(page, 2, 5);
   await page.locator('.ProseMirror').press('Control+k');
@@ -243,8 +208,7 @@ test('the field is absent while a link is being made', async ({ page }) => {
 });
 
 test('the href edit still works from a link right edge', async ({ page }) => {
-  // The card reaches the right edge through `linkAtCaret` now (§5.5.12), and the save has to reach
-  // it too — `extendMarkRange` is what carries the href there when the text is untouched.
+  // At the right edge via `linkAtCaret` (§5.5.12); `extendMarkRange` carries the href there.
   await openEditor(page, MD);
   await openEdit(page, 5);
   await expect(textField(page)).toHaveValue('リンク');
