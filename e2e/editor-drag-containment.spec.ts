@@ -9,32 +9,16 @@ import {
   selectAcrossCodeEdge,
 } from './native-drag';
 
-// Content dragged out of the editor may not be dropped on the form fields beside it
-// (useDragContainment in components/editor/useDragContainment.ts).
-//
-// Those fields are outside `view.dom`, so ProseMirror's drop path never runs for them and Chrome
-// performs its own move — deleting the dragged range out of the contenteditable behind
-// ProseMirror's back. Measured on the タイトル field before the guard existed:
+// Editor content may not be dropped on the form fields beside it (useDragContainment.ts). Outside
+// `view.dom` ProseMirror's drop never runs and Chrome's own move deletes the range behind its back:
 //
 //   before  doc(paragraph("前の段落です"), codeBlock("const x = 1;\n"), paragraph("後の段落です"))
 //   after   doc(paragraph("前の段落です"), codeBlock("c"), paragraph)
 //   title   "onst x = 1;  後の段"
 //
-// The body is destroyed and the fragment lands in the field with its newlines flattened.
-//
-// **Only タイトル is exercised here now — カテゴリ・タグ・説明 dropped 2026-09-21, when 記事の設定
-// became a modal drawer (PostSettingsPanel.tsx, docs/editor-requirements.md §12.22).** A drag is one
-// continuous mouse gesture (select in the body → mousedown in the body → move → drop on the field),
-// and those three fields are mounted `hidden` unless the panel is open, at which point its backdrop
-// blocks the body outright — there is no moment where the body is a legal drag source and the field
-// is a legal drop target at once. Confirmed technically unreachable, not merely hard to script, and
-// the same is true of a real drag: an author can no longer produce this failure on these three
-// fields either. タイトル is untouched by this — it was never inside the panel — and still needs
-// the guard exactly as before. `useDragContainment` itself is left covering all four regardless:
-// defense in depth for a future non-modal reversion or another reachable path, even though only one
-// of the four can be driven end-to-end from here. Same machinery as the other drop guards; see
-// e2e/native-drag.ts, which also owns the fixture and the selection this file and
-// codeblock-header-drop-guard.spec.ts both start from.
+// Only タイトル is exercised: the other fields are in the modal 記事の設定 drawer (§12.22), whose
+// backdrop blocks the body, so no drag can reach them. The guard still covers all four.
+// Machinery and fixture: e2e/native-drag.ts.
 
 const FIELDS = ['タイトル'] as const;
 
@@ -60,8 +44,7 @@ for (const label of FIELDS) {
     if (!box) throw new Error('missing box');
     await cdpNativeDrag(page, from, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
 
-    // The document is the assertion that matters: the browser's move destroys the dragged range
-    // whether or not anything lands in the field.
+    // The document matters: the browser's move destroys the range whatever lands in the field.
     expect(await docString(page)).toBe(CODE_EDGE_DOC);
     await expect(field).toHaveValue(before);
   });
@@ -74,26 +57,20 @@ test('the fields still take typed input after a refused drop', async ({ page }) 
   if (!box) throw new Error('missing box');
   await cdpNativeDrag(page, from, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
 
-  // The refusal is scoped to the drag, not to the control. Without this, disabling the fields
-  // outright would look like a pass.
+  // Scoped to the drag: disabling the fields would also pass.
   await page.getByLabel('タイトル').fill('E2E ドラッグ封じ');
   await expect(page.getByLabel('タイトル')).toHaveValue('E2E ドラッグ封じ');
   expect(await docString(page)).toBe(CODE_EDGE_DOC);
 });
 
-// The reported symptom, and the one the document assertions above do not catch: after the drag the
-// editor had no caret. Two things caused that together, and both are the browser's doing once its
-// default action runs — the source text was deleted out of the contenteditable, and focus moved to
-// the field the drop landed on. Measured before the guard existed, dragging the whole of a
-// callout's text onto タイトル:
+// The reported symptom: no caret after the drag. The browser deleted the source text and moved
+// focus to the field:
 //
 //   doc     callout(paragraph("囲みの中身です")) → callout(paragraph)
 //   title   "囲みの中身です"
 //   editor  hasFocus false, activeElement <input name=title>, selection collapsed at 10
 //
-// So the caret was not merely invisible: the text it should have sat in was gone and the editor no
-// longer held focus. Asserting the selection *and* the focus, because the document check alone
-// passes on a document that is intact but unfocused.
+// Selection and focus are asserted: an intact but unfocused document passes the document check.
 const CALLOUT_MD = '前の段落です\n\n> [!NOTE]\n>\n> 囲みの中身です\n\n後の段落です\n';
 const CALLOUT_DOC =
   'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))';
@@ -108,8 +85,7 @@ test("dragging a callout's whole text to a field leaves the editor focused and t
   await loadMarkdown(page, CALLOUT_MD);
   expect(await docString(page)).toBe(CALLOUT_DOC);
 
-  // `.last()` — the callout renders a contenteditable=false title paragraph ("情報") ahead of its
-  // body, so the first <p> is chrome rather than the text being dragged.
+  // `.last()`: the first <p> is the callout's title chip.
   const inner = await editor.locator('.markdown-alert p').last().boundingBox();
   const title = await page.getByLabel('タイトル').boundingBox();
   if (!inner || !title) throw new Error('missing boxes');
@@ -128,8 +104,7 @@ test("dragging a callout's whole text to a field leaves the editor focused and t
 
   expect(await docString(page)).toBe(CALLOUT_DOC);
   await expect(page.getByLabel('タイトル')).toHaveValue('');
-  // The refused gesture leaves everything as it was: the editor keeps focus and the dragged range
-  // stays selected, so the callout still shows where the text is.
+  // Focus and selection are kept.
   expect(
     await page.evaluate(() => {
       const el = document.querySelector('.ProseMirror') as Element & {
@@ -149,9 +124,7 @@ test("dragging a callout's whole text to a field leaves the editor focused and t
   ).toEqual({ hasFocus: true, from: 10, to: 17, domText: '囲みの中身です' });
 });
 
-// The guard must not touch the drag it doesn't own. A selection dragged *within* the editor is
-// ProseMirror's own business and still moves; useImageUpload's file drop is a different gesture
-// entirely (view.dragging is null for it) and is covered by e2e/image-upload.spec.ts.
+// Drags within the editor still move; file drops (view.dragging null) are image-upload.spec.ts's.
 test('a drag that stays inside the editor still moves the text', async ({ page }) => {
   await openEditor(page);
   const editor = page.locator('.ProseMirror');
