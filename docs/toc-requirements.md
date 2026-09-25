@@ -97,7 +97,7 @@ sanitize のスキーマ（GitHub の `defaultSchema`）は DOM クロバリン�
 ## 5. 表示条件 — 見出し 3 つ以上
 
 ```ts
-const MIN_HEADINGS_FOR_TOC = 3; // app/posts/[slug]/page.tsx
+const MIN_HEADINGS_FOR_TOC = 3; // components/PostArticle.tsx
 ```
 
 `toc.length >= 3` のときだけ目次を出す。1〜2 個の記事では、飛ぶ先が少なすぎて目次が案内ではなく余分な部品になる。
@@ -127,7 +127,7 @@ const MIN_HEADINGS_FOR_TOC = 3; // app/posts/[slug]/page.tsx
 
 **目次を出す記事でも、本文の左端が他のページ・SiteHeader と 1px もずれないこと。** これが唯一かつ最大の制約である。目次のためのレールは本文の右側の余りだけを食ってよい。
 
-採用した形（`app/posts/[slug]/page.tsx`）:
+採用した形（`components/PostArticle.tsx`）:
 
 ```
 grid-cols-[calc((100% - var(--container-site))/2)  var(--container-site)  1fr]

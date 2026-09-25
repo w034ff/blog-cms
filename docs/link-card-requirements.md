@@ -541,7 +541,7 @@ renderMdxToHtml(source, { resolveCard });
 
 ### 14.1 決定① — 取得は著者の操作で走る。読者のリクエストでは走らない
 
-**これがこの節の背骨で、他の 5 つはここから落ちてくる。** 公開ページは `export const dynamic = 'force-dynamic'`（`app/posts/[slug]/page.tsx`）なので、`renderMdxToHtml` は読者のリクエストごとに走る。そこに外部ページの取得を置くと、第三者の応答時間がそのまま TTFB に乗る。実測（2026-08-18、Node の `fetch` から 10 件、いずれも初回）:
+**これがこの節の背骨で、他の 5 つはここから落ちてくる。** 公開ページは `export const dynamic = 'force-dynamic'`（`app/(site)/posts/[slug]/page.tsx`）なので、`renderMdxToHtml` は読者のリクエストごとに走る。そこに外部ページの取得を置くと、第三者の応答時間がそのまま TTFB に乗る。実測（2026-08-18、Node の `fetch` から 10 件、いずれも初回）:
 
 | 取得先                                   | 状態 | 時間   |
 | ---------------------------------------- | ---- | ------ |
