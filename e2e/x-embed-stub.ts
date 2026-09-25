@@ -22,7 +22,7 @@ export const X_TALL_HEIGHT = 999;
 // X's own pace: `resize` lands ~600ms after the iframe shows (EMBED_SILENCE_MS's note in
 // lib/embed-message.ts). Not faster: `EmbedFrames` attaches its listener 200-320ms after load under
 // suite load, and X's `resize` is fire-and-forget, so a faster reply invents a miss X never makes.
-const REPLY_MS = 600;
+export const REPLY_MS = 600;
 
 const url = (id: string) => `https://x.com/ClaudeDevs/status/${id}`;
 export const X_RESIZE_URL = url(X_RESIZE_ID);

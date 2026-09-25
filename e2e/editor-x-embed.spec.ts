@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, moveBlockAbove } from './editor-authoring';
 import { markdown, shot } from './editor-probe';
 import {
+  REPLY_MS,
   stubX,
   X_HEIGHT,
   X_MISSING_URL,
@@ -177,8 +178,9 @@ test('dragging the block leaves its height alone (§10.10)', async ({ page }) =>
   await expect(preview.locator('.embed-drag-token-detail')).toHaveCount(0);
   await expect(preview.locator('.embed-drag-token svg')).toHaveCount(1);
 
-  // Long enough for a clone's reply (the stub answers ~600ms after load).
-  await page.waitForTimeout(800);
+  // Past the stub's reply time by a margin, derived from it so the two cannot drift apart: a clone
+  // would have answered by now.
+  await page.waitForTimeout(REPLY_MS + 1000);
   expect(Math.round((await frame.boundingBox())!.height)).toBe(X_HEIGHT);
   await shot(page, '08-dragging-keeps-height');
 
