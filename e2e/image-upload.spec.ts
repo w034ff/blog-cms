@@ -2,17 +2,13 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { expectAutosaved, loadMarkdown, selectAcross, selectInside } from './editor-authoring';
 
-// A minimal valid 1×1 PNG. Uploads are content-addressed (sha256), so re-runs
-// dedup to a single file in data/uploads and the GC sweep reclaims it.
+// A 1×1 PNG; content-addressed uploads dedupe across runs.
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const PNG_1x1 = Buffer.from(PNG_1x1_BASE64, 'base64');
 
-// Paste a PNG into the editor, the way a screenshot from the clipboard arrives. The toolbar picker
-// is only one of three entry points and the only one with an affordance to grey out; paste and drop
-// go straight to uploadImages, which is where the refusals actually live. A dispatched
-// ClipboardEvent carrying a real File hits PostEditor's handlePaste exactly as the browser's own
-// would.
+// A screenshot paste. Paste and drop go straight to uploadImages, where the refusals live; a real
+// File in a ClipboardEvent reaches PostEditor's handlePaste as the browser's would.
 async function pasteImage(page: Page): Promise<void> {
   await page.evaluate((base64) => {
     const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -26,11 +22,8 @@ async function pasteImage(page: Page): Promise<void> {
   }, PNG_1x1_BASE64);
 }
 
-// Drop a PNG onto a specific element, the way a file dragged from the desktop lands. The
-// coordinates are the point of the whole thing — useImageUpload reads them with posAtCoords to
-// decide where the image goes — so this aims at a real element's centre rather than the origin.
-// The listener is on window (PostEditor intercepts the drag there to stop the browser navigating
-// to the image), which is what the browser's own drop would reach.
+// A desktop file drop at a real element's centre: useImageUpload places by posAtCoords. On window,
+// where PostEditor intercepts drags.
 async function dropImageAt(page: Page, target: Locator): Promise<void> {
   const box = await target.boundingBox();
   if (!box) throw new Error('drop target has no box');
@@ -53,15 +46,13 @@ async function dropImageAt(page: Page, target: Locator): Promise<void> {
   );
 }
 
-// Exercises the image pipeline end-to-end: file → /api/uploads → an inserted
-// image node carrying the returned /uploads/ URL.
+// file → /api/uploads → an image node with the returned URL.
 test('toolbar image upload inserts an uploaded image', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
 
-  // The 画像 toolbar control wraps a hidden <input type=file>; setInputFiles works
-  // on hidden inputs and triggers the same upload path as the picker.
+  // setInputFiles works on the hidden input, the picker's own path.
   await page.getByTestId('image-picker').setInputFiles({
     name: 'e2e-pixel.png',
     mimeType: 'image/png',
@@ -73,11 +64,8 @@ test('toolbar image upload inserts an uploaded image', async ({ page }) => {
   await expect(img).toHaveAttribute('src', /^\/uploads\/[0-9a-f]+\.png$/);
 });
 
-// An image can't live in a table cell: cells are paragraph-only (table-extensions.ts) and the
-// image node is a block, so inserting there splits the table in two around it — and the
-// headerless half that falls out can't be written as a GFM pipe table, so the saved markdown
-// degrades to a raw <table> blob. useImageUpload refuses before it uploads anything, and the
-// picker is greyed out to match. Browser-only: the guard reads the live selection.
+// Cells are paragraph-only, so an image splits the table and the headerless half saves as raw HTML.
+// useImageUpload refuses before uploading; the picker greys out to match.
 test('the image picker is disabled inside a table cell', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -91,8 +79,7 @@ test('the image picker is disabled inside a table cell', async ({ page }) => {
   await editor.locator('td').first().click();
   await expect(picker).toBeDisabled();
 
-  // Outside the table it uploads and inserts as before — and the table is still one table,
-  // written as a pipe table rather than the raw <table> a split would produce.
+  // Outside, it inserts, and the table stays one pipe table.
   await editor.click({ position: { x: 200, y: 400 } });
   await expect(picker).toBeEnabled();
   await picker.setInputFiles({ name: 'e2e-pixel.png', mimeType: 'image/png', buffer: PNG_1x1 });
@@ -103,9 +90,7 @@ test('the image picker is disabled inside a table cell', async ({ page }) => {
   expect(await page.locator('input[name="body"]').inputValue()).not.toContain('<table');
 });
 
-// Same refusal inside a code block, for the same reason with a different corruption: the block
-// splits at the caret, so the code breaks mid-token and the second fence loses its own line —
-// the backticks and the code after them then render as body text on the published page.
+// In a code block the insert splits the code mid-token and breaks the second fence.
 test('the image picker is disabled inside a code block', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -117,17 +102,14 @@ test('the image picker is disabled inside a code block', async ({ page }) => {
   await expect(editor.locator('.code-block')).toBeVisible();
 
   await expect(page.getByTestId('image-picker')).toBeDisabled();
-  // The code block is untouched: one block, still holding the whole line.
+  // The code block is untouched.
   await expect(editor.locator('.code-block')).toHaveCount(1);
   expect(await page.locator('input[name="body"]').inputValue()).toContain('const a = 1;');
 });
 
-// The image node is a block, but tiptap-markdown registers prosemirror-markdown's *inline*
-// image serializer for it, which writes `![alt](src)` without closing the block — so whatever
-// came next was emitted onto the image's own line. `![alt](src)> 引用です` then reached the
-// public pipeline as one paragraph: the image rendered, the `>` and its first line showed up as
-// literal body text, and the blockquote lost that line. image-extension.ts adds the closeBlock.
-// Browser-only: only the live editor produces this markdown.
+// tiptap-markdown uses prosemirror-markdown's inline image serializer, which does not close the block,
+// so the next block landed on the image's line (`![alt](src)> 引用です`). image-extension.ts adds
+// the closeBlock.
 test('a block right after an image is not glued onto the image line', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -143,19 +125,17 @@ test('a block right after an image is not glued onto the image line', async ({ p
   });
   await expect(editor.locator('img')).toBeVisible({ timeout: 20_000 });
 
-  // ArrowDown leaves the (block) image; the `> ` rule then opens a real quote below it.
+  // ArrowDown leaves the image; `> ` opens a quote below.
   await page.keyboard.press('ArrowDown');
   await page.keyboard.type('> 引用です');
   await expect(editor.locator('blockquote')).toContainText('引用です');
 
-  // The image's markdown ends its own block: a blank line separates it from the quote, so the
-  // `>` starts a line rather than trailing the image.
+  // A blank line separates the image and the quote.
   const md = await page.locator('input[name="body"]').inputValue();
-  // The alt stays empty: an uploaded image gets none, since the file name is not one
-  // (useImageUpload.ts). What this line is about is the blank line after the image.
+  // Empty alt: a file name is not one (useImageUpload.ts). The blank line is the point.
   expect(md).toMatch(/!\[\]\(\/uploads\/[0-9a-f]+\.png\)\n\n> 引用です/);
 
-  // And it survives the round-trip through storage as an image plus a quote, not one paragraph.
+  // It survives storage as an image plus a quote.
   await page.getByLabel('タイトル').fill('画像の次のブロック');
   await expectAutosaved(page);
   await page.reload();
@@ -165,12 +145,8 @@ test('a block right after an image is not glued onto the image line', async ({ p
   await expect(editor.locator('blockquote img')).toHaveCount(0);
 });
 
-// The two refusals above were written as `editor.isActive('table' | 'codeBlock')`, which only holds
-// for a caret. A selection reaching from the paragraph above into either host reported false, and
-// setImage then *replaced* the range rather than splitting it: the table disappeared entirely, and
-// the code block came out empty — its markdown an empty fence. The guard scans the selected range
-// instead (components/editor/selection-scan.ts), and the picker reads the same call so the two
-// agree. Browser-only: the guard reads the live selection.
+// `editor.isActive(...)` holds only for a caret, so a range into a table or code block passed, and
+// setImage replaced it. The guard scans the range (selection-scan.ts); the picker reads the same.
 for (const { label, markdown, typeName, expected } of [
   {
     label: 'a table',
@@ -199,17 +175,14 @@ for (const { label, markdown, typeName, expected } of [
     const picker = page.getByTestId('image-picker');
     await expect(picker).toBeDisabled();
 
-    // The picker being greyed out only covers the toolbar; paste reaches uploadImages directly,
-    // which is where the refusal actually lives. Dispatch a real paste carrying a PNG.
+    // Paste reaches uploadImages directly, where the refusal lives.
     await pasteImage(page);
     await expect(editor.locator('img')).toHaveCount(0);
     expect(await docString(page)).toBe(expected);
   });
 }
 
-// Positive control for the two refusals above: the same dispatched paste *does* insert when the
-// selection is somewhere an image can go. Without this, a paste event the editor silently ignored
-// would make those tests pass for the wrong reason.
+// Control: the same paste inserts where allowed, or an ignored paste would pass the refusals.
 test('pasting an image inserts it when the selection allows it', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -217,34 +190,24 @@ test('pasting an image inserts it when the selection allows it', async ({ page }
   await editor.click();
 
   await loadMarkdown(page, 'text\n\n| a | b |\n| --- | --- |\n| c | d |\n');
-  // Place the caret explicitly rather than with Control+Home: that key is not always handled (it is
-  // an OS/browser-level shortcut and ProseMirror does not own it), and when it failed to move the
-  // caret it stayed where setContent left it — inside the table — so the paste was *correctly*
-  // refused and this test failed for the wrong reason. The refusal notice had already expired by
-  // the time the 20s assertion gave up, which is why the failure looked like "nothing happened".
+  // Explicitly, not Control+Home, which ProseMirror does not own and which sometimes left the caret in
+  // the table, making the paste correctly refused.
   await selectInside(page, 'paragraph');
   await pasteImage(page);
 
   const img = editor.locator('img');
   await expect(img).toBeVisible({ timeout: 20_000 });
   await expect(img).toHaveAttribute('src', /^\/uploads\/[0-9a-f]+\.png$/);
-  // An accepted paste says nothing — the notice is only for a refusal.
+  // An accepted paste says nothing.
   await expect(page.getByRole('status')).toHaveCount(0);
-  // The table is untouched — one table, still a pipe table in the saved markdown.
+  // One table, still a pipe table.
   await expect(editor.locator('table')).toHaveCount(1);
   expect(await page.locator('input[name="body"]').inputValue()).not.toContain('<table');
 });
 
-// The picker greys itself out where an insert can't land, but paste and drag-and-drop have no
-// control to grey — before the toast they simply did nothing, with no way to tell why. The notice
-// hangs off the sticky toolbar so it stays in view over the content (EditorToast), announces itself
-// as role=status, and clears itself after three seconds. It names the host in the way rather than
-// reciting both rules, and says 「には」 not 「の中には」 — the guard fires on a selection *touching* a
-// host, and a range that merely reaches into one leaves the caret outside it.
-//
-// Spelled out here rather than imported from useImageUpload. This is user-visible copy, so the test
-// should pin it independently: importing the constant would let the wording change with every test
-// still green, and noticing that change is the whole point of asserting on it.
+// Paste and drop have no control to grey, so a refusal raises a notice (EditorToast, role=status,
+// three seconds) naming the host in the way. Spelled out, not imported: user-visible copy pinned
+// independently.
 const BLOCKED_IN_TABLE = '表のセルには画像を挿入できません';
 const BLOCKED_IN_CODE_BLOCK = 'コードブロックには画像を挿入できません';
 const BLOCKED_IN_BOTH = '表のセルとコードブロックには画像を挿入できません';
@@ -283,14 +246,12 @@ for (const { label, markdown, typeName, expected } of [
     await expect(toast).toHaveText(expected);
     await expect(editor.locator('img')).toHaveCount(0);
 
-    // Three seconds, so it must be gone well inside this budget — and not before it can be read.
+    // Three seconds: gone well inside this, not before it can be read.
     await expect(toast).toHaveCount(0, { timeout: 8_000 });
   });
 }
 
-// The drop path reaches the same refusal (PostEditor's window-level drop handler calls
-// uploadImages), so it gets the same notice. The window listener is what the browser's own drop
-// would reach, so dispatching there exercises the real handler.
+// The drop path (PostEditor's window handler) gets the same notice.
 test('a drop refused in a code block says why', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -304,9 +265,7 @@ test('a drop refused in a code block says why', async ({ page }) => {
   await expect(editor.locator('img')).toHaveCount(0);
 });
 
-// One selection can touch both hosts — here a range running from the leading paragraph through the
-// table and into the code block. Naming one of them would be half the truth, so that case keeps the
-// message that recites both.
+// A range touching both hosts names both.
 test('a paste refused across both hosts names both', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -326,9 +285,7 @@ test('a paste refused across both hosts names both', async ({ page }) => {
   expect(await docString(page)).toBe(before);
 });
 
-// A dropped image lands where it was dropped. It used to go wherever the caret happened to be when
-// the drag started, so aiming at the second paragraph put the image beside the first — the drop
-// coordinates were read for nothing. useImageUpload now moves the selection to posAtCoords first.
+// A drop lands at the drop point (posAtCoords), not the caret.
 test('a dropped image lands where it was dropped, not at the caret', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -341,11 +298,11 @@ test('a dropped image lands where it was dropped, not at the caret', async ({ pa
     'doc(paragraph("一つ目"), paragraph("二つ目"), paragraph("三つ目"))',
   );
 
-  // Aim at the last paragraph, far from the caret.
+  // Far from the caret.
   await dropImageAt(page, editor.getByText('三つ目'));
   await expect(editor.locator('img')).toBeVisible({ timeout: 20_000 });
 
-  // The image sits by the paragraph it was aimed at, and the first paragraph is untouched.
+  // Beside the aimed paragraph; the first is untouched.
   const doc = await docString(page);
   expect(doc).toContain('paragraph("一つ目"), paragraph("二つ目")');
   expect(doc).toMatch(
@@ -353,8 +310,7 @@ test('a dropped image lands where it was dropped, not at the caret', async ({ pa
   );
 });
 
-// And the refusal now follows the drop point rather than the caret: dropping onto a table is
-// refused even though the caret sits in a perfectly valid paragraph, and the notice names the table.
+// The refusal follows the drop point: a drop on a table is refused with the caret elsewhere.
 test('a drop onto a table is refused even when the caret is elsewhere', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
