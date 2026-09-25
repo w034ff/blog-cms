@@ -581,7 +581,7 @@ _縦位置は一度「バーを覆わずその真上に」（`bottom` に `--edi
 
 **決定**: 背景のフェードイン/アウトとパネルの横スライド(`translateX`)を、開くときも閉じるときも付ける。`hover` では分岐しない——§12.22 自身が言うとおりこのドロワーはポインタ・タッチ両方が開くもので、`prefers-reduced-motion: no-preference` のときだけアニメーションが乗る(それ以外は瞬時に切り替わる、従来どおり)。
 
-**§12.18(＋シート)には閉じる半分が無いが、ここにはある。** ＋シートの退出アニメーションは2026-09-20に一度試して外された(InsertMenu.tsx 自身のコメント)——理由はシートの中身(CalloutMenu/TableGridMenu)が `activeTitle` の変化で次のレンダーには消えてしまい、退出遷移が始まる前に対象が無くなるからである。記事の設定のフィールドは§12.22で確立したとおり常にマウントされたままなので、この理由がそもそも成り立たない。`display` を `transition-behavior: allow-discrete` で遷移対象に含め、`@starting-style` と組にすることで、`display: none` への出入り両方を CSS だけでアニメーションできる——退出中は `display` が最後まで `block` のままなので、背景は退出アニメーションの間も引き続きクリックを受け止める(モーダルとして正しい振る舞いで、意図的)。
+**§12.18(＋シート)には閉じる半分が無いが、ここにはある。** ＋シートの退出アニメーションは2026-09-20に一度試して外された——理由はシートの中身(CalloutMenu/TableGridMenu)が `activeTitle` の変化で次のレンダーには消えてしまい、退出遷移が始まる前に対象が無くなるからである。記事の設定のフィールドは§12.22で確立したとおり常にマウントされたままなので、この理由がそもそも成り立たない。`display` を `transition-behavior: allow-discrete` で遷移対象に含め、`@starting-style` と組にすることで、`display: none` への出入り両方を CSS だけでアニメーションできる——退出中は `display` が最後まで `block` のままなので、背景は退出アニメーションの間も引き続きクリックを受け止める(モーダルとして正しい振る舞いで、意図的)。
 
 **表示・非表示の判定はアニメーションから独立している。** `.post-settings-backdrop`/`.post-settings-drawer` は無条件で `display: none`、`.is-open` が付くと `display: block` になる——ここまではメディアクエリの外にあり、これだけで前節までの瞬時トグルを再現する。`prefers-reduced-motion: no-preference` のブロックは同じセレクタに `transition`・`opacity`・`transform`・`@starting-style` を足すだけで、`display` 自体の判定には触れない。reduced-motion の読者は前者だけを受け取り、瞬時に切り替わる。
 
