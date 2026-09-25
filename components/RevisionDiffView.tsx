@@ -1,11 +1,9 @@
 import type { DiffBlock, RevisionDiff, Segment } from '@/lib/revision-diff';
 
-// The revision preview's 差分 view (docs/revision-requirements.md §9): the markdown as stored, not
-// as rendered — a rendered diff would have to mark up embeds and cards that carry no text to
-// compare. Each changed stretch shows its before and after as two tinted blocks, with a − / + in
-// the gutter so the two read apart without relying on colour — and, for a screen reader, which
-// announces neither the gutter nor `<del>` / `<ins>`, a hidden 削除 / 追加 in its place. Monospace,
-// since this is source: a fence's indentation and a table's pipes only line up in it.
+// The revision preview's 差分 view (docs/revision-requirements.md §9): the stored markdown, since a
+// rendered diff could not mark text-less embeds and cards. Each change shows before and after as
+// tinted blocks with − / + in the gutter, and a hidden 削除 / 追加 for screen readers, which
+// announce neither the gutter nor `<del>` / `<ins>`. Monospace: it is source.
 
 function Segments({ segments }: { segments: Segment[] }) {
   return segments.map((segment, index) =>
@@ -77,10 +75,9 @@ function Block({ block }: { block: DiffBlock }) {
   }
 }
 
-// Runs from what the editor holds now to what the preview's button would leave there, on both
-// kinds of preview: one direction, so red always means "goes away if pressed".
-// The sentence says what the diff is, and the legend what its colours mean — in words that fit
-// both restoring and discarding, so the page is read without remembering which way it runs.
+// From what the editor holds to what the button would leave, one direction on both previews, so red
+// always means "goes away if pressed". The sentence and legend are worded for both restoring and
+// discarding.
 export function RevisionDiffView({
   diff,
   lead,

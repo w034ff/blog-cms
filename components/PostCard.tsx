@@ -9,17 +9,11 @@ type Props = {
   post: Post;
 };
 
-// One row of the post list, shared by the home page, /tags/[tag] and
-// /categories/[category] — a layout change here lands on all three at once.
-//
-// The image is optional and the row is built so that its absence is not a hole:
-// the text column is what carries the layout, and the picture sits beside it at
-// a fixed size. Most of this blog's posts have no image, so a design that
-// reserved space for one would leave the list full of gaps.
+// One post-list row, shared by the home page, /tags/[tag] and /categories/[category]. The text
+// column carries the layout and the picture sits beside it at a fixed size: most of this blog's
+// posts have no image, so reserving space for one would leave the list full of gaps.
 export function PostCard({ post }: Props) {
-  // Not `post.thumbnail`: an author who chose no image still gets the body's
-  // first upload, which is what makes the existing archive show pictures without
-  // anyone re-editing it (lib/thumbnail.ts).
+  // Not `post.thumbnail`: with none chosen, the body's first upload stands in (lib/thumbnail.ts).
   const thumbnail = resolveThumbnail(post);
   // The body's opening, not a field — there is none (lib/excerpt.ts).
   const excerpt = excerptFromBody(post.body);
@@ -42,10 +36,9 @@ export function PostCard({ post }: Props) {
             {categoryLabel(post.category)}
           </Link>
         </div>
-        {/* Clamped by lines, not by EXCERPT_MAX_CHARS: that length is shared with the meta
-            description, og:description and RSS, which want the whole excerpt. Three lines on a
-            phone (about 36 characters beside a thumbnail — two would not hold a first sentence),
-            two from `sm`, the same break where the thumbnail grows (about 78 at full width). */}
+        {/* Clamped by lines, not EXCERPT_MAX_CHARS, which the meta description, og:description
+            and RSS share in full. Three lines on a phone, two from `sm`, where the thumbnail
+            grows. */}
         {excerpt && (
           <p className='mt-3 line-clamp-3 text-zinc-700 sm:line-clamp-2 dark:text-zinc-300'>
             {excerpt}
@@ -66,11 +59,8 @@ export function PostCard({ post }: Props) {
         )}
       </div>
       {thumbnail && (
-        // Hidden from assistive technology and excluded from the tab order: it
-        // links to the same place as the title directly above it, and an empty
-        // alt on a second link to one destination is a duplicate stop that
-        // announces nothing. The picture is decoration on a row whose text is
-        // already complete.
+        // Hidden from assistive tech and the tab order: it duplicates the title's link, and an
+        // empty-alt second link is a stop that announces nothing.
         <Link
           href={`/posts/${post.slug}`}
           tabIndex={-1}

@@ -10,9 +10,8 @@ const CHECK_ICON =
 
 const COPIED_MS = 1600;
 
-// The code text. rehype-pretty-code wraps each line in a `[data-line]` element laid out as a
-// grid row, so `code.textContent` would concatenate the lines with NO newlines — join the
-// per-line text instead. Falls back to textContent if a block has no data-line wrappers.
+// rehype-pretty-code puts each line in a grid-row `[data-line]`, so `textContent` loses the
+// newlines: join per line, falling back to textContent.
 function codeText(figure: Element): string {
   const lines = figure.querySelectorAll('[data-line]');
   if (lines.length > 0) {
@@ -48,9 +47,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-// Enhances the server-rendered post body (`#${targetId}`) by injecting a copy button into each
-// code block. The body itself stays server-rendered (dangerouslySetInnerHTML); this only adds
-// the interactive control after mount. Renders nothing.
+// Injects a copy button into each code block of the server-rendered `#${targetId}` after mount.
 export function CodeCopyButtons({ targetId }: { targetId: string }) {
   useEffect(() => {
     const root = document.getElementById(targetId);
