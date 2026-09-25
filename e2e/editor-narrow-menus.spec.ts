@@ -1,33 +1,19 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// The editor's two floating menus on a phone (docs/link-requirements.md §5.5.19,
-// docs/editor-requirements.md §12).
-//
-// Browser-only, and not merely because the editor is: what broke here is a box wider than the
-// screen, which nothing about the markup or the class list states. Both menus are placed by
-// floating-ui with `shift`, so the failure did not look like a positioning bug either — both were
-// pinned to the left edge, having been shifted as far as they could go, and still ran off the right.
-//
-// Reported 2026-08-21. Measured before the fix: the link card's edit layout 403px and the table
-// toolbar 441px, against 390px and 320px screens.
+// The editor's floating menus on a phone (docs/link-requirements.md §5.5.19,
+// docs/editor-requirements.md §12). What broke was a box wider than the screen, which no markup
+// states; floating-ui's `shift` had pinned both menus to the left edge and they still overflowed.
 const MD = '前[リンク](https://example.com "タイトル")後\n';
 const TABLE_MD = '| A | B | C |\n| --- | --- | --- |\n| x | y | z |\n';
-// Long enough that the card's href line runs into its own truncation, which is where the display
-// card is at its widest (measured 437px with 「カードにする」 present, 407px without).
+// Long enough to truncate the href line, where the display card is widest.
 const LONG_HREF =
   'https://example.com/very/long/path/that/does/not/fit/in/the/card/at/all/index.html';
 
-// Every control's own box, not just its container's: the container fitting says nothing about the
-// button inside it that overflowed, and 適用 — the only press that commits an edit — was exactly
-// that button.
-//
-// **What is measured is the margin, not the overflow.** A menu whose right edge lands exactly on
-// the viewport's satisfies "does not overflow" and still shows as cut off on a phone, because a
-// device has several ways to disagree with `100vw` by a pixel or two — a rounded corner, a
-// safe-area inset, a rounded layout viewport. Measured on an emulated phone before this: left 16px,
-// right 412px of a 412px screen. So the cap and `shift` both leave 8px and the specs hold them to
-// it (§5.5.19).
+// Every control's box, not only the container's: 適用, the one committing press, was the button
+// that overflowed. **The margin is measured, not the overflow**: an edge exactly on the viewport
+// still looks cut off on a device (rounded corners, insets, rounding), so the cap and `shift` leave
+// 8px (§5.5.19).
 const EDGE = 8;
 
 async function margins(page: Page, selector: string): Promise<{ smallest: number; boxes: number }> {
@@ -44,9 +30,8 @@ async function margins(page: Page, selector: string): Promise<{ smallest: number
   }, selector);
 }
 
-// The toolbar's height in buttons: 1 while it is on one line, ~2 once `flex-wrap` has taken over.
-// A ratio rather than a pixel height, so a change in the button's own padding does not read as a
-// wrap (docs/editor-requirements.md §12, §12.1).
+// Height in buttons (1, or ~2 once wrapped): a ratio, so padding changes do not read as a wrap
+// (docs/editor-requirements.md §12, §12.1).
 async function toolbarRows(page: Page): Promise<number> {
   return page
     .locator('.table-toolbar')
@@ -71,7 +56,7 @@ for (const width of [390, 320]) {
     await setRange(page, 3, 3);
     const card = page.getByRole('group', { name: 'リンク' });
     await expect(card).toBeVisible();
-    // The edit layout is the wide one; display mode fitted all along (measured 204px).
+    // The edit layout is the wide one; display mode always fitted.
     await card.getByRole('button', { name: '編集' }).click();
     await expect(card.getByRole('textbox', { name: 'リンク先' })).toBeVisible();
 
@@ -89,28 +74,21 @@ for (const width of [390, 320]) {
 
     const measured = await margins(page, '.table-toolbar');
     expect(measured.smallest).toBeGreaterThanOrEqual(EDGE);
-    // Below `sm` the four row/column buttons carry the short labels (§12.1), which is what decides
-    // whether the toolbar needs a second line at all. Asserted from `innerText`, because the long
-    // label is in the DOM at every width — it is `display: none` that picks between them. The signs
-    // are full-width (`＋`, not `+`), which is the author's choice and costs 16px (§12.1).
+    // Below `sm` the row/column buttons carry short labels (§12.1), read from `innerText` since both
+    // labels are in the DOM and `display` picks. Full-width signs are the author's choice (§12.1).
     await expect(
       page.locator('.table-toolbar').getByRole('button', { name: '行を追加' }),
     ).toHaveText('＋行', { useInnerText: true });
-    // How it fits is now a function of the width, and both halves matter. 390px is one line since
-    // the labels shortened (measured 327px against a cap of 358px); 320px still wraps, and that is
-    // what keeps `flex-wrap` load-bearing rather than vestigial — the cap there is 288px.
+    // 390px fits one line; 320px still wraps, which keeps `flex-wrap` load-bearing.
     const rows = await toolbarRows(page);
     if (width === 320) expect(rows).toBeGreaterThan(1.5);
     else expect(rows).toBeLessThan(1.5);
   });
 }
 
-// Reported 2026-08-21, after the caps above: 「カード化のボタンがないバブルを開いてからカード化のある
-// バブルを開くと右端が画面外に出る」. A link in a heading is not offered 「カードにする」 and a
-// line-alone link is, so moving between the two changes the card's width by one button (~30px)
-// *after* the plugin has placed it. That is the shape a stale placement would take, so the sequence
-// — not either card alone — is what this measures, and it measures the card's children rather than
-// its box: a capped container can still be overflowed by what is inside it.
+// A heading's link gets no 「カードにする」 and a line-alone link does, so moving between them widens
+// the card by a button after the plugin placed it. The sequence is what is measured, on the card's
+// children: a capped container can still be overflowed from inside.
 for (const width of [390, 320]) {
   test(`the card fits after moving from a link that cannot become one (${width}px, 12d)`, async ({
     page,
@@ -122,8 +100,7 @@ for (const width of [390, 320]) {
       `## 見出しの中の[リンク](${LONG_HREF})\n\n[単独行のリンクはカードにできる](${LONG_HREF})\n`,
     );
 
-    // Caret by selection rather than by click: at these widths the first card can cover the line
-    // below it, and a click that lands on the card measures the wrong thing (or times out).
+    // By selection: at these widths the first card can cover the next line.
     const caretInto = (selector: string) =>
       page.evaluate((sel) => {
         const a = document.querySelector(sel) as HTMLElement;
@@ -153,9 +130,7 @@ for (const width of [390, 320]) {
 }
 
 test('a wide screen is left as it was (12c)', async ({ page }) => {
-  // The caps are `max-width`, so nothing about them should reach a desktop card: measured at 402px
-  // and 441px, which is what these two were before §5.5.19 (403px — the 1px is the grid's width
-  // now being declared rather than derived from the field's).
+  // The caps are `max-width`, so a desktop card is unaffected.
   await page.setViewportSize({ width: 1280, height: 800 });
   await openEditor(page);
   await loadMarkdown(page, MD);
@@ -174,27 +149,22 @@ test('a wide screen is left as it was (12c)', async ({ page }) => {
   const toolbar = page.locator('.table-toolbar');
   await expect(toolbar).toBeVisible();
   expect(await toolbarRows(page)).toBeLessThan(1.5);
-  // No ring here: it is `hover: none` that asks for one, and this context has a mouse (§12.2).
+  // No ring: this context has a mouse (§12.2).
   expect(
     await toolbar
       .locator('button')
       .first()
       .evaluate((el) => getComputedStyle(el).boxShadow),
   ).toBe('none');
-  // And the words come back above `sm` — the short labels are for the screen that cannot hold
-  // these, not a simplification of the toolbar (§12.1).
+  // The long labels return above `sm` (§12.1).
   await expect(toolbar.getByRole('button', { name: '行を追加' })).toHaveText('行を追加', {
     useInnerText: true,
   });
 });
 
-// The report that produced the margin (2026-08-21): the overflow was visible **on a phone only**.
-// A narrow desktop window is not the same environment — `isMobile` brings the device's viewport
-// meta handling, a device pixel ratio that is not 1, and touch — and the failure lived in the last
-// 8px, which is exactly the width a rounding or an inset can eat. So one case runs emulated.
-// Listed rather than spread: `defaultBrowserType` and `channel` both force a new worker from inside
-// a describe (Playwright refuses), and the project already runs system Chrome. What is wanted from
-// the descriptor is these five.
+// The overflow showed on a phone only: `isMobile` brings viewport meta handling, a non-1 pixel
+// ratio and touch, and the failure lived in the last 8px, so one case runs emulated. The five
+// fields are listed: `defaultBrowserType` and `channel` force a new worker in a describe.
 const PIXEL_7 = devices['Pixel 7'];
 const PHONE = {
   viewport: PIXEL_7.viewport,
@@ -204,12 +174,8 @@ const PHONE = {
   hasTouch: PIXEL_7.hasTouch,
 };
 
-// **The page-level half of the same claim**: no menu may make the document wider than the screen.
-// Margins are measured per element above, and that leaves a gap — a tooltip, the heading list, or
-// anything else a menu hangs off itself is not in that sample, and any of them widening the page
-// turns the editor into a surface that pans sideways while the author types. `scrollWidth` answers
-// for all of them at once, which is why this is stated as its own criterion rather than folded into
-// the margins (§5.5.19).
+// **The page-level half**: no menu may widen the document. The per-element margins miss tooltips,
+// the heading list and anything else hung off a menu; `scrollWidth` covers them all (§5.5.19).
 async function pageWidth(page: Page): Promise<{ scroll: number; client: number }> {
   return page.evaluate(() => ({
     scroll: document.documentElement.scrollWidth,
@@ -223,12 +189,11 @@ for (const width of [390, 320]) {
     await openEditor(page);
     await loadMarkdown(page, `${MD}\n${TABLE_MD}`);
 
-    // `<=`, not `===`: with a classic scrollbar the document is narrower than the viewport box, and
-    // what is being ruled out is only the other direction.
+    // `<=`: a classic scrollbar makes the document narrower than the viewport box.
     const clean = await pageWidth(page);
     expect(clean.scroll).toBeLessThanOrEqual(clean.client);
 
-    // The card, in both of its shapes, and then with the heading list hanging off it.
+    // The card in both shapes, then with the heading list.
     await setRange(page, 3, 3);
     await expect(page.getByRole('group', { name: 'リンク' })).toBeVisible();
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
@@ -241,7 +206,7 @@ for (const width of [390, 320]) {
     await expect(page.locator('.link-bubble')).toBeVisible();
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(clean.client);
 
-    // And the table's toolbar, the other menu that outgrew the screen.
+    // And the table toolbar.
     await page.keyboard.press('Escape');
     await page.locator('.ProseMirror td').first().click();
     await expect(page.locator('.table-toolbar')).toBeVisible();
@@ -282,18 +247,14 @@ test.describe('on an emulated phone', () => {
   });
 });
 
-// 360px, and emulated, because that pair is what the failure needed (2026-08-21). The offender was
-// an `EditorTooltip`: invisible (`opacity: 0`), laid out anyway, centred under its button and wide
-// enough to hang past the right edge — 366px of document against a 360px screen, with nothing
-// visible out of place. Whether any button lands in that position depends on where the toolbar
-// wraps, which is why 412px, 390px, 375px and 320px are all clean; and the rule that fixes it keys
-// on `hover: none`, so a desktop viewport of the same width does not exercise it.
+// 360px, emulated: an invisible `EditorTooltip` (`opacity: 0`, still laid out) hung past the right
+// edge. Only some widths put a button there, and the fix keys on `hover: none`.
 test.describe('on an emulated phone at 360px', () => {
   test.use({ ...PHONE, viewport: { width: 360, height: 800 } });
 
   test('nothing invisible widens the page (12g)', async ({ page }) => {
     await openEditor(page);
-    // Before anything is opened: the toolbar alone was enough.
+    // Before anything opens: the toolbar alone did it.
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
 
     await loadMarkdown(page, `${MD}\n${TABLE_MD}`);
@@ -316,10 +277,8 @@ test.describe('on an emulated phone at 360px', () => {
   });
 
   test('the table toolbar is one line, and its names are still words (12i)', async ({ page }) => {
-    // The width the short labels were asked for. Measured: 315px of toolbar against a 328px cap —
-    // one line, where the long labels needed 441px and two (§12.1). The margin is thin on purpose:
-    // full-width signs at the buttons' desktop padding come to 343px and wrap here, which is why
-    // the padding below `sm` is 6px and why this case is at 360px rather than at 390px.
+    // One line with the short labels (§12.1), thinly: at desktop padding they wrap here, hence the 6px
+    // padding below `sm`.
     await openEditor(page);
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -332,9 +291,8 @@ test.describe('on an emulated phone at 360px', () => {
       ['列を追加', '＋列'],
       ['列を削除', '－列'],
     ]) {
-      // Found by its accessible name and asserted on its visible text: the two differ here on
-      // purpose, because `－列` read aloud is not an instruction. That the query resolves at all is
-      // the half that protects screen readers — and the half the other table specs depend on.
+      // Found by name, asserted on text: the two differ on purpose (`－列` read aloud is no instruction).
+      // That the query resolves protects screen readers and the other table specs.
       await expect(toolbar.getByRole('button', { name })).toHaveText(short, { useInnerText: true });
     }
     expect(await toolbarRows(page)).toBeLessThan(1.5);
@@ -342,14 +300,8 @@ test.describe('on an emulated phone at 360px', () => {
   });
 
   test('no toolbar button rings anywhere, on touch or on a pointer (12j)', async ({ page }) => {
-    // §12.2 drew an inset ring here from 2026-08-22 — without hover there is no
-    // `hover:bg-zinc-100`, so a bare-glyph row had nothing to show where one button ended and the
-    // next began. §12.12 (2026-09-18) dropped it from the main format row first (compared against
-    // note and Google Docs' mobile toolbars, both borderless — a glyph plus a divider between
-    // groups instead); 2026-09-19 dropped it from everywhere else too (the table toolbar, the ＋
-    // drawer's rows, and every other `ToolbarButton` consumer), superseding this test's own name.
-    // What marks a control's edge now is the glyph/label itself, `:active`'s momentary tint
-    // (§12.7), and `.toolbar-mark-divider` between the main row's two groups.
+    // No ring on any toolbar button (§12.12, then everywhere): edges are marked by the glyph or label,
+    // `:active`'s tint (§12.7) and `.toolbar-mark-divider`.
     await openEditor(page);
     await loadMarkdown(page, TABLE_MD);
     await page.locator('.ProseMirror td').first().click();
@@ -372,10 +324,7 @@ test.describe('on an emulated phone at 360px', () => {
     expect(main.length).toBeGreaterThan(8);
     expect(main.every((c) => !c.ring)).toBe(true);
 
-    // …and every control in the ＋ menu, not just the ones that are `<button>`s — none of them
-    // ring, including 画像 (a `<label>` around a hidden file input, styled by hand to look like the
-    // buttons beside it), asserted by tag so a future control that copies the same shape is still
-    // caught by this check.
+    // Every control in the ＋ menu too, by tag, including 画像 (a `<label>` styled as a button).
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     const inserts = await outlines('[data-testid="insert-menu-panel"] .toolbar-button');
     expect(inserts.length).toBeGreaterThan(2);
@@ -388,11 +337,9 @@ test.describe('on an emulated phone at 360px', () => {
   });
 
   test('every pressable box in the editor chrome is 40px tall (12k)', async ({ page }) => {
-    // §12.3. A number that rots silently: nothing about the markup states it, and the buttons that
-    // fell short were the ones whose padding is written per-component — so this measures the boxes
-    // rather than looking for the rule. Four hooks carry it (`.toolbar-button`, `.dropdown-item`,
-    // `.link-bubble-open`, and the card head's own rule) and each is represented below, because a
-    // class dropped from one component is exactly the regression this catches.
+    // §12.3, measured on the boxes: nothing in the markup states it, and the short ones had
+    // per-component padding. Each of the four hooks (`.toolbar-button`, `.dropdown-item`,
+    // `.link-bubble-open`, the card head's rule) is represented, since dropping one is the regression.
     const FLOOR = 40;
     const shortest = (page: Page, selector: string) =>
       page.locator(selector).evaluateAll((els) =>
@@ -403,41 +350,33 @@ test.describe('on an emulated phone at 360px', () => {
       );
 
     await openEditor(page);
-    // `.editor-toolbar-bar`, not `.sticky`: under `hover: none` this bar is fixed to the bottom of
-    // the screen and is not a sticky box at all (§12.5).
-    // `:visible` because the insert group's pointer copy is in this bar too and unpainted — its
-    // boxes are 0×0 here, and it is the ＋'s copy below that carries those four controls (§12.5).
+    // `.editor-toolbar-bar`: under `hover: none` the bar is fixed, not sticky (§12.5). `:visible`: the
+    // pointer copy of the insert group is here too, unpainted and 0×0.
     const main = await shortest(page, '.editor-toolbar-bar .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
     expect(Math.min(...main.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
 
-    // The ＋ in the page header — chrome that exists only under `hover: none`, so this file is the
-    // only place the floor can be measured on it (§12.5). The header is the one exemption from
-    // `FLOOR`: `.editor-header-bar` (app/globals.css) drops its own `.toolbar-button`s to 34px so
-    // the header fits in 50px (requested 2026-09-20, the tradeoff argued through at the time).
+    // The header's ＋ exists only under `hover: none` (§12.5). The header is the one exemption from
+    // `FLOOR`: `.editor-header-bar` (app/globals.css) drops its controls to 34px to fit in 50px.
     const HEADER_FLOOR = 34;
     const plus = await shortest(page, '.insert-menu .toolbar-button');
     expect(plus).toHaveLength(1);
     expect(plus[0].h).toBeGreaterThanOrEqual(HEADER_FLOOR);
-    // The insert controls the ＋ opens are the drawer's own rows, not the header — back to FLOOR.
+    // The drawer's rows are back at FLOOR.
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     const inserts = await shortest(page, '[data-testid="insert-menu-panel"] .toolbar-button');
     expect(inserts.length).toBeGreaterThan(2);
     expect(Math.min(...inserts.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
     await page.keyboard.press('Escape');
 
-    // Undo and redo take the floor in both directions (§12.4): they are the one pair whose width
-    // costs no row, and squares are what they are drawn as. Asserted here rather than in
-    // editor-history-buttons.spec.ts because it is this file that runs under `hover: none`.
+    // Undo/redo are squares at the floor both ways (§12.4); measured here because this file runs under
+    // `hover: none`.
     const history = await shortest(page, '.editor-toolbar-bar .toolbar-button-history:visible');
     expect(history).toHaveLength(2);
     expect(Math.min(...history.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
 
-    // A dropdown's rows are not `.toolbar-button` — they take the height from their own class, and
-    // §12.2 deliberately leaves them out of the ring, so the two rules have to be checked apart.
-    // リスト would have been this dropdown, but on touch (this file runs under `hover: none` here,
-    // per the note above) it is two direct toggles instead (§12.11) — 囲み枠, reached through the
-    // ＋ opened above, is still a dropdown on touch too.
+    // Dropdown rows take their height from their own class, so they are checked apart. On touch
+    // リスト is two toggles (§12.11); 囲み枠 is still a dropdown.
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     await page
       .getByTestId('insert-menu-panel')
@@ -446,8 +385,7 @@ test.describe('on an emulated phone at 360px', () => {
     const items = await shortest(page, '.dropdown-item');
     expect(items.length).toBeGreaterThan(1);
     expect(Math.min(...items.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
-    // The sheet's backdrop (§12.18) blocks the press it used to let through — a real modal, not
-    // the old small anchored panel — so it needs an explicit close before the next press lands.
+    // The sheet's backdrop (§12.18) blocks presses, so close it first.
     await page.keyboard.press('Escape');
     await page.locator('.ProseMirror').click();
 
@@ -457,9 +395,8 @@ test.describe('on an emulated phone at 360px', () => {
     const table = await shortest(page, '.table-toolbar button');
     expect(Math.min(...table.map((b) => b.h))).toBeGreaterThanOrEqual(FLOOR);
 
-    // The link bubble's first line opens a tab and is a bare `<button>`, which is why it was the
-    // shortest box in the editor at 20px (§12.3). Its round neighbours are squares and take the
-    // floor in both dimensions or they come out pills.
+    // The bubble's first line is a bare `<button>`, once the shortest box (§12.3); its round neighbours
+    // take the floor both ways or become pills.
     await openEditor(page);
     await loadMarkdown(page, MD);
     await setRange(page, 3, 3);
@@ -471,11 +408,8 @@ test.describe('on an emulated phone at 360px', () => {
     expect(round.length).toBeGreaterThan(1);
     expect(Math.min(...round.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
 
-    // And the icon sits at the circle's centre. Growing a box is not the same as centring what is
-    // in it: the icon is a block-level `<svg>`, so widening the button pushed all 12px to its
-    // right (6px left, 18px right) until the rule added flex — reported the day it shipped, and
-    // invisible to a size assertion. Measured per side rather than against the centre, so a
-    // one-sided padding change is what fails.
+    // The icon is centred: a block-level `<svg>` put all the added width to its right until flex.
+    // Per side, so a one-sided padding change fails.
     const offsets = await page.locator('.link-bubble .toolbar-button-round').evaluateAll((els) =>
       els.map((el) => {
         const box = el.getBoundingClientRect();
@@ -491,8 +425,7 @@ test.describe('on an emulated phone at 360px', () => {
       expect(Math.abs(o.y)).toBeLessThanOrEqual(1);
     }
 
-    // The card's band, which loses its labels at this width and is icons alone — 23x23 before
-    // §12.3, the one box in the editor under WCAG 2.2 SC 2.5.8's 24px floor.
+    // The card's band, icon-only here, was the one box under WCAG 2.2 SC 2.5.8's 24px (§12.3).
     await openEditor(page);
     await loadMarkdown(
       page,
@@ -503,10 +436,8 @@ test.describe('on an emulated phone at 360px', () => {
     expect(head).toHaveLength(3);
     expect(Math.min(...head.map((b) => Math.min(b.h, b.w)))).toBeGreaterThanOrEqual(FLOOR);
 
-    // And the embed's band, which is exempt — the opposite assertion, because the exemption is a
-    // decision and not an oversight (§12.3). Its one button carries a label and is wide enough
-    // without the floor; taking the floor filled the 2.2em band exactly and left the ring sitting
-    // on the player. Measured as the gap, since that is the thing that was reported.
+    // The embed's band is exempt by decision (§12.3): its labelled button is wide enough, and at the
+    // floor it filled the band and ringed the player. Measured as the gap, as reported.
     await openEditor(page);
     await loadMarkdown(
       page,
@@ -522,14 +453,9 @@ test.describe('on an emulated phone at 360px', () => {
   });
 });
 
-// The width band where the card's *change* of width is what overflows (2026-08-22, reported from a
-// phone: `441/440 ⚠ link-bubble R=441 w=408`). The plugin places the card before React has
-// re-rendered it for the new link, so a move from a link that cannot become a card to one that can
-// — a heading's link to a line-alone one — adds a button and ~30px after `shift` has already run.
-//
-// Only a band shows it: below it both cards are at the cap and the width never changes, above it
-// neither is capped and there is room to grow into. 450px sits inside it; 360, 375, 390 and 412 are
-// all outside, which is why every width measured before came back clean.
+// A band where the card's change of width overflows: the plugin places it before React re-renders
+// for the new link, so going from a heading's link to a line-alone one adds a button after `shift`.
+// Below the band both cards are capped, above it there is room; 450px is inside.
 test.describe('in the width band where the card grows into the edge', () => {
   test.use({ ...PHONE, viewport: { width: 450, height: 800 } });
 
@@ -561,23 +487,15 @@ test.describe('in the width band where the card grows into the edge', () => {
     await expect(
       page.locator('.link-bubble').getByRole('button', { name: 'カードにする' }),
     ).toBeVisible();
-    // The page, and the margin: before the fix this was 451px of document against 450px of screen,
-    // with the card left at the text's left edge because `shift` had run against the narrow one.
+    // The page and the margin: before, 451px of document on a 450px screen.
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(450);
     expect((await margins(page, '.link-bubble')).smallest).toBeGreaterThanOrEqual(EDGE);
   });
 });
 
-// The main toolbar's own dropdowns (list, callout, table — ToolbarDropdown.tsx; リスト is a pointer
-// control only since §12.11, which gave touch two direct toggles instead), not the floating menus
-// above. Its panel used to center on its trigger unconditionally (`left-1/2`, translated),
-// which assumes room on both sides — true while the toolbar fits one line, but it wraps
-// (`flex-wrap`), and which row a trigger lands in is a function of viewport width. The table picker
-// is the widest panel here (an 8×8 grid), so it is the one that first reaches an edge: measured, the
-// trigger sits mid-row from 300–416px, but past 420px it wraps to a row where it is near the left
-// edge, and the centered panel then ran 14px+ past it (reported 2026-09-05). `pageWidth`'s
-// `scrollWidth` check above does not catch this direction — a negative `left` clips off-screen
-// without widening the document, so this needs its own margin measurement.
+// The toolbar's own dropdowns (ToolbarDropdown.tsx). The panel centred on its trigger, but the
+// toolbar wraps, and past 420px the table picker's trigger is near the left edge, so the panel ran
+// past it. A negative `left` clips without widening the document, so `pageWidth` cannot see it.
 for (const width of [420, 440, 460]) {
   test(`the table picker's panel stays on a ${width}px screen`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
