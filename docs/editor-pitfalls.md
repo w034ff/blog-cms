@@ -357,7 +357,7 @@ callout の中の文字は `Slice(callout(paragraph(…)), 2, 2)` で、平の�
 
 ## 12. `.prose` の共有
 
-`.prose` クラスは 4 つの面が身に付けている（エディタ `PostEditor.tsx`、公開ページ `app/posts/[slug]/page.tsx`、`FootnotePopover.tsx`、ブロックドラッグのゴースト `block-drag-handle.ts`）。
+`.prose` クラスは 4 つの面が身に付けている（エディタ `PostEditor.tsx`、公開ページ `components/PostArticle.tsx`、`FootnotePopover.tsx`、ブロックドラッグのゴースト `block-drag-handle.ts`）。
 
 - 汎用の `.prose X` 規則の監査には 2 つの半分があり、飛ばされるのは 2 つ目である。「どの要素に届くか」だけでなく「どの既存の宣言に今や勝つか」。typography の `:where(a)`（0,1,0、レイヤ内）を `.prose a`（0,1,1、レイヤ外）で置き換えると、`.prose` の中の単一クラスの `color:` はすべて危うくなる。新しい要素向けの規則が奪えるのは、同じ要素を狙う規則からだけである。
 - 色（`docs/link-requirements.md` §7.1）は共有することが目的なので `.prose a` に置く。`text-decoration` は足さない。`.footnote-popover-jump`（0,1,0）が `.prose a`（0,1,1）に負け、prose の下線が戻る。

@@ -38,7 +38,7 @@ export type TocEntry = { id: string; text: string; level: 2 | 3 };
 
 vfile の `DataMap` を `declare module` で拡張して `file.data.toc` に型を付けている。unified のプラグインが結果を返す唯一の正規の口がここであり、`unknown` を挟まずに済む形はこれしかない。
 
-**レベルは 2 と 3 だけである。** エディタが `Heading.configure({ levels: [2, 3] })`（`components/PostEditor.tsx:322`）で本文の見出しを h2/h3 に制限しているため、記事が生み出しうる見出しはこの 2 つに限られる。収集側にフィルタは無く、`h2` / `h3` 以外を単に見ていない。
+**レベルは 2 と 3 だけである。** エディタが `Heading.configure({ levels: [2, 3] })`（`components/editor/extensions.ts` の `postEditorExtensions`）で本文の見出しを h2/h3 に制限しているため、記事が生み出しうる見出しはこの 2 つに限られる。収集側にフィルタは無く、`h2` / `h3` 以外を単に見ていない。
 
 **帰結**: 著者が生 HTML で `<h4>` を書いた場合、`rehypeSlug` は id を振り sanitize も通すが、**目次には出ない**。壊れないが載らない、という扱いにしてある。h4 を目次に載せたくなったら、収集側とエディタ側の両方を変えることになる。
 

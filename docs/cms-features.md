@@ -61,11 +61,11 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 ## 4. 表示場所（想定）
 
-| 画面                         | ファイル                     | 挿入位置                                                                                                                                                                                                                                      |
-| ---------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ----------------------------------------------------------------------------------- |
-| ホーム/タグ/カテゴリの一覧行 | `components/PostCard.tsx`    | `<time dateTime={post.date}>{formatPostDate(post.date)}</time>` と category リンクを並べている `flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500` 行（`components/PostCard.tsx:30`）に、同じスタイルの inline 項目として追加 |
-| 記事詳細ページのヘッダー     | `components/PostArticle.tsx` | 上と同じ構造を持つヘッダー内の行（`<time dateTime={post.date}>{formatPostDate(post.date)}</time>` — `components/PostArticle.tsx`）に追加                                                                                                      |
-| 管理画面の記事一覧           | `app/admin/(list)/page.tsx`  | `{post.slug} · {formatPostDateTime(post.date)                                                                                                                                                                                                 |     | '未公開'} · {post.category}` の行（`app/admin/(list)/page.tsx`）に `·` 区切りで追加 |
+| 画面                         | ファイル                     | 挿入位置                                                                                                                                                                                                                                   |
+| ---------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- | ----------------------------------------------------------------------------------- |
+| ホーム/タグ/カテゴリの一覧行 | `components/PostCard.tsx`    | `<time dateTime={post.date}>{formatPostDate(post.date)}</time>` と category リンクを並べている `flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500` 行（`components/PostCard.tsx`）に、同じスタイルの inline 項目として追加 |
+| 記事詳細ページのヘッダー     | `components/PostArticle.tsx` | 上と同じ構造を持つヘッダー内の行（`<time dateTime={post.date}>{formatPostDate(post.date)}</time>` — `components/PostArticle.tsx`）に追加                                                                                                   |
+| 管理画面の記事一覧           | `app/admin/(list)/page.tsx`  | `{post.slug} · {formatPostDateTime(post.date)                                                                                                                                                                                              |     | '未公開'} · {post.category}` の行（`app/admin/(list)/page.tsx`）に `·` 区切りで追加 |
 
 いずれも `estimateReadingTime(post.body)` を直接呼ぶ想定だった（§3.1 の通り、`body` はどの画面でもすでに手元にある）。
 

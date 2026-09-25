@@ -80,7 +80,7 @@
 
 ### 2.1 リンクが付く経路は 4 つ、任意のテキストに付くのは 1 つだけ
 
-`link` マークは StarterKit 経由で登録されている（`@tiptap/starter-kit/dist/index.js:70` が `Link.configure(options.link)` を push、`PostEditor.tsx:219-234` の `configure` は `link: false` を渡していない）。他の多くのノード／マークは明示的に無効化して自前版に差し替えてあるのに、link だけは方針が書かれないまま既定値で残っている — この文書はその穴を埋めるものでもある。
+`link` マークは当時 StarterKit 経由で登録されていた（`@tiptap/starter-kit/dist/index.js:70` が `Link.configure(options.link)` を push、当時の `StarterKit.configure` は `link: false` を渡していなかった。現在は `components/editor/extensions.ts` の `postEditorExtensions` が `link: false` を渡し、`Link.configure` を別に登録している）。他の多くのノード／マークは明示的に無効化して自前版に差し替えてあるのに、link だけは方針が書かれないまま既定値で残っている — この文書はその穴を埋めるものでもある。
 
 **経路には (a)〜(d) の記号を使う。** §3 以降の①②は「決定した項目」の番号であり、別物である。
 
@@ -142,7 +142,7 @@ UI は存在しない。 `setLink` / `toggleLink` / `unsetLink` コマンドは�
 
 保存側は `tiptap-markdown` が `defaultMarkdownSerializer.marks.link` を使う（`tiptap-markdown.es.js:701`）ので `[text](href "title")` になる。`title` も直列化される。ただしリンクの文字列が href とちょうど同じときは `<https://example.com>`（山括弧の autolink 形式）になる — 2026-08-09 実測。経路 (b)(c) が作るリンクは常にこの形である。公開側は remark-gfm がどちらも同じくリンクにするので、見た目に差は出ない。`target` / `rel` は markdown に書けないので落ちる — これは損失ではなく、そもそも公開されない属性である（§2.3）。
 
-読み込み側は markdown-it が解釈する。`Markdown.configure({ linkify: false })`（`PostEditor.tsx:266`）は**裸 URL の自動リンクだけを切るもので、`[]()` 記法には効かない** — markdown-it に `linkify:false` を渡しても `[任意のテキスト](https://example.com)` は `<a href>` になることを実測済み。
+読み込み側は markdown-it が解釈する。`Markdown.configure({ linkify: false })`（`components/editor/extensions.ts`）は**裸 URL の自動リンクだけを切るもので、`[]()` 記法には効かない** — markdown-it に `linkify:false` を渡しても `[任意のテキスト](https://example.com)` は `<a href>` になることを実測済み。
 
 **帰結**: text ノードとして残った `[text](url)` は、保存の時点で `\[text\](url)` に潰れる（§2.2.1）。打った記法を受け止めるのは §5.4 の入力ルールであり、打っている最中に片が付く — 保存の往復には何も期待していない。`transformPastedText` / `transformCopiedText` は既定 `false` のまま（`tiptap-markdown.es.js:923`）なので、**ペーストした** `[text](url)` は今もリテラルのテキストである。
 
@@ -222,7 +222,7 @@ UI は存在しない。 `setLink` / `toggleLink` / `unsetLink` コマンドは�
 | `[ftp](ftp://example.com/x)` | `<a>ftp</a>`         |
 | `[irc](irc://example.com/x)` | `<a href="irc://…">` |
 
-これは `PostEditor.tsx:210-212` が underline について書いている「WYSIWYG のウソ」と同じ形である — エディタでは正しいリンクに見え、公開すると黙って死ぬ。
+これは underline を無効化した理由（`components/editor/extensions.ts` の `underline: false` のコメント）と同じ「WYSIWYG のウソ」の形である — エディタでは正しいリンクに見え、公開すると黙って死ぬ。
 
 エディタ側も 2026-08-09 に E2E で実測し、往復が成立してしまうことを確認した:
 
@@ -307,7 +307,7 @@ if (!text || !language) return false;
 
 **順序の理由**（実測: `handlePasteLink` が index 5、`codeBlockVSCodeHandler` が index 33）: ExtensionManager は `sortExtensions([...this.extensions].reverse())` の順にプラグインを集める（`@tiptap/core/dist/index.js:4547`）。反転が先、優先度のソートが後なので、配列上の位置ではなく優先度が効く。`Link` は `priority: 1000`（dist の字面は `priority: 1e3`。`extension-link/dist/index.js:240`）で既定の 100 を持つ全員より前に出る。
 
-> **注意**: 「配列の後ろにあるものが先に訊かれる」という規則（`PostEditor.tsx:256-260` が IsolatingBoundary の位置について述べているもの）は**優先度が同じ者どうしの間でしか成り立たない**。優先度を明示している拡張はその規則の外にある。
+> **注意**: 「配列の後ろにあるものが先に訊かれる」という規則（`components/editor/extensions.ts` の `postEditorExtensions` 冒頭と IsolatingBoundary の位置のコメントが述べているもの）は**優先度が同じ者どうしの間でしか成り立たない**。優先度を明示している拡張はその規則の外にある。
 
 実害はここにある: リンクの `handlePaste` が断る形（選択が空、または貼り付け内容が URL ちょうど 1 個でない）だと VS Code ハンドラが取り、`replaceSelectionWith` なので**選択していたテキストが消えてコードブロックに置き換わる**。VS Code から 1 単語コピーして選択範囲に貼る、という日常操作がこれに当たる。
 
@@ -346,7 +346,7 @@ if (!text || !language) return false;
 
 **理由**: §2.3 の実測どおり、公開側は remark-gfm の autolink literals で裸 URL をリンクにする。エディタ側の `autolink` を切ると、エディタでは素のテキスト、公開ではリンクという WYSIWYG のズレが生まれる。`autolink` を残せばタイプした URL は `<url>` として保存され（§2.2）、公開側の結果と一致する。**`autolink` はズレを作る側ではなく塞ぐ側である。**
 
-`PostEditor.tsx:210-212` が underline を無効化した理由と同じ判断基準（エディタで見えるものと公開されるものを食い違わせない）を、逆向きに適用している。
+`components/editor/extensions.ts` が underline を無効化した理由と同じ判断基準（エディタで見えるものと公開されるものを食い違わせない）を、逆向きに適用している。
 
 **位置を限って切る案も同じ理由で却下した**（2026-08-17、§10）。`[テキスト](` の後ろに貼られた URL だけ autolink を止める案で、切れるのはエディタの表示だけであり、公開側は同じ URL を同じくリンクにする（§2.3 の表）。全体を切る場合と部分的に切る場合で、ズレの向きは変わらない。
 
@@ -944,13 +944,13 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 
 **`.prose a` が巻き込む `<a>` は数え上げてある**（汎用セレクタなので、ここが事故る側）:
 
-| 経路                                                                            | 結果                                                                                                                                                                                                          |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 本文・表・callout・アコーディオン内の著者のリンク                               | 対象。意図どおり                                                                                                                                                                                              |
-| 脚注参照 / 戻りリンク                                                           | 属性セレクタ (0,2,1) が明暗とも勝つ。不変                                                                                                                                                                     |
-| 脚注ポップオーバー内（`FootnotePopover.tsx:139` が `prose` を着る）             | クローンした本文中のリンクは青になる（一貫していてよい）。`.footnote-popover-jump` (0,1,0) はこの規則 (0,1,1) に負けるが**色は明暗とも同値**で、`color` しか宣言していないので `text-decoration: none` は残る |
-| ブロックドラッグのプレビュー（`block-drag-handle.ts` の `.block-drag-preview`） | 本体と同じ色になる。意図どおり                                                                                                                                                                                |
-| 目次                                                                            | `.prose` の外（`globals.css` の `#post-body h2` の直前のコメントに明記）。不変                                                                                                                                |
+| 経路                                                                                   | 結果                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 本文・表・callout・アコーディオン内の著者のリンク                                      | 対象。意図どおり                                                                                                                                                                                              |
+| 脚注参照 / 戻りリンク                                                                  | 属性セレクタ (0,2,1) が明暗とも勝つ。不変                                                                                                                                                                     |
+| 脚注ポップオーバー内（`FootnotePopover.tsx` の `popover.className` が `prose` を着る） | クローンした本文中のリンクは青になる（一貫していてよい）。`.footnote-popover-jump` (0,1,0) はこの規則 (0,1,1) に負けるが**色は明暗とも同値**で、`color` しか宣言していないので `text-decoration: none` は残る |
+| ブロックドラッグのプレビュー（`block-drag-handle.ts` の `.block-drag-preview`）        | 本体と同じ色になる。意図どおり                                                                                                                                                                                |
+| 目次                                                                                   | `.prose` の外（`globals.css` の `#post-body h2` の直前のコメントに明記）。不変                                                                                                                                |
 
 **この数え上げには裏側がある。** 「この規則がどの `<a>` に届くか」だけでは半分で、もう半分は「この規則が今どの既存宣言に勝ってしまうか」である。`.prose a` は (0,1,1) かつ unlayered で、置き換えた typography の規則は (0,1,0) かつ layered だったので、`.prose` 内で単一クラスの `color` を持つものはすべて候補になる。
 

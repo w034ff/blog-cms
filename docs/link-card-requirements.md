@@ -108,7 +108,7 @@
 <div class="link-card" data-href="/posts/f377f7a9a768a5b4d6f2"></div>
 ```
 
-空要素であることが重要で、表示に出る文字は 1 つも保存しない。`markdown-it` は `html: true`（`PostEditor.tsx:290`）、公開側は `rehypeRaw` が既に居るので、両方向とも新しいパーサを足さずに通る。`accent-emphasis` が「native な markdown 記法が無いので raw `<span>` で往復させる」（`lib/render.ts` のコメント）のと同じ形であり、前例は 2 つある。
+空要素であることが重要で、表示に出る文字は 1 つも保存しない。`markdown-it` は `html: true`（`components/editor/extensions.ts` の `Markdown.configure`）、公開側は `rehypeRaw` が既に居るので、両方向とも新しいパーサを足さずに通る。`accent-emphasis` が「native な markdown 記法が無いので raw `<span>` で往復させる」（`lib/render.ts` のコメント）のと同じ形であり、前例は 2 つある。
 
 ### 4.3 sanitize スキーマに要ること（実測 2026-08-12）
 
