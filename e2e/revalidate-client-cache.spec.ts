@@ -4,27 +4,15 @@ import { postSlug } from './published-post';
 import Database from 'better-sqlite3';
 import { TEST_DB_PATH } from './constants';
 
-// What does `revalidateBlog()` actually invalidate?
+// What does `revalidateBlog()` (`revalidatePath('/', 'layout')`, app/actions/posts.ts) invalidate?
+// Not the Data Cache, which only `fetch()` uses (docs/cms-features.md「RSS/Atom フィード」§7.1), nor
+// the Full Route Cache (every public route is `force-dynamic`). What remains is the browser's Client
+// Cache (node_modules/next/dist/docs/01-app/04-glossary.md, "Client Cache"): if that is it, removing
+// the call hides a fresh edit on an already-visited surface. So every hop is a <Link>, with one
+// `page.goto` at the start; a reload would clear the cache.
 //
-// It is one line — `revalidatePath('/', 'layout')` in app/actions/posts.ts `revalidateBlog` — called from
-// four sites (publish, create-and-publish, unpublish, delete), and nothing in the repo records
-// what it buys. It cannot be the Data Cache: docs/cms-features.md:186 measured that
-// `revalidatePath` reaches `fetch()`'s cache only, and every read on this site is a direct
-// better-sqlite3 query. It cannot be the Full Route Cache either — all ten public routes are
-// `force-dynamic`, so there is nothing stored to invalidate.
-//
-// The remaining candidate is the browser's Client Cache: an in-memory store of the RSC payload
-// for "visited and prefetched routes", which `revalidatePath` is documented to invalidate
-// (node_modules/next/dist/docs/01-app/04-glossary.md, "Client Cache"). If that is the mechanism,
-// removing the call must make a just-published edit invisible on a surface the tab had already
-// visited — until something forces a reload.
-//
-// So every hop below is a <Link> and there is exactly one `page.goto`, at the very start. A
-// reload anywhere would clear the client cache and make the test vacuous.
-//
-// MUST run against a production server (`next build && next start`, reached with
-// E2E_EXTERNAL_SERVER=1). Automatic prefetching "runs only in production"
-// (node_modules/next/dist/docs/01-app/02-guides/prefetching.md), so `next dev` cannot answer it.
+// MUST run against a production server (`next build && next start`, E2E_EXTERNAL_SERVER=1):
+// prefetching "runs only in production" (…/02-guides/prefetching.md).
 test('a published edit is visible on every surface reached by <Link> alone', async ({ page }) => {
   const stamp = Date.now();
   const before = `RC before ${stamp}`;
@@ -79,19 +67,12 @@ test('a published edit is visible on every surface reached by <Link> alone', asy
   await expect(page.getByText('Body after.'), `/posts/${slug} is stale`).toBeVisible();
 });
 
-// The control for the test above, and the reason to trust either result.
-//
-// If the tab's Client Cache never held these pages, the test above passes whatever
-// `revalidateBlog()` does — a green A/B would mean nothing. So this changes the post the same
-// way, but BEHIND the server's back: a direct UPDATE on the harness's own SQLite copy, which runs
-// no Server Action and therefore invalidates nothing anywhere.
-//
-// Then it walks the same <Link> path. What the three assertions see is what the client cache is
-// actually doing on this site:
-//   - stale titles  → the cache retains these routes, and `revalidatePath` has something to clear
-//   - fresh titles  → it does not, and there is nothing for `revalidateBlog()` to invalidate
-// Measured 2026-09-14 against a production build: fresh on all three. The reload at the end
-// proves the write landed, so "fresh" cannot mean "nothing changed".
+// The control: if the Client Cache never held these pages, the test above passes regardless. So the
+// post is changed behind the server's back (a direct SQLite UPDATE, no Server Action) and the same
+// <Link> path is walked:
+//   - stale titles → the cache retains routes, and `revalidatePath` has something to clear
+//   - fresh titles → it does not, and `revalidateBlog()` is inert
+// Measured against a production build: fresh on all three. The final reload proves the write.
 test('what the client cache does with a change no Server Action announced', async ({ page }) => {
   const stamp = Date.now();
   const before = `CC before ${stamp}`;
@@ -127,13 +108,9 @@ test('what the client cache does with a change no Server Action announced', asyn
     db.close();
   }
 
-  // Same <Link> path, no reload, and every hop addressed by href rather than by title — a
-  // locator named after the new title would itself fail when the answer is "stale".
-  //
-  // These are assertions, not a recording, because a red here is the signal that the question
-  // this file answers has changed: if a future `staleTimes` config or a `loading.tsx` makes the
-  // client cache start retaining these routes, one of them goes stale and `revalidateBlog()`
-  // stops being inert.
+  // No reload, hops by href: a locator named after the new title would fail on "stale". Assertions,
+  // not a recording: a `staleTimes` or `loading.tsx` change that makes the cache retain routes turns
+  // one red, and `revalidateBlog()` stops being inert.
   const stale = 'the client cache served a stale payload — revalidateBlog() is no longer inert';
 
   await page.locator('a[href="/"]').first().click();
@@ -148,7 +125,7 @@ test('what the client cache does with a change no Server Action announced', asyn
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole('link', { name: after }), `/admin ${stale}`).toBeVisible();
 
-  // The write landed — so a "fresh" reading above is a real observation, not a no-op update.
+  // The write landed, so "fresh" above is a real observation.
   await page.goto('/admin');
   await expect(page.getByRole('link', { name: after })).toBeVisible();
 });

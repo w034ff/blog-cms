@@ -8,14 +8,11 @@ import {
 } from './editor-authoring';
 import { publishedPath } from './published-post';
 
-// The full publish lifecycle over the isolated DB: create → autosave materializes
-// the row (URL sync) → 投稿 → edit the live post (pending changes) → 更新.
-// This is the path that adopts the action result during render (acceptSaved in
-// the useAutosave hook), so a regression there surfaces as a React render-phase
-// error or a stuck status line — both asserted here.
+// The publish lifecycle: autosave creates the row (URL sync) → 投稿 → edit → 更新. The action result
+// is adopted during render (useAutosave's acceptSaved), so a regression shows as a render-phase
+// error or a stuck status.
 test('a new post autosaves, publishes, and takes further edits', async ({ page }) => {
-  // Render-phase violations ("Cannot update a component…", "Maximum update
-  // depth…") arrive as console errors in dev, not page errors — watch both.
+  // Render-phase violations arrive in dev as console errors, not page errors: watch both.
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (message) => {
@@ -32,57 +29,46 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await editor.click();
   await page.keyboard.type('Publish me.');
 
-  // The first autosave materializes the row: the indicator flips to 保存済み ✓
-  // and the address bar syncs to the new row's edit URL without a navigation.
+  // The first autosave creates the row; the address syncs to its edit URL without navigating.
   await expectAutosaved(page);
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/edit$/);
   await expectDraft(page);
 
-  // Publish. The editor adopts the action result in place: the row's publish state flips to
-  // published-current and the button relabels to 更新.
+  // Published in place: published-current, and the button reads 更新.
   await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
 
-  // The post's public address. Read from the row rather than from the screen: the editor never
-  // showed the slug, and the 表示 link that used to carry it here has moved to the 記事一覧 row
-  // (checked at the end of this test, once the post is in its final state). The slug itself came
-  // from the autosave above — app/api/drafts/route.ts assigns one at row creation — so what
-  // publishing changes is that the address now serves.
+  // The public address from the row: the editor never shows the slug, assigned by the first autosave
+  // (app/api/drafts/route.ts). Publishing makes it serve.
   const published = await publishedPath(page);
   expect(published).toMatch(/^\/posts\/[0-9a-f]+$/);
 
-  // Editing the live post flags it as ahead of the public version and dirty.
+  // Editing the live post marks it ahead of the public one.
   await editor.click();
   await page.keyboard.type(' More.');
   await expectPublishPending(page);
   await expect(page.getByText(/保存中/)).toBeVisible();
 
-  // 更新 while the edit is still unsaved: submitting cancels the queued autosave
-  // and the publish result itself must settle the dirty state (acceptSaved) —
-  // the indicator flips to 保存済み ✓ without an autosave round-trip.
+  // 更新 with the edit unsaved: the queued autosave is cancelled and the publish result settles it
+  // (acceptSaved).
   await page.getByRole('button', { name: '更新' }).click();
   await expectPublished(page);
   await expectAutosaved(page);
 
-  // Where 表示 lives now. Its two gates are a slug (assigned above) and the post not being a
-  // draft, so this row — a post that has been through publish and 更新 — is the state it is for.
+  // 表示 is on the list row, shown for a published post with a slug.
   await page.goto('/admin');
-  // Pinned by the row's own title link rather than by hasText: every spec in the run publishes
-  // into this list, and a substring match would go ambiguous the moment two titles overlap.
+  // By the row's title link: other specs' titles could overlap a substring.
   const row = page.locator('li', {
     has: page.getByRole('link', { name: 'E2E publish flow', exact: true }),
   });
   await expect(row.getByRole('link', { name: '表示' })).toHaveAttribute('href', published);
 
-  // 未公開の変更 is the only place this state can be noticed once the editor is closed — inside
-  // it the same thing is the publish button being pressable. The post was just 更新'd, so the
-  // list has nothing to report about it yet.
+  // 未公開の変更 is where this state shows outside the editor; just updated, nothing to report.
   await expect(row.getByText('未公開の変更')).toHaveCount(0);
 
-  // Edit it again and leave without publishing. The badge is derived from draft_content, which
-  // is autosave's doing, so 保存済み is the thing to wait for — not a publish.
+  // Edit and leave unpublished: the badge comes from draft_content, autosave's doing.
   await row.getByRole('link', { name: 'E2E publish flow', exact: true }).click();
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await page.locator('.ProseMirror').click();
@@ -94,10 +80,8 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   expect(pageErrors).toEqual([]);
 });
 
-// 保存済み ✓ is a confirmation, not a status: `savedAt` never returns to null, so left alone the
-// notice became permanent furniture after the first save of the session. It now goes away, while
-// the state behind it stays — which is the split this asserts, and the reason every wait in the
-// suite reads the attribute instead of the words.
+// 保存済み ✓ is a confirmation that fades; the state behind it stays, which is why the suite waits on
+// the attribute.
 test('保存済み ✓ fades, and the state behind it does not', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -110,22 +94,16 @@ test('保存済み ✓ fades, and the state behind it does not', async ({ page }
   await expect(notice).toBeHidden({ timeout: 10_000 });
   await expectAutosaved(page);
 
-  // The next save raises it again — a faded notice is not a spent one.
+  // The next save raises it again.
   await page.locator('.ProseMirror').click();
   await page.keyboard.type(' More.');
   await expect(notice).toBeVisible({ timeout: 20_000 });
 });
 
-// Placing the caret is not an edit, and it took a fix to stay that way. TrailingNode appends its
-// empty paragraph on the first transaction after load rather than at load, because it has none to
-// ride until then — so on a post whose last block is a list, heading, table or fence, the click
-// that placed the caret carried the append, @tiptap emitted `update` for the round, and autosave
-// ran. Measured 2026-09-13: the stored markdown was identical (an empty trailing paragraph does
-// not serialize) but a `draft_content` row appeared, so a published post read as carrying changes
-// nobody made — and after the 未公開の変更 badge, said so in the list.
-//
-// The body deliberately ends in a list: end it with a paragraph and there is nothing to append,
-// and the case passes without testing anything.
+// Placing the caret is not an edit: TrailingNode appends on the first transaction after load, so on
+// a post ending in a list the placing click carried it, @tiptap emitted `update`, and autosave made
+// a `draft_content` row, so the post showed changes nobody made. The body ends in a list, or there
+// is nothing to append.
 test('placing the caret does not arm autosave', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -153,7 +131,7 @@ test('placing the caret does not arm autosave', async ({ page }) => {
     'published-current',
   );
 
-  // And nothing reached the list either.
+  // Nothing reached the list.
   await page.goto('/admin');
   const listRow = page.locator('li', {
     has: page.getByRole('link', { name: 'E2E caret is not an edit', exact: true }),
