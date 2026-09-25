@@ -5,26 +5,23 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 
-// Applies every not-yet-applied migration in drizzle/ to the DB.
+// Applies every not-yet-applied migration in drizzle/.
 //
 //   node scripts/migrate-db.mts
 //
-// This is the ONLY way schema changes reach a populated DB. `drizzle-kit push`
-// was removed on purpose: it diffs the live DB against schema.ts and, for
-// anything SQLite can't ALTER in place, rewrites the table (create → copy →
-// drop → rename). On `posts` it emits the unique index twice and aborts
-// midway, which is survivable locally and is not something to attempt on a DB
-// holding the only copy of published posts. Workflow is now:
+// The ONLY way schema changes reach a populated DB. `drizzle-kit push` was removed: for anything
+// SQLite cannot ALTER it rewrites the table (create → copy → drop → rename), and on `posts` it
+// emitted the unique index twice and aborted midway, not something to try on the only copy of the
+// posts. Workflow:
 //
 //   1. edit lib/db/schema.ts
 //   2. npx drizzle-kit generate      (writes drizzle/NNNN_*.sql)
 //   3. read the generated SQL — it is the thing that will run
 //   4. npm run db:backup && npm run db:migrate
 //
-// The ledger is `__drizzle_migrations`, and drizzle decides what to run by
-// comparing the newest recorded created_at against each migration's `when`
-// (meta/_journal.json) — not by hashing. The pre-existing local DB was marked
-// as already at 0000 by scripts/baseline-db.mts rather than having it applied.
+// The ledger is `__drizzle_migrations`; drizzle runs what is newer than the latest recorded
+// created_at by `when` (meta/_journal.json), not by hash. The original DB was marked at 0000 by
+// scripts/baseline-db.mts.
 const ROOT = process.cwd();
 // So a deployment pointing elsewhere migrates the DB it actually serves.
 const DB_PATH = resolveDbPath();

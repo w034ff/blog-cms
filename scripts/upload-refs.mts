@@ -1,8 +1,7 @@
 import type Database from 'better-sqlite3';
 
-// Which uploads the database still points at — the half of scripts/gc-uploads.mts that decides
-// what a sweep must keep. Its own module so it can be tested: importing gc-uploads.mts runs the
-// sweep.
+// The uploads the DB still references: gc-uploads.mts's keep-list, separate so it is testable
+// (importing gc-uploads.mts runs the sweep).
 
 export const UPLOAD_REF = /\/uploads\/([A-Za-z0-9._-]+)/g;
 
@@ -19,20 +18,10 @@ type PostTextRow = {
   draft_content: string | null;
 };
 
-// Every column a reference can hide in, not just the published body.
-//
-// `thumbnail` holds a card image the body need not mention at all — that is the whole point of
-// choosing one — so a sweep blind to it deletes exactly the image the author picked.
-// `draft_content` is the private working copy of a *published* post's pending edits: an image added
-// in an edit that has not been published yet is referenced nowhere else, and once the file ages
-// past the grace period the sweep would take it while the author is still writing.
-// `post_revisions.content` is a past version the author can restore (docs/revision-requirements.md
-// §6): an image dropped from the current text but kept in a revision would come back broken. All
-// three are unreferenced-looking and in use, which is the failure this function exists to prevent.
-//
-// JSON columns are scanned as raw text rather than parsed: every field in them is a string,
-// `UPLOAD_REF` is looking for a substring, and a shape change in DraftContent must not be able to
-// quietly narrow what this sees.
+// Every column a reference can hide in: `thumbnail` (a card image the body need not mention),
+// `draft_content` (a published post's unpublished edits), `post_revisions.content` (restorable
+// versions, docs/revision-requirements.md §6). JSON is scanned as text, so a shape change cannot
+// narrow it.
 export function referencedInDb(db: Database.Database): Set<string> {
   const refs = new Set<string>();
   const rows = db

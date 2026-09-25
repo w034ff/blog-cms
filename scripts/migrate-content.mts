@@ -34,10 +34,8 @@ function main(): void {
        body=excluded.body, updated_at=excluded.updated_at`,
   );
 
-  // A post's tags are slugs from the dictionary (docs/editor-requirements.md §12.33), and a slug
-  // the dictionary lacks is dropped when read. The frontmatter values are taken as slugs as they
-  // are — the same rule drizzle/0010 used for the tags already in the DB — and admitted here, so a
-  // fresh clone's import does not lose them.
+  // Tags are dictionary slugs (docs/editor-requirements.md §12.33), and unknown ones are dropped on
+  // read, so frontmatter tags are admitted as-is (drizzle/0010's rule).
   const admitTag = db.prepare(`INSERT OR IGNORE INTO tags (slug, name) VALUES (?, ?)`);
 
   const files = readdirSync(POSTS_DIR).filter((f) => f.endsWith('.mdx'));
@@ -59,8 +57,7 @@ function main(): void {
       title: fm.title,
       date: fm.date,
       description: fm.description ?? '',
-      // Imported posts can arrive published, and a published post has a category (§12.32), so one
-      // the file does not name goes under the list's first rather than being left unchosen.
+      // A published post has a category (§12.32), so a missing one takes the list's first.
       category: normalizeCategory(fm.category) || CATEGORIES[0].id,
       tags: JSON.stringify(tags),
       draft: fm.draft ? 1 : 0,

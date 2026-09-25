@@ -1,37 +1,22 @@
 import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 
-// One-off repair for markdown written before components/editor/image-extension.ts existed.
+// One-off repair for markdown written before components/editor/image-extension.ts existed: the
+// inline image serializer never closed the block, so `![alt](src)> quoted` became one paragraph.
+// The serializer fix stops new damage; this adds the missing blank line where posts store markdown.
 //
-// tiptap-markdown serialized the (block) image node with prosemirror-markdown's *inline* image
-// serializer, which emits `![alt](src)` and never closes the block. Whatever followed the image
-// was written onto the image's own line, so a quote or a fence right after one came out as
-// `![alt](src)> quoted` / `![alt](src)```lang`. Markdown then reads that as a single paragraph:
-// the image renders and the rest shows up as literal body text on the published page.
+// **The two columns differ, and treating them alike corrupts the database:**
+//   posts.body          TEXT: raw markdown, repaired directly
+//   posts.draft_content JSON (`{ mode: 'json' }`, lib/db/schema.ts): its markdown is the `body`
+//                       field inside. A text substitution over it puts raw newlines in a JSON
+//                       string, and every read then throws. Decode, repair the field, re-encode.
 //
-// The serializer fix stops new corruption but does not touch what is already stored, so this
-// puts the missing blank line back in both places a post's markdown lives.
-//
-// The two columns are NOT the same kind of value, and treating them alike corrupts the database:
-//   posts.body          TEXT — raw markdown, repaired directly
-//   posts.draft_content JSON — the whole working copy ({title, description, category, tags,
-//                              body}), declared `{ mode: 'json' }` in lib/db/schema.ts, so
-//                              drizzle JSON.parses it on every read. Its markdown is the `body`
-//                              *field inside* that document. Running a text substitution over
-//                              the stored JSON inserts raw newlines into a JSON string literal,
-//                              which is illegal — every read of that row then throws
-//                              "Bad control character in string literal in JSON". Decode, repair
-//                              the field, re-encode.
-//
-// Deliberately NOT done by opening the post in the editor and re-saving: an affected post loads
-// with the stray `>` as literal paragraph text, which re-serializes to the HTML entity `&gt;`.
+// Not by re-saving in the editor: an affected post loads with `>` as text, saved back as `&gt;`.
 
 const DB_PATH = resolveDbPath();
 
-// An image immediately followed by a non-space character. The space matters: `![a](b) text` is a
-// legitimately inline image with content after it, while the corruption always butts the next
-// block straight against the closing paren. `[^)\s]*` for the URL keeps the match from running
-// past the first `)`.
+// An image butted against the next character. `![a](b) text` is a legitimate inline image; the
+// corruption never has the space. `[^)\s]*` stops at the first `)`.
 const GLUED_IMAGE = /(!\[[^\]]*\]\([^)\s]*\))(?=\S)/g;
 
 // Match the line ending already in the text, so a CRLF document doesn't end up with mixed ones.
@@ -46,12 +31,8 @@ function repairDraftContent(stored: string, id: number): string | null {
   try {
     doc = JSON.parse(stored);
   } catch {
-    // Already-invalid JSON — the exact state a raw text substitution over this column produces
-    // (see above), so a row can arrive here holding one. There is no `body` field to reach, and
-    // re-encoding is impossible; the only thing to decide is whether to stop. Skipping keeps the
-    // run going: `body` is a separate column and still repairable, and throwing here would strand
-    // every later post unprocessed behind a stack trace. Report it so the row isn't silently
-    // passed over — a draft that won't parse needs a human anyway, since every read of it throws.
+    // Already-invalid JSON, as a raw substitution would leave it: no field to reach. Skip and
+    // report, so `body` and later posts still get repaired and a human sees the row.
     console.warn(`skipped draft_content: id=${id} does not hold valid JSON`);
     return null;
   }
@@ -72,16 +53,10 @@ function main(): void {
   const updateBody = db.prepare('UPDATE posts SET body = @body WHERE id = @id');
   const updateDraft = db.prepare('UPDATE posts SET draft_content = @draft WHERE id = @id');
 
-  // One transaction per row. The two columns hold two copies of the same text (see above), so a
-  // crash between the statements would leave a post whose published markdown is repaired and whose
-  // editor working copy is not — and the next save in the editor would write the corruption back
-  // over the fix. Per row rather than one for the whole table so an interrupted run still leaves
-  // every post it touched coherent; re-running is safe either way, since repaired text no longer
-  // matches GLUED_IMAGE. A null column means "this one needed no change".
-  // `.immediate` so the write lock is taken as the transaction opens. A deferred
-  // BEGIN would read first and upgrade, and SQLite refuses that upgrade with
-  // SQLITE_BUSY_SNAPSHOT — which busy_timeout does not retry — if a live app
-  // committed in between.
+  // One transaction per row: the columns hold two copies of the text, and a crash between them
+  // would let the editor write the corruption back. Re-running is safe (repaired text no longer
+  // matches). `.immediate`: a deferred BEGIN upgrading to a write gets SQLITE_BUSY_SNAPSHOT, not
+  // retried by busy_timeout, if the live app committed in between.
   const repairRow = db.transaction((id: number, body: string | null, draft: string | null) => {
     if (body !== null) updateBody.run({ id, body });
     if (draft !== null) updateDraft.run({ id, draft });

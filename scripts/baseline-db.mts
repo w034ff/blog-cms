@@ -4,39 +4,26 @@ import { openDb } from './open-db.mts';
 import { resolveDbPath } from './db-path.mts';
 import { readMigrations, type Migration } from './migrations.mts';
 
-// Marks an EXISTING database as already carrying the migrations in drizzle/,
-// without running them.
+// Marks an EXISTING database as carrying the migrations in drizzle/, without running them.
 //
 //   node scripts/baseline-db.mts [--apply]
 //
-// Needed once: this DB predates the migration files. It was built by
-// `drizzle-kit push` plus hand-written ALTERs, so its tables are already what
-// 0000 would create — running 0000 against it would just fail on "table posts
-// already exists", and there is no history worth replaying (the hand-applied
-// DDL was never kept). What it lacks is the ledger row that tells drizzle so.
-//
-// Marking a DB as migrated is a claim about its shape, so the claim is checked
-// first: every journal migration is applied to a throwaway in-memory DB and the
-// resulting schema is compared, statement by statement, with the real one. A
-// mismatch means this DB is NOT at that revision and must not be marked.
-//
-// Dry-run by default; --apply writes the ledger.
+// Needed once: this DB predates the migrations (built by `drizzle-kit push` and hand ALTERs), so
+// 0000 would fail on "table posts already exists"; it lacks only the ledger row. The claim is
+// checked first: the journal is applied to an in-memory DB and the schemas compared statement by
+// statement, and a mismatch refuses. Dry-run by default; --apply writes the ledger.
 const DB_PATH = resolveDbPath();
 
-// Same shape drizzle-orm's migrator creates (sqlite-core/dialect.cjs), so a
-// later `db:migrate` finds the ledger it expects instead of making its own.
+// drizzle-orm's migrator's shape (sqlite-core/dialect.cjs), so `db:migrate` finds its ledger.
 const LEDGER_DDL = `CREATE TABLE IF NOT EXISTS \`__drizzle_migrations\` (
 	id SERIAL PRIMARY KEY,
 	hash text NOT NULL,
 	created_at numeric
 )`;
 
-// sqlite_master keeps whatever quoting the original CREATE used — the live
-// tables came from drizzle-kit push and read `CREATE TABLE "posts"`, while the
-// migration file says `CREATE TABLE \`posts\``. Same schema, different bytes,
-// so compare with identifier quoting and whitespace removed. String literals in
-// this schema are single-quoted, so dropping backticks and double quotes cannot
-// swallow one.
+// sqlite_master keeps the original quoting (`CREATE TABLE "posts"` from push, backticks in the
+// migration), so compare without identifier quotes and whitespace. String literals here are
+// single-quoted, so nothing is swallowed.
 function normalize(sql: string): string {
   return sql.replaceAll('`', '').replaceAll('"', '').replace(/\s+/g, ' ').trim();
 }
@@ -116,16 +103,13 @@ function main(): void {
       return;
     }
 
-    // DDL first: better-sqlite3 validates a statement at prepare() time, so
-    // preparing the insert before the table exists throws.
+    // DDL first: better-sqlite3 validates at prepare(), before the table would exist.
     db.exec(LEDGER_DDL);
     const insert = db.prepare(
       'INSERT INTO __drizzle_migrations ("hash", "created_at") VALUES (?, ?)',
     );
-    // `.immediate` for the same reason as the DDL above needing to land first:
-    // this transaction reads nothing, but a deferred BEGIN still upgrades to a
-    // write, and SQLite refuses that with SQLITE_BUSY_SNAPSHOT (which
-    // busy_timeout does not retry) when another connection committed meanwhile.
+    // `.immediate`: a deferred BEGIN upgrading to a write gets SQLITE_BUSY_SNAPSHOT, which
+    // busy_timeout does not retry, if another connection committed meanwhile.
     const write = db.transaction((rows: Migration[]) => {
       for (const row of rows) insert.run(row.hash, row.when);
     }).immediate;

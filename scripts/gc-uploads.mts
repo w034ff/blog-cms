@@ -5,19 +5,15 @@ import { resolveDbPath } from './db-path.mts';
 import { formatBytes } from './format-bytes.mts';
 import { addUploadRefs, referencedInDb } from './upload-refs.mts';
 
-// Grace-period garbage collector for data/uploads. Uploads are written the
-// moment an image is pasted/dropped — before the post is saved — so a file can
-// be on disk while still unreferenced. We delete a file only when it is BOTH
-// unreferenced AND older than the grace window, so a just-uploaded-not-yet-saved
-// image is never removed. Dry-run by default; pass --delete to actually unlink.
+// Grace-period GC for data/uploads. Uploads land before the post is saved, so a file is deleted
+// only when unreferenced AND older than the grace window. Dry-run by default.
 //   node scripts/gc-uploads.mts                 # report only (dry-run)
 //   node scripts/gc-uploads.mts --delete        # remove orphans
 //   node scripts/gc-uploads.mts --grace-hours=48
 const ROOT = process.cwd();
 const UPLOAD_DIR = path.join(ROOT, 'data', 'uploads');
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
-// Uploads live next to the app, but the DB may not — see scripts/db-path.mts.
-// Getting this wrong here means sweeping against an empty reference set.
+// The DB may live elsewhere (scripts/db-path.mts); the wrong one means an empty reference set.
 const DB_PATH = resolveDbPath();
 
 function parseGraceHours(args: string[]): number {
@@ -27,9 +23,8 @@ function parseGraceHours(args: string[]): number {
   return Number.isFinite(n) && n >= 0 ? n : 24;
 }
 
-// Filenames anything could point at: the live DB (every column a reference can hide in —
-// scripts/upload-refs.mts lists them and why) AND the version-controlled .mdx (the seed copy).
-// Taking the union errs on the side of keeping a file.
+// The live DB (every column, scripts/upload-refs.mts) and the tracked .mdx, unioned: err on
+// keeping.
 function collectReferenced(): { refs: Set<string>; dbPresent: boolean } {
   const dbPresent = existsSync(DB_PATH);
   let refs = new Set<string>();

@@ -1,33 +1,23 @@
 import path from 'node:path';
 import { chromium } from '@playwright/test';
 
-// Regenerates public/og.png, the card image every share of this site carries.
+// Regenerates public/og.png, the site's share card.
 //
 //   node scripts/make-og-image.mts
 //
-// Committed as a generator rather than only as a PNG so the design is reviewable
-// as markup and can be changed without anyone opening an image editor — and so
-// the answer to "where did this file come from" is in the repo.
-//
-// Rendered by screenshotting real Chrome rather than by Next's ImageResponse.
-// Satori (what ImageResponse uses) needs the font bytes handed to it, and the
-// text here is Japanese: the only ways to feed it are vendoring a CJK font — the
-// Noto Sans JP on this machine is 9.6MB, and there is no subsetting tool here —
-// or fetching one at render time, which would make a self-hosted blog's share
-// card depend on a third party being reachable. A browser already has the fonts.
-// The output is a static file, so nothing about this runs in production.
+// A generator, so the design is reviewable markup and the file's origin is in the repo. A Chrome
+// screenshot, not ImageResponse: Satori needs font bytes, and Japanese would mean vendoring a ~10MB
+// CJK font or fetching one at render time. The output is static.
 const OUT = path.join(process.cwd(), 'public', 'og.png');
 
-// The sizes every consumer (Slack, X, Discord, iMessage) expects.
+// The size share consumers expect.
 const WIDTH = 1200;
 const HEIGHT = 630;
 
 const TITLE = 'Tech Blog';
 const SUBTITLE = '個人技術ブログ';
 
-// Deliberately no URL text: the site's address has already moved once and is
-// meant to move again, and an address baked into a binary is the one place it
-// cannot be updated from an environment variable.
+// No URL text: the address moves, and a PNG cannot read an environment variable.
 const html = `<!doctype html>
 <html lang="ja">
   <head>
@@ -68,8 +58,7 @@ try {
   });
   const page = await context.newPage();
   await page.setContent(html, { waitUntil: 'load' });
-  // Webfonts are not involved (system fonts only), but the layout still settles a
-  // frame after setContent.
+  // System fonts only, but layout settles a frame after setContent.
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: OUT });
   console.log(`wrote ${OUT} (${WIDTH}x${HEIGHT})`);
