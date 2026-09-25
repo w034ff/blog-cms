@@ -2,15 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// The editor and the public renderer used to disagree about which URI schemes may be a link, and
-// the editor was the wider of the two: `ftp`, `ftps`, `tel`, `callto`, `sms` and `cid` were
-// accepted here, saved to markdown, and then had their href removed outright by
-// hast-util-sanitize on publish — an <a> pointing nowhere, with nothing said about it.
-// components/editor/link-protocols.ts closes that gap at this end. See
-// docs/link-requirements.md §2.4.
-//
-// Pasting HTML is the route that reaches the check: `parseHTML`'s getAttrs asks `isAllowedUri`
-// before applying the mark, so a refused scheme arrives as the anchor's text and nothing else.
+// The editor accepted schemes (`ftp`, `ftps`, `tel`, `callto`, `sms`, `cid`) that hast-util-sanitize
+// strips on publish, leaving an <a> to nowhere. link-protocols.ts narrows the editor
+// (docs/link-requirements.md §2.4). Pasted HTML reaches the check: `parseHTML`'s getAttrs asks
+// `isAllowedUri`, so a refused scheme arrives as text.
 
 async function openEditor(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');
@@ -52,17 +47,14 @@ for (const [scheme, href] of [
 
 test('leading whitespace does not smuggle a refused scheme through', async ({ page }) => {
   await openEditor(page);
-  // The link extension strips this class of character before validating, so a predicate that
-  // tests the raw string would let this pass and then the default check would accept it.
+  // The extension strips these characters before validating; a raw-string predicate would pass it.
   await pasteAnchor(page, '<a href="  tel:+81312345678">文字</a>', '文字');
   expect(await docString(page)).toBe('doc(paragraph("ここ文字"))');
 });
 
-// The route that does not reach `isAllowedUri` at all: the link extension's linkOnPaste plugin
-// applies the mark with a raw setMark. linkifyjs recognises `ftp://…` as a link (it does not
-// recognise `tel:`/`sms:`, and reads `cid:a@example.com` as the email `a@example.com`, so ftp/ftps
-// are the schemes that actually reach it), so without PostEditor's own handlePaste this would be
-// an ftp link that still dies on publish.
+// linkOnPaste applies the mark with a raw setMark, bypassing `isAllowedUri`. linkifyjs finds `ftp://`
+// (not `tel:`/`sms:`; `cid:a@example.com` reads as an email), so PostEditor's own handlePaste
+// guards it.
 for (const href of ['ftp://example.com/x', 'ftps://example.com/x'] as const) {
   test(`${href} pasted as plain text over a selection does not become a link`, async ({ page }) => {
     await openEditor(page);
@@ -92,7 +84,7 @@ test('a publishable URL pasted as plain text over a selection still links', asyn
         new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true }),
       );
   });
-  // Route (a) — the only way to put a link on chosen text — must be untouched by the guard above.
+  // Route (a), linking chosen text, is untouched by that guard.
   expect(await docString(page)).toBe('doc(paragraph(link("ここ")))');
 });
 
@@ -104,15 +96,14 @@ test('an https link is unaffected', async ({ page }) => {
 
 test('a mailto link is unaffected', async ({ page }) => {
   await openEditor(page);
-  // In both allowlists, so narrowing to the publishable set must not touch it.
+  // In both allowlists.
   await pasteAnchor(page, '<a href="mailto:a@example.com">文字</a>', '文字');
   expect(await docString(page)).toBe('doc(paragraph("ここ", link("文字")))');
 });
 
 test('an in-site relative link is unaffected', async ({ page }) => {
   await openEditor(page);
-  // No scheme at all, which is how an author links to this site's own posts. The default check
-  // is kept in front precisely so these go on being accepted.
+  // No scheme, as links to own posts are: the default check stays in front for these.
   await pasteAnchor(page, '<a href="/posts/foo">文字</a>', '文字');
   expect(await docString(page)).toBe('doc(paragraph("ここ", link("文字")))');
 });

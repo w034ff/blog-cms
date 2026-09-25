@@ -2,21 +2,18 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { loadMarkdown } from './editor-authoring';
 
-// `.prose table { table-layout: fixed }` (app/globals.css, docs/editor-requirements.md §11).
-// Two things depend on it, and both are invisible until they are not: a table that outgrows
-// the editor frame, and column widths that move while the author types.
+// `.prose table { table-layout: fixed }` (app/globals.css, docs/editor-requirements.md §11): keeps a
+// table inside the frame, and column widths still while typing.
 
 const TABLE_MD = ['| 項目 | 説明 | 可否 |', '| --- | --- | --- |', '| あ | い | ○ |'].join('\n');
 
-// Every measurement is taken from layout, not from the declaration: asserting
-// `table-layout === 'fixed'` would pass on a rule that some later selector outranks.
+// From layout, not the declaration, which a later selector could outrank.
 function tableMetrics(page: Page): Promise<{ width: number; wrapper: number; cols: number[] }> {
   return page.evaluate(() => {
     const table = document.querySelector('.ProseMirror table') as HTMLTableElement;
     return {
       width: Math.round(table.getBoundingClientRect().width),
-      // The div @tiptap/extension-table's TableView puts around the table — the box the
-      // table has to stay inside. Editor-only; the published page has no such wrapper.
+      // TableView's wrapper, the box the table must stay in (editor only).
       wrapper: (table.parentElement as HTMLElement).clientWidth,
       cols: [...table.querySelectorAll('tr:first-child > *')].map((cell) =>
         Math.round(cell.getBoundingClientRect().width),
@@ -43,10 +40,8 @@ test.beforeEach(async ({ page }) => {
   await editor.click();
 });
 
-// A long token with no whitespace is the case `overflow-wrap: break-word` cannot answer:
-// it is excluded from min-content sizing, which is what auto layout measures columns by.
-// Before the fix this made the table 2418px inside a 766px wrapper and put the whole page
-// into horizontal scroll.
+// A spaceless token escapes `overflow-wrap: break-word`, being excluded from min-content, which auto
+// layout sizes by; it scrolled the whole page sideways.
 test('a long unbroken token leaves the table inside its wrapper', async ({ page }) => {
   await tableWithText(page, 'a'.repeat(300));
 
@@ -61,10 +56,8 @@ test('a long unbroken token leaves the table inside its wrapper', async ({ page 
     .toBe(false);
 });
 
-// The same defect in the shape an author actually produces. Deliberately not a URL: Chrome
-// takes `/`, `?` and `&` as break opportunities, so even a 210-character URL wraps on its own
-// and asserting on one measured nothing (checked by reverting the rule — it passed either way).
-// What has no break opportunity at all is a hash, a token, or an identifier.
+// Not a URL: Chrome breaks at `/`, `?` and `&`, so a URL passed with the rule reverted. A hash has no
+// break opportunity.
 const HASH = `sha256-${'0f3c9ab27e'.repeat(12)}`;
 
 test('a long hash in a cell leaves the table inside its wrapper', async ({ page }) => {
@@ -74,10 +67,7 @@ test('a long hash in a cell leaves the table inside its wrapper', async ({ page 
   expect(width).toBeLessThanOrEqual(wrapper);
 });
 
-// The reason the rule is `table-layout` rather than a wrapping tweak: with the plugin's
-// `width: 100%`, auto layout cannot grow the table, so a column that gains content takes
-// the width from its neighbours. Measured before the fix: 255 → 44px in the two columns
-// the author was not typing in.
+// With `width: 100%`, auto layout gives a growing column its neighbours' width.
 test('column widths do not move while typing into one cell', async ({ page }) => {
   await loadMarkdown(page, TABLE_MD);
   const editor = page.locator('.ProseMirror');
