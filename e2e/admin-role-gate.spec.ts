@@ -1,12 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { TEST_AUTHOR } from './constants';
 
-// What an author — signed in, but not an admin — is kept out of (docs/editor-requirements.md
-// §12.33.1). The tag dictionary is shared by every author, so only an admin changes it: the list
-// does not link to it, and the address typed by hand is a 404.
-//
-// Logged in as the author through the real form, not the saved admin session the other specs
-// share (e2e/auth.setup.ts), which would pass every check here vacuously.
+// An author who is not an admin is kept from the shared tag dictionary (docs/editor-requirements.md
+// §12.33.1): no link, and a 404 by hand. Logged in through the real form; the shared admin session
+// would pass everything.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test('an author sees no tag dictionary', async ({ page }) => {

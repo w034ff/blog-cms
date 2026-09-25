@@ -2,11 +2,8 @@ import { test, expect } from '@playwright/test';
 import { expectAutosaved, expectPublished, ensureCategory } from './editor-authoring';
 import { gotoPublished } from './published-post';
 
-// End-to-end over the *public* render path (which no other spec touches): author a
-// `> [!CAUTION]` callout in the editor, publish it, then open the public post and
-// confirm the alert renders as a titled callout with its icon. This guards the
-// whole chain — the Callout node's markdown (`> [!CAUTION]`) → remark transform →
-// sanitize → the icon CSS in globals.css.
+// The public render path end to end: the Callout's `> [!CAUTION]` → remark transform → sanitize →
+// the icon CSS in globals.css.
 test('a published [!CAUTION] callout renders with title + icon on the public page', async ({
   page,
 }) => {
@@ -16,8 +13,7 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
 
   await page.getByLabel('タイトル').fill('Public callout spec');
   await editor.click();
-  // `> [!CAUTION]` + Enter commits the marker into a callout node with the caret already in
-  // the body (the Enter is the trigger, consumed by the conversion), then type the content.
+  // Enter commits the marker (consumed), leaving the caret in the body.
   await page.keyboard.type('> [!CAUTION]');
   await page.keyboard.press('Enter');
   await page.keyboard.type('破壊的操作の前に確認してください。');
@@ -44,8 +40,7 @@ test('a published [!CAUTION] callout renders with title + icon on the public pag
     '破壊的操作の前に確認してください。',
   );
 
-  // The icon is a masked SVG tinted to the caution accent, drawn on the title's
-  // ::before — assert both the mask (icon present) and the accent tint.
+  // A masked SVG on the title's ::before, tinted to the accent: both asserted.
   const icon = await title.evaluate((el) => {
     const s = getComputedStyle(el, '::before');
     return { mask: s.maskImage || s.webkitMaskImage, bg: s.backgroundColor };

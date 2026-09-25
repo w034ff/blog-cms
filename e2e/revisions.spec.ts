@@ -8,8 +8,8 @@ import {
 } from './editor-authoring';
 import { STORAGE_STATE } from './constants';
 
-// docs/revision-requirements.md §8, rows 9-12: the wiring only a browser shows — the リビジョン履歴
-// entry's gate, the preview route, and the restore's trip back into a freshly mounted editor. What gets kept and pruned is lib/revisions.test.ts's.
+// docs/revision-requirements.md §8, rows 9-12: the リビジョン履歴 entry's gate, the preview route, and
+// the restore into a fresh editor. What is kept and pruned is lib/revisions.test.ts's.
 
 const editor = (page: Page) => page.locator('.ProseMirror');
 
@@ -161,8 +161,7 @@ test.describe('with no session', () => {
       await authed.close();
     }
 
-    // The admin layout's gate: a request with no session is sent to sign in, and nothing of the
-    // post — neither the old version nor the live one — is drawn on the way.
+    // The admin layout's gate: no session means sign-in, and nothing of the post is drawn.
     for (const path of previewPaths) {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);

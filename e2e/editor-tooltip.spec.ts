@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// The toolbar tooltips are a custom CSS element (not the native `title`), so
-// their placement is ours to control. This guards that hovering an icon button
-// reveals its label centered directly below the button.
+// Tooltips are our own element, not `title`: hovering reveals the label centred below the button.
 test('toolbar tooltip appears centered below the button on hover', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
@@ -28,12 +26,8 @@ test('toolbar tooltip appears centered below the button on hover', async ({ page
   expect(label.y).toBeGreaterThanOrEqual(btn.y + btn.height);
 });
 
-// The shortcut of any command that has one is surfaced in its tooltip alongside its name. Every
-// ToolbarButton that carries a `shortcut` also carries a `title` now — 大見出し/小見出し were the
-// last holdout with a shortcut but no title (their own visible text, 大見出し, doubled as the name)
-// until they became the H2/H3 glyphs (docs/editor-requirements.md §12.10), which moved them into
-// this same shape: the visible glyph is no longer the full name, so `title` restores it. Rendered
-// on Linux CI, so "Mod" formats as "Ctrl".
+// A command's shortcut appears in its tooltip. Every ToolbarButton with a `shortcut` has a `title`,
+// including the H2/H3 glyphs (docs/editor-requirements.md §12.10). On Linux "Mod" reads "Ctrl".
 test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
