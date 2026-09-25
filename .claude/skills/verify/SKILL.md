@@ -28,7 +28,7 @@ merge, not before a commit.
 npx playwright test e2e/editor-embed.spec.ts          # one file — the default
 npx playwright test e2e/<a>.spec.ts e2e/<b>.spec.ts   # several: one command, one boot
 npx playwright test e2e/<name>.spec.ts:<line>         # one test, by line
-npx playwright test e2e/editor-embed.spec.ts --repeat-each=5   # is it flaky?
+npx playwright test e2e/editor-embed.spec.ts --repeat-each=5 --workers=1   # is it flaky?
 npm run test:e2e                                      # the whole suite
 ```
 
@@ -75,8 +75,8 @@ defects** — every one was the harness's own input timing. So triage before
 debugging, in this order, changing only the set of tests while the commit and the
 build stay the same:
 
-1. **The one test alone** (`--repeat-each=5`). Green here and red in a full run
-   means the suite, not the code.
+1. **The one test alone** (`--repeat-each=5 --workers=1`; parallel copies share the DB,
+   `e2e/README.md`). Green here and red in a full run means the suite, not the code.
 2. **Its file.** Green per-file and red in a full run is the shape
    `docs/cms-features.md` records twice (the image-bubble 22s case, and this one).
 3. **A full run**, only once 1 and 2 have said something.

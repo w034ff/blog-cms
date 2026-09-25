@@ -63,6 +63,11 @@ speed (the header of `scripts/e2e-shards.mts`).
   the 12-15s of `next build` eats. Per-case time is navigation, context creation and the TipTap
   mount. What production does buy is memory (RSS 235MB vs 1.58GB), so it matters only if the worker
   count outgrows one dev server.
+- `--repeat-each` spreads a test's copies over the workers, where they run at once against the one
+  DB copy. A test that keys a row by a fixed value (a URL in `link_previews`, a title) then fails
+  on its copies overwriting each other, not on its own code: `editor-link-card.spec.ts`'s 14.3.2
+  case failed 3 of 4 that way with every copy reading the same `fetched_at`, and 8 of 8 passed at
+  `--workers=1` (2026-09-25). Repeat a test with `--workers=1`.
 - `next dev` compiles a route on its first hit (672ms for `/uploads/[name]` against 19-32ms warm),
   which is enough to lose a race a production server never has.
 

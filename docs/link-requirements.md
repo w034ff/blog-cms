@@ -209,10 +209,10 @@ UI は存在しない。 `setLink` / `toggleLink` / `unsetLink` コマンドは�
 
 2 つの層は同じ集合を守っていない。
 
-| 層       | 許可するプロトコル                                                             | 出典                                                         |
-| -------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------ |
-| エディタ | `http` `https` **`ftp` `ftps`** `mailto` **`tel` `callto` `sms` `cid`** `xmpp` | `extension-link/dist/index.js:211-222`（`allowedProtocols`） |
-| 公開     | `http` `https` **`irc` `ircs`** `mailto` `xmpp`                                | `hast-util-sanitize/lib/schema.js:143`                       |
+| 層       | 許可するプロトコル                                                             | 出典                                                            |
+| -------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| エディタ | `http` `https` **`ftp` `ftps`** `mailto` **`tel` `callto` `sms` `cid`** `xmpp` | `extension-link/dist/index.js:211-222`（`allowedProtocols`）    |
+| 公開     | `http` `https` **`irc` `ircs`** `mailto` `xmpp`                                | `hast-util-sanitize/lib/schema.js:143`（`protocols` の `href`） |
 
 エディタだけが通す 6 つ（`ftp` / `ftps` / `tel` / `callto` / `sms` / `cid`）は、公開時に `href` ごと消えて中身のないリンクになる。 2026-08-09 実測:
 
