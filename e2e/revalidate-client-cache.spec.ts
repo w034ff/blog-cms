@@ -6,7 +6,7 @@ import { TEST_DB_PATH } from './constants';
 
 // What does `revalidateBlog()` actually invalidate?
 //
-// It is one line — `revalidatePath('/', 'layout')` in app/actions/posts.ts:79-81 — called from
+// It is one line — `revalidatePath('/', 'layout')` in app/actions/posts.ts `revalidateBlog` — called from
 // four sites (publish, create-and-publish, unpublish, delete), and nothing in the repo records
 // what it buys. It cannot be the Data Cache: docs/cms-features.md:186 measured that
 // `revalidatePath` reaches `fetch()`'s cache only, and every read on this site is a direct

@@ -199,7 +199,7 @@ test('the table of contents sits outside .prose and is untouched', async ({ page
 
   // Still zinc-600 from TocNav's own Tailwind classes. The ToC is the anchor a `.prose a` rule would
   // be most likely to swallow by accident, and the only thing keeping it out is that it sits outside
-  // the article body — a fact that lived in a comment (`globals.css:900`) until now.
+  // the article body — a fact that lived in a comment (globals.css, above `#post-body h2`) until now.
   expect(await colorOf(tocLink)).not.toBe(BLUE_LIGHT);
 });
 

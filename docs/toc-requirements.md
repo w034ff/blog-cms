@@ -2,7 +2,7 @@
 
 - 状態: 実装済み（2026-08-01、`32c366a` / `9e264bb`。除外規則の追加は `13f6e83` / `c7757fc`）
 - 作成: 2026-08-08（**実装後に、コード・コミットメッセージ・テストから起こした事後の記録**）
-- 実装: `lib/rehype-collect-toc.ts`、`components/TocNav.tsx`、`app/posts/[slug]/page.tsx`、`app/globals.css`、`lib/render.ts`（パイプラインへの組み込み）
+- 実装: `lib/rehype-collect-toc.ts`、`components/TocNav.tsx`、`components/PostArticle.tsx`、`app/globals.css`、`lib/render.ts`（パイプラインへの組み込み）
 - 併せて変更されたもの: `app/layout.tsx`、`components/SiteHeader.tsx`、`components/SiteFooter.tsx`（§6.2）
 - 関連: `docs/accordion-requirements.md` §8.1（アコーディオン内の見出しを外す判断の本体）、`docs/footnote-requirements.md` §8（脚注セクションを外す判断の本体）
 

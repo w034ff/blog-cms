@@ -61,11 +61,11 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 ## 4. 表示場所（想定）
 
-| 画面                         | ファイル                    | 挿入位置                                                                                                                                                                                                                                      |
-| ---------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------- |
-| ホーム/タグ/カテゴリの一覧行 | `components/PostCard.tsx`   | `<time dateTime={post.date}>{formatPostDate(post.date)}</time>` と category リンクを並べている `flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500` 行（`components/PostCard.tsx:30`）に、同じスタイルの inline 項目として追加 |
-| 記事詳細ページのヘッダー     | `app/posts/[slug]/page.tsx` | 上と同じ構造を持つヘッダー内の行（`<time dateTime={post.date}>{formatPostDate(post.date)}</time>` — `app/posts/[slug]/page.tsx:153`）に追加                                                                                                   |
-| 管理画面の記事一覧           | `app/admin/page.tsx`        | `{post.slug} · {formatPostDateTime(post.date)                                                                                                                                                                                                 |     | '未公開'} · {post.category}` の行（`app/admin/page.tsx:43`）に `·` 区切りで追加 |
+| 画面                         | ファイル                     | 挿入位置                                                                                                                                                                                                                                      |
+| ---------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- | ----------------------------------------------------------------------------------- |
+| ホーム/タグ/カテゴリの一覧行 | `components/PostCard.tsx`    | `<time dateTime={post.date}>{formatPostDate(post.date)}</time>` と category リンクを並べている `flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500` 行（`components/PostCard.tsx:30`）に、同じスタイルの inline 項目として追加 |
+| 記事詳細ページのヘッダー     | `components/PostArticle.tsx` | 上と同じ構造を持つヘッダー内の行（`<time dateTime={post.date}>{formatPostDate(post.date)}</time>` — `components/PostArticle.tsx`）に追加                                                                                                      |
+| 管理画面の記事一覧           | `app/admin/(list)/page.tsx`  | `{post.slug} · {formatPostDateTime(post.date)                                                                                                                                                                                                 |     | '未公開'} · {post.category}` の行（`app/admin/(list)/page.tsx`）に `·` 区切りで追加 |
 
 いずれも `estimateReadingTime(post.body)` を直接呼ぶ想定だった（§3.1 の通り、`body` はどの画面でもすでに手元にある）。
 
@@ -144,8 +144,8 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 ## 3. データソースとサイトメタ情報
 
 - 投稿一覧: `getAllPosts()`（`lib/posts.ts`）をそのまま使う。すでに `draft=false` かつ `unlisted=false` でフィルタ済み（非公開限定URL投稿 §4 で追加）、`date` 降順。`Post` 型（`lib/types.ts`）に `title`・`slug`・`date`・`description`・`category`・`tags`・`body` に加えて `unlisted`・`updatedAt`（いずれも2026-09-06追加）も載っているが、このフィードが使うのは前者のみ——`unlisted` は `getAllPosts` のフィルタで既に処理済み、`updatedAt` は§4の決定によりフィードに出さない。追加クエリは不要。
-- サイト起点 URL: `siteOrigin`（`lib/site.ts`、`SITE_ORIGIN` 環境変数、既定 `http://localhost:3001`）。`app/layout.tsx:28` の `metadataBase: siteOrigin` と同じ値を使う。
-- サイト名/概要: `SITE_NAME = 'Tech Blog'`・`SITE_DESCRIPTION = '個人技術ブログ'`（`app/shared-metadata.ts:6-7`）。
+- サイト起点 URL: `siteOrigin`（`lib/site.ts`、`SITE_ORIGIN` 環境変数、既定 `http://localhost:3001`）。`app/layout.tsx` の `metadataBase: siteOrigin` と同じ値を使う。
+- サイト名/概要: `SITE_NAME = 'Tech Blog'`・`SITE_DESCRIPTION = '個人技術ブログ'`（`app/shared-metadata.ts`）。
 
 ## 4. 各アイテムの内容
 
@@ -185,7 +185,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 **検討して見送った案**（2026-09-06）: 公開/更新のたびに `revalidatePath('/rss.xml')` を呼び、Route Handler 側をキャッシュさせる案。`node_modules/next/dist/docs/01-app/01-getting-started/15-route-handlers.md`（"Caching" 節、"Route Handlers are not cached by default"）と `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/revalidatePath.md`（"Route Handlers: Invalidates cached data accessed **within** route handlers" — 例はいずれも `fetch(..., { cache: 'force-cache' })`）を確認した結果、この機構は `fetch()` の Data Cache だけを対象にしており、`better-sqlite3` を直接呼ぶこのフィードの DB 読み取りには一切効かないと判明した。Next.js のキャッシュに乗らずに DB 負荷を下げたい場合は、モジュールスコープの自前キャッシュ（このアプリは常時起動の単一プロセスなので機能する）＋ `revalidateBlog()`（`app/actions/posts.ts`）からの明示的な無効化呼び出しを自分で書く必要がある。今回はそこまでの負荷が無いと判断し、素の `force-dynamic` のままとした。
 
-- discoverability: `app/layout.tsx` は生の `<head>` JSX ではなく `export const metadata: Metadata = {...}`（`:19`）を使っているので、そこに `alternates: { types: { 'application/rss+xml': '/rss.xml' } }` を足す。Next.js の Metadata API（`generate-metadata.md` "alternates" 節）がこれを `<link rel="alternate" type="application/rss+xml" href="/rss.xml">` として自動的に出力する——`<link>` タグを手書きしない。
+- discoverability: `app/layout.tsx` は生の `<head>` JSX ではなく `export const metadata: Metadata = {...}` を使っているので、そこに `alternates: { types: { 'application/rss+xml': '/rss.xml' } }` を足す。Next.js の Metadata API（`generate-metadata.md` "alternates" 節）がこれを `<link rel="alternate" type="application/rss+xml" href="/rss.xml">` として自動的に出力する——`<link>` タグを手書きしない。
 
 ### 7.1 `revalidateBlog()` はこのサイトでは何も無効化しない（実測 2026-09-14）
 
@@ -292,14 +292,14 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 
 ## 4. 一覧クエリの変更
 
-| 関数                                                                                          | ファイル       | 変更                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `getAllPosts`                                                                                 | `lib/posts.ts` | `.where(eq(posts.draft, false))` → `and(eq(posts.draft, false), eq(posts.unlisted, false))`                                                                                                                                                 |
-| `getPostsByCategory`                                                                          | `lib/posts.ts` | 同様に `eq(posts.unlisted, false)` を `and()` に追加                                                                                                                                                                                        |
-| `getPostsByTag`・`getAllTags`・`getAllCategories`                                             | `lib/posts.ts` | いずれも内部で `getAllPosts()` を呼ぶだけなので変更不要——`getAllPosts` のフィルタをそのまま継承する                                                                                                                                         |
-| `getPostBySlug`                                                                               | `lib/posts.ts` | **変更しない**——`draft` 以外のフィルタを持たないことが、直接URLアクセスを成立させている本体（§2）                                                                                                                                           |
-| `listAllPosts`（管理画面）                                                                    | `lib/posts.ts` | **変更しない**——`.where()` を持たず全件返す。下書きと同じ「隠さず、印を付ける」方針（`app/api/posts/search/route.ts:35-37` が下書きについて述べる方針を unlisted にも適用する）を踏襲し、一覧はそのまま出して管理画面にバッジを付ける（§6） |
-| `app/api/posts/search/route.ts`（リンクカードの自著記事検索、`:38` で `listAllPosts` を使用） | —              | **変更しない**——`getOptionalSession`（`:27`）で認証済みの著者本人しか叩けないので、下書きと同様 unlisted も見えたままでよい                                                                                                                 |
+| 関数                                                                                 | ファイル       | 変更                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getAllPosts`                                                                        | `lib/posts.ts` | `.where(eq(posts.draft, false))` → `and(eq(posts.draft, false), eq(posts.unlisted, false))`                                                                                                                                                                     |
+| `getPostsByCategory`                                                                 | `lib/posts.ts` | 同様に `eq(posts.unlisted, false)` を `and()` に追加                                                                                                                                                                                                            |
+| `getPostsByTag`・`getAllTags`・`getAllCategories`                                    | `lib/posts.ts` | いずれも内部で `getAllPosts()` を呼ぶだけなので変更不要——`getAllPosts` のフィルタをそのまま継承する                                                                                                                                                             |
+| `getPostBySlug`                                                                      | `lib/posts.ts` | **変更しない**——`draft` 以外のフィルタを持たないことが、直接URLアクセスを成立させている本体（§2）                                                                                                                                                               |
+| `listAllPosts`（管理画面）                                                           | `lib/posts.ts` | **変更しない**——`.where()` を持たず全件返す。下書きと同じ「隠さず、印を付ける」方針（`app/api/posts/search/route.ts` の `listAllPosts` 呼び出しが下書きについて述べる方針を unlisted にも適用する）を踏襲し、一覧はそのまま出して管理画面にバッジを付ける（§6） |
+| `app/api/posts/search/route.ts`（リンクカードの自著記事検索、`listAllPosts` を使用） | —              | **変更しない**——`getOptionalSession` で認証済みの著者本人しか叩けないので、下書きと同様 unlisted も見えたままでよい                                                                                                                                             |
 
 ## 5. 投稿の作成・保存経路
 
@@ -451,7 +451,7 @@ unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
 
 # 画像の拡大
 
-状態: **実装済み**（2026-09-08。`components/ImageZoom.tsx`、`app/globals.css`、`app/posts/[slug]/page.tsx`）
+状態: **実装済み**（2026-09-08。`components/ImageZoom.tsx`、`app/globals.css`、`components/PostArticle.tsx`）
 作成: 2026-09-08。本文画像の一連（キャプション・alt）と同じ流れで、このファイルに足した 5 件目。
 
 ## 1. 決定
