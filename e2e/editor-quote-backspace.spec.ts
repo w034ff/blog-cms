@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { expectCanonicalSelection, pressKeyUntil, settle } from './editor-probe';
 
-// Blockquote Backspace joins (blockquote-extension.ts). @tiptap/extension-blockquote@3.27.1 bundles its
-// own prosemirror-state and joins one level only, so it is replaced; both effects exist only in the
-// bundled runtime.
+// Blockquote Backspace joins (blockquote-extension.ts), replacing upstream's one-level join. The
+// first case dates from @tiptap/extension-blockquote bundling its own prosemirror-state (through
+// 3.27.x; test/no-inlined-prosemirror.test.ts guards that class) and stays as a canonical-selection
+// check.
 
 // The join built its caret from a duplicate TextSelection class, failing prosemirror-view's
 // `instanceof` and killing the next Backspace.
