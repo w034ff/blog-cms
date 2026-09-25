@@ -2786,8 +2786,8 @@ dialog.image-zoom img {
   position: relative;
 }
 /* `left: 0` resolves against the padding box, so the marker sits in the indent. Out of flow, an
-   over-wide marker overlaps the text; 2.6em holds up to `[999]`
-   (e2e/editor-footnote-definition-layout.spec.ts). `tabular-nums` keeps digits steady. */
+   over-wide marker overlaps the text; 2.6em holds up to `[999]` (docs/footnote-requirements.md
+   §5.1 has the per-digit widths). `tabular-nums` keeps digits steady. */
 .ProseMirror div[data-footnote-def]::before {
   content: '[' attr(data-number) ']';
   position: absolute;
