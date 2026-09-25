@@ -30,6 +30,7 @@ These are design records, kept and maintained after the feature ships. They are 
 - Body language is Japanese, matching the existing documents.
 - **Keep them true with checks, not rewrites.** Every defect found in these documents so far has been drift between two copies of a fact, never a format problem, and reorganising them measured at 6-8% saved (2026-09-01). `test/embed-criteria.test.ts` is the pattern: parse the tables, assert they agree with the code and prose they restate, and keep an explicit ledger for the gaps not fixed yet. Duplicating a fact into an index table is fine only when a test then compares the copies.
 - **Measure bold density per line, after stripping code spans.** These documents write `` `**` `` as code when they discuss the syntax, and a document-wide pair scan reads that as an opening marker — it once put `link-requirements.md` at 21.4% when the true figure was 9.5%.
+- **Cite a section as `docs/<name>.md §N`**, and in `docs/cms-features.md`, which numbers § per feature, as `cms-features.md「機能名」§N`. `test/reference-check.test.ts` checks these cites, repo paths and line-number cites in docs and comments; a path meant to be absent goes in its `ABSENT` ledger.
 
 # Where an editor test goes
 
