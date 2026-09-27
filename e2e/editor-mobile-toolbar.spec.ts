@@ -64,10 +64,9 @@ test.describe('on an emulated phone', () => {
     await plus(page).click();
     const panel = page.getByTestId('insert-menu-panel');
     await expect(panel).toBeVisible();
-    for (const name of ['囲み枠', '表', 'リンク', '引用']) {
+    for (const name of ['囲み枠', '表', 'リンク', '引用', '画像']) {
       await expect(panel.getByRole('button', { name, exact: true })).toBeVisible();
     }
-    // 画像 is the <label> around a file input, the one control here that is not a <button>.
     await expect(panel.getByTestId('image-picker-touch')).toHaveCount(1);
     // A full-width bottom sheet (§12.18): no anchor edge cases left.
     const box = (await panel.boundingBox())!;

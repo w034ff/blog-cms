@@ -52,12 +52,14 @@ test('toolbar image upload inserts an uploaded image', async ({ page }) => {
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
 
-  // setInputFiles works on the hidden input, the picker's own path.
-  await page.getByTestId('image-picker').setInputFiles({
-    name: 'e2e-pixel.png',
-    mimeType: 'image/png',
-    buffer: PNG_1x1,
-  });
+  // By keyboard, from its neighbour: the picker is a button in the row's tab order, and Enter on it
+  // opens the file chooser the hidden input owns.
+  await page.getByRole('button', { name: '表', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '画像', exact: true })).toBeFocused();
+  const chooser = page.waitForEvent('filechooser');
+  await page.keyboard.press('Enter');
+  await (await chooser).setFiles({ name: 'e2e-pixel.png', mimeType: 'image/png', buffer: PNG_1x1 });
 
   const img = editor.locator('img');
   await expect(img).toBeVisible({ timeout: 20_000 });

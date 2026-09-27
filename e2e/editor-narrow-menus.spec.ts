@@ -314,22 +314,20 @@ test.describe('on an emulated phone at 360px', () => {
     expect(shadows.every((s) => !s.includes('inset'))).toBe(true);
 
     const outlines = (selector: string) =>
-      page.locator(selector).evaluateAll((els) =>
-        els.map((el) => ({
-          tag: el.tagName,
-          ring: getComputedStyle(el).boxShadow.includes('inset'),
-        })),
-      );
+      page
+        .locator(selector)
+        .evaluateAll((els) =>
+          els.map((el) => ({ ring: getComputedStyle(el).boxShadow.includes('inset') })),
+        );
     const main = await outlines('.editor-toolbar-bar .toolbar-scroll .toolbar-button:visible');
     expect(main.length).toBeGreaterThan(8);
     expect(main.every((c) => !c.ring)).toBe(true);
 
-    // Every control in the ＋ menu too, by tag, including 画像 (a `<label>` styled as a button).
+    // Every control in the ＋ menu too.
     await page.getByRole('button', { name: 'ブロックを追加' }).click();
     const inserts = await outlines('[data-testid="insert-menu-panel"] .toolbar-button');
     expect(inserts.length).toBeGreaterThan(2);
     expect(inserts.every((c) => !c.ring)).toBe(true);
-    expect(inserts.some((c) => c.tag === 'LABEL')).toBe(true);
     await page.keyboard.press('Escape');
 
     expect(await toolbarRows(page)).toBeLessThan(1.5);

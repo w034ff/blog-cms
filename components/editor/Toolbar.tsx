@@ -1,6 +1,6 @@
 'use client';
 
-import type { ChangeEvent } from 'react';
+import { Fragment, useRef, type ChangeEvent } from 'react';
 import type { Editor } from '@tiptap/core';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { selectionTouches } from './selection-scan';
@@ -256,20 +256,19 @@ export function InsertControls({
 
   // Each row is built once and placed in a per-surface order below; only one branch mounts it.
 
-  // A <label>-wrapped hidden file input styled as a ToolbarButton. It needs its own
-  // `cursor-pointer` and `toolbar-button` class because the global rules target `button`.
+  // A button that opens the hidden file input, not a <label> around it: a label is not focusable, so
+  // the picker would drop out of the row's tab order.
+  const imageInput = useRef<HTMLInputElement>(null);
   const image = (
-    <label
-      key='image'
-      className={`toolbar-button inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${
-        imageBlocked
-          ? 'pointer-events-none opacity-40'
-          : 'cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800'
-      }`}>
-      <ImageIcon />
-      {uploading ? 'アップロード中…' : '画像'}
-
+    <Fragment key='image'>
+      <ToolbarButton onClick={() => imageInput.current?.click()} disabled={imageBlocked}>
+        <span className='flex items-center gap-1'>
+          <ImageIcon />
+          {uploading ? 'アップロード中…' : '画像'}
+        </span>
+      </ToolbarButton>
       <input
+        ref={imageInput}
         data-testid={pickerTestId}
         type='file'
         accept={ALLOWED_IMAGE_ACCEPT}
@@ -280,7 +279,7 @@ export function InsertControls({
           nav?.closeMenu();
         }}
       />
-    </label>
+    </Fragment>
   );
 
   // Same command and `can()` guard as the slash menu's 「リンク」 row; the dialog picks card or
