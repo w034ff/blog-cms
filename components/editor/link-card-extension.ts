@@ -1,4 +1,4 @@
-import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
+import { Node, mergeAttributes, type CommandProps, type Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
@@ -19,6 +19,7 @@ import {
   type IconShape,
 } from './svg/icon-shapes';
 import { canPlaceAfterCaret } from './code-block-extension';
+import { focusThenRun } from './focus-then-run';
 import { escapeAttribute } from './html-escape';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
@@ -487,7 +488,7 @@ function head(): HTMLDivElement {
 function renderCard(
   body: HTMLElement,
   href: string,
-  editor: { commands: { unsetLinkCard: (at?: number) => boolean } },
+  editor: Editor,
   onClear: () => void,
   pos: () => number | undefined,
   setImage: (picture: CardImage | null) => void,
@@ -502,7 +503,8 @@ function renderCard(
       icon: EXTERNAL_LINK_SHAPES,
     }),
     button('変更', onClear, { icon: PENCIL_SHAPES }),
-    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos()), {
+    // Refocused first, as the embed's does: the command removes this button, which holds focus.
+    button('リンクに戻す', () => focusThenRun(editor, (c) => c.unsetLinkCard(pos())), {
       icon: UNLINK_SHAPES,
       danger: true,
     }),

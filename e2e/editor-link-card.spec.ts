@@ -170,12 +170,16 @@ test('the caret cannot enter a card, and the link bubble stays away (4a)', async
 test('a card can be turned back into a text link (4b)', async ({ page }) => {
   await openWithCard(page);
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await closeHistory(page);
 
   await card(page).getByRole('button', { name: 'リンクに戻す' }).click();
 
   // §7-3: the reference survives and the text reads like something an author would have written.
   expect(await docString(page)).not.toContain('linkCard');
   expect(await markdown(page)).toContain(`[${CARD_TITLE}](${CARD_HREF})`);
+  // Focus is back in the editor, so one Ctrl-Z brings the card back (4s).
+  await page.keyboard.press('Control+z');
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
 });
 
 // §7.4. Not that a tab opens (`window.open` is the browser's), but that pressing a control beside

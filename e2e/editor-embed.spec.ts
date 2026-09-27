@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  closeHistory,
   contentStartOf,
   loadMarkdown,
   moveBlockAbove,
@@ -108,6 +109,7 @@ test('リンクに戻す hands the reference back verbatim', async ({ page }) =>
   const href = `${WATCH}&t=90`;
   await openWith(page, `<div class="embed" data-href="${href}"></div>\n\n本文\n`);
   await expect(embed(page).locator('iframe')).toHaveAttribute('src', `${SRC}?start=90`);
+  await closeHistory(page);
 
   await page.getByRole('button', { name: 'リンクに戻す' }).click();
   await expect(embed(page)).toHaveCount(0);
@@ -115,6 +117,9 @@ test('リンクに戻す hands the reference back verbatim', async ({ page }) =>
   const link = page.locator('.ProseMirror a').first();
   await expect(link).toHaveAttribute('href', href);
   await expect(link).toHaveText(href);
+  // The button that held focus is gone; focus is back in the editor, so one Ctrl-Z undoes it (E20).
+  await page.keyboard.press('Control+z');
+  await expect(embed(page).locator('iframe')).toHaveAttribute('src', `${SRC}?start=90`);
 });
 
 // Icon and label, like the card's band and the code block's copy (link-card-requirements.md §7.4),

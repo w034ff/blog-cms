@@ -14,6 +14,7 @@ import {
   X_PROVIDER,
 } from '@/lib/embed-message';
 import { canPlaceAfterCaret } from './code-block-extension';
+import { focusThenRun } from './focus-then-run';
 import { escapeAttribute } from './html-escape';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { buildIcon, UNLINK_SHAPES } from './svg/icon-shapes';
@@ -262,9 +263,11 @@ export const Embed = Node.create({
       unsetLabel.className = 'embed-to-link-label';
       unsetLabel.textContent = 'リンクに戻す';
       unset.append(buildIcon(UNLINK_SHAPES), unsetLabel);
+      // Focus goes back to the editor first: the click left it on this button, which the command
+      // then removes, so without it focus falls to <body> and the next Ctrl-Z does nothing.
       unset.addEventListener('click', () => {
         const pos = getPos();
-        editor.commands.unsetEmbed(typeof pos === 'number' ? pos : undefined);
+        focusThenRun(editor, (c) => c.unsetEmbed(typeof pos === 'number' ? pos : undefined));
       });
       actions.appendChild(unset);
 
