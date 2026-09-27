@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { Editor } from '@tiptap/core';
-import { getMarkRange } from '@tiptap/core';
-import { Mark } from '@tiptap/pm/model';
 import { TextSelection } from '@tiptap/pm/state';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { autoUpdate, computePosition, flip, offset, shift, size } from '@floating-ui/dom';
 import { setLinkHighlight } from './link-highlight-extension';
+import { displayHref, editableLinkText, faviconSrc, linkAtCaret } from './link-at-caret';
 import {
   collectHeadings,
   headingForFragment,
@@ -80,26 +79,11 @@ function linkElementAt(editor: Editor): HTMLAnchorElement | null {
   return null;
 }
 
-// The root `/favicon.ico` of the link's origin, or null without one (`tel:`, `mailto:`); relative
-// links get this blog's own. Not `<link rel="icon">`, which would need a server fetch on every
-// caret placement; the `<img>` is the author's browser asking, so no SSRF question (§5.5.8). Sites
-// declaring their icon only in HTML show none. A browser, not curl, is the right probe (curl got a
-// 403 where a browser didn't).
-function faviconSrc(href: string): string | null {
-  try {
-    const url = new URL(href, window.location.origin);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    return `${url.origin}/favicon.ico`;
-  } catch {
-    return null;
-  }
-}
-
 // Drawn only once loaded, since failure is common and an empty box reads as broken; the card is
 // left-anchored, so its arrival grows it rightwards. `no-referrer`, so the third party doesn't learn
 // which page is being edited. Keyed on href by the caller, so a new link remounts it.
 function LinkFavicon({ href }: { href: string }) {
-  const src = faviconSrc(href);
+  const src = faviconSrc(href, window.location.origin);
   const [loaded, setLoaded] = useState(false);
   if (!src) return null;
   return (
@@ -117,71 +101,6 @@ function LinkFavicon({ href }: { href: string }) {
       className={`${loaded ? 'block' : 'hidden'} ml-1 h-4 w-4 shrink-0 rounded-sm`}
     />
   );
-}
-
-// The link the card is about (range and href), or null. Every question about the current link goes
-// through here.
-//
-// The mark is no longer inclusive (link-extension.ts), so at a link's right edge `isActive` and
-// `getAttributes` answer nothing (§5.5.12). **The probe is the text before the caret**: `childBefore`
-// has the link inside it and at its right edge but not its left, the card's reach while the mark
-// was inclusive. `getMarkRange` alone also resolves at the left edge, so it only widens the range
-// once the probe has found a link. A selection still uses `isActive`.
-function linkAtCaret(editor: Editor): { from: number; to: number; href: string } | null {
-  const type = editor.schema.marks.link;
-  if (!type) return null;
-  const { $from, from, empty } = editor.state.selection;
-  if (empty) {
-    const before = $from.parent.childBefore($from.parentOffset).node;
-    if (!before?.marks.some((mark) => mark.type === type)) return null;
-  } else if (!editor.isActive('link')) {
-    return null;
-  }
-  const range = getMarkRange(editor.state.doc.resolve(from), type);
-  if (!range) return null;
-  // Off the range's first text node: the caret at the right edge carries no link mark.
-  const href = editor.state.doc.nodeAt(range.from)?.marks.find((mark) => mark.type === type)
-    ?.attrs.href;
-  return { from: range.from, to: range.to, href: typeof href === 'string' ? href : '' };
-}
-
-// The link's text when the card may rewrite it, else null (§5.5.13). **Allowed means one mark set
-// over the whole range**, since the replacement is one text node carrying that set (so a uniformly
-// bold link keeps its bold). Asked over the nodes, not their count: identical-mark text can be split
-// into several nodes.
-function editableLinkText(editor: Editor, from: number, to: number): string | null {
-  const type = editor.schema.marks.link;
-  if (!type) return null;
-  let plain = true;
-  let marks: readonly Mark[] | null = null;
-  editor.state.doc.nodesBetween(from, to, (node) => {
-    if (!plain) return false;
-    if (node.isText) {
-      // `getMarkRange` only spans nodes with the same link attrs
-      // (`isMarkInSet([...$pos.parent.child(endIndex).marks], type, attributes)`), so only the
-      // rest of the set is in question.
-      if (marks === null) marks = node.marks;
-      else if (!Mark.sameSet(marks, node.marks)) plain = false;
-      return false;
-    }
-    // An inline node that is not text — a footnote reference, an image — is structure by itself.
-    if (node.isInline) {
-      plain = false;
-      return false;
-    }
-    return true;
-  });
-  return plain ? editor.state.doc.textBetween(from, to) : null;
-}
-
-// Only `https://` is hidden, so an unencrypted `http://` is what shows, as in Chrome's address bar.
-// Display only: the tooltip, open and copy use the raw href (§5.5.10).
-function displayHref(href: string): string {
-  return href.replace(/^https:\/\//i, '');
-}
-
-function currentHref(editor: Editor): string {
-  return linkAtCaret(editor)?.href ?? '';
 }
 
 export function LinkBubble({
@@ -227,14 +146,14 @@ export function LinkBubble({
   // Joins each label to its input.
   const fieldId = useId();
 
-  const href = currentHref(editor);
+  const href = linkAtCaret(editor.state)?.href ?? '';
   const title = fetchedTitle?.href === href ? fetchedTitle.title : null;
 
   // Turning this link into a card (docs/link-card-requirements.md §14.6-2), decided here because a
   // present button that does nothing is worse than none (§5.2-1). `normalizeCardHref` says whether
   // there is a card to become (rewriting this blog's own URLs, §14.5.1); `can()` says whether the
   // link is the whole line.
-  const link = linkAtCaret(editor);
+  const link = linkAtCaret(editor.state);
   // The order is the decision (docs/embed-requirements.md §5): a provider is asked first, so a
   // YouTube link is never offered a card.
   const embedTarget = link ? resolveEmbed(link.href) : null;
@@ -293,10 +212,10 @@ export function LinkBubble({
   // Open the edit mode, seeding the text field with the text as it is now, which a save compares
   // against.
   const openField = useCallback(() => {
-    const link = linkAtCaret(editor);
+    const link = linkAtCaret(editor.state);
     setDraft(link?.href ?? '');
     // No text field while making a link: the selected text already is the text (§5.5.13).
-    const text = link ? editableLinkText(editor, link.from, link.to) : null;
+    const text = link ? editableLinkText(editor.state.doc, link.from, link.to) : null;
     setTextInitial(text);
     setTextDraft(text ?? '');
     // An existing `#…` link opens with its list showing, which is the same offer as typing the `#`.
@@ -314,7 +233,7 @@ export function LinkBubble({
     editingRef.current = false;
     setEditing(false);
     // Cancelling an assignment leaves no link under the caret, so the card has nothing left to show.
-    if (!linkAtCaret(editor)) {
+    if (!linkAtCaret(editor.state)) {
       signal('hide');
       return;
     }
@@ -336,7 +255,7 @@ export function LinkBubble({
   // open.
   const shouldShow = useCallback(() => {
     if (editingRef.current) return true;
-    const link = linkAtCaret(editor);
+    const link = linkAtCaret(editor.state);
     if (!link) {
       dismissedRef.current = false;
       leavingRef.current = null;
@@ -363,7 +282,7 @@ export function LinkBubble({
       if (menuVisible) signal('hide');
       return;
     }
-    const link = linkAtCaret(editor);
+    const link = linkAtCaret(editor.state);
     if (link) {
       setLinkHighlight(editor, { from: link.from, to: link.to });
       return;
@@ -391,7 +310,7 @@ export function LinkBubble({
       abandonField();
       if (inDocument && !staying) {
         // Captured before the caret moves — after it, there is nothing left to name.
-        leavingRef.current = linkAtCaret(editor);
+        leavingRef.current = linkAtCaret(editor.state);
         signal('hide');
       }
     };
@@ -443,7 +362,7 @@ export function LinkBubble({
   const getReferencedVirtualElement = useCallback(() => {
     // While making a link, anchor to the selection: `linkElementAt`'s `from - 1` found the link
     // just before a selection (§5.5.11).
-    if (editingRef.current && !linkAtCaret(editor)) return null;
+    if (editingRef.current && !linkAtCaret(editor.state)) return null;
     const anchor = linkElementAt(editor);
     // Null falls back to the plugin's own selection rect.
     return anchor
@@ -523,14 +442,14 @@ export function LinkBubble({
         event.preventDefault();
         if (editingRef.current) return;
         dismissedRef.current = false;
-        if (!linkAtCaret(editor) && editor.state.selection.empty) {
+        if (!linkAtCaret(editor.state) && editor.state.selection.empty) {
           onNotice('リンクにするテキストを選択してください');
           return;
         }
         openField();
         return;
       }
-      if (event.key === 'Escape' && !editingRef.current && linkAtCaret(editor)) {
+      if (event.key === 'Escape' && !editingRef.current && linkAtCaret(editor.state)) {
         if (dismissedRef.current) return;
         dismissedRef.current = true;
         signal('hide');
@@ -571,7 +490,7 @@ export function LinkBubble({
     if (next === '') {
       // An emptied field means "this should not be a link" when there is one, and nothing at all
       // when the author was in the middle of making one.
-      if (linkAtCaret(editor)) editor.chain().extendMarkRange('link').unsetLink().run();
+      if (linkAtCaret(editor.state)) editor.chain().extendMarkRange('link').unsetLink().run();
       // Not `close()`, whose focus scrolled the page on a phone (§5.5.21); `abandonField` takes its
       // synchronous branch here, the link having just been removed.
       abandonField();
@@ -599,7 +518,7 @@ export function LinkBubble({
       return;
     }
     // One chain, one undo. No `.focus()`, which would leave the open field if something refused.
-    const link = linkAtCaret(editor);
+    const link = linkAtCaret(editor.state);
     const chain = editor.chain();
     if (link && textInitial !== null && textDraft !== textInitial) {
       chain.command(({ tr }) => {

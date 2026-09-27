@@ -735,6 +735,15 @@ Vite + React Router 7 への移行を検討し、Next 16 に留まると決め�
 
 **その窓の測り方**: 保存が保留中であることと、送信中であることは違う。800ms のデバウンスが明ける前にクリックすると、フォーム自身の `cancelPendingAutosave()` がタイマーを消し、自動保存は走らず、危険が無いことの証明に見える。最初の `/api/drafts` を `page.route` で止め、そのハンドラが発火してからクリックする。
 
+### 3.1 PostEditor と LinkBubble の分割の境目（2026-09-28）
+
+**決定**: PostEditor はこれ以上分けない。`components/editor/LinkBubble.tsx` からは、カードが文書と href に訊く純関数（`linkAtCaret`・`editableLinkText`・`displayHref`・`faviconSrc`）だけを `components/editor/link-at-caret.ts` に出した。どちらも行数は理由にしていない。
+
+- **PostEditor**: 上の 2 案が扱わなかった境目はヘッダバーの component 化（約 125 行）だけである。8 月以降の変更はヘッダ・＋ ドロワー・記事の設定に集まっているが、切り出すと props が約 14 個になり（公開の状態・ラベル・disabled、自動保存の表示、InsertMenu の開閉、画像アップロード、ヘルプと設定の開閉、`state.error` など）、親との結合は減らない。ヘッダが props ではなく自分の状態を持ち始めたら見直す。
+- **LinkBubble で出した理由はテストの層である。** `linkAtCaret` と `editableLinkText` は文書と選択についての主張で、それまで E2E でしか測れていなかった（AGENTS.md の「Where an editor test goes」）。`EditorState` を受け取る形にし、`components/editor/link-at-caret.test.ts` が右端・左端・選択・一様なマーク・インラインのアトム・脚注定義の中を測る。基準 5p・7f（`docs/link-requirements.md` §5.5.10・§5.5.12）はこのファイルに移した。
+- **LinkBubble に残したもの**: `editingRef` / `dismissedRef` / `leavingRef`、`shouldShow`、blur・focusout・mousedown・keydown の規則、位置直しの layout effect は、ref とタイミングでつながった 1 つの状態機械である（`docs/editor-pitfalls.md` §10.4・§10.5）。hook に分けても結合は残り、順序が hook の境界の向こうに隠れるだけになる。
+- **次に触るときに判断するもの**: 見出し候補（`docs/link-requirements.md` §5.5.17。約 200 行、hook にすると入出力が 6〜8 個）とタイトル取得の effect（§5.5.10。約 25 行）。どちらも境目としては成り立つが、テストの層は変わらない。
+
 ## 4. 絵文字のアイキャッチ（2026-09-24、作って見送り）
 
 Zenn 型の絵文字アイキャッチを、画像のサムネイルと択一の代替として作った。捨てるブランチで全テスト緑まで作り、作者が実物を見て「画像だけでよく絵文字は不要」と決めた。コミットしていない。

@@ -632,16 +632,6 @@ test('https:// is dropped from the line but from nothing else', async ({ page })
   expect(await markdown(page)).toBe('前[リンク](https://example.com/a/b)後');
 });
 
-test('http:// is left where it is', async ({ page }) => {
-  // Only the default scheme hides, so an unencrypted link is the one showing its scheme.
-  await openEditor(page);
-  await loadMarkdown(page, '前[リンク](http://example.com/a/b)後\n');
-  await setRange(page, 3);
-  await expect(card(page).getByRole('button', { name: 'リンク先を開く' })).toHaveText(
-    'http://example.com/a/b',
-  );
-});
-
 test('a link with no obtainable title is the card as it was', async ({ page }) => {
   // A dead port, offline. No title is the resting state, not an error.
   await openEditor(page);

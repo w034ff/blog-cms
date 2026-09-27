@@ -6,7 +6,8 @@ import { loadMarkdown, setRange } from './editor-authoring';
 // at the right edge stays out, as at the left. `extension-link`'s
 // `inclusive() { return this.options.autolink; }` tied it to autolink (§4), and the 。 after a link
 // was swallowed. The rest pins what rides on the option and must not move; the card now resolves
-// from the text before the caret (`linkAtCaret`, cases in editor-link-bubble.spec.ts).
+// from the text before the caret (`linkAtCaret`, whose cases, 7f among them, are in
+// components/editor/link-at-caret.test.ts; the card's are in editor-link-bubble.spec.ts).
 
 const MD = '前[リンク](https://example.com "タイトル")後\n';
 // 「前リンク後」: 前 = 1..2, リンク = 2..5, 後 = 5..6.
@@ -108,27 +109,4 @@ test('a composition inside the link keeps the card', async ({ page }) => {
   await settle(page);
   expect(await docString(page)).toBe('doc(paragraph("前", link("リンあク"), "後"))');
   await expect(card(page)).toBeVisible();
-});
-
-test('the caret at a right edge no longer reads as being in a link', async ({ page }) => {
-  // `isActive('link')` and `getAttributes('link')` both say no link at the right edge. Restored
-  // inclusiveness would fail here, leaving `linkAtCaret` answering nothing.
-  await openEditor(page, MD);
-  await setRange(page, LINK_RIGHT_EDGE);
-  const atCaret = await page.evaluate(() => {
-    const el = document.querySelector('.ProseMirror') as
-      | (Element & {
-          editor?: {
-            isActive(name: string): boolean;
-            getAttributes(name: string): Record<string, unknown>;
-          };
-        })
-      | null;
-    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
-    return {
-      isActive: el.editor.isActive('link'),
-      attrs: Object.keys(el.editor.getAttributes('link')).length,
-    };
-  });
-  expect(atCaret).toEqual({ isActive: false, attrs: 0 });
 });
