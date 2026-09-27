@@ -33,6 +33,7 @@ import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
 import { SiteColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
+import { EDIT_POST_TITLE, tabTitle } from '@/app/shared-metadata';
 import type { PostFormState } from '@/app/actions/posts';
 
 export type PostEditorInitial = {
@@ -381,10 +382,12 @@ export function PostEditor({
   }, [editor]);
 
   // Sync the address bar to a new post's edit URL without navigating, once it gains an identity.
+  // Without a navigation no metadata runs, so the tab title is set here to match the edit page's.
   useEffect(() => {
     if (committedId === null || urlSyncedRef.current) return;
     urlSyncedRef.current = true;
     window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
+    document.title = tabTitle(EDIT_POST_TITLE);
   }, [committedId]);
 
   const publishLabel = pending

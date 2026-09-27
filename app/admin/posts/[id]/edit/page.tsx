@@ -4,11 +4,12 @@ import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
 import { getPostForEdit, liveContent } from '@/lib/posts';
 import { listDictionary } from '@/lib/tags';
+import { EDIT_POST_TITLE } from '@/app/shared-metadata';
 
 export const dynamic = 'force-dynamic';
 
 // No h1: the editor's title field names the post. The tab title tells new from edit.
-export const metadata: Metadata = { title: '記事を編集' };
+export const metadata: Metadata = { title: EDIT_POST_TITLE };
 
 export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

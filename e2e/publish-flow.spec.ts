@@ -7,6 +7,7 @@ import {
   ensureCategory,
 } from './editor-authoring';
 import { publishedPath } from './published-post';
+import { EDIT_POST_TITLE, tabTitle } from '../app/shared-metadata';
 
 // The publish lifecycle: autosave creates the row (URL sync) → 投稿 → edit → 更新. The action result
 // is adopted during render (useAutosave's acceptSaved), so a regression shows as a render-phase
@@ -32,6 +33,8 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   // The first autosave creates the row; the address syncs to its edit URL without navigating.
   await expectAutosaved(page);
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/edit$/);
+  // The tab title follows the address, as a reload of it would give.
+  await expect(page).toHaveTitle(tabTitle(EDIT_POST_TITLE));
   await expectDraft(page);
 
   // Published in place: published-current, and the button reads 更新.
@@ -39,6 +42,8 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await page.getByRole('button', { name: '投稿' }).click();
   await expectPublished(page);
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
+  // The publish revalidates the page (docs/editor-pitfalls.md §15.5); the title survives it.
+  await expect(page).toHaveTitle(tabTitle(EDIT_POST_TITLE));
 
   // The public address from the row: the editor never shows the slug, assigned by the first autosave
   // (app/api/drafts/route.ts). Publishing makes it serve.

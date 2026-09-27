@@ -4,6 +4,16 @@ import type { Metadata } from 'next';
 export const SITE_NAME = 'Tech Blog';
 export const SITE_DESCRIPTION = '個人技術ブログ';
 
+// The layout's title template. `tabTitle` applies it for a title set from the client, where no
+// metadata runs.
+export const TITLE_TEMPLATE = `%s | ${SITE_NAME}`;
+export function tabTitle(title: string): string {
+  return TITLE_TEMPLATE.replace('%s', title);
+}
+
+// The edit page's title. A new post's editor takes it too, once its address becomes the edit URL.
+export const EDIT_POST_TITLE = '記事を編集';
+
 // Spread into every page's `openGraph`: a page that sets `openGraph` REPLACES the layout's object,
 // so without this it would drop og:site_name and og:locale. The post page overrides `type`.
 export const sharedOpenGraph = {

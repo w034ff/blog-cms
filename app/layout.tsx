@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { siteIndexable, siteOrigin } from '@/lib/site';
-import { SITE_DESCRIPTION, SITE_NAME, sharedOpenGraph } from './shared-metadata';
+import { SITE_DESCRIPTION, SITE_NAME, TITLE_TEMPLATE, sharedOpenGraph } from './shared-metadata';
 import './globals.css';
 
 const geistSans = Geist({
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
   title: {
     default: SITE_NAME,
-    template: `%s | ${SITE_NAME}`,
+    template: TITLE_TEMPLATE,
   },
   description: SITE_DESCRIPTION,
   // Emits <link rel="alternate" type="application/rss+xml">; app/rss.xml/route.ts serves it.
