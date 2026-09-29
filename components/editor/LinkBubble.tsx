@@ -42,6 +42,8 @@ import { isSpeakerdeckDeckPage } from '@/lib/speakerdeck-snippet';
 // Distinct from the table menu's key, so the metas below reach this menu.
 const MENU_KEY = 'linkMenu';
 const OPEN_SHORTCUT = 'Mod-k';
+// Said by `Mod-k` before the field opens; apply keeps the same check behind it.
+const LINK_REFUSED_HERE = 'ここにはリンクを付けられません';
 
 // While the card is up, this body class hides the table toolbar (app/globals.css), since a link in a
 // cell would raise both. CSS, because `shouldShow` isn't re-asked when the URL field takes focus
@@ -442,6 +444,12 @@ export function LinkBubble({
         event.preventDefault();
         if (editingRef.current) return;
         dismissedRef.current = false;
+        // Asked before opening, so a refused place costs no typing. First, because selecting text
+        // there would not help. The scheme is still checked on apply.
+        if (!editor.can().setMark('link')) {
+          onNotice(LINK_REFUSED_HERE);
+          return;
+        }
         if (!linkAtCaret(editor.state) && editor.state.selection.empty) {
           onNotice('リンクにするテキストを選択してください');
           return;
@@ -512,7 +520,7 @@ export function LinkBubble({
       onNotice(
         editor.can().setMark('link')
           ? 'このリンク先は公開できないため設定していません'
-          : 'ここにはリンクを付けられません',
+          : LINK_REFUSED_HERE,
       );
       inputRef.current?.focus();
       return;

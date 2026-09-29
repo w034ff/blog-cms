@@ -1,6 +1,12 @@
 import { test, expect, devices, type Page } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
-import { expectAutosaved, loadMarkdown, selectInside, setRange } from './editor-authoring';
+import {
+  caretAtStartOf,
+  expectAutosaved,
+  loadMarkdown,
+  selectInside,
+  setRange,
+} from './editor-authoring';
 
 // The link card (components/editor/LinkBubble.tsx, docs/link-requirements.md §5.5), the editor's
 // only link UI. Positions are set programmatically: a click's caret reaches `state.selection` a
@@ -172,34 +178,36 @@ test('the URL field refuses a scheme publishing would drop', async ({ page }) =>
   await expect(field).toHaveValue('tel:+81312345678');
 });
 
-test('the card says so where the schema will not hold a link', async ({ page }) => {
-  // `detailsSummary` and `codeBlock` declare `marks: ''`: setMark reports success and the schema drops
-  // the mark, so without the check the field would close on a link never made (§2.4/§2.5).
+// Said at `Mod-k`, before the field opens, so a refused place costs no typing. `detailsSummary` and
+// `codeBlock` declare `marks: ''`: setMark would report success and the schema drop the mark, so
+// without the check the field would close on a link never made (§2.4/§2.5).
+async function expectRefusedAtModK(page: Page, doc: string): Promise<void> {
+  await page.keyboard.press('Control+k');
+  await expect(page.getByText('ここにはリンクを付けられません')).toBeVisible();
+  await expect(card(page).getByRole('textbox', { name: 'リンク先' })).toHaveCount(0);
+  await settle(page);
+  expect(await docString(page)).toBe(doc);
+}
+
+test('Mod-k says so where the schema will not hold a link', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, '<details><summary>たたみ見出し</summary>\n\n中身\n\n</details>\n');
   await selectInside(page, 'detailsSummary');
-  await page.keyboard.press('Control+k');
-  const field = card(page).getByRole('textbox', { name: 'リンク先' });
-  await field.fill('https://example.com');
-  await field.press('Enter');
-  await settle(page);
-  expect(await docString(page)).toContain('detailsSummary("たたみ見出し")');
-  expect(await docString(page)).not.toContain('link(');
-  await expect(page.getByText('ここにはリンクを付けられません')).toBeVisible();
-  await expect(field).toBeFocused();
+  await expectRefusedAtModK(
+    page,
+    'doc(details(detailsSummary("たたみ見出し"), detailsContent(paragraph("中身"))), paragraph)',
+  );
 });
 
-test('the same inside a code block', async ({ page }) => {
+test('the same inside a code block, where a caret alone is refused rather than asked to select', async ({
+  page,
+}) => {
+  // Selecting would not help here, so the place is answered before the empty selection is.
   await openEditor(page);
   await loadMarkdown(page, '```js\nconst a = 1;\n```\n');
-  await selectInside(page, 'codeBlock');
-  await page.keyboard.press('Control+k');
-  const field = card(page).getByRole('textbox', { name: 'リンク先' });
-  await field.fill('https://example.com');
-  await field.press('Enter');
-  await settle(page);
-  expect(await docString(page)).not.toContain('link(');
-  await expect(page.getByText('ここにはリンクを付けられません')).toBeVisible();
+  await caretAtStartOf(page, 'codeBlock');
+  await expectRefusedAtModK(page, 'doc(codeBlock("const a = 1;\\n"), paragraph)');
+  await expect(page.getByText('リンクにするテキストを選択してください')).toHaveCount(0);
 });
 
 test('the same over an inline code span', async ({ page }) => {
@@ -207,13 +215,7 @@ test('the same over an inline code span', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, '`const a` のこと\n');
   await setRange(page, 1, 8);
-  await page.keyboard.press('Control+k');
-  const field = card(page).getByRole('textbox', { name: 'リンク先' });
-  await field.fill('https://example.com');
-  await field.press('Enter');
-  await settle(page);
-  expect(await docString(page)).toBe('doc(paragraph(code("const a"), " のこと"))');
-  await expect(page.getByText('ここにはリンクを付けられません')).toBeVisible();
+  await expectRefusedAtModK(page, 'doc(paragraph(code("const a"), " のこと"))');
 });
 
 test('an emptied URL field removes the link', async ({ page }) => {
