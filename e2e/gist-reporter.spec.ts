@@ -58,16 +58,16 @@ test('the frame announces its height, answers an ask, and reports an empty gist 
 
     const reports = async () =>
       page.evaluate(() => (window as unknown as { reports: Report[] }).reports);
+    // The latest, since both parents apply every report and the last one stands. The first can
+    // carry a height of 0 with the file already drawn — the frame's timed sends can run before it
+    // is laid out — and the resize path corrects it.
+    const latest = async (id: string) => (await reports()).findLast((r) => r.id === id);
 
     // **The height, unprompted**, the reason for our own document over `.pibb` (§18.3).
-    await expect
-      .poll(async () => (await reports()).find((r) => r.id === 'emb-drawn')?.height)
-      .toBe(HEIGHT);
-    expect((await reports()).find((r) => r.id === 'emb-drawn')?.files).toBe(1);
+    await expect.poll(async () => (await latest('emb-drawn'))?.height).toBe(HEIGHT);
+    expect((await latest('emb-drawn'))?.files).toBe(1);
     // Zero files: the signal for a link or a note (§18.5).
-    await expect
-      .poll(async () => (await reports()).find((r) => r.id === 'emb-empty')?.files)
-      .toBe(0);
+    await expect.poll(async () => (await latest('emb-empty'))?.files).toBe(0);
 
     // **The ask**: a parent listening late would keep the guess, so it asks, and the reply is counted.
     const before = (await reports()).filter((r) => r.id === 'emb-drawn').length;
