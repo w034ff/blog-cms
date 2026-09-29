@@ -17,6 +17,7 @@ import {
   tagSlugProblem,
 } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
+import { EditorTooltip } from '@/components/editor/EditorTooltip';
 
 const inputClass =
   'w-full min-w-0 rounded-xs border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
@@ -128,29 +129,38 @@ export function TagDirectory({
       <div className='mt-8'>
         <div
           className={`${columnsClass} border-b border-zinc-200 pb-2 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400`}>
-          <button
-            type='button'
-            aria-pressed={sort === 'slug'}
-            onClick={() => setSort('slug')}
-            className={`text-left ${headingButton(sort === 'slug')}`}>
-            識別子{sort !== 'slug' && sortArrow(null)}
-          </button>
+          {/* The tooltip says what a press does; the order now is the arrow's and aria-label's job.
+              A sibling of the button, not its child, so the button's text stays its name. */}
+          <span className='group/tt relative justify-self-start'>
+            <button
+              type='button'
+              aria-pressed={sort === 'slug'}
+              onClick={() => setSort('slug')}
+              className={headingButton(sort === 'slug')}>
+              識別子{sort !== 'slug' && sortArrow(null)}
+            </button>
+            {/* None when active: a press changes nothing. */}
+            {sort !== 'slug' && <EditorTooltip label='A→Z 順に並べる' />}
+          </span>
           <span>表示名</span>
           {/* First press: most first. Each press after: the other way. */}
-          <button
-            type='button'
-            aria-pressed={byCount}
-            aria-label={
-              sort === 'countAsc'
-                ? '記事（少ない順）'
-                : sort === 'countDesc'
-                  ? '記事（多い順）'
-                  : '記事'
-            }
-            onClick={() => setSort(sort === 'countDesc' ? 'countAsc' : 'countDesc')}
-            className={`text-right ${headingButton(byCount)}`}>
-            記事{sortArrow(sort === 'countDesc' ? '↓' : sort === 'countAsc' ? '↑' : null)}
-          </button>
+          <span className='group/tt relative justify-self-end'>
+            <button
+              type='button'
+              aria-pressed={byCount}
+              aria-label={
+                sort === 'countAsc'
+                  ? '記事（少ない順）'
+                  : sort === 'countDesc'
+                    ? '記事（多い順）'
+                    : '記事'
+              }
+              onClick={() => setSort(sort === 'countDesc' ? 'countAsc' : 'countDesc')}
+              className={headingButton(byCount)}>
+              記事{sortArrow(sort === 'countDesc' ? '↓' : sort === 'countAsc' ? '↑' : null)}
+            </button>
+            <EditorTooltip label={sort === 'countDesc' ? '少ない順に並べる' : '多い順に並べる'} />
+          </span>
           <span />
         </div>
         {shown.length === 0 ? (
