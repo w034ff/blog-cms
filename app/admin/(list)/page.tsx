@@ -51,14 +51,14 @@ export default async function AdminHome() {
             </Link>
           )}
           <form action={logout}>
-            <button type='submit' className='text-zinc-500 hover:underline dark:text-zinc-400'>
+            <button type='submit' className='text-zinc-600 hover:underline dark:text-zinc-400'>
               ログアウト
             </button>
           </form>
         </div>
       </div>
       {posts.length === 0 ? (
-        <p className='text-zinc-500 dark:text-zinc-400'>
+        <p className='text-zinc-600 dark:text-zinc-400'>
           記事がありません。「新規記事」から作成できます。
         </p>
       ) : (
@@ -98,7 +98,7 @@ export default async function AdminHome() {
                   </div>
                   {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of this
                       list. The 表示 link reaches the public URL. */}
-                  <div className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
+                  <div className='truncate text-xs text-zinc-600 dark:text-zinc-400'>
                     {formatPostDate(post.date) || '未公開'}
                     {hasVisibleUpdate(post.date, post.updatedAt) && (
                       <> (更新: {formatPostDate(post.updatedAt)})</>

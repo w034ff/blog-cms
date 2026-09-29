@@ -37,7 +37,7 @@ export default async function TagPage({ params }: { params: Promise<Params> }) {
   return (
     <section className='mx-auto w-full max-w-site'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>
-        #{name} <span className='text-zinc-500 dark:text-zinc-400 text-xl'>({posts.length})</span>
+        #{name} <span className='text-zinc-600 dark:text-zinc-400 text-xl'>({posts.length})</span>
       </h1>
       <div className='divide-y divide-zinc-200 dark:divide-zinc-800'>
         {posts.map((post) => (

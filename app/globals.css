@@ -24,9 +24,10 @@
 }
 
 :root {
-  /* A grey ground, so the white `--surface` of the post card and the editor reads as a sheet on it,
-     as the dark scheme's lighter card already does. */
-  --background: #f4f4f5;
+  /* A faint purple ground (the author's colour), so the white `--surface` of the post card and the
+     editor reads as a sheet on it, as the dark scheme's lighter card already does. Hex, not a
+     palette variable: e2e/image-zoom.spec.ts compares it with the zoom overlay's `color-mix`. */
+  --background: #f3eef8;
   --foreground: #171717;
   /* The editor's sticky header height, which the format toolbar pins under. Measured at runtime by
      useMeasuredHeight.ts (the bar wraps); this is the first paint's value. Too small is safe (one
@@ -38,7 +39,7 @@
 
   /* The site's own colour: h2's rule, h3's bar, 強調 and the ToC's current entry. Not the warning
      callout's red (`--alert-accent`), which only happens to share the value. */
-  --accent: #cf222e;
+  --accent: #9f1239;
   /* What the post card, the ToC box, the editor's frame and the form fields are painted with, over
      `--background`. */
   --surface: var(--color-white);
@@ -48,6 +49,14 @@
   --button-primary-fg: var(--color-white);
   --button-secondary-border: var(--color-zinc-300);
   --button-secondary-bg-hover: var(--color-zinc-100);
+  /* Tag chips: a step darker than the ground, in the same purple. */
+  --chip-bg: #e8e0f1;
+  --chip-bg-hover: #ddd2ea;
+  --chip-fg: #5b3a7a;
+  /* One mark per id in lib/content.ts `CATEGORIES`; lib/category-marks.test.ts keeps the two in
+     step. Non-text, so 3:1 against the ground is the bar (WCAG 1.4.11). */
+  --category-tech: #e8590c;
+  --category-blog: #2b8a3e;
 }
 
 @theme inline {
@@ -76,13 +85,18 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
-    --accent: #f85149;
+    --accent: #ec7a92;
     --surface: var(--color-zinc-900);
     --button-primary-bg: var(--color-zinc-100);
     --button-primary-bg-hover: var(--color-zinc-300);
     --button-primary-fg: var(--color-zinc-900);
     --button-secondary-border: var(--color-zinc-700);
     --button-secondary-bg-hover: var(--color-zinc-800);
+    --chip-bg: #2a2235;
+    --chip-bg-hover: #352b43;
+    --chip-fg: #d9c8ee;
+    --category-tech: #ff8a4c;
+    --category-blog: #51cf66;
   }
 }
 
@@ -99,12 +113,38 @@
     border-radius: 0.125rem;
     border: 1px solid var(--button-secondary-border);
   }
+  .tag-chip {
+    display: inline-block;
+    border-radius: 9999px;
+    background: var(--chip-bg);
+    color: var(--chip-fg);
+  }
+  /* A dot before the category's name, in its own colour; the name keeps the text colour. */
+  .category-mark::before {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 0.55em;
+    margin-right: 0.4em;
+    border-radius: 9999px;
+    vertical-align: 0.05em;
+    background: var(--category-color);
+  }
+  .category-mark[data-category='tech'] {
+    --category-color: var(--category-tech);
+  }
+  .category-mark[data-category='blog'] {
+    --category-color: var(--category-blog);
+  }
   @media (hover: hover) {
     .button-primary:hover {
       background: var(--button-primary-bg-hover);
     }
     .button-secondary:hover {
       background: var(--button-secondary-bg-hover);
+    }
+    .tag-chip:hover {
+      background: var(--chip-bg-hover);
     }
   }
 }

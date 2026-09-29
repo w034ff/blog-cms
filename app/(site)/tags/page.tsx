@@ -14,15 +14,15 @@ export default async function TagsIndexPage() {
     <section className='mx-auto w-full max-w-site'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>Tags</h1>
       {tags.length === 0 ? (
-        <p className='text-zinc-500 dark:text-zinc-400'>タグはまだありません。</p>
+        <p className='text-zinc-600 dark:text-zinc-400'>タグはまだありません。</p>
       ) : (
         <ul className='flex flex-wrap gap-2'>
           {tags.map(({ slug, name, count }) => (
             <li key={slug}>
               <Link
                 href={`/tags/${encodeURIComponent(slug)}`}
-                className='inline-block rounded-full bg-surface dark:bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-200 dark:hover:bg-zinc-700'>
-                #{name} <span className='text-zinc-500 dark:text-zinc-400'>({count})</span>
+                className='tag-chip px-3 py-1 text-sm'>
+                #{name} ({count})
               </Link>
             </li>
           ))}

@@ -28,7 +28,7 @@ const SOURCE = [
 // A literal hex comes back as plain `rgb()`.
 const BLUE_LIGHT = 'rgb(9, 105, 218)'; // #0969da
 const BLUE_DARK = 'rgb(68, 147, 248)'; // #4493f8
-const ACCENT_LIGHT = 'rgb(207, 34, 46)'; // #cf222e — `--accent`, the 強調 mark's colour, also a literal hex
+const ACCENT_LIGHT = 'rgb(159, 18, 57)'; // #9f1239 — `--accent`, the 強調 mark's colour, also a literal hex
 
 // Palette colours come back as `lab(...)`; pinning those pins a serialization, so untouched elements
 // are asserted as "not the new blue", the sharper claim for a rule that regresses by reaching.
@@ -186,7 +186,7 @@ test.describe('dark', () => {
 
   test('強調 on a link takes the dark blue, not the dark red', async ({ page }) => {
     // `color: inherit` serves both schemes, and in dark it must still beat `.accent-emphasis`, whose
-    // `--accent` is the dark #f85149 there: (0,2,1) over (0,1,0). Editor only: the surfaces share the stack, the scheme is new.
+    // `--accent` is the dark #ec7a92 there: (0,2,1) over (0,1,0). Editor only: the surfaces share the stack, the scheme is new.
     await page.goto('/admin/posts/new');
     const editor = page.locator('.ProseMirror');
     await expect(editor).toBeVisible();

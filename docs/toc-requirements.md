@@ -263,7 +263,7 @@ const BAND_TOP_PX = 64; // components/TocNav.tsx
 | 位置                 | `sticky top-4`、`max-h-[calc(100vh-2rem)] overflow-y-auto`                                                           |
 | 幅                   | `1fr` のトラックに置き、`max-w-60` で頭打ち（超ワイド画面で間延びさせない）、`ml-6` が本文との間隔                   |
 | 階層                 | h3 の項目だけ `pl-4`                                                                                                 |
-| アクティブ           | アクセント `--accent`（明 `#cf222e` / 暗 `#f85149`）＋ `font-weight: 600`。h2/h3 見出しや `accent-emphasis` と同じ色 |
+| アクティブ           | アクセント `--accent`（明 `#9f1239` / 暗 `#ec7a92`）＋ `font-weight: 600`。h2/h3 見出しや `accent-emphasis` と同じ色 |
 
 ### 10.1 却下した案 — `truncate`
 

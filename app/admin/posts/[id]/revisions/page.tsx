@@ -46,7 +46,7 @@ function Row({
       <span className='shrink-0 font-medium'>{heading}</span>
       {badge && <span className={`${BADGE_CLASS} ${badge.badge}`}>{badge.label}</span>}
       {title !== null && (
-        <span className='truncate text-xs text-zinc-500 dark:text-zinc-400'>
+        <span className='truncate text-xs text-zinc-600 dark:text-zinc-400'>
           {title.trim() || '（無題）'}
         </span>
       )}
@@ -119,7 +119,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
         <section className='mt-6'>
           <h2 className='text-sm font-bold'>過去のリビジョン</h2>
           {revisions.length === 0 ? (
-            <p className='mt-2 text-sm text-zinc-500 dark:text-zinc-400'>
+            <p className='mt-2 text-sm text-zinc-600 dark:text-zinc-400'>
               リビジョンはまだありません。
             </p>
           ) : (

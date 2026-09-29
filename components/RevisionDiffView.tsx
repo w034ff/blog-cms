@@ -44,7 +44,7 @@ function Side({ sign, segments }: { sign: '−' | '+'; segments: Segment[] }) {
 
 function Context({ lines }: { lines: string[] }) {
   return (
-    <div className='flex gap-2 px-3 py-1 text-zinc-500 dark:text-zinc-400'>
+    <div className='flex gap-2 px-3 py-1 text-zinc-600 dark:text-zinc-400'>
       <span aria-hidden='true' className='w-3 shrink-0' />
       <div className='min-w-0 flex-1'>{lines.join('\n')}</div>
     </div>
@@ -88,7 +88,7 @@ export function RevisionDiffView({
   unchanged: string;
 }) {
   if (diff.identical)
-    return <p className='text-sm text-zinc-500 dark:text-zinc-400'>{unchanged}</p>;
+    return <p className='text-sm text-zinc-600 dark:text-zinc-400'>{unchanged}</p>;
   return (
     <div className='space-y-4 text-sm'>
       <div className='space-y-1'>
@@ -102,7 +102,7 @@ export function RevisionDiffView({
         <dl className='space-y-1'>
           {diff.fields.map((field) => (
             <div key={field.label} className='flex flex-wrap items-baseline gap-x-2'>
-              <dt className='text-xs text-zinc-500 dark:text-zinc-400'>{field.label}</dt>
+              <dt className='text-xs text-zinc-600 dark:text-zinc-400'>{field.label}</dt>
               <dd className='min-w-0 break-words'>
                 <del className='rounded-sm bg-red-200 line-through dark:bg-red-900/60'>
                   {field.before || '（なし）'}

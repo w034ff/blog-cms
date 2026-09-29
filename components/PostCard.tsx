@@ -25,14 +25,15 @@ export function PostCard({ post }: Props) {
             {post.title}
           </h2>
         </Link>
-        <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
+        <div className='mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400'>
           <time dateTime={post.date}>{formatPostDate(post.date)}</time>
           {hasVisibleUpdate(post.date, post.updatedAt) && (
             <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
           )}
           <Link
             href={`/categories/${encodeURIComponent(post.category)}`}
-            className='hover:underline'>
+            data-category={post.category}
+            className='category-mark hover:underline'>
             {categoryLabel(post.category)}
           </Link>
         </div>
@@ -50,7 +51,7 @@ export function PostCard({ post }: Props) {
               <li key={slug}>
                 <Link
                   href={`/tags/${encodeURIComponent(slug)}`}
-                  className='inline-block rounded-full bg-surface dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
+                  className='tag-chip px-3 py-1 text-xs'>
                   #{name}
                 </Link>
               </li>

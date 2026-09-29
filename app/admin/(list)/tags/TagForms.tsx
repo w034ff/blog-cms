@@ -22,7 +22,7 @@ const inputClass =
   'w-full min-w-0 rounded-xs border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
 const secondaryButtonClass = 'button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50';
 const primaryButtonClass = 'button-primary shrink-0 px-3 py-1.5 text-sm disabled:opacity-40';
-// One grey (`zinc-500`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
+// One grey (`zinc-600`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
 // body colour for the data, so the data reads first. One grid for the header and every row, so the
 // columns line up.
 const columnsClass =
@@ -127,7 +127,7 @@ export function TagDirectory({
 
       <div className='mt-8'>
         <div
-          className={`${columnsClass} border-b border-zinc-200 pb-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400`}>
+          className={`${columnsClass} border-b border-zinc-200 pb-2 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400`}>
           <button
             type='button'
             aria-pressed={sort === 'slug'}
@@ -154,7 +154,7 @@ export function TagDirectory({
           <span />
         </div>
         {shown.length === 0 ? (
-          <p className='py-3 text-sm text-zinc-500 dark:text-zinc-400'>
+          <p className='py-3 text-sm text-zinc-600 dark:text-zinc-400'>
             {tags.length === 0 ? 'タグはまだありません。' : '当てはまるタグはありません。'}
           </p>
         ) : (
@@ -199,7 +199,7 @@ function TagRow({
         <span className='truncate text-sm'>
           <span className='font-medium'>{tag.slug}</span>
           {tag.aliases.length > 0 && (
-            <span className='text-zinc-500 dark:text-zinc-400'>
+            <span className='text-zinc-600 dark:text-zinc-400'>
               {' '}
               （別名 {tag.aliases.join('、')}）
             </span>
@@ -215,7 +215,7 @@ function TagRow({
               type='button'
               aria-label={`「${tag.slug}」を編集`}
               onClick={onOpen}
-              className='text-sm text-zinc-500 hover:underline dark:text-zinc-400'>
+              className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
               編集
             </button>
           )}
@@ -283,7 +283,7 @@ function TagEditor({
           />
           {/* Only what the author could not take for granted: the URL moving, or the merge. */}
           {moving && (
-            <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
+            <p className='mt-1 text-xs text-zinc-600 dark:text-zinc-400'>
               {merging
                 ? `${owner} に統合され、このタグは削除されます。`
                 : `URL が /tags/${target} に変わります。`}
@@ -304,7 +304,7 @@ function TagEditor({
             className={`${inputClass} disabled:opacity-50`}
           />
           {merging && (
-            <p className='mt-1 text-xs text-zinc-500 dark:text-zinc-400'>
+            <p className='mt-1 text-xs text-zinc-600 dark:text-zinc-400'>
               統合先の表示名を使います。
             </p>
           )}
@@ -334,7 +334,7 @@ function TagEditor({
                 <button
                   type='button'
                   onClick={() => setConfirming(false)}
-                  className='text-sm text-zinc-500 hover:underline dark:text-zinc-400'>
+                  className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
                   やめる
                 </button>
               )}
@@ -387,7 +387,7 @@ function AliasEditor({ tag }: { tag: DictionaryTag }) {
                   type='submit'
                   disabled={removing}
                   aria-label={`別名「${word}」を外す`}
-                  className='text-xs text-zinc-500 hover:underline disabled:opacity-50 dark:text-zinc-400'>
+                  className='text-xs text-zinc-600 hover:underline disabled:opacity-50 dark:text-zinc-400'>
                   外す
                 </button>
               </form>

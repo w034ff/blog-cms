@@ -37,7 +37,7 @@ const html = `<!doctype html>
         font-family: "Noto Sans JP", "Yu Gothic", Meiryo, system-ui, sans-serif;
       }
       /* The red rule stands in for the site's accent on h2/h3 and the 強調 mark. */
-      .rule { width: 96px; height: 10px; background: #cf222e; border-radius: 999px; }
+      .rule { width: 96px; height: 10px; background: #9f1239; border-radius: 999px; }
       h1 { margin-top: 40px; font-size: 104px; font-weight: 800; letter-spacing: -0.02em; }
       p { margin-top: 24px; font-size: 40px; color: #52525b; }
     </style>

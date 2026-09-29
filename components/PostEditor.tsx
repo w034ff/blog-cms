@@ -434,7 +434,7 @@ export function PostEditor({
   if (autosaveState === 'failed') {
     autosaveStatus = { text: '保存に失敗', className: 'text-red-600' };
   } else if (unsaved) {
-    autosaveStatus = { text: '保存中…', className: 'text-zinc-500' };
+    autosaveStatus = { text: '保存中…', className: 'text-zinc-600' };
   } else if (savedAt !== null && savedNoticeShown) {
     autosaveStatus = { text: '保存済み ✓', className: 'text-green-600' };
   }

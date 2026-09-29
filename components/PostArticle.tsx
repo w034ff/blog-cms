@@ -50,7 +50,7 @@ export function PostArticle({
       <div className={showToc ? 'toc:col-start-2 min-w-0' : undefined}>
         <header className='mb-8'>
           <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
-          <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400'>
+          <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400'>
             {showDates && <time dateTime={post.date}>{formatPostDate(post.date)}</time>}
             {showDates && hasVisibleUpdate(post.date, post.updatedAt) && (
               <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>
@@ -62,7 +62,8 @@ export function PostArticle({
             ) : (
               <Link
                 href={`/categories/${encodeURIComponent(post.category)}`}
-                className='hover:underline'>
+                data-category={post.category}
+                className='category-mark hover:underline'>
                 {categoryLabel(post.category)}
               </Link>
             )}
@@ -73,7 +74,7 @@ export function PostArticle({
                 <li key={slug}>
                   <Link
                     href={`/tags/${encodeURIComponent(slug)}`}
-                    className='inline-block rounded-full bg-surface dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
+                    className='tag-chip px-3 py-1 text-xs'>
                     #{name}
                   </Link>
                 </li>
