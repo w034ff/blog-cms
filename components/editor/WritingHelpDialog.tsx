@@ -135,7 +135,8 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
     <div
       // `z-[55]` for InsertDialog's own reason: the ＋ sheet portals to document.body at `z-50`, and
       // an equal z-index would leave paint order to mount timing.
-      className='fixed inset-0 z-[55] flex items-start justify-center bg-black/40 p-8'
+      // `writing-help-backdrop` / `-panel` carry the entrance (app/globals.css, docs/editor-requirements.md §12.36).
+      className='writing-help-backdrop fixed inset-0 z-[55] flex items-start justify-center bg-black/40 p-8'
       // mousedown, not click: a row that unmounts on mousedown lets the mouseup fall through to the
       // document (docs/editor-pitfalls.md §13.3 の前例)。
       onMouseDown={(event) => {
@@ -145,7 +146,7 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
         role='dialog'
         aria-modal='true'
         aria-labelledby={headingId}
-        className='flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900'
+        className='writing-help-panel flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
           <h2 id={headingId} className='text-base font-bold'>

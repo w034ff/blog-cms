@@ -447,6 +447,70 @@ body {
   }
 }
 
+/* EditorToast and ヘルプ (WritingHelpDialog.tsx) animate their entrance only: both unmount the
+   moment they close, so an exit transition would have nothing left to run on
+   (docs/editor-requirements.md §12.36). `transform` composes with Tailwind's `translate`, which
+   centres the toast. */
+@media (prefers-reduced-motion: no-preference) {
+  .editor-toast {
+    transition:
+      opacity 150ms ease,
+      transform 150ms ease-out;
+  }
+  @starting-style {
+    .editor-toast {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  .writing-help-backdrop {
+    transition: opacity 150ms ease;
+  }
+  @starting-style {
+    .writing-help-backdrop {
+      opacity: 0;
+    }
+  }
+  .writing-help-panel {
+    transition: transform 150ms ease-out;
+  }
+  @starting-style {
+    .writing-help-panel {
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+}
+
+/* On a phone the toast opens upward from the bottom bar (§12.5), so it rises out of the bar
+   instead. */
+@media (hover: none) and (prefers-reduced-motion: no-preference) {
+  @starting-style {
+    .editor-toast {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+}
+
+/* ToolbarDropdown's floating panel drops in from its trigger, as the toast does
+   (docs/editor-requirements.md §12.37). `translate`, not `transform`: the inline `transform` centres
+   and clamps the panel, and the two compose where a `transform` here would override it. No exit
+   half: the panel unmounts on close. */
+@media (prefers-reduced-motion: no-preference) {
+  .toolbar-dropdown-panel {
+    transition:
+      opacity 150ms ease,
+      translate 150ms ease-out;
+  }
+  @starting-style {
+    .toolbar-dropdown-panel {
+      opacity: 0;
+      translate: 0 -4px;
+    }
+  }
+}
+
 /* §12.25: past 106rem the drawer stops being modal. The drawer and the editor column stop
    overlapping at about 1652px on a pointer; 106rem leaves margin, since scrollbar width
    varies. Only the backdrop retires: transparent, and `pointer-events: none` so a press reaches the

@@ -104,7 +104,9 @@ export function ToolbarDropdown({
           data-testid='toolbar-dropdown-panel'
           // -50% is inline because shiftX adds to the same transform.
           style={{ transform: `translateX(calc(-50% + ${shiftX}px))` }}
-          className={`absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
+          // `toolbar-dropdown-panel` carries the entrance fade (app/globals.css,
+          // docs/editor-requirements.md §12.37).
+          className={`toolbar-dropdown-panel absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
           {children(() => setOpen(false))}
         </div>
       )}

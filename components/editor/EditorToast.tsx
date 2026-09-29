@@ -6,7 +6,7 @@
 //
 // `role='status'` (an implicit aria-live="polite") announces it without interrupting typing — this
 // reports a rule, not an error. `pointer-events-none` keeps it from swallowing a click on the
-// content underneath while it fades away on its own.
+// content underneath until it clears on its own.
 export function EditorToast({ message }: { message: string }) {
   return (
     <div
