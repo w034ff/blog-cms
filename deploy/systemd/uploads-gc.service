@@ -1,0 +1,18 @@
+[Unit]
+Description=Delete orphaned files from data/uploads (scripts/gc-uploads.mts)
+Documentation=file://%h/test/docs/dev-environment.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/test
+# The app reads .env through Next; the script does not. Loading it here is what makes
+# BLOG_DB_PATH resolve to the DB the app uses. A missing file is not an error (the default
+# data/blog.db then applies, as it does for the app).
+EnvironmentFile=-%h/test/.env
+# systemd's PATH does not include nvm. Pinned to one version on purpose: after an nvm upgrade
+# the unit fails with status 203/EXEC instead of running on a different Node.
+ExecStartPre=%h/.nvm/versions/node/v24.14.1/bin/node --input-type=module -e "import { resolveDbPath } from './scripts/db-path.mts'; console.log('db: ' + resolveDbPath())"
+ExecStart=%h/.nvm/versions/node/v24.14.1/bin/node scripts/gc-uploads.mts --delete
+# No ProtectSystem/ReadWritePaths: on this WSL2 user manager they are accepted but not enforced
+# (docs/dev-environment.md §6.3), so listing them would claim a restriction that does not exist.
+NoNewPrivileges=yes

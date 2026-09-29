@@ -52,7 +52,7 @@
 
 ## 6. 先送りの一覧
 
-- **アップロードの掃除の定期実行**: 本番のホストが決まったら、同じホストで `npm run gc:uploads` を systemd の timer（`Persistent=true`）で回す。まだ設定していない。
+- **アップロードの掃除の定期実行**: WSL2 の systemd user timer で設定済み。置き場所と入れ方は `docs/dev-environment.md` §6（`deploy/systemd/`）。Cloud Run などへ移るときは再検討する（systemd の timer は使えず、Cloud Scheduler + Cloud Run Job 等になり、`data/uploads` の置き場所も再設計になる）。
 - **`npm run fix:glued-images` を本番の DB に走らせていない**（2026-07-27 時点）。直列化のバグは源で直っている（`d6ccaf8`）が、それ以前に保存した記事には、画像の行に引用やフェンスがくっついて文字として描かれるものが残りうる。先に `-- --dry-run`、サーバを止めてから。正規表現はフェンスの中を飛ばさないので、dry-run の出力を確かめる。
 - **自動保存の手元のバッファ**: 自動保存はサーバ側だけで、次の保存が成功するまで編集は React のメモリにしかない。回線断やセッション切れで差分を失いうる（`sessionExpired` の案内と `beforeunload` で和らげている）。作者が先送りにした。サーバ側の自動保存が主であることは正しい。
 - **「変更を破棄」と、より豊かな「下書き保存」**: 作者が先送りにした。

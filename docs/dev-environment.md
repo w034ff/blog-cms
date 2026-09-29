@@ -80,3 +80,34 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 ### 5.3 vitest のパストラバーサル（2026-09-24 に対応）
 
 `@vitest/mocker` 経由の moderate（Vitest: Path Traversal / Arbitrary File Read）を、`vitest` を 4.1.9 から 4.1.11 に上げて塞いだ。`npm audit` は drizzle-kit 経由の 4 件（§5.1）だけに戻った。vitest の範囲に従って、推移的依存の `vite` が 8.0.16 から 8.3.0 に、`rolldown` が 1.0.3 から 1.2.9 に上がり、`lightningcss` 1.33.0 が加わった。どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
+
+## 6. アップロードの掃除の定期実行（systemd user timer）
+
+`npm run gc:uploads -- --delete` を、この WSL2 ホストで毎日 04:00（±10 分）に回す。unit は `deploy/systemd/uploads-gc.service` と `uploads-gc.timer`。スクリプトの挙動（猶予 24 時間、参照は DB の本文と `.mdx` の和）は `docs/project-status.md` の「アップロードは参照で消す」に従い、timer はそれを変えない。2026-09-30 決定。
+
+### 6.1 入れ方
+
+```
+systemctl --user link "$PWD/deploy/systemd/uploads-gc.service" "$PWD/deploy/systemd/uploads-gc.timer"
+systemctl --user enable --now uploads-gc.timer
+systemctl --user list-timers uploads-gc.timer
+```
+
+`cp` ではなく `link` を使う。unit の実体が repo に一つだけ残り、`git pull` で更新が届く（変更後は `systemctl --user daemon-reload`）。外すときは `systemctl --user disable --now uploads-gc.timer`。この timer は `--delete` で回るので、有効にした後の最初の実行から本当に消す。先に `node scripts/gc-uploads.mts` の dry-run で孤児の一覧を見ておく。
+
+### 6.2 node のパスと環境
+
+- `ExecStart` は `npm` を経由せず、`node scripts/gc-uploads.mts --delete` を直接呼ぶ（`npm run gc:uploads` と同じ）。systemd の PATH に nvm は入らないので、`%h/.nvm/versions/node/v24.14.1/bin/node` に固定している。nvm で版を上げたら unit の 2 か所を直す。直し忘れると `203/EXEC` で失敗し、別の版で黙って動くことはない。
+- `WorkingDirectory=%h/test`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
+- アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/test/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
+
+### 6.3 サンドボックスは採らない
+
+`ProtectSystem=strict` + `ReadWritePaths=` は、この WSL2 の user manager で受け付けられるが効かない。`ProtectSystem=strict` の下で `data/` に空ファイルを作れた（`systemd-run --user -P -p ProtectSystem=strict -p ReadWritePaths=…/data/uploads` で確認、2026-09-30）。効かない制限を書くと制限があるように読めるので、書かない。`NoNewPrivileges=yes` だけを残す。
+
+### 6.4 ログと失敗に気づく方法
+
+- ログ: `journalctl --user -u uploads-gc.service`。1 回の実行は `db:`、`uploads: N file(s), M referenced …`、削除した各ファイル、`Removed …` の順に出る。
+- 次回実行: `systemctl --user list-timers uploads-gc.timer`。
+- 失敗: `systemctl --user --failed`。失敗の通知は出ない。スクリプトが非ゼロで終わるのは、`--delete` で DB が無いときの中止と、node の起動失敗（`203/EXEC`）。定期的に `--failed` を見る。
+- user manager は WSL が動いている間だけ生きる（`Linger=no`）。止まっている間に逃した回は `Persistent=true` が起動時に実行する。
