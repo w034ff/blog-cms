@@ -90,6 +90,17 @@ export function TagDirectory({
       tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(query)));
   const headingButton = (active: boolean) =>
     `hover:underline ${active ? 'font-bold text-zinc-900 dark:text-zinc-100' : ''}`;
+  // A faint ↕ on each inactive heading: bold alone left a heading that sorts looking like one that
+  // does not. The active one shows a direction only where a press reverses it — 識別子 is A→Z
+  // alone, so it gets none. Out of the name — aria-pressed and 記事's label say the order.
+  const sortArrow = (arrow: string | null) => (
+    <span
+      aria-hidden
+      className={arrow === null ? 'font-normal text-zinc-300 dark:text-zinc-600' : undefined}>
+      {' '}
+      {arrow ?? '↕'}
+    </span>
+  );
 
   return (
     <div>
@@ -97,8 +108,8 @@ export function TagDirectory({
         <div className='flex gap-2'>
           <input
             name='name'
-            aria-label='タグを探す、または新しい識別子を入力'
-            placeholder='タグを探す、または新しい識別子を入力'
+            aria-label='タグを検索・追加'
+            placeholder='タグを検索・追加'
             maxLength={TAG_NAME_MAX_LENGTH}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -124,10 +135,10 @@ export function TagDirectory({
             aria-pressed={sort === 'slug'}
             onClick={() => setSort('slug')}
             className={`text-left ${headingButton(sort === 'slug')}`}>
-            識別子
+            識別子{sort !== 'slug' && sortArrow(null)}
           </button>
           <span>表示名</span>
-          {/* First press: most first. Each press after: the other way. The arrow says which. */}
+          {/* First press: most first. Each press after: the other way. */}
           <button
             type='button'
             aria-pressed={byCount}
@@ -140,7 +151,7 @@ export function TagDirectory({
             }
             onClick={() => setSort(sort === 'countDesc' ? 'countAsc' : 'countDesc')}
             className={`text-right ${headingButton(byCount)}`}>
-            記事{sort === 'countDesc' ? ' ↓' : sort === 'countAsc' ? ' ↑' : ''}
+            記事{sortArrow(sort === 'countDesc' ? '↓' : sort === 'countAsc' ? '↑' : null)}
           </button>
           <span />
         </div>

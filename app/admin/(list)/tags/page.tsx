@@ -9,7 +9,8 @@ export const metadata: Metadata = { title: 'タグ' };
 export const dynamic = 'force-dynamic';
 
 // The tag dictionary's screen (docs/editor-requirements.md §12.33): the editor admits tags, this
-// tidies them. The two names are the page's whole difficulty, so its first line says which is which.
+// tidies them. The two names are the page's whole difficulty; its first line says what the
+// identifier is for, and 表示名 explains itself.
 export default async function AdminTagsPage() {
   await verifyAdmin();
   const tags = listDictionary();
@@ -24,7 +25,7 @@ export default async function AdminTagsPage() {
         </Link>
       </div>
       <p className='mb-6 text-sm text-zinc-500 dark:text-zinc-400'>
-        識別子はエディタで入力する語で、URL にも使われます。表示名は読者に見える名前です。
+        識別子はタグの URL に使います。
       </p>
       <TagDirectory tags={tags} usage={usage} />
     </section>

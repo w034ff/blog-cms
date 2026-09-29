@@ -42,7 +42,7 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   const shown = `E2E 管理 ${stamp}`;
   const editButton = (slug: string) => page.getByRole('button', { name: `「${slug}」を編集` });
   const add = async (slug: string) => {
-    await page.getByLabel('タグを探す、または新しい識別子を入力').fill(slug);
+    await page.getByLabel('タグを検索・追加').fill(slug);
     await page.getByRole('button', { name: '追加', exact: true }).click();
     await expect(editButton(slug)).toBeVisible();
   };
@@ -50,11 +50,11 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await page.goto('/admin/tags');
   await add(first);
   // Symbols are refused as typed, said only when nothing matched. No real tag contains `qz`.
-  await page.getByLabel('タグを探す、または新しい識別子を入力').fill('qz#');
+  await page.getByLabel('タグを検索・追加').fill('qz#');
   await expect(page.getByRole('alert').filter({ hasText: '記号やスペース' })).toBeVisible();
   await expect(page.getByRole('button', { name: '追加', exact: true })).toBeDisabled();
   // A tag that already is the word shows as the search result, and 追加 stays shut.
-  await page.getByLabel('タグを探す、または新しい識別子を入力').fill(first.toUpperCase());
+  await page.getByLabel('タグを検索・追加').fill(first.toUpperCase());
   await expect(editButton(first)).toBeVisible();
   await expect(page.getByRole('button', { name: '追加', exact: true })).toBeDisabled();
 
@@ -108,7 +108,7 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await page.goto('/admin/tags');
   await add(other);
   // The text stays after an add, leaving the table narrowed to the new tag; clear it to reach others.
-  await page.getByLabel('タグを探す、または新しい識別子を入力').fill('');
+  await page.getByLabel('タグを検索・追加').fill('');
   fields = await edit(page, moved);
   await fields.slug.fill(other);
   await expect(page.getByText(`${other} に統合され、このタグは削除されます。`)).toBeVisible();
@@ -157,7 +157,7 @@ test('the field narrows the table by identifier, display name or alias, and 記�
   page,
 }) => {
   await page.goto('/admin/tags');
-  const search = page.getByLabel('タグを探す、または新しい識別子を入力');
+  const search = page.getByLabel('タグを検索・追加');
   const editOf = (slug: string) => page.getByRole('button', { name: `「${slug}」を編集` });
 
   // An alias finds its tag, and the rest of the table goes.
@@ -171,10 +171,17 @@ test('the field narrows the table by identifier, display name or alias, and 記�
   await search.fill('');
   await expect(editOf('python')).toBeVisible();
 
+  // An inactive heading shows ↕, so it reads as a control; the active 識別子, which has one
+  // direction, shows none. The arrow stays out of the name.
+  const bySlug = page.getByRole('button', { name: '識別子', exact: true });
+  await expect(bySlug).toHaveText('識別子');
+  await expect(page.getByRole('button', { name: '記事', exact: true })).toHaveText('記事 ↕');
+
   // By count: most-used first, then pressed again, least-used first.
   const counts = async () =>
     (await page.locator('ul > li > div > span.tabular-nums').allInnerTexts()).map(Number);
   await page.getByRole('button', { name: '記事', exact: true }).click();
+  await expect(bySlug).toHaveText('識別子 ↕');
   await expect(page.getByRole('button', { name: '記事（多い順）' })).toHaveAttribute(
     'aria-pressed',
     'true',
