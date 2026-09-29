@@ -4,7 +4,10 @@ import { loadMarkdown } from './editor-authoring';
 // Where a body image sits and what its block buys (docs/link-card-requirements.md §22): geometry,
 // invisible to the DOM, transaction and markdown.
 
-// 390x220 and 768x403, in data/uploads: one well narrower than the column, one nearly filling it.
+// 390x220 and 768x403, in data/uploads: one well narrower than the column, one wider than it at
+// COLUMN_NARROWER_THAN_WIDE, where the body is 800 − 40·2 − 2 − 36·2 = 646px wide (`editor-shell`,
+// `--editor-gutter`). At a desktop width the body is 800px (`--container-editor`), wider than both.
+const COLUMN_NARROWER_THAN_WIDE = { width: 800, height: 900 };
 const NARROW = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
 const WIDE = '/uploads/531f1bd7bc8be82b6f3aa910ff3c6ec45d3572033db26d10bec768eae58a6652.webp';
 
@@ -28,6 +31,7 @@ async function openWithBothImages(page: Page): Promise<void> {
 
 // Inline by default, so `margin-inline: auto` needs the `display`; boxes are measured, not rules.
 test('a picture narrower than the column is centred in it', async ({ page }) => {
+  await page.setViewportSize(COLUMN_NARROWER_THAN_WIDE);
   await openWithBothImages(page);
 
   const boxes = await page.evaluate(() =>
@@ -56,7 +60,7 @@ test('a picture narrower than the column is centred in it', async ({ page }) => 
 });
 
 // Why the picture is wrapped in a column-wide block at all: not the handle's x (a fixed
-// `left: -0.2rem`; `alignHandles` sets only `top`), but the reveal area. `:has(+ :hover)` needs the
+// `left` in app/globals.css; `alignHandles` sets only `top`), but the reveal area. `:has(+ :hover)` needs the
 // pointer inside the next element, and the block makes the empty column beside a centred picture
 // part of it.
 test('the handle appears from the empty column beside a centred picture', async ({ page }) => {

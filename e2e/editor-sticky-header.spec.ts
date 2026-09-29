@@ -99,7 +99,7 @@ test("記事の設定 gets a background fill while open, ToolbarButton's own act
 test('記事の設定 stops being modal once the drawer clears the editor column (§12.25)', async ({
   page,
 }) => {
-  // `min-width: 100rem` (app/globals.css) is chosen with margin past the measured crossover (~1545px),
+  // `min-width: 106rem` (app/globals.css) is chosen with margin past the measured crossover (~1652px),
   // not the crossover itself. 1280 stays modal; 1700 must not be.
   await page.setViewportSize({ width: 1700, height: 900 });
   await page.goto('/admin/posts/new');
@@ -153,7 +153,7 @@ test('closing 記事の設定 at that width never flashes black (§12.25)', asyn
 });
 
 test('the header rule spans the window while its contents keep the column', async ({ page }) => {
-  // Wider than the column (50rem), or the claim is vacuous.
+  // Wider than the column (`--container-editor`), or the claim is vacuous.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -349,7 +349,7 @@ test.describe('記事の設定 focus', () => {
     await expect(gear).toBeFocused();
   });
 
-  // Past 100rem not modal (§12.25): no trap, and Escape in the editor is the editor's.
+  // Past 106rem not modal (§12.25): no trap, and Escape in the editor is the editor's.
   test('past the modal width, Escape closes it only from inside', async ({ page }) => {
     await page.setViewportSize({ width: 1700, height: 900 });
     await page.goto('/admin/posts/new');

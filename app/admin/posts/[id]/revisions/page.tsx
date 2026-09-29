@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { SiteColumn } from '@/components/PageShell';
+import { EditorColumn } from '@/components/PageShell';
 import { HEADER_ICON_LINK, RevisionHeaderBar } from '@/components/RevisionHeaderBar';
 import { ArrowLeftIcon } from '@/components/editor/svg/ArrowLeftIcon';
 import { formatRevisionTime } from '@/lib/format';
@@ -92,7 +92,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
           <EditorTooltip label='編集に戻る' />
         </Link>
       </RevisionHeaderBar>
-      <SiteColumn>
+      <EditorColumn>
         <h1 className='min-w-0 truncate text-2xl font-bold tracking-tight'>リビジョン履歴</h1>
         {/* Which post, since nothing else on the page says it once titles stop differing. */}
         <p className='mt-1 truncate text-sm text-zinc-600 dark:text-zinc-400'>
@@ -140,7 +140,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
             </ul>
           )}
         </section>
-      </SiteColumn>
+      </EditorColumn>
     </>
   );
 }

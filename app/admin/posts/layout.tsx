@@ -15,8 +15,8 @@ export const viewport: Viewport = {
 // app/admin/layout.tsx is only the auth gate.
 //
 // No column here: PostEditor's header bar spans the window by cancelling PageMain's `px-4` with
-// `-mx-4`, which works only with PageMain directly above it, so the editor applies SiteColumn to the
-// rest. The way back is inside PostEditor's <form>, sharing a bar with 記事の設定 and 更新.
+// `-mx-4`, which works only with PageMain directly above it, so the editor applies EditorColumn to
+// the rest. `editor-shell` widens that padding on a pointer (app/globals.css), header bars included. The way back is inside PostEditor's <form>, sharing a bar with 記事の設定 and 更新.
 export default function PostEditorLayout({ children }: { children: React.ReactNode }) {
-  return <PageMain>{children}</PageMain>;
+  return <PageMain className='editor-shell'>{children}</PageMain>;
 }

@@ -31,7 +31,7 @@ import { EditorTooltip } from './editor/EditorTooltip';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
-import { SiteColumn } from './PageShell';
+import { EditorColumn } from './PageShell';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import { EDIT_POST_TITLE, tabTitle } from '@/app/shared-metadata';
 import type { PostFormState } from '@/app/actions/posts';
@@ -297,7 +297,7 @@ export function PostEditor({
     editorProps: {
       attributes: {
         class:
-          'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] px-4 py-3 focus:outline-none',
+          'prose prose-zinc dark:prose-invert max-w-none min-h-[480px] py-3 focus:outline-none',
       },
       // Two pastes answered ahead of every plugin: image files are uploaded rather than inlined as
       // data URLs (uploadImages is stable, so this handler never goes stale), and an unpublishable
@@ -459,8 +459,8 @@ export function PostEditor({
           overlay and dropdowns (z-50); opaque, as the post scrolls under it.
 
           It spans the window (`-mx-4` cancels PageMain's padding, `px-4` restores it, `mx-auto
-          max-w-site` inside), SiteHeader's shape, so app/admin/posts/layout.tsx gives a bare
-          PageMain. `-mt-8` cancels PageMain's top padding: this page starts with chrome.
+          max-w-editor` inside; `editor-shell` widens both on a pointer), SiteHeader's shape, so
+          app/admin/posts/layout.tsx gives PageMain no column. `-mt-8` cancels PageMain's top padding: this page starts with chrome.
 
           data-publish-state / data-autosave-state live only here: the suite queries them
           unqualified, so a second copy fails on strict mode. */}
@@ -471,7 +471,7 @@ export function PostEditor({
         // `editor-header-bar` (app/globals.css) drops the header's buttons to 34px, under the 40px
         // floor; that rule says why.
         className='editor-header-bar sticky top-0 z-40 -mx-4 -mt-8 border-b border-zinc-300 bg-background px-4 py-2 dark:border-zinc-700'>
-        <div className='mx-auto flex max-w-site flex-wrap items-center gap-x-3 gap-y-1'>
+        <div className='mx-auto flex max-w-editor flex-wrap items-center gap-x-3 gap-y-1'>
           {/* **Icon alone on both surfaces** (docs/editor-requirements.md §12.6), named by
               `aria-label` with an `EditorTooltip` on hover: the header is three icons and the
               publish button. `-mx-1` keeps the glyph flush with the title's edge. With nothing
@@ -575,10 +575,10 @@ export function PostEditor({
         {/* In the pinned bar, readable wherever 投稿 was pressed; the toolbar's offset is
             measured, so it follows. Not for カテゴリ, said under the field (§12.32). */}
         {state.error && errorVisible && !state.missingCategory && (
-          <p className='mx-auto max-w-site px-1 pt-1 text-sm text-red-600'>{state.error}</p>
+          <p className='mx-auto max-w-editor px-1 pt-1 text-sm text-red-600'>{state.error}</p>
         )}
       </div>
-      <SiteColumn>
+      <EditorColumn>
         <div className='space-y-5'>
           {/* Below the header, so it scrolls away; 保存に失敗 stays in the bar. */}
           {sessionExpired && (
@@ -701,7 +701,7 @@ export function PostEditor({
             {helpOpen && <WritingHelpDialog onClose={() => setHelpOpen(false)} />}
           </div>
         </div>
-      </SiteColumn>
+      </EditorColumn>
 
       <input type='hidden' name='body' value={body} />
       {/* Blank for a new post, so publish creates and publishes. */}

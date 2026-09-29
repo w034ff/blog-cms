@@ -18,7 +18,7 @@ import { PencilIcon } from './svg/PencilIcon';
 
 // A modal drawer from the right (docs/editor-requirements.md §12.22), with the ＋ sheet's dismiss
 // mechanics: useDismiss, a backdrop that closes on its own click, and useBodyScrollLock. Not modal
-// past `min-width: 100rem` (§12.25), where it clears the editor column: presses read the
+// past `min-width: 106rem` (§12.25), where it clears the editor column: presses read the
 // backdrop's computed style at the moment they happen, while the scroll lock tracks the breakpoint
 // live because it must hold or release continuously.
 //
@@ -148,7 +148,7 @@ export function PostSettingsPanel({
   historyDisabled,
 }: Props) {
   const router = useRouter();
-  // Past `min-width: 100rem` (§12.25) the backdrop is `pointer-events: none`, but useDismiss listens
+  // Past `min-width: 106rem` (§12.25) the backdrop is `pointer-events: none`, but useDismiss listens
   // on `document`, so it reads the backdrop's computed style at the press: the CSS breakpoint stays
   // the only place the mode is decided. Escape (§12.29) closes at every width, but past the line only
   // while focus is inside the drawer, so an Escape meant for a bubble menu doesn't take it.
@@ -167,11 +167,11 @@ export function PostSettingsPanel({
     onClose();
   });
 
-  // The same `min-width: 100rem` query string as §12.25's CSS, tracked live because the lock must
+  // The same `min-width: 106rem` query string as §12.25's CSS, tracked live because the lock must
   // follow a resize across the line. `true` (modal) until the first effect, as SSR would render.
   const [lockScroll, setLockScroll] = useState(true);
   useEffect(() => {
-    const query = window.matchMedia('(min-width: 100rem)');
+    const query = window.matchMedia('(min-width: 106rem)');
     const sync = () => setLockScroll(!query.matches);
     sync();
     query.addEventListener('change', sync);
@@ -243,7 +243,7 @@ export function PostSettingsPanel({
           reason: it caps its height at `44vh` rather than filling the screen, so its own backdrop
           stays reachable above it.
 
-          Wide desktop (`min-width: 100rem`, §12.25 in app/globals.css) goes further and drops the
+          Wide desktop (`min-width: 106rem`, §12.25 in app/globals.css) goes further and drops the
           modal behaviour outright: past that width the drawer no longer overlaps the editor
           column, so this backdrop turns transparent and `pointer-events: none` there — nothing to
           dim and nothing to block. */}

@@ -50,6 +50,10 @@ html {
      page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
      landing on the same left edge as a plain `mx-auto` box. */
   --container-site: 50rem;
+  /* The writing shell's column (`max-w-editor`: PostEditor, the revision pages' header and list):
+     the frame's two borders and gutters around a body exactly `--container-site` wide, so the
+     editor breaks lines where the published post does. Follows `--editor-gutter`. */
+  --container-editor: calc(var(--container-site) + 2 * var(--editor-gutter) + 2px);
   /* Below this the ToC rail is too narrow to be worth showing, and the post uses the mobile
      <details> (components/TocNav.tsx). Readability only: the rail is `1fr`, so it cannot overflow.
      Used as `toc:` in three places (the grid, TocNavMobile's hide, TocNavDesktop's show).
@@ -343,14 +347,14 @@ body {
   }
 }
 
-/* §12.25: past 100rem the drawer stops being modal. The drawer and the editor column stop
-   overlapping at about 1545px without a scrollbar; 100rem leaves margin, since scrollbar width
+/* §12.25: past 106rem the drawer stops being modal. The drawer and the editor column stop
+   overlapping at about 1652px on a pointer; 106rem leaves margin, since scrollbar width
    varies. Only the backdrop retires: transparent, and `pointer-events: none` so a press reaches the
    editor (PostSettingsPanel.tsx reads this style to decide whether to close).
 
    On the bare class, not `.is-open`: React removes `.is-open` the instant a close starts, and
    `background-color` is not transitioned, so the backdrop flashed back to `bg-black/40`. */
-@media (min-width: 100rem) {
+@media (min-width: 106rem) {
   .post-settings-backdrop {
     background-color: transparent;
     pointer-events: none;
@@ -639,16 +643,36 @@ body {
     color: rgba(228, 228, 231, 0.9); /* zinc-200-ish; same shade at rest as on hover */
   }
 }
-/* On a pointer, the body's side padding widens from `px-4` to a gutter the grip sits in the middle of
-   (2.25rem − 1.25rem, halved), clear of the frame's border, so aiming at it no longer lands on the
-   text or outside the frame. Both sides, so the column stays centred. Touch keeps `px-4`: the grip
-   is a hover affordance and the phone's width is scarcer. Unlayered, so it beats the utility. */
+/* The body's side padding inside the frame. On a pointer it widens to a gutter the grip sits in the
+   middle of (2.25rem − 1.25rem, halved), clear of the frame's border, so aiming at it no longer
+   lands on the text or outside the frame. Both sides, so the column stays centred. Touch keeps
+   1rem: the grip is a hover affordance and the phone's width is scarcer. `--container-editor`
+   reads it, so the body stays `--container-site` wide either way. */
+:root {
+  --editor-gutter: 1rem;
+}
+.ProseMirror {
+  padding-inline: var(--editor-gutter);
+}
 @media (hover: hover) {
-  .ProseMirror {
-    padding-inline: 2.25rem;
+  :root {
+    --editor-gutter: 2.25rem;
   }
   .prose .block-drag-handle {
     left: 0.5rem;
+  }
+}
+
+/* The writing shell's side padding (app/admin/posts/layout.tsx), wider than PageMain's `px-4` on a
+   pointer so a window just wider than `--container-editor` does not put the frame against its edge.
+   The header bars cancel it to span the window, so they follow it here. Touch keeps `px-4`. */
+@media (hover: hover) {
+  .editor-shell {
+    padding-inline: 2.5rem;
+  }
+  .editor-shell .editor-header-bar {
+    margin-inline: -2.5rem;
+    padding-inline: 2.5rem;
   }
 }
 .prose .block-drag-handle svg {
