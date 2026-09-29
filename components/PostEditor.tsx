@@ -451,7 +451,7 @@ export function PostEditor({
         // A publish carries the current content, so a queued autosave is moot.
         cancelPendingAutosave();
       }}
-      className='space-y-5'>
+      className='post-editor space-y-5'>
       {/* The header bar: the way out, autosave state, settings and publish. **A direct child of
           the <form>**: useAutosave reads `new FormData(form)` and these are its submit buttons,
           and `position: sticky` holds only while the parent's box is on screen, which the
@@ -459,7 +459,7 @@ export function PostEditor({
           overlay and dropdowns (z-50); opaque, as the post scrolls under it.
 
           It spans the window (`-mx-4` cancels PageMain's padding, `px-4` restores it, `mx-auto
-          max-w-editor` inside; `editor-shell` widens both on a pointer), SiteHeader's shape, so
+          max-w-editor` inside; app/globals.css widens both on a pointer), SiteHeader's shape, so
           app/admin/posts/layout.tsx gives PageMain no column. `-mt-8` cancels PageMain's top padding: this page starts with chrome.
 
           data-publish-state / data-autosave-state live only here: the suite queries them

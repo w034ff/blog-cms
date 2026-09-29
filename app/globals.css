@@ -50,7 +50,7 @@ html {
      page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
      landing on the same left edge as a plain `mx-auto` box. */
   --container-site: 50rem;
-  /* The writing shell's column (`max-w-editor`: PostEditor, the revision pages' header and list):
+  /* The editor's column (`max-w-editor`: PostEditor's header bar and form):
      the frame's two borders and gutters around a body exactly `--container-site` wide, so the
      editor breaks lines where the published post does. Follows `--editor-gutter`. */
   --container-editor: calc(var(--container-site) + 2 * var(--editor-gutter) + 2px);
@@ -663,14 +663,16 @@ body {
   }
 }
 
-/* The writing shell's side padding (app/admin/posts/layout.tsx), wider than PageMain's `px-4` on a
-   pointer so a window just wider than `--container-editor` does not put the frame against its edge.
-   The header bars cancel it to span the window, so they follow it here. Touch keeps `px-4`. */
+/* The editor page's side padding, wider than PageMain's `px-4` on a pointer so a window just wider
+   than `--container-editor` does not put the frame against its edge. The header bar cancels it to
+   span the window, so it follows it here. Keyed to PostEditor's own <form>, not to the shell's
+   layout: the revision pages share that layout but keep the published page's padding and column,
+   since one of them is a preview of the post. Touch keeps `px-4`. */
 @media (hover: hover) {
-  .editor-shell {
+  main:has(.post-editor) {
     padding-inline: 2.5rem;
   }
-  .editor-shell .editor-header-bar {
+  .post-editor .editor-header-bar {
     margin-inline: -2.5rem;
     padding-inline: 2.5rem;
   }
