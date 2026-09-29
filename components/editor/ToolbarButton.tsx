@@ -100,7 +100,7 @@ export function ToolbarButton({
   const tone = destructive
     ? 'text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950 dark:hover:text-red-300'
     : accent
-      ? 'text-[#0969da] hover:bg-blue-50 hover:text-[#0757ba] dark:text-[#4493f8] dark:hover:bg-blue-950 dark:hover:text-[#6cb0ff]'
+      ? 'text-link hover:bg-link/10 hover:text-link-hover'
       : 'hover:bg-zinc-100 dark:hover:bg-zinc-800';
   const mac = isMac();
   const shortcutLabel = shortcut ? formatShortcut(shortcut, mac) : undefined;

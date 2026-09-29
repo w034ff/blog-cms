@@ -211,7 +211,7 @@ export function InsertDialog({
             onClick={() => setTab('url')}
             className={`border-b-2 px-3 py-2 text-sm ${
               tab === 'url'
-                ? 'border-blue-600 font-bold text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                ? 'border-link font-bold text-link'
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
             }`}>
             URLを貼り付け
@@ -224,7 +224,7 @@ export function InsertDialog({
             onClick={() => setTab('posts')}
             className={`border-b-2 px-3 py-2 text-sm ${
               tab === 'posts'
-                ? 'border-blue-600 font-bold text-blue-600 dark:border-blue-400 dark:text-blue-400'
+                ? 'border-link font-bold text-link'
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
             }`}>
             記事から選ぶ
@@ -298,9 +298,7 @@ export function InsertDialog({
                   // `aria-current` says it to a screen reader, the left bar says it to the eye.
                   aria-current={on ? 'true' : undefined}
                   className={`border-l-2 py-2.5 pr-3 pl-2.5 text-xs ${
-                    on
-                      ? 'border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950/40'
-                      : 'border-transparent'
+                    on ? 'border-link bg-link/10' : 'border-transparent'
                   }`}>
                   <div className='flex items-center gap-3'>
                     <EmbedProviderIcon name={provider.name} />

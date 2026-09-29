@@ -301,9 +301,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
                       }}
                       // `cursor-default`: the 64 cells read as one sizing surface, not 64 controls.
                       className={`h-4 w-4 cursor-default rounded-sm border ${
-                        selected
-                          ? 'border-blue-400 bg-blue-200 dark:border-blue-500 dark:bg-blue-500/40'
-                          : 'border-zinc-300 dark:border-zinc-600'
+                        selected ? 'border-link bg-link/30' : 'border-zinc-300 dark:border-zinc-600'
                       }`}
                     />
                   );

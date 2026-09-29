@@ -53,7 +53,7 @@ const SUPPRESS_TABLE_MENU = 'link-menu-open';
 // Shared by both fields, which must line up. **The field fills its grid column and does not set
 // the card's width** (§5.5.19): a definite width here overflowed the capped card on a phone.
 const FIELD_CLASS =
-  'w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-[#0969da] focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-[#4493f8]';
+  'w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-link focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100';
 
 // Each field's name, as a label rather than a placeholder (a filled field shows none). To the left,
 // because height is the card's expensive axis: every added line covers another paragraph.
@@ -883,7 +883,7 @@ export function LinkBubble({
                 onClick={
                   isFragment ? jump : () => window.open(href, '_blank', 'noopener,noreferrer')
                 }
-                className='link-bubble-open block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-[#0969da] hover:underline dark:text-[#4493f8]'>
+                className='link-bubble-open block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-link hover:underline'>
                 {title ?? displayHref(href)}
               </button>
               <EditorTooltip label={title ?? href} />
@@ -900,7 +900,7 @@ export function LinkBubble({
             {deckPageHint && (
               // A third line that wraps, in the editor's own amber (the footnote states' caution
               // colour), so it reads as the editor speaking (§16.10).
-              <span className='link-bubble-deck-hint mt-0.5 block w-full whitespace-normal px-1.5 text-[10px] leading-tight text-[#9a6700] dark:text-[#d29922]'>
+              <span className='link-bubble-deck-hint mt-0.5 block w-full whitespace-normal px-1.5 text-[10px] leading-tight text-caution'>
                 埋め込みにするには Share →「Copy iframe code」の内容を貼り付けてください
               </span>
             )}

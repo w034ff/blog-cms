@@ -46,6 +46,14 @@ html {
   /* The site's own colour: h2's rule, h3's bar, 強調 and the ToC's current entry. Not the warning
      callout's red (`--alert-accent`), which only happens to share the value. */
   --accent: #9f1239;
+  /* The one blue: links, footnote references, the note callout and the editor's link-ish controls
+     (docs/link-requirements.md §7.1). Its dark value is in the dark block; `--link-hover` is the
+     toolbar button's hover. */
+  --link: #0969da;
+  --link-hover: #0757ba;
+  /* The one amber: the caution callout and the editor's "unfinished" voice (an unwritten footnote,
+     an orphan, the link bubble's hint). */
+  --caution: #9a6700;
   /* What the post card, the ToC box, the editor's frame and the form fields are painted with, over
      `--background`. */
   --surface: var(--color-white);
@@ -69,6 +77,9 @@ html {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-link: var(--link);
+  --color-link-hover: var(--link-hover);
+  --color-caution: var(--caution);
   --font-sans: var(--font-plex-sans);
   --font-mono: var(--font-plex-mono);
   /* The site's one content column: `max-w-site`, SiteHeader/SiteFooter's inner box, and the post
@@ -92,6 +103,9 @@ html {
     --background: #0a0a0a;
     --foreground: #ededed;
     --accent: #ec7a92;
+    --link: #4493f8;
+    --link-hover: #6cb0ff;
+    --caution: #d29922;
     --surface: var(--color-zinc-900);
     --button-primary-bg: var(--color-zinc-100);
     --button-primary-bg-hover: var(--color-zinc-300);
@@ -937,7 +951,7 @@ body.link-menu-open .table-toolbar {
 
 /* The text the link card is about (docs/link-requirements.md §5.5.7), as a decoration
    (link-highlight-extension.ts). The tint sits behind link-coloured text, so contrast bounds it:
-   light 6% and dark 10% both hold 4.5:1 against #0969da / #4493f8, and dark fails at 14%. Raise
+   light 6% and dark 10% both hold 4.5:1 against `--link` (#0969da / #4493f8), and dark fails at 14%. Raise
    either only with the ratio recomputed. */
 .ProseMirror .link-bubble-target {
   background: rgba(0, 0, 0, 0.06);
@@ -1853,7 +1867,7 @@ dialog.image-zoom img {
 }
 
 /* Link colour (docs/link-requirements.md §7.1). prose-zinc gives `a` no hue, leaving the underline
-   as the only cue. The blue pair (#0969da / #4493f8) is the footnote reference's, below, so blue
+   as the only cue. `--link` is also the footnote reference's colour, so blue
    means one thing. In the editor, where links never navigate, it also shows a link's extent.
 
    Colour only: the underline stays as the non-colour cue (WCAG SC 1.4.1), which a full-size link,
@@ -1861,7 +1875,7 @@ dialog.image-zoom img {
    colour (0,1,1 over 0,1,0) but leaves its `text-decoration: none`; the footnote ref/backref rules
    outrank this. Dark value in the bottom block. */
 .prose a {
-  color: #0969da;
+  color: var(--link);
 }
 
 /* 強調 in a link keeps its weight and gives up its red (§7.1, 基準 5f・5g). The underline is the
@@ -2027,7 +2041,7 @@ dialog.image-zoom img {
   border: 0;
 }
 .prose .markdown-alert-note {
-  --alert-accent: #0969da;
+  --alert-accent: var(--link);
   --alert-bg: rgba(9, 105, 218, 0.06);
   --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
 }
@@ -2037,7 +2051,7 @@ dialog.image-zoom img {
   --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
 }
 .prose .markdown-alert-caution {
-  --alert-accent: #9a6700;
+  --alert-accent: var(--caution);
   --alert-bg: rgba(154, 103, 0, 0.06);
   --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.141.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
 }
@@ -2825,14 +2839,9 @@ dialog.image-zoom img {
     --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
   }
 
-  /* The footnote reference's and .markdown-alert-note's dark blue. */
-  .prose a {
-    color: #4493f8;
-  }
-
   /* Brighter accents: the light hues go muddy on dark. */
   .prose .markdown-alert-note {
-    --alert-accent: #4493f8;
+    --alert-accent: var(--link);
     --alert-bg: rgba(68, 147, 248, 0.1);
   }
   .prose .markdown-alert-warning {
@@ -2840,7 +2849,7 @@ dialog.image-zoom img {
     --alert-bg: rgba(248, 81, 73, 0.1);
   }
   .prose .markdown-alert-caution {
-    --alert-accent: #d29922;
+    --alert-accent: var(--caution);
     --alert-bg: rgba(210, 153, 34, 0.1);
   }
 }
@@ -2854,7 +2863,7 @@ dialog.image-zoom img {
   line-height: 0;
   vertical-align: super;
   padding: 0 0.1em;
-  color: #0969da;
+  color: var(--link);
   cursor: default;
 }
 .ProseMirror sup[data-footnote-ref]::after {
@@ -2862,7 +2871,7 @@ dialog.image-zoom img {
 }
 /* §5.2's first layer: an unwritten note is visible from its reference, where the author looks. */
 .ProseMirror sup[data-footnote-ref][data-incomplete] {
-  color: #9a6700;
+  color: var(--caution);
   text-decoration: underline dotted;
   text-underline-offset: 0.2em;
 }
@@ -2903,7 +2912,7 @@ dialog.image-zoom img {
 /* No reference points here (§5.4): kept, but it says why instead of a number. */
 .ProseMirror div[data-footnote-def][data-orphan]::before {
   content: '[?]';
-  color: #9a6700;
+  color: var(--caution);
 }
 /* The definition of the selected reference, in its blue. `box-shadow`, since padding would move
    the marker. */
@@ -2921,7 +2930,7 @@ dialog.image-zoom img {
   position: absolute;
   left: calc(var(--footnote-marker) + var(--footnote-gap));
   top: 0;
-  color: #9a6700;
+  color: var(--caution);
   pointer-events: none;
   user-select: none;
 }
@@ -2951,7 +2960,7 @@ dialog.image-zoom img {
    the return leg. `:focus-visible` with `:hover`, since the keyboard has no hover. */
 .prose a[data-footnote-ref],
 .prose a[data-footnote-backref] {
-  color: #0969da;
+  color: var(--link);
   text-decoration: none;
 }
 .prose a[data-footnote-ref]:hover,
@@ -3022,7 +3031,7 @@ dialog.image-zoom img {
 .footnote-popover-jump {
   display: inline-block;
   margin-top: 0.75rem;
-  color: #0969da;
+  color: var(--link);
   font-size: 0.9em;
   text-decoration: none;
 }
@@ -3032,22 +3041,10 @@ dialog.image-zoom img {
 }
 
 @media (prefers-color-scheme: dark) {
-  .ProseMirror sup[data-footnote-ref],
-  .prose a[data-footnote-ref],
-  .prose a[data-footnote-backref] {
-    color: #4493f8;
-  }
   .footnote-popover {
     background: #161b22;
     border-color: #30363d;
     box-shadow: 0 8px 24px rgb(1 4 9 / 0.8);
-  }
-  .footnote-popover-jump {
-    color: #4493f8;
-  }
-  .ProseMirror sup[data-footnote-ref][data-incomplete],
-  .ProseMirror div[data-footnote-def][data-orphan]::before {
-    color: #d29922;
   }
   .ProseMirror div[data-footnote-section],
   .prose section[data-footnotes] {
