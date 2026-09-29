@@ -34,6 +34,39 @@ describe('diffBody', () => {
     ]);
   });
 
+  it('compares a run of ASCII letters and digits whole, not by character', () => {
+    expect(diffBody('```diff_python\n', '```ts\n')).toEqual([
+      {
+        kind: 'change',
+        before: [
+          { kind: 'same', text: '```' },
+          { kind: 'removed', text: 'diff_python' },
+        ],
+        after: [
+          { kind: 'same', text: '```' },
+          { kind: 'added', text: 'ts' },
+        ],
+      },
+    ]);
+  });
+
+  it('still compares Japanese by character beside a changed word', () => {
+    expect(diffBody('React の設定\n', 'Vue の設定を\n')).toEqual([
+      {
+        kind: 'change',
+        before: [
+          { kind: 'removed', text: 'React' },
+          { kind: 'same', text: ' の設定' },
+        ],
+        after: [
+          { kind: 'added', text: 'Vue' },
+          { kind: 'same', text: ' の設定' },
+          { kind: 'added', text: 'を' },
+        ],
+      },
+    ]);
+  });
+
   it('shows a pure insertion with nothing on the before side', () => {
     expect(diffBody('a\n', 'a\nb\n')).toEqual([
       { kind: 'context', lines: ['a'] },

@@ -1,11 +1,11 @@
-import { diffChars, diffLines } from 'diff';
+import { diffArrays, diffLines } from 'diff';
 import { categoryLabel } from '@/lib/content';
 import { normalizeNewlines } from '@/lib/draft-content';
 import type { DraftContent } from '@/lib/types';
 
 // What restoring a revision would change (docs/revision-requirements.md §9): the revision against
 // what the editor holds now. Shaped as data rather than markup so the rules — which lines pair,
-// what collapses, when a change is too big to compare by character — are testable without a page.
+// what collapses, when a change is too big to compare token by token — are testable without a page.
 
 export type Segment = { kind: 'same' | 'removed' | 'added'; text: string };
 
@@ -14,8 +14,8 @@ export type DiffBlock =
   | { kind: 'context'; lines: string[] }
   // Unchanged lines folded away, kept so the fold can be opened.
   | { kind: 'collapsed'; lines: string[] }
-  // One changed stretch: the lines as they were and as they are, each with the characters that
-  // differ marked. Either side is empty for a pure insertion or deletion.
+  // One changed stretch: the lines as they were and as they are, each with the tokens that differ
+  // marked (DIFF_TOKEN). Either side is empty for a pure insertion or deletion.
   | { kind: 'change'; before: Segment[]; after: Segment[] };
 
 export type FieldChange = { label: string; before: string; after: string };
@@ -31,9 +31,18 @@ export type RevisionDiff = {
 export const DIFF_CONTEXT_LINES = 2;
 
 // A changed stretch longer than this (both sides together) is shown as whole lines rather than
-// compared by character: a character diff of two long, unrelated passages is slow and reads as
-// confetti. Japanese has no spaces to diff by word, which is why the unit is the character.
+// compared by token: a token diff of two long, unrelated passages is slow and reads as confetti.
 export const DIFF_INLINE_LIMIT = 2000;
+
+// The unit a changed line is compared in: a run of ASCII letters, digits and `_` is one token, and
+// every other character is its own. Japanese has no spaces to diff by word, so it goes by
+// character; an identifier or a language name compared that way lights up the letters two names
+// happen to share (`diff_python` → `ts` kept its `t`), so it goes whole.
+const DIFF_TOKEN = /[A-Za-z0-9_]+|[\s\S]/gu;
+
+function tokensOf(text: string): string[] {
+  return text.match(DIFF_TOKEN) ?? [];
+}
 
 function linesOf(text: string): string[] {
   const lines = text.split('\n');
@@ -51,12 +60,13 @@ function changeBlock(removed: string, added: string): DiffBlock {
   }
   const before: Segment[] = [];
   const after: Segment[] = [];
-  for (const part of diffChars(removed, added)) {
-    if (part.added) after.push({ kind: 'added', text: part.value });
-    else if (part.removed) before.push({ kind: 'removed', text: part.value });
+  for (const part of diffArrays(tokensOf(removed), tokensOf(added))) {
+    const text = part.value.join('');
+    if (part.added) after.push({ kind: 'added', text });
+    else if (part.removed) before.push({ kind: 'removed', text });
     else {
-      before.push({ kind: 'same', text: part.value });
-      after.push({ kind: 'same', text: part.value });
+      before.push({ kind: 'same', text });
+      after.push({ kind: 'same', text });
     }
   }
   return { kind: 'change', before, after };
