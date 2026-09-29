@@ -37,7 +37,7 @@
 - **目次は最後に集める。** `rehype-sanitize` の `clobberPrefix: 'user-content-'` がすべての id を書き換えるので、`lib/rehype-collect-toc.ts` は消毒の後で id を読む。`lib/rehype-clobber-fragment-links.ts` はフラグメントの href に同じ書き換えを無条件にかける。
 - `useActiveHeadingId` は `IntersectionObserver` ではなく、rAF で間引いたスクロールのリスナーである。IO は「交差しない → 交差しない」の移動を何も報告しないので、帯を一気に飛び越すと強調が古いまま残った。毎回 `getBoundingClientRect().top` から導き直し、覚えない。
 - `--breakpoint-toc` と `toc:` の変種は、グリッド・モバイルで隠す・デスクトップで出すの 3 か所の唯一の源である。1 か所だけ動かすと、目次が二重になるか、どこにも出なくなる。レイアウトは `docs/editor-pitfalls.md` §17.2 のグリッドで、`position: fixed` のレールは作者が退けた。
-- `html` にスクロールバーの幅を確保しない（`scrollbar-gutter` は初期値）。スクロールバーの有無で中央寄せのレイアウトが数 px 左右にずれるのは受け入れる。2026-09-29 に `stable` を外した — 短いページで確保した幅が空白として残り、ヘッダの下線がその手前で途切れたため。参考にした Zenn と ashunar0.dev はどちらも幅を確保していない（実測 2026-09-29）。
+- `html` に `scrollbar-gutter: stable` を付けている。付けないと、スクロールバーの要る長いページは幅が狭くなり、中央寄せのレイアウト全体が動く。スクロールを止めるモーダル（エディタのドロワーやダイアログ、画像の拡大）を開いたときも、スクロールバーが消えた分だけ画面が横にずれる。代わりに、スクロールの要らない短いページでは確保した幅が空白として残り、ヘッダの下線がその手前（約 15px）で途切れるのを受け入れる。2026-09-29 に一度外したが、モーダルを開くだけでずれるようになったので 2026-09-30 に戻した。
 - 本文の幅は `max-w-3xl` のままにし、`#post-body` に背景と枠を付けた（参考サイトは 760〜781px で、この サイトは 768px だった）。
 - **OGP**: Next はページが `openGraph` を設定するとレイアウトのものを丸ごと置き換える（マージしない）ので、どのページも `app/shared-metadata.ts` の `sharedOpenGraph` を展開する。`og:title` は `title` に従わない。サイト全体で 1 枚の `public/og.png` を `scripts/make-og-image.mts` が本物の Chrome で撮って commit している。記事ごとの `ImageResponse` は、CJK のフォントを渡す必要があり（手元の唯一のフォントは 9.6MB で、サブセット化の道具が無い）見送った。Slack のプレビューは robots.txt を守らない（X と Facebook のデバッガは守る）。
 
