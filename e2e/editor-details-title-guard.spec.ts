@@ -125,7 +125,7 @@ test('an image is refused in an accordion title, and says why', async ({ page })
   await setRange(page, await firstPos(page, 'detailsSummary'));
 
   // The picker greys out; paste and drop get the notice.
-  const picker = page.getByLabel(/画像/).first();
+  const picker = page.getByRole('button', { name: '画像', exact: true });
   await expect(picker).toBeDisabled();
 
   const toast = page.getByRole('status');
