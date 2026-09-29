@@ -99,7 +99,7 @@ export function TocNavDesktop({ toc }: { toc: TocEntry[] }) {
   return (
     <nav
       aria-label='目次'
-      className='hidden toc:block toc:col-start-3 toc:ml-6 toc:max-w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900'>
+      className='hidden toc:block toc:col-start-3 toc:ml-6 toc:max-w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border border-zinc-200 bg-surface p-4 dark:border-zinc-800'>
       <p className='font-semibold text-sm mb-3'>目次</p>
       <TocList toc={toc} activeId={activeId} />
     </nav>

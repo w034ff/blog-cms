@@ -33,11 +33,24 @@
   /* The format toolbar's height, which the post pads under on a phone (§12.5). Measured by the same
      hook, since it wraps at 320px. */
   --editor-toolbar-h: 2.25rem;
+
+  /* The site's own colour: h2's rule, h3's bar, 強調 and the ToC's current entry. Not the warning
+     callout's red (`--alert-accent`), which only happens to share the value. */
+  --accent: #cf222e;
+  /* What the post card and the ToC box are painted with, over `--background`. */
+  --surface: var(--color-white);
+  /* The one filled button per surface (更新, 保存, ログイン, …) and its quieter neighbour. */
+  --button-primary-bg: var(--color-zinc-900);
+  --button-primary-bg-hover: var(--color-zinc-700);
+  --button-primary-fg: var(--color-white);
+  --button-secondary-border: var(--color-zinc-300);
+  --button-secondary-bg-hover: var(--color-zinc-100);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   /* The site's one content column: `max-w-site`, SiteHeader/SiteFooter's inner box, and the post
@@ -60,6 +73,36 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --accent: #f85149;
+    --surface: var(--color-zinc-900);
+    --button-primary-bg: var(--color-zinc-100);
+    --button-primary-bg-hover: var(--color-zinc-300);
+    --button-primary-fg: var(--color-zinc-900);
+    --button-secondary-border: var(--color-zinc-700);
+    --button-secondary-bg-hover: var(--color-zinc-800);
+  }
+}
+
+/* Buttons by role, so their look is set here once. Size, weight and the disabled state stay with
+   each caller. In `components` so any utility at the call site still wins; `:hover` sits under
+   `(hover: hover)` as Tailwind's `hover:` does, so a tap does not leave it lit. */
+@layer components {
+  .button-primary {
+    border-radius: 0.25rem;
+    background: var(--button-primary-bg);
+    color: var(--button-primary-fg);
+  }
+  .button-secondary {
+    border-radius: 0.25rem;
+    border: 1px solid var(--button-secondary-border);
+  }
+  @media (hover: hover) {
+    .button-primary:hover {
+      background: var(--button-primary-bg-hover);
+    }
+    .button-secondary:hover {
+      background: var(--button-secondary-bg-hover);
+    }
   }
 }
 
@@ -1490,7 +1533,7 @@ body.link-menu-open .table-toolbar {
 /* A tinted box with one quote mark in its corner, instead of Typography's left bar, which is left
    to h3. `border-inline-start-width: 0` is load-bearing: adding a background does not remove the
    plugin's border. Unlayered, so it beats the plugin. Achromatic, because hued tints mean callout
-   and #cf222e means heading; a low-alpha grey needs no dark counterpart. */
+   and `--accent` means heading; a low-alpha grey needs no dark counterpart. */
 .prose blockquote {
   position: relative;
   border-inline-start-width: 0;
@@ -1739,24 +1782,24 @@ dialog.image-zoom img {
 }
 
 /* h2 gets a border-bottom, drawn once under a wrapped heading, where a text underline would draw
-   per line. The same red as h3's left bar. Dark value in the bottom block. */
+   per line. */
 .prose h2 {
   padding-bottom: 0.3em;
-  border-bottom: 2px solid #cf222e; /* same red as h3 / markdown-alert-warning */
+  border-bottom: 2px solid var(--accent);
 }
 
-/* A red left bar on h3 (the warning red), the only left bar left in the design: callouts and
-   blockquotes dropped theirs. Dark value in the bottom block. */
+/* A left bar on h3, the only left bar left in the design: callouts and blockquotes dropped
+   theirs. */
 .prose h3 {
   padding-left: 0.5em;
-  border-left: 0.25rem solid #cf222e; /* same red as markdown-alert-warning */
+  border-left: 0.25rem solid var(--accent);
 }
 
-/* 強調 (accent-emphasis-extension.ts): bold plus the heading red. Not `.prose`-scoped, so the
-   toolbar's preview glyph, outside `.prose`, wears it too. Dark value in the bottom block. */
+/* 強調 (accent-emphasis-extension.ts): bold plus the accent. Not `.prose`-scoped, so the toolbar's
+   preview glyph, outside `.prose`, wears it too. */
 .accent-emphasis {
   font-weight: 700;
-  color: #cf222e;
+  color: var(--accent);
 }
 
 /* Link colour (docs/link-requirements.md §7.1). prose-zinc gives `a` no hue, leaving the underline
@@ -1775,21 +1818,20 @@ dialog.image-zoom img {
    `<a>`'s, and a text-decoration is painted in the colour of the element that declared it, so the
    span's red can never reach the line: either the underline turns red or the text turns blue. Blue,
    because on a link colour is the affordance, and 700 weight still marks 強調. `inherit` follows
-   whatever `.prose a` resolved to, so no dark counterpart; (0,2,1) beats the unscoped dark rule. */
+   whatever `.prose a` resolved to, so no dark counterpart; (0,2,1) beats `.accent-emphasis`. */
 .prose a .accent-emphasis {
   color: inherit;
 }
 
 /* Table of contents (components/TocNav.tsx), post page only. Not `.prose`-scoped: it sits outside
-   the article body. `scroll-mt` gives a jumped-to heading a little room; there is no fixed header.
-   Dark values in the bottom block. */
+   the article body. `scroll-mt` gives a jumped-to heading a little room; there is no fixed header. */
 #post-body h2,
 #post-body h3 {
   scroll-margin-top: 1rem;
 }
 
 .toc-link.is-active {
-  color: #cf222e; /* same red accent as h2/h3/accent-emphasis above */
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -2731,26 +2773,6 @@ dialog.image-zoom img {
   .prose {
     --tw-prose-bullets: #d4d4d8; /* zinc-300 — matches prose-invert body */
     --tw-prose-counters: #d4d4d8; /* zinc-300 — matches prose-invert body */
-  }
-
-  /* The warning callout's dark accent. */
-  .prose h2 {
-    border-bottom-color: #f85149;
-  }
-
-  /* The warning callout's dark accent. */
-  .prose h3 {
-    border-left-color: #f85149;
-  }
-
-  /* Dark counterpart of the accent-emphasis color above (also unscoped — see there). */
-  .accent-emphasis {
-    color: #f85149;
-  }
-
-  /* Dark counterpart of the TOC active-link color above. */
-  .toc-link.is-active {
-    color: #f85149;
   }
 
   /* The footnote reference's and .markdown-alert-note's dark blue. */

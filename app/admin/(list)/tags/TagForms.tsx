@@ -20,10 +20,8 @@ import type { DictionaryTag } from '@/lib/types';
 
 const inputClass =
   'w-full min-w-0 rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
-const secondaryButtonClass =
-  'shrink-0 rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800';
-const primaryButtonClass =
-  'shrink-0 rounded bg-zinc-900 px-3 py-1.5 text-sm text-white hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300';
+const secondaryButtonClass = 'button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50';
+const primaryButtonClass = 'button-primary shrink-0 px-3 py-1.5 text-sm disabled:opacity-40';
 // One grey (`zinc-500`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
 // body colour for the data, so the data reads first. One grid for the header and every row, so the
 // columns line up.

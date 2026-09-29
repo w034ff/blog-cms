@@ -567,7 +567,7 @@ export function PostEditor({
               value='publish'
               disabled={publishDisabled}
               // `editor-publish-button` (app/globals.css) pins 投稿 to the header's 34px on touch.
-              className='editor-publish-button rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+              className='editor-publish-button button-primary px-4 py-2 text-sm font-medium disabled:pointer-events-none disabled:opacity-50'>
               {publishLabel}
             </button>
           </span>

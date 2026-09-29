@@ -84,7 +84,7 @@ export function PostArticle({
         {/* The card separates the body from the page, as Zenn does. `sm:px-6`: the padding
             comes out of the column, so it sets the reading width (~750px; px-8 would be
             ~734px). */}
-        <div className='rounded-lg border border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900 sm:px-6 sm:py-8'>
+        <div className='rounded-lg border border-zinc-200 bg-surface px-4 py-6 dark:border-zinc-800 sm:px-6 sm:py-8'>
           {body ?? (
             <>
               {showToc && <TocNavMobile toc={toc} />}

@@ -76,16 +76,13 @@ function TableSizeFields({
         </label>
       </div>
       <div className='flex justify-end gap-2'>
-        <button
-          type='button'
-          onClick={onCancel}
-          className='rounded border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+        <button type='button' onClick={onCancel} className='button-secondary px-3 py-1.5 text-sm'>
           キャンセル
         </button>
         <button
           type='button'
           onClick={submit}
-          className='rounded bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+          className='button-primary px-4 py-1.5 text-sm font-medium'>
           追加
         </button>
       </div>
@@ -173,7 +170,7 @@ function TableSizeRows({ onInsert }: { onInsert: (rows: number, cols: number) =>
         <button
           type='button'
           onClick={() => onInsert(rows, cols)}
-          className='w-full rounded bg-zinc-900 py-2.5 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+          className='button-primary w-full py-2.5 text-sm font-medium'>
           表を追加
         </button>
       </div>
