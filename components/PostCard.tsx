@@ -50,7 +50,7 @@ export function PostCard({ post }: Props) {
               <li key={slug}>
                 <Link
                   href={`/tags/${encodeURIComponent(slug)}`}
-                  className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
+                  className='inline-block rounded-full bg-surface dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
                   #{name}
                 </Link>
               </li>

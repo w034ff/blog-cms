@@ -66,10 +66,10 @@ export function TableToolbar({ editor }: { editor: Editor }) {
       options={options}
       getReferencedVirtualElement={getReferencedVirtualElement}
       // The width cap gives `flex-wrap` something to wrap against: an absolute box shrinks to its
-      // containing block, wider than a phone, and ran off screen. `[&_button]:px-1.5` below `sm`
-      // keeps the full-width labels (§12.1) on one line at 360px; the hit area stays 34x24, over
-      // WCAG 2.5.8's 24x24.
-      className='table-toolbar z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg [&_button]:px-1.5 sm:[&_button]:px-2 dark:border-zinc-700 dark:bg-zinc-900'>
+      // containing block, wider than a phone, and ran off screen. `[&_button]:px-1` below `sm`
+      // keeps the full-width labels (docs/editor-requirements.md §12.1) on one line at 360px; the
+      // hit area stays 32x24, over WCAG 2.5.8's 24x24.
+      className='table-toolbar z-20 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-0.5 rounded border border-zinc-300 bg-white px-1 py-0.5 shadow-lg [&_button]:px-1 sm:[&_button]:px-2 dark:border-zinc-700 dark:bg-zinc-900'>
       <ToolbarButton onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
         見出し行
       </ToolbarButton>

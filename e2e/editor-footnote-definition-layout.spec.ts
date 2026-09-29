@@ -35,7 +35,7 @@ test('a marker never reaches the note beside it', async ({ page }) => {
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await loadMarkdown(page, SOURCE);
   await expect(page.locator('.ProseMirror div[data-footnote-def]')).toHaveCount(COUNT);
-  // Glyph advances: measure after Geist loads, not the fallback.
+  // Glyph advances: measure after the web font loads, not the fallback.
   await page.evaluate(() => document.fonts.ready);
 
   const section = page.locator('.ProseMirror div[data-footnote-section]');

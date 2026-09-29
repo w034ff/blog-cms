@@ -73,7 +73,7 @@ export function PostArticle({
                 <li key={slug}>
                   <Link
                     href={`/tags/${encodeURIComponent(slug)}`}
-                    className='inline-block rounded-full bg-zinc-100 dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
+                    className='inline-block rounded-full bg-surface dark:bg-zinc-800 px-3 py-1 text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700'>
                     #{name}
                   </Link>
                 </li>
@@ -84,7 +84,7 @@ export function PostArticle({
         {/* The card separates the body from the page, as Zenn does. `sm:px-6`: the padding
             comes out of the column, so it sets the reading width (~750px; px-8 would be
             ~734px). */}
-        <div className='rounded-lg border border-zinc-200 bg-surface px-4 py-6 dark:border-zinc-800 sm:px-6 sm:py-8'>
+        <div className='rounded-xs border border-zinc-200 bg-surface px-4 py-6 dark:border-zinc-800 sm:px-6 sm:py-8'>
           {body ?? (
             <>
               {showToc && <TocNavMobile toc={toc} />}

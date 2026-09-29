@@ -271,7 +271,11 @@ test.describe('on an emulated phone at 360px', () => {
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
 
     await page.keyboard.press('Escape');
-    await page.locator('.ProseMirror td').first().click();
+    // Low in the cell: the link card, still open, ends about where the cell's centre is at this
+    // width, so a centre click lands on one or the other by a pixel.
+    const cell = page.locator('.ProseMirror td').first();
+    const { height } = (await cell.boundingBox())!;
+    await cell.click({ position: { x: 8, y: height - 6 } });
     await expect(page.locator('.table-toolbar')).toBeVisible();
     expect((await pageWidth(page)).scroll).toBeLessThanOrEqual(360);
   });

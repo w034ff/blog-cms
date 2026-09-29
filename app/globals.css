@@ -24,7 +24,9 @@
 }
 
 :root {
-  --background: #ffffff;
+  /* A grey ground, so the white `--surface` of the post card and the editor reads as a sheet on it,
+     as the dark scheme's lighter card already does. */
+  --background: #f4f4f5;
   --foreground: #171717;
   /* The editor's sticky header height, which the format toolbar pins under. Measured at runtime by
      useMeasuredHeight.ts (the bar wraps); this is the first paint's value. Too small is safe (one
@@ -37,7 +39,8 @@
   /* The site's own colour: h2's rule, h3's bar, 強調 and the ToC's current entry. Not the warning
      callout's red (`--alert-accent`), which only happens to share the value. */
   --accent: #cf222e;
-  /* What the post card and the ToC box are painted with, over `--background`. */
+  /* What the post card, the ToC box, the editor's frame and the form fields are painted with, over
+     `--background`. */
   --surface: var(--color-white);
   /* The one filled button per surface (更新, 保存, ログイン, …) and its quieter neighbour. */
   --button-primary-bg: var(--color-zinc-900);
@@ -51,8 +54,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-plex-sans);
+  --font-mono: var(--font-plex-mono);
   /* The site's one content column: `max-w-site`, SiteHeader/SiteFooter's inner box, and the post
      page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
      landing on the same left edge as a plain `mx-auto` box. */
@@ -88,12 +91,12 @@
    `(hover: hover)` as Tailwind's `hover:` does, so a tap does not leave it lit. */
 @layer components {
   .button-primary {
-    border-radius: 0.25rem;
+    border-radius: 0.125rem;
     background: var(--button-primary-bg);
     color: var(--button-primary-fg);
   }
   .button-secondary {
-    border-radius: 0.25rem;
+    border-radius: 0.125rem;
     border: 1px solid var(--button-secondary-border);
   }
   @media (hover: hover) {
@@ -779,7 +782,7 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--background);
+  background: var(--surface);
   opacity: 0.6;
 }
 @media (prefers-color-scheme: dark) {
@@ -789,7 +792,8 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
 }
 
 /* The ghost: a cursor-following clone of the dragged block, whose source stays put. Capped so a
-   large table or code block stays a card; opaque `var(--background)` so it is not a smear. */
+   large table or code block stays a card; opaque `var(--surface)`, the editor's own sheet, so it
+   is not a smear. */
 .block-drag-preview {
   position: fixed;
   z-index: 41;
@@ -800,7 +804,7 @@ body.block-dragging .prose .block-drag-handle:not(.is-dragging) {
   overflow: hidden;
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  background: var(--background);
+  background: var(--surface);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   opacity: 0.95;
 }

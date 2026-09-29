@@ -954,7 +954,7 @@ autolink 直後に書き続けてもカードは出続けない（実測）: `ht
 
 **この数え上げには裏側がある。** 「この規則がどの `<a>` に届くか」だけでは半分で、もう半分は「この規則が今どの既存宣言に勝ってしまうか」である。`.prose a` は (0,1,1) かつ unlayered で、置き換えた typography の規則は (0,1,0) かつ layered だったので、`.prose` 内で単一クラスの `color` を持つものはすべて候補になる。
 
-`.accent-emphasis`（`#cf222e`、(0,1,0)）が**唯一「別の色を失いうる」相手**で、しかも `accent-emphasis-extension.ts` の `excludes` は bold/italic/strike/code を挙げるが **`link` を挙げていない** — リンク＋強調は仮定ではなく到達可能である。
+`.accent-emphasis`（`--accent`、(0,1,0)）が**唯一「別の色を失いうる」相手**で、しかも `accent-emphasis-extension.ts` の `excludes` は bold/italic/strike/code を挙げるが **`link` を挙げていない** — リンク＋強調は仮定ではなく到達可能である。
 
 **詳細度の争いはそもそも起きない。** 強調の span は `<a>` の**内側**に入る（`<a …><span class="accent-emphasis">…</span></a>`、エディタ・公開とも）ので、2 つの規則は別々の要素に当たる。2026-08-11 の実測はここまでで、結論は「文字は `#cf222e` のまま」だった。**この結論は入れ子の順序に依存していて、それを固定しているものは repo に他に無い。** だからコメントではなく 5f として spec に置いた。
 

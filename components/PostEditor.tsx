@@ -650,7 +650,7 @@ export function PostEditor({
 
           <div className='space-y-2'>
             {/* Not overflow-hidden, or the toolbar would pin to the frame, not the viewport. */}
-            <div className='rounded border border-zinc-300 dark:border-zinc-700'>
+            <div className='rounded-xs border border-zinc-300 bg-surface dark:border-zinc-700'>
               {/* The format toolbar, pinned under the page header at the measured
                   `--editor-header-h` (useMeasuredHeight.ts; first-paint fallback in
                   app/globals.css). z-30: above the content, below the page header (z-40) and
@@ -659,7 +659,7 @@ export function PostEditor({
               {editor && (
                 <div
                   ref={toolbarRef}
-                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t border-b border-zinc-300 bg-white px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-950'>
+                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t-xs border-b border-zinc-300 bg-surface px-2 py-0.5 dark:border-zinc-700'>
                   <Toolbar
                     editor={editor}
                     uploading={uploading}

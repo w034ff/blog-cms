@@ -19,7 +19,7 @@ import {
 import type { DictionaryTag } from '@/lib/types';
 
 const inputClass =
-  'w-full min-w-0 rounded border border-zinc-300 bg-transparent px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
+  'w-full min-w-0 rounded-xs border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
 const secondaryButtonClass = 'button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50';
 const primaryButtonClass = 'button-primary shrink-0 px-3 py-1.5 text-sm disabled:opacity-40';
 // One grey (`zinc-500`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
