@@ -1,12 +1,6 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 
-/* Reserve the scrollbar gutter always, so a long page and a short one have the same layout width
-   and the centred layout does not shift sideways between them. */
-html {
-  scrollbar-gutter: stable;
-}
-
 /* Smooth scrolling for the ToC links, on the post page only (`:has(#post-body)`). Never on <html>
    unconditionally: assigning `scrollTop` scrolls with the element's computed scroll-behavior, and
    prosemirror-view keeps the caret on screen by writing `scrollTop` on its scroll parent
@@ -1664,8 +1658,8 @@ dialog.image-zoom[open] {
 dialog.image-zoom::backdrop {
   background: transparent;
 }
-/* `showModal()` does not stop the wheel, so the article scrolled under the picture. No layout shift:
-   `scrollbar-gutter: stable` already reserves the space. */
+/* `showModal()` does not stop the wheel, so the article scrolled under the picture. ImageZoom.tsx
+   keeps the vanishing scrollbar's width while open, so the page does not shift sideways. */
 html:has(dialog.image-zoom[open]) {
   overflow: hidden;
 }

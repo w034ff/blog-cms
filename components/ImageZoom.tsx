@@ -66,6 +66,12 @@ export function ImageZoom({ targetId }: { targetId: string }) {
         }
       });
 
+      // The open dialog hides the page's overflow (globals.css), which takes a classic scrollbar
+      // away; keep its width so the page stays put. Only when one is showing: a short page has
+      // none, and reserving one would shift it instead.
+      if (window.innerWidth > document.documentElement.clientWidth) {
+        document.documentElement.style.scrollbarGutter = 'stable';
+      }
       dialog.showModal();
       history.pushState({ imageZoom: true }, '');
       pushed = true;
@@ -101,6 +107,7 @@ export function ImageZoom({ targetId }: { targetId: string }) {
     };
 
     const onClose = (): void => {
+      document.documentElement.style.scrollbarGutter = '';
       if (!pushed) return;
       pushed = false;
       ownPop = true;
@@ -120,6 +127,7 @@ export function ImageZoom({ targetId }: { targetId: string }) {
       window.removeEventListener('popstate', onPopState);
       // Before removing it, so unmount does not call history.back().
       pushed = false;
+      document.documentElement.style.scrollbarGutter = '';
       dialog.remove();
     };
   }, [targetId]);
