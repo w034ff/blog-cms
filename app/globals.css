@@ -607,7 +607,7 @@ body {
    placed as a widget decoration just before its target. JS sets `top`; `left` is fixed, since
    every target sits at the doc's left edge. `:has(+ :hover)` reveals it while the pointer is
    anywhere inside the next block. `-0.2rem` keeps it inside PostEditor's bordered frame, which has
-   no left padding of its own. */
+   no left padding of its own; a pointer gets a gutter of its own below. */
 .prose .block-drag-handle {
   position: absolute;
   top: 0;
@@ -637,6 +637,18 @@ body {
 @media (prefers-color-scheme: dark) {
   .prose .block-drag-handle {
     color: rgba(228, 228, 231, 0.9); /* zinc-200-ish; same shade at rest as on hover */
+  }
+}
+/* On a pointer, the body's side padding widens from `px-4` to a gutter the grip sits in the middle of
+   (2.25rem − 1.25rem, halved), clear of the frame's border, so aiming at it no longer lands on the
+   text or outside the frame. Both sides, so the column stays centred. Touch keeps `px-4`: the grip
+   is a hover affordance and the phone's width is scarcer. Unlayered, so it beats the utility. */
+@media (hover: hover) {
+  .ProseMirror {
+    padding-inline: 2.25rem;
+  }
+  .prose .block-drag-handle {
+    left: 0.5rem;
   }
 }
 .prose .block-drag-handle svg {
