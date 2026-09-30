@@ -30,6 +30,7 @@ import {
   SUMMARY_NAME,
   TLDR_NAME,
   demoteExtraBoxes,
+  dropRuleBreak,
   newRuleBreak,
   pasteSlice,
   sectionKind,
@@ -152,15 +153,6 @@ function replacesWholeDocument(tr: { steps: readonly unknown[] }, doc: PMNode): 
   return first instanceof ReplaceStep && first.from === 0 && first.to === doc.content.size;
 }
 
-// A box headed below the top level. The enclosing textblock does not count: ProseMirror splits it
-// and the box lands beside it — the same test as `wouldNestDetails`.
-function nestedAt($pos: ReturnType<PMNode['resolve']>): boolean {
-  for (let depth = $pos.depth; depth > 0; depth -= 1) {
-    if (!$pos.node(depth).isTextblock) return true;
-  }
-  return false;
-}
-
 function docHas(doc: PMNode, typeName: string): boolean {
   let found = false;
   doc.descendants((node) => {
@@ -170,19 +162,11 @@ function docHas(doc: PMNode, typeName: string): boolean {
   return found;
 }
 
-function sliceTypes(slice: { content: PMNode['content'] }): Set<string> {
-  const names = new Set<string>();
-  slice.content.descendants((node) => {
-    if (node.type.name === SUMMARY_NAME || node.type.name === TLDR_NAME) names.add(node.type.name);
-  });
-  return names;
-}
-
 // The one plugin behind every route (§3.2):
 //   - paste: a box that would break a rule is demoted to ordinary blocks, so the words still land;
-//   - drop: a copy of a box the post already has, or a box headed below the top level, is refused
-//     (repairing at the destination would come after the move deleted the source,
-//     docs/editor-pitfalls.md §11.2);
+//   - drop: anything below the まとめ, a copy of a box the post already has, or a box headed below
+//     the top level is refused (`dropRuleBreak`, which the drop cursor asks too; repairing at the
+//     destination would come after the move deleted the source, docs/editor-pitfalls.md §11.2);
 //   - every other edit — typing after the まとめ, the drag handle, a command, undo — is held to
 //     `newRuleBreak` by filterTransaction and refused with a notice;
 //   - a load demotes the extra boxes (appendTransaction here, onCreate for the first document).
@@ -199,17 +183,9 @@ function summaryGuard(notify: (message: string) => void): Plugin {
         return true;
       },
       handleDrop(view, event, slice, moved) {
-        if (!sliceCarriesBox(slice)) return false;
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
-        const $target = resolveDropTarget(view, coords.pos, slice, moved);
-        const types = [...sliceTypes(slice)];
-        let broken: SummaryRuleBreak | null = null;
-        if (nestedAt($target)) broken = 'nested';
-        else if (!moved && types.includes(SUMMARY_NAME) && docHas(view.state.doc, SUMMARY_NAME))
-          broken = 'duplicate-summary';
-        else if (!moved && types.includes(TLDR_NAME) && docHas(view.state.doc, TLDR_NAME))
-          broken = 'duplicate-tldr';
+        const broken = dropRuleBreak(resolveDropTarget(view, coords.pos, slice, moved), slice, moved);
         if (!broken) return false;
         notify(RULE_MESSAGES[broken]);
         event.preventDefault();

@@ -4,6 +4,7 @@ import { dragMoves, resolveDropTarget } from './drop-target';
 import { repairIncomingSlice, wouldNestCallout } from './callout-slice-guard';
 import { unwrapHalfSelectedDetails, wouldNestDetails } from './details-slice-guard';
 import { tableDropRefusal } from './table-cell-rules';
+import { dropRuleBreak, unwrapHalfSelectedBoxes } from './summary-rules';
 
 // prosemirror-dropcursor's `disableDropCursor` hook, hiding the indicator for every drop this
 // editor refuses. **It must be one hook:** `extendNodeSchema` merges specs by key, so a second
@@ -19,13 +20,15 @@ import { tableDropRefusal } from './table-cell-rules';
 function disableDropCursor(view: EditorView, pos: { pos: number }, event: DragEvent): boolean {
   const dragged = view.dragging?.slice;
   if (!dragged) return false;
-  const slice = unwrapHalfSelectedDetails(repairIncomingSlice(dragged));
-  const $target = resolveDropTarget(view, pos.pos, slice, dragMoves(view, event));
+  const slice = unwrapHalfSelectedBoxes(unwrapHalfSelectedDetails(repairIncomingSlice(dragged)));
+  const moved = dragMoves(view, event);
+  const $target = resolveDropTarget(view, pos.pos, slice, moved);
   // Both table reasons hide it: a refused block would be refused anywhere in the cell.
   return (
     tableDropRefusal($target, slice) !== null ||
     wouldNestCallout($target, slice) ||
-    wouldNestDetails($target, slice)
+    wouldNestDetails($target, slice) ||
+    dropRuleBreak($target, slice, moved) !== null
   );
 }
 

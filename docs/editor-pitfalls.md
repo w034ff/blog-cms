@@ -48,6 +48,7 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 - Tailwind v4 のパレット色は `getComputedStyle` で `lab(...)` として返る（zinc-700 は `lab(26.8019 1.35387 -4.68303)`）。`rgb()` で返るのはこのリポジトリの CSS に書いたリテラルの hex だけである。手を付けていない要素は「新しい色ではない」と assert する。汎用ルールの退行は何かを塗ることで起きるので、そのほうが鋭い主張にもなる。
 - `TocNavMobile` と `TocNavDesktop` は両方描画され、どちらも `aria-label='目次'` を持つ。DOM で先に来るのは隠れた mobile 側なので、`.first()` は見えないほうを拾う。`nav[aria-label="目次"]:visible` を使う。
 - アサーションのない「計測用」spec は、変更後に再実行しても何も教えない（§10.2 の範囲置換のコストはそれで見逃した）。
+- drop cursor の「出ない」は数では測れない（2026-09-30）。`cdpNativeDrag` の最初の dragOver は出発点に線を引き、prosemirror-dropcursor は後の位置が `disableDropCursor` で拒まれても線を消さず、`scheduleRemoval(5000)` まで元の位置に残す。さらに線は dragOver の少し後に動く（ガードを外して 300ms 後）。再試行する `toHaveCount(0)` は取り除きのタイマーを待ち切って、ガードを外しても通った。待ってから 1 回だけ読み、拒まれた位置に線が無いことを位置で assert する（`e2e/editor-summary.spec.ts` のネイティブドラッグの spec）。
 - 完全な受け入れ基準表は「何を求めたか」の証拠であって、「機能が何をするか」の証拠ではない。脚注の「21/21 基準を実測」は、定義の順序を測る基準が無いことを隠していた（`docs/footnote-requirements.md` 基準 3b）。
 
 ## 2. 入力ルールと keymap

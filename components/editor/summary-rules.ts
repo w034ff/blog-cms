@@ -1,4 +1,4 @@
-import { Fragment, Slice, type Node as PMNode } from '@tiptap/pm/model';
+import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from '@tiptap/pm/model';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { SUMMARY_SECTION_TITLES, type SummarySectionKind } from '@/lib/summary-types';
 
@@ -165,6 +165,56 @@ export function newRuleBreak(before: PMNode, after: PMNode): SummaryRuleBreak | 
   if (!summaryNotLast(before) && summaryNotLast(after)) return 'not-last';
   if (sectionsHoldOnlyLists(before) && !sectionsHoldOnlyLists(after)) return 'section-block';
   return null;
+}
+
+// A position below the top level. The enclosing textblock does not count: ProseMirror splits it and
+// a block lands beside it — the same test as `wouldNestDetails`.
+function nestedAt($pos: ResolvedPos): boolean {
+  for (let depth = $pos.depth; depth > 0; depth -= 1) {
+    if (!$pos.node(depth).isTextblock) return true;
+  }
+  return false;
+}
+
+function sliceBoxNames(slice: Slice): Set<string> {
+  const names = new Set<string>();
+  slice.content.descendants((node) => {
+    if (isBox(node)) names.add(node.type.name);
+    return !isBox(node);
+  });
+  return names;
+}
+
+/**
+ * The rule a drop at `$target` would break, or null. `$target` is where the drop lands, resolved in
+ * the document the drop leaves behind (`resolveDropTarget`), and `moved` whether the drag is a move.
+ * Asked by the drop handler and by the drop cursor, so the cursor is hidden exactly where the drop
+ * is refused (docs/summary-requirements.md §3.2).
+ */
+export function dropRuleBreak(
+  $target: ResolvedPos,
+  slice: Slice,
+  moved: boolean,
+): SummaryRuleBreak | null {
+  const doc = $target.doc;
+  let summaryIndex = -1;
+  doc.forEach((child, _offset, index) => {
+    if (child.type.name === SUMMARY_NAME && summaryIndex === -1) summaryIndex = index;
+  });
+  // Anything landing below the まとめ, a block or text into the blank line kept there.
+  if (summaryIndex !== -1 && $target.index(0) > summaryIndex) return 'not-last';
+  const names = sliceBoxNames(slice);
+  if (names.size === 0) return null;
+  if (nestedAt($target)) return 'nested';
+  let found: SummaryRuleBreak | null = null;
+  doc.descendants((node) => {
+    // A move has already taken its box out of `doc`; a copy has not.
+    if (!moved && names.has(node.type.name) && isBox(node)) {
+      found = node.type.name === SUMMARY_NAME ? 'duplicate-summary' : 'duplicate-tldr';
+    }
+    return found === null && !isBox(node);
+  });
+  return found;
 }
 
 export function sliceCarriesBox(slice: Slice): boolean {

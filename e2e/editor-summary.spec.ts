@@ -9,6 +9,7 @@ import {
   setRange,
 } from './editor-authoring';
 import { docString, markdown, settle, shot } from './editor-probe';
+import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
 // The まとめ and TL;DR blocks in the editor (docs/summary-requirements.md). What only a browser
 // answers: the markdown round trip through markdown-it's DOM, the NodeView's controls, and that each
@@ -302,24 +303,90 @@ test('a pasted copy of the まとめ lands as ordinary blocks', async ({ page })
   );
 });
 
-test('the drag handle cannot move the TL;DR below the まとめ', async ({ page }) => {
+// The handle draws its line only where the move would land (moveTransaction in
+// block-drag-handle.ts): below the まとめ it draws none, and a release there changes nothing, as over
+// the source. The gap above 本文 is the control: the same drag draws a line there.
+test('the drag handle draws no line below the まとめ, and cannot move the TL;DR there', async ({
+  page,
+}) => {
   await openEditor(page);
   const editor = page.locator('.ProseMirror');
-  await loadMarkdown(page, `${TLDR('要点。')}\n本文\n\n${SUMMARY('総評。')}`);
+  await loadMarkdown(page, `${TLDR('要点。')}\n本文\n\n後の段落\n\n${SUMMARY('総評。')}`);
   const before = await markdown(page);
   const handle = editor.locator('.block-drag-handle').first();
   await editor.locator('.tldr').hover();
   const handleBox = await handle.boundingBox();
-  const targetBox = await editor.locator(':scope > p').last().boundingBox();
-  if (!handleBox || !targetBox) throw new Error('missing bounding box');
+  const lastPara = await editor.locator('p', { hasText: '後の段落' }).boundingBox();
+  const trailing = await editor.locator(':scope > p').last().boundingBox();
+  if (!handleBox || !lastPara || !trailing) throw new Error('missing bounding box');
+  const indicator = page.locator('.block-drag-indicator');
+
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
   await page.mouse.down();
-  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height - 2, {
+  // Control: below 後の段落 (above the まとめ) is a valid gap.
+  await page.mouse.move(lastPara.x + lastPara.width / 2, lastPara.y + lastPara.height - 2, {
     steps: 8,
   });
+  await expect(indicator).toBeVisible();
+  // Below the まとめ: no line.
+  await page.mouse.move(trailing.x + trailing.width / 2, trailing.y + trailing.height - 2, {
+    steps: 8,
+  });
+  await expect(indicator).toBeHidden();
   await page.mouse.up();
+  expect(await markdown(page)).toBe(before);
+  await expect(page.getByRole('status')).toHaveCount(0);
+});
+
+// Native drags draw prosemirror-dropcursor's line, kept off the refused gap by DropCursorGuard where
+// `dropRuleBreak` refuses; the drop itself is refused with the notice. Asked by position, not count:
+// the drag's first dragOver draws a line at its source, and upstream leaves the last line standing
+// (up to 5s) when a later position is disabled rather than removing it. The line moves a moment
+// after dragOver (measured: 300ms with the guard removed), and the 総評 is the control where the
+// same drag draws one.
+const DROP_CURSOR = '.prosemirror-dropcursor-block, .prosemirror-dropcursor-inline';
+const DROP_CURSOR_DELAY_MS = 300;
+
+test('a native drag shows no drop line below the まとめ and is refused there', async ({ page }) => {
+  await openEditor(page);
+  const editor = page.locator('.ProseMirror');
+  await loadMarkdown(page, `本文の段落です\n\n${SUMMARY('総評。')}`);
+  const before = await markdown(page);
+  const select = async () =>
+    dragSelect(
+      page,
+      await caretPoint(editor.getByText('本文の段落です'), 0),
+      await caretPoint(editor.getByText('本文の段落です'), 2),
+    );
+
+  const trailing = await editor.locator(':scope > p').last().boundingBox();
+  if (!trailing) throw new Error('missing bounding box');
+  await cdpNativeDrag(
+    page,
+    await select(),
+    { x: trailing.x + 20, y: trailing.y + trailing.height / 2 },
+    async () => {
+      await page.waitForTimeout(DROP_CURSOR_DELAY_MS);
+      // Read once, not awaited: a retrying assertion waits out the upstream removal timer and
+      // passed with the guard removed.
+      const tops = await page
+        .locator(DROP_CURSOR)
+        .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+      expect(tops.filter((top) => top >= trailing.y - 2)).toEqual([]);
+    },
+  );
   await expect(page.getByRole('status')).toContainText('まとめの後ろには何も追加できません');
   expect(await markdown(page)).toBe(before);
+
+  // Control: into the 総評, the same drag draws its line.
+  const overall = await editor.locator('.summary-body p').first().boundingBox();
+  if (!overall) throw new Error('missing bounding box');
+  await cdpNativeDrag(
+    page,
+    await select(),
+    { x: overall.x + 10, y: overall.y + overall.height / 2 },
+    async () => expect(page.locator(DROP_CURSOR)).toHaveCount(1),
+  );
 });
 
 test('undo and redo never hold two まとめ', async ({ page }) => {

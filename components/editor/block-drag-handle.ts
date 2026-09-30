@@ -1,10 +1,11 @@
 import { Extension } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, Selection } from '@tiptap/pm/state';
-import type { EditorState } from '@tiptap/pm/state';
+import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { resolveEmbed } from '@/lib/embed-provider';
 import { buildIcon, embedMarkShapes } from './svg/icon-shapes';
+import { newRuleBreak } from './summary-rules';
 import type { EditorView } from '@tiptap/pm/view';
 
 // Top-level-only reorder targets (`doc.forEach` below sees only direct children). Headings are not
@@ -186,8 +187,18 @@ function createDragController(view: EditorView): DragController {
   // block-height apart. Collapsing its layout instead was tried and reverted (the reflow was hard to
   // follow); exclusion alone once made the indicator jump ahead while the pointer was over the
   // source. It works now with the cursor-following preview and the suppressed no-op indicator.
-  function applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
-    if (target === to) return;
+  //
+  // The move as a transaction, or null when there is nothing to move or the editor would refuse
+  // it. Built on every pointer move as well as on release, so the indicator is drawn only where
+  // the drop would land: the まとめ rules (summary-rules.ts) refuse a block below the まとめ, and
+  // their filterTransaction refusal on release used to follow an indicator that said yes.
+  function moveTransaction(
+    node: ProseMirrorNode,
+    from: number,
+    to: number,
+    target: number,
+  ): Transaction | null {
+    if (target === to) return null;
     const tr = view.state.tr.delete(from, to);
     const pos = tr.mapping.map(target);
     // `Transform.insert` refuses silently (no step added), and NodeSelection.create below then threw
@@ -195,8 +206,14 @@ function createDragController(view: EditorView): DragController {
     // since the delete already set it.
     const steps = tr.steps.length;
     tr.insert(pos, node);
-    if (tr.steps.length === steps) return;
-    tr.setSelection(NodeSelection.create(tr.doc, pos));
+    if (tr.steps.length === steps) return null;
+    if (newRuleBreak(view.state.doc, tr.doc) !== null) return null;
+    return tr.setSelection(NodeSelection.create(tr.doc, pos));
+  }
+
+  function applyMove(node: ProseMirrorNode, from: number, to: number, target: number): void {
+    const tr = moveTransaction(node, from, to, target);
+    if (!tr) return;
     view.dispatch(tr);
     view.focus();
   }
@@ -417,8 +434,9 @@ function createDragController(view: EditorView): DragController {
     const { pos, y, left, width } = findBoundary(view, current.clientY, current.from);
     // `to` is a no-op, so no indicator: it covers the zone from the node's top to the next
     // sibling's midpoint, including the start of the drag. The cut preview is off there too, so a
-    // no-op is drawn as the block as it is.
-    if (pos === current.to) {
+    // no-op is drawn as the block as it is. A gap the move may not land in is drawn the same way,
+    // so release there changes nothing, as it does over the source.
+    if (pos === current.to || !moveTransaction(current.node, current.from, current.to, pos)) {
       current.target = null;
       if (indicator) indicator.style.display = 'none';
       markCut(false);

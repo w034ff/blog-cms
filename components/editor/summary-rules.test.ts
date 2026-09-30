@@ -4,6 +4,7 @@ import { EditorState, TextSelection } from '@tiptap/pm/state';
 import {
   boxesToDemote,
   demoteExtraBoxes,
+  dropRuleBreak,
   newRuleBreak,
   pasteSlice,
   sectionsHoldOnlyLists,
@@ -231,5 +232,37 @@ describe('unwrapHalfSelectedBoxes', () => {
     const doc = docOf(tldr('要点の文'), para());
     const slice = rangeSlice(doc, 3, 5);
     expect(unwrapHalfSelectedBoxes(slice)).toBe(slice);
+  });
+});
+
+describe('dropRuleBreak', () => {
+  const source = docOf(tldr('要点'), para('本文'));
+  const tldrSlice = nodeSlice(source, 0);
+  const textSlice = rangeSlice(docOf(para('文字')), 1, 3);
+  const doc = docOf(para('本文'), quote(para('引用')), summary(['総評']), para());
+
+  it('refuses anything landing below the まとめ, text included', () => {
+    const trailing = doc.resolve(doc.content.size - 1);
+    expect(trailing.parent.type.name).toBe('paragraph');
+    expect(dropRuleBreak(trailing, textSlice, true)).toBe('not-last');
+    expect(dropRuleBreak(doc.resolve(doc.content.size), tldrSlice, true)).toBe('not-last');
+  });
+
+  it('lets text into the まとめ and a TL;DR into a top-level gap above it', () => {
+    expect(dropRuleBreak(doc.resolve(childPos(doc, 2) + 2), textSlice, true)).toBeNull();
+    expect(dropRuleBreak(doc.resolve(childPos(doc, 1)), tldrSlice, true)).toBeNull();
+  });
+
+  it('refuses a box headed into a quote', () => {
+    expect(dropRuleBreak(doc.resolve(childPos(doc, 1) + 2), tldrSlice, true)).toBe('nested');
+  });
+
+  it('refuses a copy of a box the post has, not a move of it', () => {
+    const withOne = docOf(tldr('要点'), para('本文'), para());
+    const gap = withOne.resolve(withOne.content.size);
+    expect(dropRuleBreak(gap, tldrSlice, false)).toBe('duplicate-tldr');
+    // A move resolves in the document after its source is gone.
+    const afterDeletion = docOf(para('本文'), para());
+    expect(dropRuleBreak(afterDeletion.resolve(afterDeletion.content.size), tldrSlice, true)).toBeNull();
   });
 });
