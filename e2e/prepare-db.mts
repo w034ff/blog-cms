@@ -8,13 +8,24 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 const dest = process.env.BLOG_DB_PATH;
+const uploadsDest = process.env.BLOG_UPLOADS_DIR;
+const fixtureUploads = process.env.E2E_FIXTURE_UPLOADS_DIR;
 const username = process.env.E2E_ADMIN_USERNAME;
 const password = process.env.E2E_ADMIN_PASSWORD;
 const authorUsername = process.env.E2E_AUTHOR_USERNAME;
 const authorPassword = process.env.E2E_AUTHOR_PASSWORD;
-if (!dest || !username || !password || !authorUsername || !authorPassword) {
+if (
+  !dest ||
+  !uploadsDest ||
+  !fixtureUploads ||
+  !username ||
+  !password ||
+  !authorUsername ||
+  !authorPassword
+) {
   console.error(
-    '[e2e] BLOG_DB_PATH and the E2E_ADMIN_* and E2E_AUTHOR_* credentials must all be set.',
+    '[e2e] BLOG_DB_PATH, BLOG_UPLOADS_DIR, E2E_FIXTURE_UPLOADS_DIR and the E2E_ADMIN_* and ' +
+      'E2E_AUTHOR_* credentials must all be set.',
   );
   process.exit(1);
 }
@@ -93,4 +104,19 @@ db.prepare(
 
 db.close();
 
-console.log(`[e2e] Prepared seeded test DB at ${dest} (admin '${username}').`);
+// The uploads the server reads and writes, rebuilt like the DB: the real directory's files, so the
+// seeded posts' images load, then the tracked fixtures. The real directory is only read.
+fs.rmSync(uploadsDest, { recursive: true, force: true });
+fs.mkdirSync(uploadsDest, { recursive: true });
+const realUploads = path.join(process.cwd(), 'data', 'uploads');
+for (const from of [realUploads, fixtureUploads]) {
+  if (!fs.existsSync(from)) continue;
+  for (const name of fs.readdirSync(from)) {
+    const file = path.join(from, name);
+    if (fs.statSync(file).isFile()) fs.copyFileSync(file, path.join(uploadsDest, name));
+  }
+}
+
+console.log(
+  `[e2e] Prepared seeded test DB at ${dest} (admin '${username}') and uploads at ${uploadsDest}.`,
+);

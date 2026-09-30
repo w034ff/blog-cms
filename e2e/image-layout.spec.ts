@@ -4,12 +4,12 @@ import { loadMarkdown } from './editor-authoring';
 // Where a body image sits and what its block buys (docs/link-card-requirements.md §22): geometry,
 // invisible to the DOM, transaction and markdown.
 
-// 390x220 and 768x403, in data/uploads: one well narrower than the column, one wider than it at
+// 390x220 and 768x403, fixtures (e2e/fixtures/uploads): one well narrower than the column, one wider than it at
 // COLUMN_NARROWER_THAN_WIDE, where the body is 800 − 40·2 − 2 − 36·2 = 646px wide (`editor-shell`,
 // `--editor-gutter`). At a desktop width the body is 800px (`--container-editor`), wider than both.
 const COLUMN_NARROWER_THAN_WIDE = { width: 800, height: 900 };
-const NARROW = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
-const WIDE = '/uploads/531f1bd7bc8be82b6f3aa910ff3c6ec45d3572033db26d10bec768eae58a6652.webp';
+const NARROW = '/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png';
+const WIDE = '/uploads/6810c9ae66fa2ee74f08269d42e1a666703242a2ad98432ba09267dca3bca295.webp';
 
 async function openWithBothImages(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');

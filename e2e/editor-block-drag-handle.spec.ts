@@ -961,9 +961,9 @@ test('clicking a footnote reference to select it starts no native drag', async (
 // `image`, `linkCard` and `embed` declare `draggable: true`, so they are native drag sources with
 // nothing selected. Chrome drags the picture as a File, which `clearData()` does not remove, and
 // useImageUpload read it as an incoming file. The サムネイル badge showing is this unringed state
-// (the ring hides it). 390x220, already in data/uploads, as in e2e/image-layout.spec.ts.
+// (the ring hides it). 390x220, a fixture (e2e/fixtures/uploads), as in e2e/image-layout.spec.ts.
 const UNRINGED_IMAGE =
-  '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
+  '/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png';
 
 // The guard is written against the DOM attribute, not a type: the image (reported) and the card
 // (§7.2). `embed` is covered by the ringed test, since it needs the X stub.

@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { UPLOAD_DIR } from '@/lib/upload-dir';
 import { ALLOWED_IMAGE_EXTENSIONS } from '@/lib/uploads';
 
 // Uploaded images, read from disk on each request. Not `public/`: `setupFsCheck`
 // (next/dist/server/lib/router-utils/filesystem.js) fills `publicFolderItems` once at boot
 // `if (!opts.dev)`, so under `next start` a file written after boot 404s until a restart. Uploads
-// are runtime data in `data/uploads`; the public URL (`/uploads/<name>`) is unchanged.
-
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
+// are runtime data in `data/uploads` (lib/upload-dir.ts); the public URL (`/uploads/<name>`) is
+// unchanged.
 
 // lib/uploads.ts's type → extension pairs, read the other way round.
 const CONTENT_TYPES = new Map<string, string>(

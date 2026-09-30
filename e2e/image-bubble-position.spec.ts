@@ -5,9 +5,9 @@ import { loadMarkdown } from './editor-authoring';
 // Where and how soon the image bubble lands (docs/link-card-requirements.md §22, §22.1; criteria
 // 22e, 22f, 22l, 22m, 22n): floating-ui geometry against live rects, invisible to the document.
 
-// 390x220, in data/uploads: a 1x1 would sit inside `shift`'s 8px padding.
+// 390x220, a fixture (e2e/fixtures/uploads): a 1x1 would sit inside `shift`'s 8px padding.
 const UPLOAD_IMAGE =
-  '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
+  '/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png';
 
 async function openEditorWithImage(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');
@@ -124,7 +124,7 @@ test('a picture narrower than the menu keeps the menu above it, uncovered', asyn
 // 22n: `fitMenuToPicture` compares against the menu's width, which is 削除 alone until React commits
 // the other buttons. Deciding in the positioning callback read the narrow width, since
 // `dispatchTransaction` runs `updatePosition` before React re-renders. 120x24 sits between the
-// widths and is shorter than the menu. Pasted, since `data/uploads` is git-ignored; shared with 22s.
+// widths and is shorter than the menu. Pasted, since no fixture has this size; shared with 22s.
 function solidPng(w: number, h: number): Buffer {
   const raw = Buffer.concat(
     Array.from({ length: h }, () => Buffer.concat([Buffer.of(0), Buffer.alloc(w * 3, 0xc8)])),

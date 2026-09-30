@@ -18,6 +18,13 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
   to `e2e/.tmp/blog.e2e.<port>.db` with better-sqlite3's `.backup()` (WAL-safe) and upserts the test
   admin and author. The real DB is never touched. `data/blog.db` must exist (`npm run db:seed` on a
   fresh clone).
+- The uploads get the same treatment. The prep rebuilds `e2e/.tmp/uploads.<port>/` from
+  `data/uploads` (read only, so the seeded posts' images load) and `e2e/fixtures/uploads/`, and the
+  server reads and writes there through `BLOG_UPLOADS_DIR` (`lib/upload-dir.ts`). A spec's upload
+  never reaches `data/uploads`. An image a spec refers to by name is a tracked fixture, named by its
+  sha256 as the upload route names files: fixtures once lived in `data/uploads`, where
+  `scripts/gc-uploads.mts` deleted them as unreferenced (2026-09-30), and 14 specs failed on a blank
+  image.
 - The prep lives in `webServer.command`, not in a `globalSetup`, because Playwright starts the
   webServer before globalSetup runs. Login is a `setup` project (`e2e/auth.setup.ts`) that runs after
   the server is up and saves `e2e/.auth/admin.<port>.json` for the spec projects.
