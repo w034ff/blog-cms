@@ -3,17 +3,19 @@ import {
   BASE_URL,
   DIST_DIR,
   E2E_PORT,
+  FIXTURE_UPLOADS_DIR,
   STORAGE_STATE,
   TEST_ADMIN,
   TEST_AUTHOR,
   TEST_DB_PATH,
   TEST_SESSION_SECRET,
+  TEST_UPLOADS_DIR,
   TSCONFIG_PATH,
 } from './e2e/constants';
 
 // A lean, editor-scoped E2E harness. It boots an isolated `next dev` on its own
-// port and build dir, against a throwaway seeded copy of the DB (BLOG_DB_PATH),
-// and logs in once (the setup project) to reuse the admin session across specs.
+// port and build dir, against a throwaway seeded copy of the DB (BLOG_DB_PATH) and of the uploads
+// (BLOG_UPLOADS_DIR), and logs in once (the setup project) to reuse the admin session across specs.
 export default defineConfig({
   testDir: './e2e',
   // `fullyParallel: false` keeps every test in a file on one worker, in order — which is what the
@@ -72,6 +74,8 @@ export default defineConfig({
           NEXT_DIST_DIR: DIST_DIR,
           NEXT_TSCONFIG_PATH: TSCONFIG_PATH,
           BLOG_DB_PATH: TEST_DB_PATH,
+          BLOG_UPLOADS_DIR: TEST_UPLOADS_DIR,
+          E2E_FIXTURE_UPLOADS_DIR: FIXTURE_UPLOADS_DIR,
           E2E_ADMIN_USERNAME: TEST_ADMIN.username,
           E2E_ADMIN_PASSWORD: TEST_ADMIN.password,
           E2E_AUTHOR_USERNAME: TEST_AUTHOR.username,

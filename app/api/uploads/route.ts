@@ -3,11 +3,11 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
+import { UPLOAD_DIR } from '@/lib/upload-dir';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
 
 // Runtime data beside the DB, not `public/` (app/uploads/[name]/route.ts serves these and says
-// why); `scripts/gc-uploads.mts` sweeps the same directory.
-const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads');
+// why); `scripts/gc-uploads.mts` sweeps the same directory. Where it is: lib/upload-dir.ts.
 
 export async function POST(req: NextRequest) {
   const session = await getOptionalSession();

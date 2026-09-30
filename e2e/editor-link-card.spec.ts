@@ -898,8 +898,8 @@ function rowShapes(page: Page): Promise<RowShape[]> {
 }
 
 // `resolveThumbnail` falls back to the body's first image, so no upload is needed; this file is
-// already in data/uploads (the one e2e/image-layout.spec.ts measures).
-const BODY_IMAGE = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
+// a fixture (e2e/fixtures/uploads; the one e2e/image-layout.spec.ts measures).
+const BODY_IMAGE = '/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png';
 
 // Drafts are listed (§5.2-4), so autosave is enough.
 async function draftPost(page: Page, title: string, body: string): Promise<void> {

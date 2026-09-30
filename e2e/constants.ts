@@ -10,6 +10,16 @@ export const BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
 // this (via BLOG_DB_PATH) so the real DB is never touched. Kept out of git.
 export const TEST_DB_PATH = path.join(process.cwd(), 'e2e', '.tmp', `blog.e2e.${E2E_PORT}.db`);
 
+// The server's uploads directory (via BLOG_UPLOADS_DIR, lib/upload-dir.ts), rebuilt each run from the
+// real data/uploads and FIXTURE_UPLOADS_DIR (e2e/prepare-db.mts). A test's uploads land here, never
+// in data/uploads, and the fixtures are out of reach of `scripts/gc-uploads.mts`, which deleted them
+// once: nothing the real DB references pointed at them. Kept out of git.
+export const TEST_UPLOADS_DIR = path.join(process.cwd(), 'e2e', '.tmp', `uploads.${E2E_PORT}`);
+
+// The images specs refer to by name, tracked in git. A name is the file's sha256, as
+// app/api/uploads/route.ts writes it, since the serving route accepts no other shape.
+export const FIXTURE_UPLOADS_DIR = path.join(process.cwd(), 'e2e', 'fixtures', 'uploads');
+
 // Saved logged-in session, reused across specs so each doesn't re-login.
 export const STORAGE_STATE = path.join(process.cwd(), 'e2e', '.auth', `admin.${E2E_PORT}.json`);
 

@@ -5,8 +5,8 @@ import { expectAutosaved, loadMarkdown } from './editor-authoring';
 // visible only when rendered, with a conditional shape (the badge hides while selected, the line
 // does not).
 
-const MARKED = '/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png';
-const OTHER = '/uploads/531f1bd7bc8be82b6f3aa910ff3c6ec45d3572033db26d10bec768eae58a6652.webp';
+const MARKED = '/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png';
+const OTHER = '/uploads/6810c9ae66fa2ee74f08269d42e1a666703242a2ad98432ba09267dca3bca295.webp';
 
 async function markFirstImage(page: Page): Promise<void> {
   await page.goto('/admin/posts/new');

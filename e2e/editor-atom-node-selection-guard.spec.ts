@@ -11,7 +11,7 @@ const EMBED_MD =
   '<div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo"></div>';
 // A real upload: the pasted 1x1 would be indistinguishable from a 1x1 original.
 const IMAGE_MD =
-  '![](/uploads/3cf43f6c9f92a311cb0de38736934c4efc6aa3d1d0968206d837e593fbe99107.png)';
+  '![](/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png)';
 
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
