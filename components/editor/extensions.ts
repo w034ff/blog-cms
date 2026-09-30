@@ -38,6 +38,7 @@ import { SlashCommand } from './slash-command';
 import { CodeBlockWithLanguage } from './code-block-extension';
 import { ClearNodes } from './clear-nodes-extension';
 import { BlockDragHandle } from './block-drag-handle';
+import { Summary, SummaryGood, SummaryBad, Tldr } from './summary-extension';
 
 // tiptap-markdown ships no type augmentation for its `markdown` storage, so it is registered here.
 declare module '@tiptap/core' {
@@ -122,6 +123,13 @@ export function postEditorExtensions(showNotice: (message: string) => void): Ext
     FootnoteReference.configure({ onBlocked: showNotice, onNotice: showNotice }),
     FootnoteDefinition.configure({ onBlocked: showNotice }),
     FootnoteSection,
+    // まとめ and TL;DR (docs/summary-requirements.md). Ahead of Callout and MarkdownDetails, so their
+    // handlePaste is asked first: this guard's paste claims any slice carrying a box, and theirs
+    // answer for boxes of their own inside it.
+    Summary.configure({ onBlocked: showNotice }),
+    SummaryGood,
+    SummaryBad,
+    Tldr,
     Callout.configure({ onBlocked: showNotice }),
     Blockquote,
     MarkdownDetails.configure({ onBlocked: showNotice }),

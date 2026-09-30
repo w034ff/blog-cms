@@ -20,6 +20,8 @@ export const DRAGGABLE_TYPES = new Set([
   'codeBlock',
   'linkCard',
   'embed',
+  // Not `summary`: the まとめ stays last (docs/summary-requirements.md §3.2), so it has nowhere to go.
+  'tldr',
 ]);
 
 // Movement (px) before a handle press counts as a drag; below it, a click leaves the NodeSelection.

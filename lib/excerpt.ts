@@ -2,6 +2,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import type { PhrasingContent, Root, RootContent } from 'mdast';
+import { SUMMARY_CLASS, TLDR_CLASS } from './summary-types';
 
 // A post's summary line, and the one place that decides what it is — the twin of
 // lib/thumbnail.ts's resolveThumbnail. There is no field for it: the author writes no description,
@@ -93,33 +94,72 @@ function detailsDepthChange(html: string): number {
   return (html.match(/<details\b/gi)?.length ?? 0) - (html.match(/<\/details\s*>/gi)?.length ?? 0);
 }
 
-// Top-level paragraphs only: headings, lists, tables, quotes (and so callouts), code and raw HTML
-// blocks are all skipped, as is anything inside an accordion. Paragraphs are joined until the limit rather than stopping at the first,
-// so a one-line greeting does not become the whole summary.
+// The まとめ and TL;DR containers are raw-HTML blocks too, `<div class="…">` and `</div>` each a block
+// of their own (components/editor/summary-extension.ts), so which one a paragraph sits in is a
+// stack of the <div>s opened and not yet closed. Other <div>s (link cards, embeds) are pushed as ''
+// so that their `</div>` closes the right one.
+const DIV_TAG = /<div\b[^>]*>|<\/div\s*>/gi;
+const CLASS_ATTR = /\bclass\s*=\s*"([^"]*)"/i;
+
+function applyDivTags(html: string, stack: string[]): void {
+  for (const [tag] of html.matchAll(DIV_TAG)) {
+    if (tag.startsWith('</')) {
+      stack.pop();
+      continue;
+    }
+    const classes = (tag.match(CLASS_ATTR)?.[1] ?? '').split(/\s+/);
+    if (classes.includes(TLDR_CLASS)) stack.push(TLDR_CLASS);
+    else if (classes.includes(SUMMARY_CLASS)) stack.push(SUMMARY_CLASS);
+    else stack.push('');
+  }
+}
+
+// Counted in code points, so a cut never splits a surrogate pair.
+function clip(text: string): string {
+  const chars = Array.from(text);
+  return chars.length > EXCERPT_MAX_CHARS
+    ? `${chars.slice(0, EXCERPT_MAX_CHARS).join('').trimEnd()}…`
+    : text;
+}
+
+// The description is the TL;DR when the post has one with any text (docs/summary-requirements.md
+// §2) — the author's own words for a reader deciding whether to read. Otherwise it is the opening:
+// top-level paragraphs only, so headings, lists, tables, quotes (and so callouts), code and raw HTML
+// blocks are all skipped, as is anything inside an accordion, a まとめ (written for someone who has
+// read the post) or an empty TL;DR. Paragraphs are joined until the limit rather than stopping at
+// the first, so a one-line greeting does not become the whole summary.
 export function excerptFromBody(body: string): string {
   const tree = parser.parse(body) as Root;
   let joined = '';
+  let tldr = '';
+  let tldrSeen = false;
   let previous: RootContent | undefined;
   let detailsDepth = 0;
+  const divs: string[] = [];
   for (const node of tree.children) {
-    if (node.type === 'html')
+    if (node.type === 'html') {
       detailsDepth = Math.max(0, detailsDepth + detailsDepthChange(node.value));
+      const wasInTldr = divs.includes(TLDR_CLASS);
+      applyDivTags(node.value, divs);
+      if (wasInTldr && !divs.includes(TLDR_CLASS)) tldrSeen = true;
+    }
+    const inTldr = divs.includes(TLDR_CLASS);
+    if (inTldr && !tldrSeen && detailsDepth === 0 && node.type === 'paragraph') {
+      tldr = joinLine(tldr, normalize(phrasingText(node.children)));
+    }
     const skip =
       detailsDepth > 0 ||
+      divs.includes(SUMMARY_CLASS) ||
+      inTldr ||
       node.type !== 'paragraph' ||
       isImageOnly(node) ||
       isCaption(node, previous) ||
       isBareLink(node);
     previous = node;
-    if (skip) continue;
+    if (skip || node.type !== 'paragraph') continue;
     const text = normalize(phrasingText(node.children));
     if (text === '' || isLeadIn(text)) continue;
-    joined = joinLine(joined, text);
-    if (joined.length >= EXCERPT_MAX_CHARS) break;
+    if (joined.length < EXCERPT_MAX_CHARS) joined = joinLine(joined, text);
   }
-  // Counted in code points, so a cut never splits a surrogate pair.
-  const chars = Array.from(joined);
-  return chars.length > EXCERPT_MAX_CHARS
-    ? `${chars.slice(0, EXCERPT_MAX_CHARS).join('').trimEnd()}…`
-    : joined;
+  return clip(tldr !== '' ? tldr : joined);
 }

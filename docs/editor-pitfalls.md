@@ -77,6 +77,10 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 
 **機構**: `code-block-extension.ts` の `deleteSoleCodeChar` が、空にする削除（Backspace / Delete / 単語削除の各キー）を ProseMirror 経由で行う。`ignoreMutation` は `!code.isConnected` のとき false を返し、PM に描き直させる。
 
+### 3.2 `buildIcon` の `<svg>` は大きさを持たない — Playwright はそれでも押せる
+
+`svg/icon-shapes.ts` の `buildIcon` は React のアイコンと同じ属性で `<svg>` を組むが、React の側の大きさは `h-4 w-4` のクラスから来ており、DOM で組んだものには付かない。まとめの区画の削除ボタンは、アイコンが 0×0 で余白だけの 6px 四方になり、画面では見えなかった。それでも spec の `click()` は通った（2026-09-30、作者の報告で発覚）。NodeView のボタンにアイコンを入れたら、CSS で `svg` に大きさを与え（前例は `.code-block-to-link svg`、`.summary-remove svg`）、spec ではボタンの `boundingBox()` を assert する。
+
 ## 4. バンドル時に prosemirror が二重になる
 
 **`npm ls` が重複排除済みの 1 コピーしか示さなくても、バンドル済みの拡張が `prosemirror-*` の 2 つ目のコピーを内包していることがある。** 分裂はバンドル時に起きるので、依存木にも Turbopack にも現れない。
@@ -268,6 +272,14 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 - 「着地した後の位置を問う」修復は、内容式が拒む場所では盲目になる。fitter が祖先を割り、参照は割れた本文の段落に落ち、祖先を辿っても `detailsSummary` が見つからない。`hostRefusalAt` は drop だけを覆い（`handleDrop` は挿入前の文書に `posAtCoords` を問う）、paste には `handlePaste` が要った。**着地後の配置修復は、拒むノードが着地した内容の祖先のまま残る場合にしか効かない。**
 - 設計の記録は `docs/footnote-requirements.md` §6.5 と `docs/accordion-requirements.md` §6.5。2 つの機能は 4 日違いで出荷され、互いについて一度も問われていなかった。
 
+### 8.4 `toggleList` は `can()` の中でも型を付け替え、親に問わない
+
+中身が `bulletList` だけの容器（まとめの区画、`docs/summary-requirements.md` §3.1）にキャレットを置くと、エディタ全体が Next のエラー画面になった（2026-09-30、試作で測定）。捕捉されない `TransformError: Invalid content for node summaryGood` で、スタックはツールバーの描画の `can().toggleOrderedList()` から `@tiptap/core` の `toggleList` の `tr.setNodeMarkup(currentList.pos, listType)` に至る。既存のリストの中では、`toggleList` は `listType.validContent(currentList.node.content)`（リスト自身の中身）しか確かめず、親がその型を許すかを問わない。`can()` の dry run でも同じ取引に step を積むので、拒否ではなく throw になる。ツールバーは描画のたびに問うので、キャレットが入った時点で落ちる。
+
+**機構**: `guarded-block-toggles.ts` の `blockedForList` が、区画の中ではリストの切替を断る。
+
+**一般則**: 子の型を 1 つに絞った容器を足すときは、その子を別の型に付け替えるコマンド（`toggleList`、`setNode`、`toggleHeading`）を容器の中で `can()` に問うて、throw しないことを確かめる。
+
 ## 9. 直列化
 
 ### 9.1 区切りを持つコードブロックは保存のたびに空行が 1 つ増えていた
@@ -284,6 +296,12 @@ markdown-it-footnote とその周り（HTML 経由の解析、ラベルの保持
 
 - `footnote-literal-extension.ts` は撤去できない防御である。`footnote_def` は空白を含むラベルを拒み、markdown-it の `reference` ブロック規則がその行をリンク参照定義として食べる。`本文[^1]。\n\n[^1]: 注釈。` は注釈の文字を失う（開いて保存するだけでデータを失う）。拡張は `reference` を包み、`^` で始まるラベルの定義には false を返す。`Ruler.at()` は置き換える規則を取り出す手段を持たないので、元の規則は非公開の `__rules__` から取る。公開 API の代替は `disable('reference')` だけで、通常のリンク参照定義まで落とす。
 - prosemirror-markdown の `esc()` は `[` と `]` を無条件にエスケープし、tiptap-markdown は `esc` も `escapeExtraCharacters` も上書きしない。拒まれた文字は `\[^1\]: …` で保存され、同じ文字に読み戻る。このエスケープはバグではなく保護である。markdown-it の脚注プラグインより先にこのガードを外すと、データの喪失が戻る。
+
+### 9.3 DOMParser は、content 式の先頭で必須のノードを補わない
+
+`paragraph+ summaryGood? summaryBad?` の容器に `<div class="summary"><div class="summary-good">…</div>…</div>` を読ませると（総評が空で保存された形）、先頭の段落は補われず、区画の div が容器の外へ押し出された。中の 2 つの箇条書きは 1 つに結合した（2026-09-30、`docs/summary-requirements.md` §6）。末尾の必須ノードは補われる前例があるが（`block+` の空の本文。`updateDetailsDOM` の `<p>`）、先頭が欠けると結果は「空のノードが増える」ではなく「構造が壊れる」になる。
+
+**機構**: `parse.updateDOM` で、DOM の段階で先頭のノードを補う（`summary-extension.ts` の `updateSummaryDOM`）。判定は空白だけのテキストノードを飛ばした最初の子で行う。`firstElementChild` は裸のテキスト行を飛ばすので、空行の無い手書きの入力で段落を余分に補い、不動点を崩した。順序が固定の任意の子（`good? bad?`）が逆順で来た場合も、後ろの子は容器の外へ出る。これも DOM の段階で並べ替える。
 
 ## 10. リンクのマークとバブルメニュー
 

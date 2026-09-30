@@ -16,6 +16,8 @@ import { ImageIcon } from './svg/ImageIcon';
 import { AccordionIcon } from './svg/AccordionIcon';
 import { FootnoteIcon } from './svg/FootnoteIcon';
 import { CodeBlockIcon } from './svg/CodeBlockIcon';
+import { SummaryIcon } from './svg/SummaryIcon';
+import { TldrIcon } from './svg/TldrIcon';
 import { LinkIcon } from './svg/LinkIcon';
 import { ListIcon } from './svg/ListIcon';
 import { OrderedListIcon } from './svg/OrderedListIcon';
@@ -338,7 +340,7 @@ export function InsertControls({
 
   // No horizontal-rule button: h2's underline divides sections, and `---` covers the rare case.
 
-  // Drawer-only rows (アコーディオン, コードブロック, 脚注): the pointer toolbar declines them
+  // Drawer-only rows (アコーディオン, コードブロック, TL;DR, まとめ, 脚注): the pointer toolbar declines them
   // (docs/accordion-requirements.md §7.9, docs/footnote-requirements.md §9), but the drawer is a
   // scrollable list, and their typed routes sit behind a phone keyboard's symbol layer.
   const accordion = labelled && (
@@ -374,6 +376,40 @@ export function InsertControls({
     </ToolbarButton>
   );
 
+  // TL;DR and まとめ (docs/summary-requirements.md §9), greyed out once the post has one: `can()` is
+  // the commands' own refusal, which covers the one-per-post rule and where each may go.
+  const tldr = labelled && (
+    <ToolbarButton
+      key='tldr'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.setTldr());
+        nav?.closeMenu();
+      }}
+      disabled={!editor.can().setTldr()}
+      title='TL;DR'>
+      <span className='flex items-center gap-3'>
+        <TldrIcon />
+        TL;DR
+      </span>
+    </ToolbarButton>
+  );
+
+  const summary = labelled && (
+    <ToolbarButton
+      key='summary'
+      onClick={() => {
+        focusThenRun(editor, (c) => c.setSummary());
+        nav?.closeMenu();
+      }}
+      disabled={!editor.can().setSummary()}
+      title='まとめ'>
+      <span className='flex items-center gap-3'>
+        <SummaryIcon />
+        まとめ
+      </span>
+    </ToolbarButton>
+  );
+
   // The same `setFootnote` the `Mod-Shift-f` shortcut calls.
   const footnote = labelled && (
     <ToolbarButton
@@ -395,7 +431,7 @@ export function InsertControls({
   return (
     <div className={className}>
       {labelled
-        ? [image, link, quote, callout, table, accordion, codeBlock, footnote]
+        ? [image, link, quote, callout, table, accordion, codeBlock, tldr, summary, footnote]
         : [callout, quote, link, table, image]}
     </div>
   );

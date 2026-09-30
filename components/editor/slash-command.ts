@@ -78,6 +78,21 @@ const ITEMS: SlashEntry[] = [
     run: (chain, range) => chain.openInsertDialog(range.from),
     available: (editor) => editor.can().openInsertDialog(),
   },
+  {
+    // Inserted at the end of the post wherever `/` was typed (docs/summary-requirements.md §3.2).
+    id: 'summary',
+    title: 'まとめ',
+    keywords: ['summary', 'review', 'まとめ', '総評', '良かった点', '気になった点'],
+    run: (chain) => chain.setSummary(),
+    available: (editor) => editor.can().setSummary(),
+  },
+  {
+    id: 'tldr',
+    title: 'TL;DR',
+    keywords: ['tldr', 'tl;dr', 'summary', '要約', '要点', '概要'],
+    run: (chain) => chain.setTldr(),
+    available: (editor) => editor.can().setTldr(),
+  },
 ];
 
 // Whether any row is available at the caret; otherwise `/` stays an ordinary character. Phrased

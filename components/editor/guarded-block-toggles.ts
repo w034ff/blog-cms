@@ -33,8 +33,18 @@ function insideList({ editor, state }: CommandProps): boolean {
   return !!findParentNode((node) => isList(node.type.name, extensions))(state.selection);
 }
 
+// A まとめ section is `content: 'bulletList'`. toggleList re-types a list with
+// `tr.setNodeMarkup(currentList.pos, listType)` without asking the parent, even in a `can()` dry run,
+// so the toolbar's `can().toggleOrderedList()` threw on every render with the caret in a section and
+// took the editor down (docs/editor-pitfalls.md §8.4). Refused there outright: the section's list
+// is the section.
+function inSummarySection({ state }: CommandProps): boolean {
+  return selectionTouches(state, 'summaryGood', 'summaryBad');
+}
+
 function blockedForList(props: CommandProps): boolean {
   if (props.editor.isActive('codeBlock')) return true;
+  if (inSummarySection(props)) return true;
   return !insideList(props) && codeBlockInRange(props);
 }
 

@@ -75,3 +75,42 @@ describe('excerptFromBody', () => {
     expect(excerptFromBody('## 見出しだけ\n\n```\ncode\n```')).toBe('');
   });
 });
+
+// The stored forms components/editor/summary-extension.ts writes (docs/summary-requirements.md §3.3).
+const TLDR = (text: string) => `<div class="tldr">\n\n${text}\n\n</div>`;
+const SUMMARY =
+  '<div class="summary">\n\n総評の文。\n\n<div class="summary-good">\n\n- 良い\n\n</div>\n\n</div>';
+
+describe('excerptFromBody — TL;DR and まとめ', () => {
+  it('uses the TL;DR, wherever it is, over the opening', () => {
+    const body = ['書き出しの段落。', TLDR('要点の一文目。\n\n要点の二文目。'), '本文。'].join('\n\n');
+    expect(excerptFromBody(body)).toBe('要点の一文目。要点の二文目。');
+  });
+
+  it('falls back to the opening when the TL;DR is empty, without reading into it', () => {
+    const body = [TLDR(''), '書き出しの段落。'].join('\n\n').replace('\n\n\n\n', '\n\n');
+    expect(excerptFromBody(body)).toBe('書き出しの段落。');
+  });
+
+  it('leaves the まとめ out of the opening: it is written for someone who has read the post', () => {
+    expect(excerptFromBody(['短い書き出し。', SUMMARY].join('\n\n'))).toBe('短い書き出し。');
+  });
+
+  it('keeps counting <div>s it does not own, so a card inside does not end the box early', () => {
+    const body = [
+      '<div class="tldr">',
+      '要点。',
+      '<div class="link-card" data-href="/posts/abc"></div>',
+      '続きの要点。',
+      '</div>',
+      '本文。',
+    ].join('\n\n');
+    expect(excerptFromBody(body)).toBe('要点。続きの要点。');
+  });
+
+  it('clips a long TL;DR at the same limit as the opening', () => {
+    const excerpt = excerptFromBody(TLDR('あ'.repeat(EXCERPT_MAX_CHARS + 10)));
+    expect(Array.from(excerpt)).toHaveLength(EXCERPT_MAX_CHARS + 1);
+    expect(excerpt.endsWith('…')).toBe(true);
+  });
+});

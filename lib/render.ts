@@ -17,12 +17,14 @@ import { rehypeClobberFragmentLinks } from './rehype-clobber-fragment-links';
 import { rehypeImageCaption } from './rehype-image-caption';
 import { rehypeLinkCard, type CardTarget, type ResolveCard } from './rehype-link-card';
 import { rehypeEmbed } from './rehype-embed';
+import { rehypeSummary } from './rehype-summary';
 import { rehypeNewTabLinks } from './rehype-new-tab-links';
 import {
   CALLOUT_DIV_CLASSES,
   CALLOUT_TITLE_CLASS,
   CALLOUT_TITLE_LABEL_CLASS,
 } from './callout-types';
+import { SUMMARY_DIV_CLASSES } from './summary-types';
 
 export type { TocEntry, CardTarget, ResolveCard };
 
@@ -34,11 +36,13 @@ export type { TocEntry, CardTarget, ResolveCard };
 //     *silently* and a new tier would render with no colour.
 //   - link-card (docs/link-card-requirements.md §4.2) and embed (docs/embed-requirements.md §4.1):
 //     stored forms that would silently become empty divs. One word for every embed provider.
+//   - the まとめ / TL;DR containers (docs/summary-requirements.md §3.3), from lib/summary-types.ts.
 const divClasses: [string, ...string[]] = [
   'className',
   ...CALLOUT_DIV_CLASSES,
   'link-card',
   'embed',
+  ...SUMMARY_DIV_CLASSES,
 ];
 const titleClass: [string, ...string[]] = ['className', CALLOUT_TITLE_CLASS];
 // Both <span> classes in one tuple: hast-util-sanitize's `findDefinition` returns on the first entry
@@ -115,6 +119,9 @@ const processor = unified()
   // Embeds (docs/embed-requirements.md §6): `<iframe>` must never enter the schema, so it is built
   // after sanitize. Beside rehypeLinkCard only for grouping; they read disjoint classes.
   .use(rehypeEmbed)
+  // The まとめ / TL;DR titles (docs/summary-requirements.md §8), after sanitize so the chrome needs no
+  // allow-listing. <p>, not headings, so its place against rehypeCollectToc does not matter.
+  .use(rehypeSummary)
   // New-tab links (docs/link-requirements.md §7.2). Last, since it must see the anchors the card
   // and embed stages build.
   .use(rehypeNewTabLinks)

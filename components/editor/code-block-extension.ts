@@ -11,6 +11,8 @@ import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-bo
 import { buildIcon, GITHUB_MARK_SHAPES, UNLINK_SHAPES } from './svg/icon-shapes';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
+import { selectionTouches } from './selection-scan';
+import { BLOCK_REFUSING_BOXES } from './summary-rules';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -30,6 +32,9 @@ export function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean 
   const { $from, empty } = state.selection;
   // Only for a caret. A paste collapses its range before asking (speakerdeck-snippet-paste.ts).
   if (!empty || $from.depth < 1) return false;
+  // A まとめ section's list item is `paragraph block*` by the shared schema, but holds text only
+  // (docs/summary-requirements.md §3.1).
+  if (selectionTouches(state, ...BLOCK_REFUSING_BOXES)) return false;
   const parent = $from.node($from.depth - 1);
   const index = $from.index($from.depth - 1);
   return parent.canReplaceWith(index + 1, index + 1, type);

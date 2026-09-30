@@ -67,6 +67,11 @@ html {
   --chip-bg: #e8e0f1;
   --chip-bg-hover: #ddd2ea;
   --chip-fg: #5b3a7a;
+  /* The まとめ / TL;DR ground: the chip's purple, faint enough to sit under body text. */
+  --summary-bg: rgba(91, 58, 122, 0.06);
+  /* The one green: a まとめ's 良かった点. The blog category's value, not its token — the two mean
+     different things and may part. */
+  --good: #2b8a3e;
   /* One mark per id in lib/content.ts `CATEGORIES`; lib/category-marks.test.ts keeps the two in
      step. Non-text, so 3:1 against the ground is the bar (WCAG 1.4.11). */
   --category-tech: #e8590c;
@@ -115,6 +120,8 @@ html {
     --chip-bg: #2a2235;
     --chip-bg-hover: #352b43;
     --chip-fg: #d9c8ee;
+    --summary-bg: rgba(217, 200, 238, 0.07);
+    --good: #51cf66;
     --category-tech: #ff8a4c;
     --category-blog: #51cf66;
   }
@@ -2273,6 +2280,163 @@ dialog.image-zoom img {
   pointer-events: none;
 }
 
+/* まとめ / TL;DR (docs/summary-requirements.md §8). lib/rehype-summary.ts and the editor's NodeViews
+   (summary-extension.ts) emit the same DOM — box > title row + body, and for each section title row +
+   body — so these rules serve both. The callout's family: a tinted ground and no border, the site's
+   purple rather than a callout tier's hue, so it is not read as a fourth tier. The sections sit on
+   the page's surface, told apart by colour, icon and title. */
+.prose .summary,
+.prose .tldr {
+  margin: 1.5em 0;
+  padding: 0.9em 1.1em 1em;
+  border-radius: 0.25rem;
+  background: var(--summary-bg);
+  /* Upright and regular even inside emphasis, as the callout. */
+  font-style: normal;
+  font-weight: 400;
+}
+.prose .summary-label {
+  /* A row, for the editor's remove button at its end. */
+  display: flex;
+  align-items: center;
+  margin: 0 0 0.4em;
+  font-weight: 600;
+  color: var(--chip-fg);
+}
+/* One column; two when both sections are there and the column is wide enough (§8). A grid rather
+   than flow, so the 総評 spans both and a lone section takes the full width with no rule of its own. */
+.prose .summary-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.prose .summary-body > p {
+  margin: 0;
+}
+@media (min-width: 40rem) {
+  .prose .summary-body:has(> .summary-good):has(> .summary-bad) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .prose .summary-body > :not(.summary-good, .summary-bad) {
+    grid-column: 1 / -1;
+  }
+}
+.prose .summary-good,
+.prose .summary-bad {
+  padding: 0.6em 0.9em;
+  border-radius: 0.25rem;
+  background: var(--surface);
+}
+.prose .summary-good {
+  --section-accent: var(--good);
+  /* CheckIcon's shape (components/editor/svg/CheckIcon.tsx). */
+  --section-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.prose .summary-bad {
+  --section-accent: var(--caution);
+  /* AlertTriangleIcon's shape. */
+  --section-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+}
+.prose .summary-section-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0;
+  font-weight: 600;
+  color: var(--section-accent);
+}
+/* The icon as a mask tinted to the accent, as the callout's, so the HTML stays untouched. */
+.prose .summary-section-label::before {
+  content: '';
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+  background-color: var(--section-accent);
+  -webkit-mask: var(--section-icon) center / contain no-repeat;
+  mask: var(--section-icon) center / contain no-repeat;
+}
+.prose .summary-section-body > ul {
+  margin: 0.25em 0 0;
+}
+/* Editor chrome: the add and remove controls, and a まとめ saved with text after it (§3.2). */
+.prose .summary-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.prose .summary-controls[hidden],
+.prose .summary-add[hidden] {
+  display: none;
+}
+.prose .summary-add {
+  padding: 0.2em 0.7em;
+  border: 1px solid var(--chip-bg-hover);
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  color: var(--chip-fg);
+  cursor: pointer;
+}
+.prose .summary-add:hover {
+  background: var(--chip-bg);
+}
+/* 24px across, the AA target floor, with the label row's line box unchanged: the row's `align-items:
+   center` keeps the text where it was. */
+.prose .summary-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -0.25rem 0 -0.25rem auto;
+  border-radius: 0.25rem;
+  color: var(--color-zinc-500);
+  cursor: pointer;
+}
+/* buildIcon's <svg> carries no size of its own (the React icons get theirs from utility classes). */
+.prose .summary-remove svg {
+  width: 1rem;
+  height: 1rem;
+}
+.prose .summary-remove:hover {
+  color: var(--foreground);
+  background: var(--summary-bg);
+}
+.prose .summary.summary-misplaced::after {
+  content: 'この後ろに本文があります。まとめは記事の末尾に置いてください';
+  display: block;
+  margin-top: 0.75em;
+  font-size: 0.875em;
+  color: var(--caution);
+}
+/* Placeholders, keyed on ProseMirror's trailing <br> as the accordion's title is. The sections have
+   none: their title row already names what goes in them (docs/summary-requirements.md §3.6). */
+.ProseMirror
+  .summary
+  > .summary-body
+  > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+.ProseMirror
+  .tldr
+  > .summary-body
+  > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  float: left;
+  height: 0;
+  opacity: 0.45;
+  pointer-events: none;
+}
+.ProseMirror
+  .summary
+  > .summary-body
+  > p:first-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: '総評';
+}
+/* Names what goes here and nothing more, as 総評 does (docs/summary-requirements.md §3.6). */
+.ProseMirror
+  .tldr
+  > .summary-body
+  > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: '記事の要点';
+}
 /* Link card (docs/link-card-requirements.md): the accordion's and code block's card, with the
    target's image beside the text when it has one. `color` and `text-decoration` are reset at
    (0,2,1), beating `.prose a` (0,1,1) and Typography's underline; without it the whole card, which

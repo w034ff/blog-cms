@@ -1195,3 +1195,51 @@ describe('renderMdxToHtml — image caption', () => {
     expect(html).not.toContain('figcaption');
   });
 });
+
+// docs/summary-requirements.md §8: the containers pass sanitize by name, and rehype-summary adds the
+// titles the stored form leaves out.
+describe('renderMdxToHtml — まとめ and TL;DR', () => {
+  const summary = (sections: string) =>
+    `<div class="summary">\n\n総評の **文**。\n\n${sections}</div>\n`;
+  const section = (cls: string, items: string) => `<div class="${cls}">\n\n${items}\n\n</div>\n\n`;
+
+  it('keeps the container classes and adds the titles, not as headings', async () => {
+    const { html, toc } = await renderMdxToHtml(
+      summary(section('summary-good', '- 良い') + section('summary-bad', '- 悪い')),
+    );
+    expect(html).toContain('<div class="summary"><p class="summary-label">まとめ</p>');
+    expect(html).toContain('<p class="summary-section-label">良かった点</p>');
+    expect(html).toContain('<p class="summary-section-label">気になった点</p>');
+    expect(html).toContain('<strong>文</strong>');
+    expect(html.indexOf('summary-good')).toBeLessThan(html.indexOf('summary-bad'));
+    expect(toc).toEqual([]);
+  });
+
+  it('draws no empty section, and no empty box', async () => {
+    const { html } = await renderMdxToHtml(
+      summary(section('summary-good', '- 良い') + section('summary-bad', '- ')) +
+        '\n<div class="tldr">\n\n</div>\n',
+    );
+    expect(html).toContain('良かった点');
+    expect(html).not.toContain('気になった点');
+    expect(html).not.toContain('summary-bad');
+    expect(html).not.toContain('TL;DR');
+  });
+
+  it('titles a TL;DR', async () => {
+    const { html } = await renderMdxToHtml('<div class="tldr">\n\n要点。\n\n</div>\n');
+    expect(html).toContain(
+      '<div class="tldr"><p class="summary-label">TL;DR</p><div class="summary-body">',
+    );
+  });
+
+  it('strips an author’s other classes and attributes on the container', async () => {
+    const { html } = await renderMdxToHtml(
+      '<div class="summary evil" style="color:red" onclick="x()">\n\n総評。\n\n</div>\n',
+    );
+    expect(html).toContain('<div class="summary">');
+    expect(html).not.toContain('evil');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('style=');
+  });
+});

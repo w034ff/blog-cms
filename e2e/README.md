@@ -24,6 +24,11 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
 - The server gets its own build dir, `NEXT_DIST_DIR=.next-e2e-<port>`. Next refuses a second
   `next dev` that shares a `<distDir>/dev/lock`, even on another port, so this is what lets the
   harness run beside `npm run dev` (port 3001).
+- A worktree outside the repo cannot borrow its `node_modules` through a symlink: Turbopack refuses
+  it (`Symlink [project]/node_modules is invalid, it points out of the filesystem root`) and the
+  webServer never starts. A hard-linked copy works and costs no space on the same filesystem:
+  `cp -al <repo>/node_modules <worktree>/node_modules` (2026-09-30). `data/blog.db` may be a symlink,
+  since the prep only reads it.
 - `next dev` rewrites the tsconfig it uses. `typescript.tsconfigPath` points it at a gitignored
   `tsconfig.e2e.<port>.json` that extends the real one, so the tracked `tsconfig.json` stays clean.
 - `nextConfig.devIndicators` is off under `NEXT_DIST_DIR`. The dev badge is fixed to the bottom-left
