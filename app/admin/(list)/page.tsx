@@ -70,7 +70,8 @@ export default async function AdminHome() {
               <div className='flex min-w-0 items-center gap-3'>
                 {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader
                     sees. The slot is always drawn so the titles stay aligned; 「なし」 means no
-                    image at all. */}
+                    image at all. Posts in both categories are expected to carry one, so 「なし」
+                    is kept visible as the reminder that one is missing, not hidden as noise. */}
                 <AdminThumbnail src={resolveThumbnail(post)} />
                 <div className='min-w-0'>
                   <Link
