@@ -87,22 +87,30 @@ html {
   --color-caution: var(--caution);
   --font-sans: var(--font-plex-sans);
   --font-mono: var(--font-plex-mono);
-  /* The site's one content column: `max-w-site`, SiteHeader/SiteFooter's inner box, and the post
-     page's ToC grid track. Must stay one value, or the grid's `(100% - column) / 2` gutter stops
-     landing on the same left edge as a plain `mx-auto` box. */
+  /* The reading column: a post's body (the first grid track beside the ToC), and the editor's body
+     through `--container-editor`. */
   --container-site: 50rem;
   /* The editor's column (`max-w-editor`: PostEditor's header bar and form):
      the frame's two borders and gutters around a body exactly `--container-site` wide, so the
      editor breaks lines where the published post does. Follows `--editor-gutter`. */
   --container-editor: calc(var(--container-site) + 2 * var(--editor-gutter) + 2px);
-  /* From this width the post shows the desktop ToC; below it, the mobile <details>
-     (components/TocNav.tsx). Used as `toc:` in three places (the grid, TocNavMobile's hide,
-     TocNavDesktop's show). The rail gets `(container − --container-site) / 2`, and the fixed-width
-     nav needs `ml-6` + `w-60` = 16.5rem of it: 50 + 2 × 16.5 = 83rem. The extra 2rem is the
-     scrollbar, which the media query counts and the grid's 100% does not; without it the nav
-     overflows the page sideways just above the breakpoint. Widening the column means raising
-     this with it (docs/toc-requirements.md §6.4). */
-  --breakpoint-toc: 85rem;
+  /* The site's page box (`max-w-page`): SiteHeader/SiteFooter's inner box and every reader-facing
+     page's root, so their edges line up. The body plus the ToC rail. Never narrowed at a
+     breakpoint: below this width the box fills the window and the body stays at its left edge, so
+     the body does not move when the ToC appears. */
+  --container-page: calc(var(--container-site) + var(--toc-rail));
+  /* From this width the post shows the desktop ToC, and its body gives up width to the rail
+     (components/PostArticle.tsx); below it, the mobile <details> (components/TocNav.tsx). Chosen
+     so the body keeps about 40rem: 40 + the rail + PageMain's `px-4` on both sides, plus 1.5rem
+     for the scrollbar, which the media query counts and the box's 100% does not
+     (docs/toc-requirements.md §6.4). */
+  --breakpoint-toc: 60rem;
+}
+
+/* The desktop ToC's grid track: the nav's `ml-6` + `w-60` (components/TocNav.tsx). A plain custom
+   property, read only through `var()`, never as a utility. */
+:root {
+  --toc-rail: 16.5rem;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -10,13 +10,13 @@ export function PageMain({ children, className }: { children: ReactNode; classNa
   return <main className={`w-full flex-1 px-4 py-8 ${className ?? ''}`}>{children}</main>;
 }
 
-// The reading column, separate because the post page goes wider for its ToC rail; the site shell
-// uses PageMain alone and each page sets its own root width.
+// The page box (`max-w-page`, app/globals.css), for the admin shells; the site shell uses PageMain
+// alone and each page's root sets the same width itself.
 export function SiteColumn({ children }: { children: ReactNode }) {
-  return <div className='mx-auto w-full max-w-site'>{children}</div>;
+  return <div className='mx-auto w-full max-w-page'>{children}</div>;
 }
 
-// The writing shell's column: the editor's frame and gutters around a body `max-w-site` wide
+// The writing shell's column: the editor's frame and gutters around a body `--container-site` wide
 // (`--container-editor`, app/globals.css).
 export function EditorColumn({ children }: { children: ReactNode }) {
   return <div className='mx-auto w-full max-w-editor'>{children}</div>;

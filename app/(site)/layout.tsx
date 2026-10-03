@@ -10,8 +10,8 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       <SiteHeader />
-      {/* No SiteColumn: each page's root sets its own max-width, since the post page goes wider
-          for its table-of-contents rail. */}
+      {/* No SiteColumn: each page's root sets `max-w-page` itself, since the post page's root is
+          also its table-of-contents grid. */}
       <PageMain>{children}</PageMain>
       <SiteFooter />
     </>
