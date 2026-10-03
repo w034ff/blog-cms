@@ -173,6 +173,23 @@ describe('restore (§8 rows 5-6)', () => {
     expect(row(id).draftContent).toBeNull();
   });
 
+  // A restore is the author's edit: 記事一覧 sorts by editedAt. On a published post it touches only
+  // the working copy, so the public 更新日 stays.
+  it('moves editedAt and leaves updatedAt on a published post', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-01T00:00:00.000Z'));
+      const id = seed({ draft: false });
+      autosavePost(id, content({ body: 'pending' }));
+      vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'));
+      expect(restoreRevision(id, 'live')).toBe(true);
+      expect(row(id).editedAt).toBe('2026-10-02T00:00:00.000Z');
+      expect(row(id).updatedAt).toBe('2026-10-01T00:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('refuses a draft’s live version, another post’s revision, and a missing post', () => {
     const draft = seed({ draft: true });
     const other = seed({ draft: true });

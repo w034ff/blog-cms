@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { posts } from '@/lib/db/schema';
 import { db } from '@/lib/db';
@@ -145,6 +145,49 @@ describe('commitPost', () => {
   it('returns true when it updates a row', () => {
     const id = seed({ slug: 'v', draft: true });
     expect(commitPost(id, content, false, '2026-01-01')).toBe(true);
+  });
+});
+
+// 記事一覧 sorts by editedAt (lib/db/schema.ts). It follows every author write; updatedAt, the public
+// 更新日, must not follow the one that only touches the working copy.
+describe('editedAt', () => {
+  const T0 = new Date('2026-10-01T00:00:00.000Z');
+  const T1 = new Date('2026-10-02T00:00:00.000Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is stamped on create', () => {
+    expect(row(seed())?.editedAt).toBe(T0.toISOString());
+  });
+
+  it('moves on a published post’s autosave, which leaves updatedAt alone', () => {
+    const id = seed({ draft: false });
+    vi.setSystemTime(T1);
+    autosavePost(id, content);
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T0.toISOString());
+  });
+
+  it('moves with updatedAt on a draft’s autosave', () => {
+    const id = seed({ draft: true });
+    vi.setSystemTime(T1);
+    autosavePost(id, content);
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T1.toISOString());
+  });
+
+  it('moves with updatedAt on publish', () => {
+    const id = seed({ draft: true });
+    vi.setSystemTime(T1);
+    commitPost(id, content, false, '2026-10-02');
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T1.toISOString());
   });
 });
 
