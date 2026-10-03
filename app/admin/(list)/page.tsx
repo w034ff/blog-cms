@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
-import { deletePostAction } from '@/app/actions/posts';
 import { logout } from '@/app/actions/auth';
 import { isAdmin } from '@/lib/dal';
 import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
+import { PostRowMenu } from './PostRowMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,12 +41,11 @@ export default async function AdminHome() {
           SiteHeader's 「Tech Blog」 goes there (app/admin/(list)/layout.tsx). */}
       <div className='mb-6 flex items-center justify-between gap-4'>
         <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
+        {/* 新規記事 is the one thing this screen is opened for, so it alone is a button, at the
+            end where the eye leaves the row. */}
         <div className='flex items-center gap-4 text-sm'>
-          <Link href='/admin/posts/new' className='font-medium hover:underline'>
-            新規記事
-          </Link>
           {admin && (
-            <Link href='/admin/tags' className='hover:underline'>
+            <Link href='/admin/tags' className='text-zinc-600 hover:underline dark:text-zinc-400'>
               タグ
             </Link>
           )}
@@ -55,6 +54,9 @@ export default async function AdminHome() {
               ログアウト
             </button>
           </form>
+          <Link href='/admin/posts/new' className='button-primary px-3 py-1.5 font-medium'>
+            新規記事
+          </Link>
         </div>
       </div>
       {posts.length === 0 ? (
@@ -71,19 +73,21 @@ export default async function AdminHome() {
                     image at all. */}
                 <AdminThumbnail src={resolveThumbnail(post)} />
                 <div className='min-w-0'>
-                  <div className='flex items-center gap-2'>
-                    <Link
-                      href={`/admin/posts/${post.id}/edit`}
-                      className='truncate font-medium hover:underline'>
-                      {/* Only a draft can lack a title; a placeholder keeps it clickable. */}
-                      {post.title.trim() ? (
-                        post.title
-                      ) : (
-                        <span className='text-zinc-400'>（無題）</span>
-                      )}
-                    </Link>
+                  <Link
+                    href={`/admin/posts/${post.id}/edit`}
+                    className='block truncate font-medium hover:underline'>
+                    {/* Only a draft can lack a title; a placeholder keeps it clickable. */}
+                    {post.title.trim() ? (
+                      post.title
+                    ) : (
+                      <span className='text-zinc-400'>（無題）</span>
+                    )}
+                  </Link>
+                  {/* The state leads the second line rather than trailing the title, so every title
+                      starts and ends on its own and the badges line up down the list. */}
+                  <div className='flex min-w-0 items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400'>
                     {post.draft && (
-                      <span className='rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
+                      <span className='shrink-0 rounded bg-amber-100 px-1.5 leading-4 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
                         下書き
                       </span>
                     )}
@@ -91,23 +95,23 @@ export default async function AdminHome() {
                         listAllPosts). Shown here because the author forgets days later, away from the
                         editor. Sky, apart from 下書き's amber. */}
                     {post.hasPendingEdits && (
-                      <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                      <span className='shrink-0 rounded bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                         未公開の変更
                       </span>
                     )}
-                  </div>
-                  {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of this
-                      list. The 表示 link reaches the public URL. */}
-                  <div className='truncate text-xs text-zinc-600 dark:text-zinc-400'>
-                    {formatPostDate(post.date) || '未公開'}
-                    {hasVisibleUpdate(post.date, post.updatedAt) && (
-                      <> (更新: {formatPostDate(post.updatedAt)})</>
-                    )}{' '}
-                    · {categoryLabel(post.category)}
+                    {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of
+                        this list. The 表示 link reaches the public URL. */}
+                    <span className='truncate'>
+                      {formatPostDate(post.date) || '未公開'}
+                      {hasVisibleUpdate(post.date, post.updatedAt) && (
+                        <> (更新: {formatPostDate(post.updatedAt)})</>
+                      )}{' '}
+                      · {categoryLabel(post.category)}
+                    </span>
                   </div>
                 </div>
               </div>
-              <div className='flex shrink-0 items-center gap-4'>
+              <div className='flex shrink-0 items-center gap-3'>
                 {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address
                     previews for this session (app/(site)/posts/[slug]/page.tsx), so one 表示
                     covers both states; the destination's banner and the 下書き badge say which.
@@ -119,12 +123,7 @@ export default async function AdminHome() {
                     表示
                   </a>
                 )}
-                <form action={deletePostAction}>
-                  <input type='hidden' name='id' value={post.id} />
-                  <button type='submit' className='text-sm text-red-600 hover:underline'>
-                    削除
-                  </button>
-                </form>
+                <PostRowMenu id={post.id} />
               </div>
             </li>
           ))}
