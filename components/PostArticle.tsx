@@ -32,22 +32,14 @@ export function PostArticle({
 }) {
   const showToc = body === undefined && toc.length >= MIN_HEADINGS_FOR_TOC;
   return (
+    // The page box, as on every other page, with the body at its left edge, so it never moves when
+    // the ToC appears or a post has none (docs/toc-requirements.md §6). From `toc:` the rail's track
+    // is fixed and the body takes the rest up to its own width: 800px when the box is full, down to
+    // about 640px at the breakpoint.
     <article
-      className={
-        showToc
-          ? // Below `toc:` (app/globals.css --breakpoint-toc): identical to the plain
-            // max-w-site case; the mobile TOC handles it there.
-            //
-            // At `toc:` and up, three tracks: calc((100% - column) / 2) | column | 1fr, where
-            // `column` is --container-site (app/globals.css), the same variable max-w-site caps at.
-            // The first track keeps the column exactly where a lone `mx-auto max-w-site` box puts
-            // it, and the tracks sum to 100%, so nothing overflows (docs/toc-requirements.md §6,
-            // which also records the rejected layouts).
-            'mx-auto w-full max-w-site toc:mx-0 toc:max-w-none toc:grid toc:grid-cols-[calc((100%_-_var(--container-site))/2)_var(--container-site)_1fr] toc:items-start'
-          : 'mx-auto w-full max-w-site'
-      }>
+      className={`mx-auto w-full max-w-page ${showToc ? 'toc:grid toc:grid-cols-[minmax(0,var(--container-site))_var(--toc-rail)] toc:items-start' : ''}`}>
       {/* min-w-0, or a wide <pre> forces the column past its track (min-width:auto). */}
-      <div className={showToc ? 'toc:col-start-2 min-w-0' : undefined}>
+      <div className='min-w-0 max-w-site'>
         <header className='mb-8'>
           <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
           <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400'>

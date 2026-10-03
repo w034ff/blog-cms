@@ -35,7 +35,7 @@ export default async function TagPage({ params }: { params: Promise<Params> }) {
   const posts = await getPostsByTag(slug);
   if (posts.length === 0) notFound();
   return (
-    <section className='mx-auto w-full max-w-site'>
+    <section className='mx-auto w-full max-w-page'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>
         #{name} <span className='text-zinc-600 dark:text-zinc-400 text-xl'>({posts.length})</span>
       </h1>

@@ -27,7 +27,7 @@ export default async function CategoryPage({ params }: { params: Promise<Params>
   const posts = await getPostsByCategory(id);
   if (posts.length === 0) notFound();
   return (
-    <section className='mx-auto w-full max-w-site'>
+    <section className='mx-auto w-full max-w-page'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>
         {categoryLabel(id)}{' '}
         <span className='text-zinc-600 dark:text-zinc-400 text-xl'>({posts.length})</span>

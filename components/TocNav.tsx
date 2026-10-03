@@ -100,7 +100,7 @@ export function TocNavDesktop({ toc }: { toc: TocEntry[] }) {
   return (
     <nav
       aria-label='目次'
-      className='toc-rail hidden toc:block toc:col-start-3 toc:ml-6 toc:w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto p-1'>
+      className='toc-rail hidden toc:block toc:col-start-2 toc:ml-6 toc:w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto p-1'>
       <p className='font-semibold text-sm mb-3'>目次</p>
       <TocList toc={toc} activeId={activeId} />
     </nav>

@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export default async function CategoriesIndexPage() {
   const categories = await getAllCategories();
   return (
-    <section className='mx-auto w-full max-w-site'>
+    <section className='mx-auto w-full max-w-page'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>Categories</h1>
       {categories.length === 0 ? (
         <p className='text-zinc-600 dark:text-zinc-400'>カテゴリはまだありません。</p>

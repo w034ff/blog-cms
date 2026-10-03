@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export default async function HomePage() {
   const posts = await getAllPosts();
   return (
-    <section className='mx-auto w-full max-w-site'>
+    <section className='mx-auto w-full max-w-page'>
       <h1 className='text-3xl font-bold tracking-tight mb-6'>最新の記事</h1>
       {posts.length === 0 ? (
         <p className='text-zinc-600 dark:text-zinc-400'>まだ記事がありません。</p>
