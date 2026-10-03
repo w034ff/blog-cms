@@ -10,7 +10,7 @@ import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 // A disclosure, not `role="menu"`: the panel holds a confirmation step, not a list of commands
 // walked with arrow keys. Deleting takes a second click because nothing brings a post back —
 // deletePost removes its revisions in the same transaction (docs/revision-requirements.md).
-export function PostRowMenu({ id }: { id: number }) {
+export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const panelId = useId();
@@ -62,6 +62,15 @@ export function PostRowMenu({ id }: { id: number }) {
             </form>
           ) : (
             <>
+              {/* The row's 表示, here only on a phone, where the row hides it to give the title
+                  the width (app/admin/(list)/page.tsx). */}
+              {slug && (
+                <a
+                  href={`/posts/${slug}`}
+                  className='block rounded-xs px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 sm:hidden dark:hover:bg-zinc-800'>
+                  表示
+                </a>
+              )}
               {/* A plain download: the route answers with Content-Disposition, so the list stays. */}
               <a
                 href={`/admin/posts/${id}/markdown`}

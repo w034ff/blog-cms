@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { verifyAdmin } from '@/lib/dal';
 import { listDictionary, tagUsage } from '@/lib/tags';
 import { TagDirectory } from './TagForms';
+import { ScreenHeading } from '../ScreenHeading';
 
 export const metadata: Metadata = { title: 'タグの管理' };
 
@@ -17,7 +18,9 @@ export default async function AdminTagsPage() {
 
   return (
     <section>
-      <h1 className='mb-2 text-2xl font-bold tracking-tight'>タグの管理</h1>
+      <div className='mb-2'>
+        <ScreenHeading title='タグの管理' showTags />
+      </div>
       <p className='mb-6 text-sm text-zinc-600 dark:text-zinc-400'>
         識別子はタグの URL に使います。
       </p>

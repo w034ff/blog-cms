@@ -1,9 +1,19 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
+import { isAdmin } from '@/lib/dal';
 import { categoryLabel } from '@/lib/content';
-import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
+import { formatPostDate, formatRelativeTime, formatRevisionTime } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
+import {
+  countByStatus,
+  matchesStatus,
+  narrow,
+  parseListParams,
+  sortPosts,
+} from '@/lib/admin-post-list';
 import { EmptyPostList } from './EmptyPostList';
+import { ListControls } from './ListControls';
+import { ScreenHeading } from './ScreenHeading';
 import { PostRowMenu } from './PostRowMenu';
 
 export const dynamic = 'force-dynamic';
@@ -29,8 +39,20 @@ function AdminThumbnail({ src }: { src: string | null }) {
   );
 }
 
-export default async function AdminHome() {
-  const posts = await listAllPosts();
+export default async function AdminHome({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const all = await listAllPosts();
+  const params = parseListParams(await searchParams);
+  // Category and search first, so the tabs count what each would show; then the tab and the order.
+  // Last edited first by default, so the post being worked on is at the top (lib/admin-post-list.ts).
+  const narrowed = narrow(all, params);
+  const posts = sortPosts(
+    narrowed.filter((post) => matchesStatus(post, params.status)),
+    params.sort,
+  );
 
   return (
     <section>
@@ -38,18 +60,26 @@ export default async function AdminHome() {
           posts the empty state carries it instead (EmptyPostList), so the screen never offers two.
           No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
       <div className='mb-6 flex items-center justify-between gap-4'>
-        <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
-        {posts.length > 0 && (
+        <ScreenHeading title='記事一覧' showTags={await isAdmin()} />
+        {all.length > 0 && (
           <Link href='/admin/posts/new' className='button-primary px-3 py-1.5 text-sm font-medium'>
             新規作成
           </Link>
         )}
       </div>
+      {all.length > 0 && <ListControls params={params} counts={countByStatus(narrowed)} />}
       {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are
           (globals.css `--surface`); the heading stays on the ground above it. */}
       <div className='rounded-xs border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
-        {posts.length === 0 ? (
+        {all.length === 0 ? (
           <EmptyPostList />
+        ) : posts.length === 0 ? (
+          <p className='py-10 text-center text-sm text-zinc-600 dark:text-zinc-400'>
+            条件に合う記事はありません。
+            <Link href='/admin' className='ml-2 underline'>
+              条件をクリア
+            </Link>
+          </p>
         ) : (
           <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
             {posts.map((post) => (
@@ -63,7 +93,7 @@ export default async function AdminHome() {
                   <div className='min-w-0'>
                     <Link
                       href={`/admin/posts/${post.id}/edit`}
-                      className='block truncate font-medium hover:underline'>
+                      className='line-clamp-2 font-medium hover:underline sm:block sm:truncate'>
                       {/* Only a draft can lack a title; a placeholder keeps it clickable. */}
                       {post.title.trim() ? (
                         post.title
@@ -72,8 +102,9 @@ export default async function AdminHome() {
                       )}
                     </Link>
                     {/* The state leads the second line rather than trailing the title, so every title
-                      starts and ends on its own and the badges line up down the list. */}
-                    <div className='flex min-w-0 items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400'>
+                      starts and ends on its own and the badges line up down the list. It wraps on a
+                      phone rather than cut the category off, and truncates from `sm`. */}
+                    <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 sm:flex-nowrap dark:text-zinc-400'>
                       {post.draft && (
                         <span className='shrink-0 rounded bg-amber-100 px-1.5 leading-4 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
                           下書き
@@ -89,12 +120,37 @@ export default async function AdminHome() {
                       )}
                       {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of
                         this list. The 表示 link reaches the public URL. */}
-                      <span className='truncate'>
-                        {formatPostDate(post.date) || '未公開'}
-                        {hasVisibleUpdate(post.date, post.updatedAt) && (
-                          <> (更新: {formatPostDate(post.updatedAt)})</>
-                        )}{' '}
-                        · {categoryLabel(post.category)}
+                      <span className='min-w-0 sm:truncate'>
+                        {/* Relative, since the list is read for how recently a post was touched; the
+                            minute is on hover for when it matters. Not 更新: that is the public
+                            更新日, a different moment. */}
+                        {/* Each part whole, so a phone wraps between them and not inside a date. */}
+                        <span className='whitespace-nowrap'>
+                          編集{' '}
+                          <time
+                            dateTime={post.editedAt}
+                            title={formatRevisionTime(Date.parse(post.editedAt))}>
+                            {formatRelativeTime(Date.parse(post.editedAt))}
+                          </time>
+                        </span>
+                        {post.date && (
+                          <>
+                            {' · '}
+                            <span className='whitespace-nowrap'>
+                              公開 {formatPostDate(post.date)}
+                            </span>
+                          </>
+                        )}
+                        {' · '}
+                        {post.category ? (
+                          <span
+                            data-category={post.category}
+                            className='category-mark whitespace-nowrap'>
+                            {categoryLabel(post.category)}
+                          </span>
+                        ) : (
+                          <span className='whitespace-nowrap'>カテゴリ未設定</span>
+                        )}
                       </span>
                     </div>
                   </div>
@@ -103,15 +159,16 @@ export default async function AdminHome() {
                   {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address
                     previews for this session (app/(site)/posts/[slug]/page.tsx), so one 表示
                     covers both states; the destination's banner and the 下書き badge say which.
-                    Here rather than in the editor, where it would navigate away from it. */}
+                    Here rather than in the editor, where it would navigate away from it. Below `sm`
+                    it moves into ⋯ (PostRowMenu), so the title gets the width. */}
                   {post.slug && (
                     <a
                       href={`/posts/${post.slug}`}
-                      className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+                      className='hidden text-sm text-zinc-600 hover:underline sm:inline dark:text-zinc-400'>
                       表示
                     </a>
                   )}
-                  <PostRowMenu id={post.id} />
+                  <PostRowMenu id={post.id} slug={post.slug} />
                 </div>
               </li>
             ))}
