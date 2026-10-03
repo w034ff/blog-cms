@@ -14,7 +14,7 @@ const LONG_NOTE = `**強調**と[リンク](https://example.com/)と\`code\`で�
 const FILLER = `${'本文の埋め草。'.repeat(24)}\n\n`;
 
 const SOURCE = [
-  `段落一[^rich]。参照の位置を測るための本文である。\n\n`,
+  `段落一。参照の位置を測るための本文である[^rich]。\n\n`,
   FILLER,
   `段落二[^long]。ここで八行の上限を測る。\n\n`,
   FILLER,
@@ -99,7 +99,8 @@ test('hover previews the note, and the plain click it is added to is untouched',
   const box = await rects(page, '.footnote-popover--preview');
   const ref = await rects(page, '#post-body a[data-footnote-ref]');
   expect(box.bottom).toBeLessThan(ref.top);
-  // Centred on it (§5.2.1's clamp does not bite here).
+  // Centred on it. The reference sits deep in its line so §5.2.1's clamp does not bite: the body
+  // starts at the page box's left edge, and a reference near it pins the box at the margin instead.
   expect((box.left + box.right) / 2).toBeCloseTo((ref.left + ref.right) / 2, 0);
 
   // The look is not assertable, so a screenshot to open when asking what it looks like.
