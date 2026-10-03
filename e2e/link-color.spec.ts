@@ -146,14 +146,16 @@ test('強調 outside a link keeps its red', async ({ page }) => {
 
 test('the table of contents sits outside .prose and is untouched', async ({ page }) => {
   const href = await publish(page, 'Link colour spec — toc');
+  // Past `--breakpoint-toc` (85rem), which the default 1280px is not.
+  await page.setViewportSize({ width: 1440, height: 800 });
   await page.goto(href);
 
   // `:visible`: both ToC variants render with `aria-label='目次'`, the mobile one first and hidden; at
-  // 1280px (past `toc:`) the rail is shown.
+  // this width the desktop nav is shown.
   const tocLink = page.locator('nav[aria-label="目次"]:visible .toc-link').first();
   await expect(tocLink).toBeVisible();
 
-  // Still TocNav's own zinc-600: the ToC stays out of `.prose a` only by sitting outside the article
+  // Still TocNav's own colour: the ToC stays out of `.prose a` only by sitting outside the article
   // body (globals.css, above `#post-body h2`).
   expect(await colorOf(tocLink)).not.toBe(BLUE_LIGHT);
 });
