@@ -173,6 +173,29 @@ html {
   .category-mark[data-category='blog'] {
     --category-color: var(--category-blog);
   }
+  /* The empty 記事一覧's typewriter (app/admin/(list)/EmptyPostList.tsx), on a disc of the light
+     ground. Both schemes draw it in the light palette — the values below are :root's, held fixed
+     rather than read from the tokens the dark scheme overrides — so the dark scheme shows the same
+     picture set into the page instead of an inverted one; the disc keeps the dark ink parts
+     visible on a dark sheet. */
+  .empty-illustration {
+    --ill-ground: #f3eef8;
+    --ill-paper: var(--color-white);
+    --ill-ink: var(--color-zinc-900);
+    --ill-body: #5b3a7a;
+    --ill-tint: #e8e0f1;
+    --ill-accent: #9f1239;
+    --ill-tech: #e8590c;
+    --ill-blog: #2b8a3e;
+    border-radius: 9999px;
+    background: var(--ill-ground);
+  }
+  @media (prefers-color-scheme: dark) {
+    /* Dimmed a step, so the brightest thing on the dark sheet does not glare. */
+    .empty-illustration {
+      filter: brightness(0.92);
+    }
+  }
   @media (hover: hover) {
     .button-primary:hover {
       background: var(--button-primary-bg-hover);

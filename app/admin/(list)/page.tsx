@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
-import { deletePostAction } from '@/app/actions/posts';
-import { logout } from '@/app/actions/auth';
-import { isAdmin } from '@/lib/dal';
 import { categoryLabel } from '@/lib/content';
 import { formatPostDate, hasVisibleUpdate } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
+import { EmptyPostList } from './EmptyPostList';
+import { PostRowMenu } from './PostRowMenu';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,49 +31,39 @@ function AdminThumbnail({ src }: { src: string | null }) {
 
 export default async function AdminHome() {
   const posts = await listAllPosts();
-  const admin = await isAdmin();
 
   return (
     <section>
-      {/* On this row rather than a nav band over every admin screen (app/admin/layout.tsx), so the
-          empty-state sentence's 「新規記事」 points at something on screen. No サイトを見る:
-          SiteHeader's 「Tech Blog」 goes there (app/admin/(list)/layout.tsx). */}
+      {/* 新規作成 is the one thing this screen is opened for, so it alone is a button. With no
+          posts the empty state carries it instead (EmptyPostList), so the screen never offers two.
+          No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
       <div className='mb-6 flex items-center justify-between gap-4'>
         <h1 className='text-2xl font-bold tracking-tight'>記事一覧</h1>
-        <div className='flex items-center gap-4 text-sm'>
-          <Link href='/admin/posts/new' className='font-medium hover:underline'>
-            新規記事
+        {posts.length > 0 && (
+          <Link href='/admin/posts/new' className='button-primary px-3 py-1.5 text-sm font-medium'>
+            新規作成
           </Link>
-          {admin && (
-            <Link href='/admin/tags' className='hover:underline'>
-              タグ
-            </Link>
-          )}
-          <form action={logout}>
-            <button type='submit' className='text-zinc-600 hover:underline dark:text-zinc-400'>
-              ログアウト
-            </button>
-          </form>
-        </div>
+        )}
       </div>
-      {posts.length === 0 ? (
-        <p className='text-zinc-600 dark:text-zinc-400'>
-          記事がありません。「新規記事」から作成できます。
-        </p>
-      ) : (
-        <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
-          {posts.map((post) => (
-            <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
-              <div className='flex min-w-0 items-center gap-3'>
-                {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader
+      {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are
+          (globals.css `--surface`); the heading stays on the ground above it. */}
+      <div className='rounded-xs border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
+        {posts.length === 0 ? (
+          <EmptyPostList />
+        ) : (
+          <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
+            {posts.map((post) => (
+              <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
+                <div className='flex min-w-0 items-center gap-3'>
+                  {/* Resolved as every surface does (lib/thumbnail.ts), so this is what a reader
                     sees. The slot is always drawn so the titles stay aligned; 「なし」 means no
-                    image at all. */}
-                <AdminThumbnail src={resolveThumbnail(post)} />
-                <div className='min-w-0'>
-                  <div className='flex items-center gap-2'>
+                    image at all. Posts in both categories are expected to carry one, so 「なし」
+                    is kept visible as the reminder that one is missing, not hidden as noise. */}
+                  <AdminThumbnail src={resolveThumbnail(post)} />
+                  <div className='min-w-0'>
                     <Link
                       href={`/admin/posts/${post.id}/edit`}
-                      className='truncate font-medium hover:underline'>
+                      className='block truncate font-medium hover:underline'>
                       {/* Only a draft can lack a title; a placeholder keeps it clickable. */}
                       {post.title.trim() ? (
                         post.title
@@ -82,54 +71,53 @@ export default async function AdminHome() {
                         <span className='text-zinc-400'>（無題）</span>
                       )}
                     </Link>
-                    {post.draft && (
-                      <span className='rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
-                        下書き
-                      </span>
-                    )}
-                    {/* Published rows only: a draft's autosave writes the live columns (lib/posts.ts
+                    {/* The state leads the second line rather than trailing the title, so every title
+                      starts and ends on its own and the badges line up down the list. */}
+                    <div className='flex min-w-0 items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400'>
+                      {post.draft && (
+                        <span className='shrink-0 rounded bg-amber-100 px-1.5 leading-4 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
+                          下書き
+                        </span>
+                      )}
+                      {/* Published rows only: a draft's autosave writes the live columns (lib/posts.ts
                         listAllPosts). Shown here because the author forgets days later, away from the
                         editor. Sky, apart from 下書き's amber. */}
-                    {post.hasPendingEdits && (
-                      <span className='rounded bg-sky-100 px-1.5 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
-                        未公開の変更
+                      {post.hasPendingEdits && (
+                        <span className='shrink-0 rounded bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                          未公開の変更
+                        </span>
+                      )}
+                      {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of
+                        this list. The 表示 link reaches the public URL. */}
+                      <span className='truncate'>
+                        {formatPostDate(post.date) || '未公開'}
+                        {hasVisibleUpdate(post.date, post.updatedAt) && (
+                          <> (更新: {formatPostDate(post.updatedAt)})</>
+                        )}{' '}
+                        · {categoryLabel(post.category)}
                       </span>
-                    )}
-                  </div>
-                  {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of this
-                      list. The 表示 link reaches the public URL. */}
-                  <div className='truncate text-xs text-zinc-600 dark:text-zinc-400'>
-                    {formatPostDate(post.date) || '未公開'}
-                    {hasVisibleUpdate(post.date, post.updatedAt) && (
-                      <> (更新: {formatPostDate(post.updatedAt)})</>
-                    )}{' '}
-                    · {categoryLabel(post.category)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className='flex shrink-0 items-center gap-4'>
-                {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address
+                <div className='flex shrink-0 items-center gap-3'>
+                  {/* Every row has a slug from creation (lib/db/schema.ts), and a draft's address
                     previews for this session (app/(site)/posts/[slug]/page.tsx), so one 表示
                     covers both states; the destination's banner and the 下書き badge say which.
                     Here rather than in the editor, where it would navigate away from it. */}
-                {post.slug && (
-                  <a
-                    href={`/posts/${post.slug}`}
-                    className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
-                    表示
-                  </a>
-                )}
-                <form action={deletePostAction}>
-                  <input type='hidden' name='id' value={post.id} />
-                  <button type='submit' className='text-sm text-red-600 hover:underline'>
-                    削除
-                  </button>
-                </form>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+                  {post.slug && (
+                    <a
+                      href={`/posts/${post.slug}`}
+                      className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+                      表示
+                    </a>
+                  )}
+                  <PostRowMenu id={post.id} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
