@@ -95,12 +95,14 @@ html {
      the frame's two borders and gutters around a body exactly `--container-site` wide, so the
      editor breaks lines where the published post does. Follows `--editor-gutter`. */
   --container-editor: calc(var(--container-site) + 2 * var(--editor-gutter) + 2px);
-  /* Below this the ToC rail is too narrow to be worth showing, and the post uses the mobile
-     <details> (components/TocNav.tsx). Readability only: the rail is `1fr`, so it cannot overflow.
-     Used as `toc:` in three places (the grid, TocNavMobile's hide, TocNavDesktop's show).
-     The rail gets `(container − --container-site) / 2` minus `ml-6`, so widening the column
-     narrows the rail: raise this with it, or headings get truncated. */
-  --breakpoint-toc: 77rem;
+  /* From this width the post shows the desktop ToC; below it, the mobile <details>
+     (components/TocNav.tsx). Used as `toc:` in three places (the grid, TocNavMobile's hide,
+     TocNavDesktop's show). The rail gets `(container − --container-site) / 2`, and the fixed-width
+     nav needs `ml-6` + `w-60` = 16.5rem of it: 50 + 2 × 16.5 = 83rem. The extra 2rem is the
+     scrollbar, which the media query counts and the grid's 100% does not; without it the nav
+     overflows the page sideways just above the breakpoint. Widening the column means raising
+     this with it (docs/toc-requirements.md §6.4). */
+  --breakpoint-toc: 85rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1968,6 +1970,77 @@ dialog.image-zoom img {
 .toc-link.is-active {
   color: var(--accent);
   font-weight: 600;
+}
+
+/* The desktop ToC's rail (TocNavDesktop): a hairline down the list, and the current entry's 3px
+   bar laid over it in the colour of the article's h3 bar. The bar is the only accent: the current
+   entry's text is dark and bold, not accent-coloured, so a red word does not jump about beside the
+   text being read, and accent text keeps meaning 強調. The mobile <details> has no bar and keeps the
+   accent text. The bar sits on the rail for h3 entries too, so their indent moves from the li onto
+   the link. h2 entries are a step darker than h3 so the hierarchy reads without the indent alone. The spacing is the link's own padding rather than a gap
+   between items, so the bar spans the whole entry. */
+.toc-rail ol {
+  border-left: 1px solid var(--color-zinc-300);
+}
+
+.toc-rail ol > li {
+  margin-block: 0;
+}
+
+.toc-rail li.toc-h3 {
+  padding-left: 0;
+}
+
+.toc-rail .toc-link {
+  margin-left: -2px;
+  border-left: 3px solid transparent;
+  padding-block: 0.25rem;
+  padding-left: 0.75rem;
+}
+
+.toc-rail .toc-h3 .toc-link {
+  padding-left: 1.75rem;
+}
+
+.toc-rail .toc-h2 .toc-link:not(.is-active) {
+  color: var(--color-zinc-800);
+}
+
+/* Unlayered, so the rule above would otherwise also beat the link's `hover:` utility. */
+.toc-rail .toc-h2 .toc-link:not(.is-active):hover {
+  color: var(--color-zinc-950);
+}
+
+.toc-rail .toc-link.is-active {
+  border-left-color: var(--accent);
+  color: var(--color-zinc-900);
+}
+
+@media (prefers-color-scheme: dark) {
+  .toc-rail ol {
+    border-left-color: var(--color-zinc-700);
+  }
+
+  /* zinc-300, not 200, which the bold zinc-50 current entry is barely brighter than. */
+  .toc-rail .toc-h2 .toc-link:not(.is-active) {
+    color: var(--color-zinc-300);
+  }
+
+  .toc-rail .toc-link.is-active {
+    color: var(--color-zinc-50);
+  }
+
+  .toc-rail .toc-h2 .toc-link:not(.is-active):hover {
+    color: var(--color-zinc-50);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toc-rail .toc-link {
+    transition:
+      color 150ms,
+      border-color 150ms;
+  }
 }
 
 /* Borders on every cell: Typography draws only horizontal rules, hiding columns and empty cells,

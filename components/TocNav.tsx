@@ -60,7 +60,7 @@ function TocList({ toc, activeId }: { toc: TocEntry[]; activeId: string | null }
   return (
     <ol className='space-y-1.5 text-sm'>
       {toc.map((entry) => (
-        <li key={entry.id} className={entry.level === 3 ? 'pl-4' : undefined}>
+        <li key={entry.id} className={entry.level === 3 ? 'toc-h3 pl-4' : 'toc-h2'}>
           {/* Two clamped lines, not `truncate`, which leaves ~8 characters at the narrowest
               rail (docs/toc-requirements.md §10.1); the desktop nav already scrolls. No
               `block`: the clamp sets its own display. `break-words` for a long Latin token,
@@ -92,14 +92,15 @@ export function TocNavMobile({ toc }: { toc: TocEntry[] }) {
 }
 
 // Sticky works because the grid (components/PostArticle.tsx) sets `items-start`; a stretched item
-// has no room to stick. In the grid's `1fr` rail (§6); `max-w-60` caps it on wide screens. Styled
-// as the post-body card.
+// has no room to stick. A fixed `w-60` in the grid's `1fr` rail (§6): `--breakpoint-toc` is set so
+// the rail always has room for it. No card: the list sits on the page ground. `p-1` keeps the
+// links' focus ring inside the scroll box, which clips it.
 export function TocNavDesktop({ toc }: { toc: TocEntry[] }) {
   const activeId = useActiveHeadingId(toc);
   return (
     <nav
       aria-label='目次'
-      className='hidden toc:block toc:col-start-3 toc:ml-6 toc:max-w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto rounded-xs border border-zinc-200 bg-surface p-4 dark:border-zinc-800'>
+      className='toc-rail hidden toc:block toc:col-start-3 toc:ml-6 toc:w-60 sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto p-1'>
       <p className='font-semibold text-sm mb-3'>目次</p>
       <TocList toc={toc} activeId={activeId} />
     </nav>
