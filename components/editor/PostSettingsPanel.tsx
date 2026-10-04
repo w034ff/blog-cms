@@ -61,7 +61,7 @@ function CategoryField({
           return (
             <label
               key={id}
-              className='relative flex cursor-pointer flex-col gap-1.5 rounded-lg border border-zinc-300 p-3 text-zinc-800 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-50 has-[:checked]:ring-1 has-[:checked]:ring-zinc-900 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-800 dark:has-[:checked]:ring-zinc-100'>
+              className='relative flex cursor-pointer flex-col gap-1.5 rounded-panel border border-zinc-300 p-3 text-zinc-800 has-[:checked]:border-zinc-900 has-[:checked]:bg-zinc-50 has-[:checked]:ring-1 has-[:checked]:ring-zinc-900 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-zinc-400 dark:border-zinc-700 dark:text-zinc-200 dark:has-[:checked]:border-zinc-100 dark:has-[:checked]:bg-zinc-800 dark:has-[:checked]:ring-zinc-100'>
               <input
                 type='radio'
                 name='category'
@@ -73,7 +73,7 @@ function CategoryField({
                 className='peer absolute inset-0 cursor-pointer appearance-none opacity-0'
               />
               <span className='flex items-center gap-2'>
-                <span className={`rounded-md p-1.5 ${tile}`}>
+                <span className={`rounded-chip p-1.5 ${tile}`}>
                   <Icon />
                 </span>
                 <span id={`${labelId}-${id}`} className='font-bold'>
@@ -334,7 +334,7 @@ export function PostSettingsPanel({
                 type='button'
                 disabled={historyDisabled}
                 onClick={() => router.push(historyHref)}
-                className='flex min-h-10 w-full items-center justify-between gap-2 rounded border border-zinc-300 px-3 text-left text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                className='flex min-h-10 w-full items-center justify-between gap-2 rounded-box border border-zinc-300 px-3 text-left text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
                 リビジョン履歴
                 <ChevronRightIcon />
               </button>

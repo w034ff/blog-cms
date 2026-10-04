@@ -171,7 +171,7 @@ export function TagField({
         </p>
       )}
       <input type='hidden' name='tags' value={value.join(',')} />
-      <div className='flex flex-wrap items-center gap-1.5 rounded border border-zinc-300 px-2 py-1.5 focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-700'>
+      <div className='flex flex-wrap items-center gap-1.5 rounded-box border border-zinc-300 px-2 py-1.5 focus-within:ring-2 focus-within:ring-zinc-400 dark:border-zinc-700'>
         {/* Chips are identifiers — what was typed and what is stored. The display name readers see
             is /admin/tags' to set, and shows beside the identifier in the list below. */}
         {value.map((slug) => (
@@ -217,7 +217,7 @@ export function TagField({
         role='listbox'
         aria-labelledby={labelId}
         hidden={!expanded}
-        className='mt-1 max-h-60 overflow-y-auto rounded border border-zinc-300 py-1 dark:border-zinc-700'>
+        className='mt-1 max-h-60 overflow-y-auto rounded-box border border-zinc-300 py-1 dark:border-zinc-700'>
         {options.map((option, index) => (
           <li
             key={option.kind === 'existing' ? option.tag.slug : `create:${option.name}`}

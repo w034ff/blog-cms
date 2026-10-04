@@ -102,7 +102,7 @@ export default async function RevisionPreviewPage({
   const base = `/admin/posts/${post.id}/revisions/${version.target}`;
 
   return (
-    <>
+    <div className='revision-page'>
       <RevisionHeaderBar>
         {/* The editor's header shape: icons named by aria-label and the tooltip. ← goes back one step,
             to the list. */}
@@ -124,7 +124,7 @@ export default async function RevisionPreviewPage({
         {/* 本文 / 差分: the same version read two ways. Links, since each is its own URL. */}
         <nav
           aria-label='表示'
-          className='flex overflow-hidden rounded border border-zinc-300 text-sm dark:border-zinc-700'>
+          className='flex overflow-hidden rounded-box border border-zinc-300 text-sm dark:border-zinc-700'>
           {(['diff', 'body'] as const).map((view) => {
             const active = (view === 'diff') === showDiff;
             return (
@@ -158,6 +158,7 @@ export default async function RevisionPreviewPage({
         html={html}
         toc={toc}
         showDates={false}
+        column='editor'
         body={
           showDiff ? (
             <div id='revision-diff'>
@@ -166,6 +167,6 @@ export default async function RevisionPreviewPage({
           ) : undefined
         }
       />
-    </>
+    </div>
   );
 }

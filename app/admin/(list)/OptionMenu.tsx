@@ -32,14 +32,14 @@ export function OptionMenu({ label, options }: { label: string; options: MenuOpt
       {open && (
         <ul
           id={panelId}
-          className='absolute top-full right-0 z-20 mt-1 min-w-full rounded-xs border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
+          className='absolute top-full right-0 z-20 mt-1 min-w-full rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
           {options.map((option) => (
             <li key={option.href}>
               <Link
                 href={option.href}
                 aria-current={option.current ? 'true' : undefined}
                 onClick={() => setOpen(false)}
-                className={`block rounded-xs px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                className={`block rounded-chip px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
                   option.current ? 'font-semibold' : ''
                 }`}>
                 {option.label}

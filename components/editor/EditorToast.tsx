@@ -16,7 +16,7 @@ export function EditorToast({ message }: { message: string }) {
       // `editor-toast` is the hook that flips this above the bar on a phone, where the toolbar it
       // hangs from is at the bottom of the screen and `top-full` would drop the notice off it
       // (app/globals.css, docs/editor-requirements.md §12.5).
-      className='editor-toast pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-900 px-3 py-1.5 text-xs text-white shadow-lg dark:bg-zinc-700'>
+      className='editor-toast pointer-events-none absolute left-1/2 top-full z-40 mt-2 -translate-x-1/2 whitespace-nowrap rounded-box bg-zinc-900 px-3 py-1.5 text-xs text-white shadow-lg dark:bg-zinc-700'>
       {message}
     </div>
   );

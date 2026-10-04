@@ -17,7 +17,7 @@ import { CloseButton } from './CloseButton';
 
 function Key({ children }: { children: string }) {
   return (
-    <kbd className='whitespace-nowrap rounded border border-zinc-300 bg-zinc-50 px-1 font-mono text-[11px] text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'>
+    <kbd className='whitespace-nowrap rounded-chip border border-zinc-300 bg-zinc-50 px-1 font-mono text-[11px] text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'>
       {children}
     </kbd>
   );
@@ -44,7 +44,7 @@ function Shortcut({ token, mac }: { token: string; mac: boolean }) {
 function Type({ children }: { children: string }) {
   return (
     <code // `whitespace-nowrap`: a wrapped `---` reads as two triggers.
-      className='whitespace-nowrap rounded bg-zinc-100 px-1 font-mono text-[12px] dark:bg-zinc-800'>
+      className='whitespace-nowrap rounded-chip bg-zinc-100 px-1 font-mono text-[12px] dark:bg-zinc-800'>
       {children}
     </code>
   );
@@ -146,7 +146,7 @@ export function WritingHelpDialog({ onClose }: { onClose: () => void }) {
         role='dialog'
         aria-modal='true'
         aria-labelledby={headingId}
-        className='writing-help-panel flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900'
+        className='writing-help-panel flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-panel border border-zinc-300 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
           <h2 id={headingId} className='text-base font-bold'>

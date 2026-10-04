@@ -8,11 +8,11 @@ import type { DiffBlock, RevisionDiff, Segment } from '@/lib/revision-diff';
 function Segments({ segments }: { segments: Segment[] }) {
   return segments.map((segment, index) =>
     segment.kind === 'removed' ? (
-      <del key={index} className='rounded-sm bg-red-200 line-through dark:bg-red-900/60'>
+      <del key={index} className='rounded-chip bg-red-200 line-through dark:bg-red-900/60'>
         {segment.text}
       </del>
     ) : segment.kind === 'added' ? (
-      <ins key={index} className='rounded-sm bg-emerald-200 no-underline dark:bg-emerald-900/60'>
+      <ins key={index} className='rounded-chip bg-emerald-200 no-underline dark:bg-emerald-900/60'>
         {segment.text}
       </ins>
     ) : (
@@ -94,8 +94,8 @@ export function RevisionDiffView({
       <div className='space-y-1'>
         <p>{lead}</p>
         <p className='flex gap-3 text-xs text-zinc-600 dark:text-zinc-400'>
-          <span className={`rounded-sm px-1.5 ${SIDE_TINT['−']}`}>− 消える</span>
-          <span className={`rounded-sm px-1.5 ${SIDE_TINT['+']}`}>+ 戻る</span>
+          <span className={`rounded-chip px-1.5 ${SIDE_TINT['−']}`}>− 消える</span>
+          <span className={`rounded-chip px-1.5 ${SIDE_TINT['+']}`}>+ 戻る</span>
         </p>
       </div>
       {diff.fields.length > 0 && (
@@ -104,11 +104,11 @@ export function RevisionDiffView({
             <div key={field.label} className='flex flex-wrap items-baseline gap-x-2'>
               <dt className='text-xs text-zinc-600 dark:text-zinc-400'>{field.label}</dt>
               <dd className='min-w-0 break-words'>
-                <del className='rounded-sm bg-red-200 line-through dark:bg-red-900/60'>
+                <del className='rounded-chip bg-red-200 line-through dark:bg-red-900/60'>
                   {field.before || '（なし）'}
                 </del>
                 {' → '}
-                <ins className='rounded-sm bg-emerald-200 no-underline dark:bg-emerald-900/60'>
+                <ins className='rounded-chip bg-emerald-200 no-underline dark:bg-emerald-900/60'>
                   {field.after || '（なし）'}
                 </ins>
               </dd>
@@ -118,7 +118,7 @@ export function RevisionDiffView({
       )}
       {diff.body.length > 0 && (
         // The markdown's own line breaks are the layout; long lines wrap rather than scroll.
-        <div className='overflow-hidden rounded border border-zinc-200 font-mono leading-relaxed whitespace-pre-wrap break-words dark:border-zinc-800'>
+        <div className='overflow-hidden rounded-box border border-zinc-200 font-mono leading-relaxed whitespace-pre-wrap break-words dark:border-zinc-800'>
           {diff.body.map((block, index) => (
             <Block key={index} block={block} />
           ))}

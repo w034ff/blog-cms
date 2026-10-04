@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
 function AdminThumbnail({ src }: { src: string | null }) {
   if (src === null) {
     return (
-      <div className='flex h-9 w-16 shrink-0 items-center justify-center rounded border border-dashed border-zinc-300 text-[10px] text-zinc-400 dark:border-zinc-700'>
+      <div className='flex h-9 w-16 shrink-0 items-center justify-center rounded-chip border border-dashed border-zinc-300 text-[10px] text-zinc-400 dark:border-zinc-700'>
         なし
       </div>
     );
@@ -34,7 +34,7 @@ function AdminThumbnail({ src }: { src: string | null }) {
     <img
       src={src}
       alt=''
-      className='h-9 w-16 shrink-0 rounded border border-zinc-300 object-cover dark:border-zinc-700'
+      className='h-9 w-16 shrink-0 rounded-chip border border-zinc-300 object-cover dark:border-zinc-700'
     />
   );
 }
@@ -70,7 +70,7 @@ export default async function AdminHome({
       {all.length > 0 && <ListControls params={params} counts={countByStatus(narrowed)} />}
       {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are
           (globals.css `--surface`); the heading stays on the ground above it. */}
-      <div className='rounded-xs border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
+      <div className='rounded-panel border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
         {all.length === 0 ? (
           <EmptyPostList />
         ) : posts.length === 0 ? (
@@ -106,7 +106,7 @@ export default async function AdminHome({
                       phone rather than cut the category off, and truncates from `sm`. */}
                     <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 sm:flex-nowrap dark:text-zinc-400'>
                       {post.draft && (
-                        <span className='shrink-0 rounded bg-amber-100 px-1.5 leading-4 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
+                        <span className='shrink-0 rounded-chip bg-amber-100 px-1.5 leading-4 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'>
                           下書き
                         </span>
                       )}
@@ -114,7 +114,7 @@ export default async function AdminHome({
                         listAllPosts). Shown here because the author forgets days later, away from the
                         editor. Sky, apart from 下書き's amber. */}
                       {post.hasPendingEdits && (
-                        <span className='shrink-0 rounded bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                        <span className='shrink-0 rounded-chip bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                           未公開の変更
                         </span>
                       )}

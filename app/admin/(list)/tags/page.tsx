@@ -25,7 +25,7 @@ export default async function AdminTagsPage() {
         識別子はタグの URL に使います。
       </p>
       {/* On a white sheet, as 記事一覧's list is. */}
-      <div className='rounded-xs border border-zinc-200 bg-surface p-4 dark:border-zinc-800 sm:p-6'>
+      <div className='rounded-panel border border-zinc-200 bg-surface p-4 dark:border-zinc-800 sm:p-6'>
         <TagDirectory tags={tags} usage={usage} />
       </div>
     </section>

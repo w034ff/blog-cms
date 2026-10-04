@@ -482,7 +482,7 @@ export function PostEditor({
             // A native `<a>` drag on touch fires `dragstart`, and Chrome cancels the pointer
             // sequence before `click`.
             onDragStart={(event) => event.preventDefault()}
-            className='toolbar-button editor-back-link group/tt relative -mx-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+            className='toolbar-button editor-back-link group/tt relative -mx-1 inline-flex items-center rounded-chip px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
             <ArrowLeftIcon />
             <EditorTooltip label='記事一覧' />
           </Link>
@@ -538,7 +538,7 @@ export function PostEditor({
               aria-label='ヘルプ'
               aria-haspopup='dialog'
               onClick={() => setHelpOpen(true)}
-              className='editor-help-button toolbar-button group/tt relative inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+              className='editor-help-button toolbar-button group/tt relative inline-flex items-center rounded-chip px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
               <HelpIcon />
               <EditorTooltip label='ヘルプ' />
             </button>
@@ -553,7 +553,7 @@ export function PostEditor({
               aria-label='記事の設定'
               onClick={() => setSettingsOpen((open) => !open)}
               // ToolbarButton's `active` fill while open, which this older button lacked.
-              className={`toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 ${settingsOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}>
+              className={`toolbar-button editor-settings-link group/tt relative -mr-1 inline-flex items-center rounded-chip px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 ${settingsOpen ? 'bg-zinc-200 dark:bg-zinc-700' : ''}`}>
               <SettingsIcon />
               <EditorTooltip label='記事の設定' />
             </button>
@@ -584,7 +584,7 @@ export function PostEditor({
           {sessionExpired && (
             <div
               role='alert'
-              className='rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
+              className='rounded-box border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200'>
               セッションが切れました。
               <a
                 href='/login'
@@ -650,7 +650,7 @@ export function PostEditor({
 
           <div className='space-y-2'>
             {/* Not overflow-hidden, or the toolbar would pin to the frame, not the viewport. */}
-            <div className='rounded-xs border border-zinc-300 bg-surface dark:border-zinc-700'>
+            <div className='rounded-panel border border-zinc-300 bg-surface dark:border-zinc-700'>
               {/* The format toolbar, pinned under the page header at the measured
                   `--editor-header-h` (useMeasuredHeight.ts; first-paint fallback in
                   app/globals.css). z-30: above the content, below the page header (z-40) and
@@ -659,7 +659,7 @@ export function PostEditor({
               {editor && (
                 <div
                   ref={toolbarRef}
-                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t-xs border-b border-zinc-300 bg-surface px-2 py-0.5 dark:border-zinc-700'>
+                  className='editor-toolbar-bar sticky top-(--editor-header-h) z-30 rounded-t-panel border-b border-zinc-300 bg-surface px-2 py-0.5 dark:border-zinc-700'>
                   <Toolbar
                     editor={editor}
                     uploading={uploading}

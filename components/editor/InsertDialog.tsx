@@ -186,7 +186,7 @@ export function InsertDialog({
         aria-labelledby={headingId}
         // Full screen on a phone, a card on a desktop (§24.1): a bottom sheet overflowed with the
         // provider rows alone.
-        className='flex h-full w-full flex-col overflow-hidden border-zinc-300 bg-white shadow-xl sm:h-auto sm:max-h-full sm:max-w-lg sm:rounded-lg sm:border dark:border-zinc-700 dark:bg-zinc-900'
+        className='flex h-full w-full flex-col overflow-hidden border-zinc-300 bg-white shadow-xl sm:h-auto sm:max-h-full sm:max-w-lg sm:rounded-panel sm:border dark:border-zinc-700 dark:bg-zinc-900'
         onMouseDown={(event) => event.stopPropagation()}>
         <div className='flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950'>
           <h2 id={headingId} className='text-base font-bold'>
@@ -276,7 +276,7 @@ export function InsertDialog({
               // Detached from PostEditor's form, so a publish running while this is open cannot
               // blank it (React 19 resets form controls after a server action).
               form='__insert-dialog-detached'
-              className='rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
+              className='rounded-box border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
             />
             {/* **Always mounted:** a live region must be in the accessibility tree before its text
                 changes. `alert` for a refusal, `status` for information. */}
@@ -288,7 +288,7 @@ export function InsertDialog({
             </p>
           </div>
 
-          <ul className='divide-y divide-zinc-200 overflow-hidden rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'>
+          <ul className='divide-y divide-zinc-200 overflow-hidden rounded-box border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'>
             {EMBED_PROVIDERS.map((provider) => {
               const on = provider === matched;
               return (
@@ -338,9 +338,9 @@ export function InsertDialog({
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder='記事のタイトルで検索…'
             autoComplete='off'
-            className='rounded border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
+            className='rounded-box border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900'
           />
-          <ul className='divide-y divide-zinc-200 overflow-y-auto rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'>
+          <ul className='divide-y divide-zinc-200 overflow-y-auto rounded-box border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800'>
             {offered.length === 0 ? (
               <li className='px-2.5 py-2 text-xs text-zinc-500 dark:text-zinc-400'>
                 {offered.length < results.length ? SELF_REFERENCE_NOTE : '一致する記事がありません'}
@@ -366,7 +366,7 @@ export function InsertDialog({
               type='button'
               onClick={commit}
               disabled={!canInsert}
-              className='rounded bg-blue-600 px-4 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40'>
+              className='rounded-box bg-blue-600 px-4 py-1.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40'>
               挿入する
             </button>
           </div>
@@ -404,7 +404,7 @@ function SearchResultRow({ post, onPick }: { post: PostSearchResult; onPick: () 
             {post.draft && (
               <span
                 aria-hidden='true'
-                className='flex-none rounded bg-zinc-100 px-1 text-[10.5px] dark:bg-zinc-800'>
+                className='flex-none rounded-chip bg-zinc-100 px-1 text-[10.5px] dark:bg-zinc-800'>
                 未公開
               </span>
             )}
@@ -425,7 +425,7 @@ function SearchResultImage({ image }: { image: CardImage }) {
   if (!image.placeholder) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={image.src} alt='' className='h-11 w-11 flex-none rounded object-cover' />
+      <img src={image.src} alt='' className='h-11 w-11 flex-none rounded-chip object-cover' />
     );
   }
   return (
@@ -434,7 +434,7 @@ function SearchResultImage({ image }: { image: CardImage }) {
       <img
         src={image.src}
         alt=''
-        className='h-11 w-11 flex-none rounded bg-zinc-100 object-contain p-1.5 dark:bg-zinc-800'
+        className='h-11 w-11 flex-none rounded-chip bg-zinc-100 object-contain p-1.5 dark:bg-zinc-800'
       />
     </picture>
   );

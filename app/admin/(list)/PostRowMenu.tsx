@@ -33,7 +33,7 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => (open ? close() : setOpen(true))}
-        className='flex h-8 w-8 items-center justify-center rounded-xs text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800'>
+        className='flex h-8 w-8 items-center justify-center rounded-chip text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-800'>
         <svg aria-hidden='true' viewBox='0 0 16 16' className='h-4 w-4' fill='currentColor'>
           <circle cx='3' cy='8' r='1.5' />
           <circle cx='8' cy='8' r='1.5' />
@@ -43,7 +43,7 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
       {open && (
         <div
           id={panelId}
-          className='absolute top-full right-0 z-20 mt-1 rounded-xs border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
+          className='absolute top-full right-0 z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
           {confirming ? (
             <form action={deletePostAction} className='w-56 p-2'>
               <input type='hidden' name='id' value={id} />
@@ -67,7 +67,7 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
               {slug && (
                 <a
                   href={`/posts/${slug}`}
-                  className='block rounded-xs px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 sm:hidden dark:hover:bg-zinc-800'>
+                  className='block rounded-chip px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 sm:hidden dark:hover:bg-zinc-800'>
                   表示
                 </a>
               )}
@@ -76,13 +76,13 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
                 href={`/admin/posts/${id}/markdown`}
                 download
                 onClick={() => close()}
-                className='block rounded-xs px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
+                className='block rounded-chip px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
                 Markdown をダウンロード
               </a>
               <button
                 type='button'
                 onClick={() => setConfirming(true)}
-                className='block w-full rounded-xs px-3 py-1.5 text-left text-sm whitespace-nowrap text-red-600 hover:bg-zinc-100 dark:text-red-400 dark:hover:bg-zinc-800'>
+                className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap text-red-600 hover:bg-zinc-100 dark:text-red-400 dark:hover:bg-zinc-800'>
                 削除
               </button>
             </>

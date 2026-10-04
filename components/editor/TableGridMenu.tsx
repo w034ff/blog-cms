@@ -43,7 +43,7 @@ function TableSizeFields({
   };
 
   const fieldClass =
-    'w-20 rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-100';
+    'w-20 rounded-box border border-zinc-300 bg-transparent px-2 py-1 text-sm text-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:text-zinc-100';
 
   return (
     <div
@@ -109,7 +109,7 @@ function SizeStepper({
   // not the "currently ON" `bg-zinc-200`. A 40px button in a 48px row: the row holds two separate
   // targets, so it isn't itself the button.
   const stepButtonClass =
-    'flex h-10 w-10 items-center justify-center rounded text-base leading-none text-zinc-700 hover:bg-zinc-100 active:bg-zinc-300 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-600';
+    'flex h-10 w-10 items-center justify-center rounded-chip text-base leading-none text-zinc-700 hover:bg-zinc-100 active:bg-zinc-300 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:active:bg-zinc-600';
 
   return (
     <div className='flex min-h-12 items-center justify-between gap-3 px-4 text-sm text-zinc-900 dark:text-zinc-100'>
@@ -212,7 +212,7 @@ function TableSizeDialog({
       onClick={(event) => {
         if (event.target === dialogRef.current) onClose();
       }}
-      className='m-auto rounded-lg border border-zinc-300 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100'>
+      className='m-auto rounded-panel border border-zinc-300 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-black/40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100'>
       {/* A <div>, not a <form>: nested inside PostEditor's <form> it would be dropped
           (docs/editor-pitfalls.md §15.1). `onMouseDown` is stopped because this portalled dialog is
           outside the ＋ sheet's useDismiss ref, whose close would unmount it mid-click. */}
@@ -300,7 +300,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
                         close();
                       }}
                       // `cursor-default`: the 64 cells read as one sizing surface, not 64 controls.
-                      className={`h-4 w-4 cursor-default rounded-sm border ${
+                      className={`h-4 w-4 cursor-default rounded-chip border ${
                         selected ? 'border-link bg-link/30' : 'border-zinc-300 dark:border-zinc-600'
                       }`}
                     />
@@ -320,7 +320,7 @@ export function TableGridMenu({ editor }: { editor: Editor }) {
                   setHover(null);
                   setDialogOpen(true);
                 }}
-                className='rounded px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'>
+                className='rounded-chip px-2 py-1 text-xs text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'>
                 行数・列数を入力…
               </button>
             </>

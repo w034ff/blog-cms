@@ -20,7 +20,7 @@ import type { DictionaryTag } from '@/lib/types';
 import { EditorTooltip } from '@/components/editor/EditorTooltip';
 
 const inputClass =
-  'w-full min-w-0 rounded-xs border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
+  'w-full min-w-0 rounded-box border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
 const secondaryButtonClass = 'button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50';
 const primaryButtonClass = 'button-primary shrink-0 px-3 py-1.5 text-sm disabled:opacity-40';
 // One grey (`zinc-600`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
@@ -274,7 +274,7 @@ function TagEditor({
   const posts = `${usage} 件の記事`;
 
   return (
-    <div className='mt-3 rounded border border-zinc-200 p-4 dark:border-zinc-800'>
+    <div className='mt-3 rounded-box border border-zinc-200 p-4 dark:border-zinc-800'>
       {/* The delete form below cannot sit inside this one — a form nested in a form is dropped
           by the parser — so 保存, placed beside キャンセル down there, names this form by id. */}
       <form id={formId} action={update} className='grid gap-4 sm:grid-cols-2'>

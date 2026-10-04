@@ -81,7 +81,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
       {preview && (
         <div
           role='status'
-          className='mx-auto mb-6 flex max-w-page flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100'>
+          className='mx-auto mb-6 flex max-w-page flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-box border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100'>
           <b className='font-semibold'>下書きのプレビュー</b>
           <Link
             href={`/admin/posts/${post.id}/edit`}

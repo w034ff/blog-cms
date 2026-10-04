@@ -46,7 +46,7 @@ export function ListControls({
           defaultValue={params.q}
           placeholder='タイトルで検索'
           aria-label='タイトルで検索'
-          className='w-full rounded-xs border border-zinc-300 bg-surface py-2 pr-3 pl-9 text-base focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700'
+          className='w-full rounded-box border border-zinc-300 bg-surface py-2 pr-3 pl-9 text-base focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700'
         />
       </form>
       <div className='mb-3 flex flex-wrap-reverse items-end justify-between gap-x-6 gap-y-2 border-b border-zinc-300 dark:border-zinc-700'>
