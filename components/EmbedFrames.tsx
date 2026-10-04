@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { embedFallbackAnchor } from '@/lib/embed-fallback';
 import {
+  EMBED_DWELL_MS,
   EMBED_SILENCE_MS,
   EMBED_VISIBLE_THRESHOLD,
   gistAsk,
@@ -11,67 +12,47 @@ import {
   X_ORIGIN,
 } from '@/lib/embed-message';
 
-// Makes the published X embeds usable in the reader's browser (docs/embed-requirements.md §10.5,
-// §10.6). The body itself stays server-rendered; this only attaches behaviour after mount, the
-// arrangement `CodeCopyButtons` already uses, and renders nothing.
+// Makes published X (and gist) embeds work in the reader's browser (docs/embed-requirements.md
+// §10.5, §10.6), attached after mount like `CodeCopyButtons`. Two answers exist only once the frame
+// is on screen: the height (published as a guess, corrected from `resize`), and whether the post
+// exists (a missing one is an empty, transparent iframe, so it becomes a link).
 //
-// Two things cannot be decided at build time, because both are answers the provider only gives once
-// its iframe is on screen:
-//
-//   1. **The height.** A post's height is its content's, not a ratio, so the box is published at a
-//      guess and corrected from the provider's own `resize` message.
-//   2. **Whether the post exists at all.** A deleted, private or absent post yields an iframe that
-//      is completely empty — no text, no link, transparent — so a reader who got no fallback would
-//      see a blank gap where the author put a reference (§10.6, measured 2026-08-23).
-//
-// **This file speaks X's protocol, and that is the cost §10.7 identified.** A wrapper iframe on an
-// origin of our own would normalise every provider onto one `{type:"resize"}` message, the way Zenn
-// and Qiita do; without one, the parent has to understand the provider it is talking to. Which is
-// why the selector below is `.embed-x` and not `.embed`: a YouTube box holds its own ratio and
-// never sends anything, so treating it as silent-and-therefore-broken would replace a working
-// player with a link.
+// **This speaks X's protocol**, the cost §10.7 identified: without a wrapper iframe of our own
+// there is no common `{type:"resize"}` message, so the parent must know the provider.
 export function EmbedFrames({ targetId }: { targetId: string }) {
   useEffect(() => {
     const root = document.getElementById(targetId);
     if (!root) return;
 
-    // Every X box on the page, keyed by the id its iframe was given. A box leaves this map only by
-    // being replaced with a link, which is what makes the fallback one-way: a `resize` arriving
-    // afterwards has nothing left to apply to (§10.6).
+    // Every box, keyed by its iframe's id. A box leaves only by becoming a link, so the fallback is
+    // one-way (§10.6).
     const boxes = new Map<string, HTMLElement>();
-    // The iframe inside each of those boxes, under the same key. **Kept because the id is a name,
-    // not a credential** — see `spokeFor` below, which is the only thing this map exists for
-    // besides asking a gist frame to speak.
+    // Each box's iframe. **The id is a name, not a credential**: see `spokeFor`; also used to ask a
+    // gist frame to speak.
     const frames = new Map<string, HTMLIFrameElement>();
-    // The clocks still running, and the ids that have said anything at all. **These are separate
-    // from `boxes` on purpose.** A box that has reported a height is no longer at risk of being
-    // mistaken for a missing post, but it must stay listening — the provider re-sends `resize`
-    // whenever the width changes (§10.5), so it is never done talking.
+    // Running clocks and ids that have spoken, **separate from `boxes` on purpose**: a box that
+    // reported a height is safe but keeps listening, as `resize` repeats on width changes (§10.5).
     const timers = new Map<string, number>();
     const answered = new Set<string>();
 
-    // **Two providers, one map.** The selector is not `.embed` — a YouTube box holds its own ratio
-    // and never sends anything, so a clock armed for it would replace a working player with a link
-    // (§10.5). It is these two because these two answer: X because X wrote its iframe that way, the
-    // gist because the document around GitHub's script is one this codebase writes (§18.5).
+    // **Two providers, one map.** Not `.embed`: YouTube never speaks, and a clock would replace a
+    // working player (§10.5). X answers by its design; the gist because its frame document is ours
+    // (§18.5).
     root
       .querySelectorAll<HTMLElement>('.embed-x[data-embed-id], .embed-gist[data-embed-id]')
       .forEach((box) => {
         const id = box.dataset.embedId;
         if (!id) return;
         boxes.set(id, box);
-        // A box `rehypeEmbed` built always holds one. A box without one keeps its clock — nothing
-        // can legitimately speak for it, so silence is the only answer it can give.
+        // `rehypeEmbed` always adds one; without it nothing can speak, so the clock stays.
         const iframe = box.querySelector('iframe');
         if (iframe) frames.set(id, iframe);
       });
     if (boxes.size === 0) return;
 
-    // **Ask the gist frames to speak, rather than only waiting for them to.** A frame's document
-    // parses with the page around it, while this listener is attached on hydration — measured
-    // 2026-08-29, an announcement sent in that gap was lost and the box kept its published guess.
-    // Asked on mount for a frame already loaded, and again on `load` for one that was not (every
-    // embed here is `loading="lazy"`, so below the fold that is much later).
+    // **Ask the gist frames to speak**: a frame can announce before this listener attaches on
+    // hydration, and that message is lost. Asked on mount if loaded, else on `load` (all are
+    // `loading="lazy"`).
     const asked: { iframe: HTMLIFrameElement; onLoad: () => void }[] = [];
     boxes.forEach((box, id) => {
       if (!box.classList.contains('embed-gist')) return;
@@ -93,8 +74,7 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     const applyHeight = (id: string, height: number) => {
       const box = boxes.get(id);
       if (!box) return;
-      // It spoke, so it is not missing. Stopping the clock here is the whole difference between a
-      // timeout that guards against silence and one that expires on every working embed.
+      // It spoke, so not missing: stopping the clock here is what keeps it off working embeds.
       answered.add(id);
       stopClock(id);
       const frame = box.querySelector<HTMLElement>('.embed-frame');
@@ -116,27 +96,17 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       box.replaceWith(anchor);
     };
 
-    // Whether this message came from the frame that owns the placement it names.
-    //
-    // **The id is a name, not a credential** (§18.5, corrected 2026-09-01). It is published in the
-    // markup as `data-embed-id` and minted as `emb-0`, `emb-1`, …, and every iframe on the page
-    // posts onto this one bus. Holding only the id was enough while every frame here held a
-    // document its own provider wrote; §20 and §21 put frames on the page whose contents are
-    // written by whoever made that sandbox or pen, and one of those can name another placement and
-    // have its box replaced with a link or its height set to anything. The editor's NodeView has
-    // asked this question since §10.10 — it holds one frame and compares against it directly — and
-    // this is the same check for the surface that holds many.
+    // Whether the message came from the frame owning the placement it names. **The id is a name,
+    // not a credential** (§18.5): `data-embed-id` is public and sequential, and sandbox or pen
+    // frames (§20, §21) can post here too. The editor's NodeView makes the same check (§10.10).
     const spokeFor = (id: string, source: MessageEventSource | null): boolean => {
       const frame = frames.get(id);
       return frame !== undefined && frame.contentWindow !== null && source === frame.contentWindow;
     };
 
     const onMessage = (event: MessageEvent) => {
-      // Our own reporter first. **Its `event.origin` is the string `"null"`**, because the frame is
-      // sandboxed without `allow-same-origin` — so the source window is the whole of its
-      // authentication, and there is no constant to compare an origin against (§18.5). A gist that
-      // drew no files is this provider's `no_results`: GitHub's script writes nothing at all for an
-      // id that no longer resolves.
+      // Our reporter: its `event.origin` is `"null"` (sandboxed without `allow-same-origin`), so
+      // the source window is its whole authentication (§18.5). Zero files is its `no_results`.
       const gist = readGistCall(event.data);
       if (gist !== null) {
         if (!spokeFor(gist.id, event.source)) return;
@@ -147,12 +117,11 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       if (event.origin !== X_ORIGIN) return;
       const call = readXCall(event.data);
       if (!call?.id) return;
-      // The origin above says "an X frame", not "this X frame": every X embed on the page is served
-      // from the same origin, so without this one of them could resize or retire another (§10.10).
+      // The origin says "an X frame", not "this one": without this, one could resize or retire
+      // another (§10.10).
       if (!spokeFor(call.id, event.source)) return;
       const height = call.params?.[0]?.height;
-      // `rendered` and `results` are acknowledged only by being ignored: the two that decide
-      // anything are the height and the absence of a post.
+      // `rendered` and `results` are ignored: only the height and a missing post decide anything.
       if (call.method === 'twttr.private.resize' && typeof height === 'number') {
         applyHeight(call.id, height);
       } else if (call.method === 'twttr.private.no_results') {
@@ -161,23 +130,42 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
     };
     window.addEventListener('message', onMessage);
 
+    // **Crossing the viewport is not being seen.** Landing on `#heading` sweeps past boxes above it
+    // for ~156ms, which armed their clocks and retired posts nobody saw (X6's misfire), racing this
+    // observer. A box must stay `EMBED_DWELL_MS` to count.
+    const dwells = new Map<string, number>();
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
           const box = entry.target;
           if (!(box instanceof HTMLElement)) continue;
           const id = box.dataset.embedId;
-          // Once seen is enough — the clock runs from the first time the reader could have been
-          // looking at it, and a box scrolled past and back is not a second chance to fail.
-          observer.unobserve(box);
-          // `answered` is checked because the two are not ordered: an embed visible at first paint
-          // can report its height before this callback ever runs, and arming a clock for it would
-          // replace a working post eight seconds later.
-          if (!id || !boxes.has(id) || answered.has(id) || timers.has(id)) continue;
-          timers.set(
+          if (!id) continue;
+          if (!entry.isIntersecting) {
+            // Scrolled off too soon: still observed, so returning to it can start its clock.
+            const dwell = dwells.get(id);
+            if (dwell !== undefined) {
+              window.clearTimeout(dwell);
+              dwells.delete(id);
+            }
+            continue;
+          }
+          // `answered` too: an embed on screen at first paint can report before this runs.
+          if (!boxes.has(id) || answered.has(id) || timers.has(id) || dwells.has(id)) continue;
+          dwells.set(
             id,
-            window.setTimeout(() => fallBack(id), EMBED_SILENCE_MS),
+            window.setTimeout(() => {
+              dwells.delete(id);
+              // Seen once is enough; the observer lets go.
+              observer.unobserve(box);
+              // Re-asked: a `resize` during the dwell should call this off.
+              if (!boxes.has(id) || answered.has(id) || timers.has(id)) return;
+              timers.set(
+                id,
+                window.setTimeout(() => fallBack(id), EMBED_SILENCE_MS),
+              );
+            }, EMBED_DWELL_MS),
           );
         }
       },
@@ -190,6 +178,7 @@ export function EmbedFrames({ targetId }: { targetId: string }) {
       asked.forEach(({ iframe, onLoad }) => iframe.removeEventListener('load', onLoad));
       observer.disconnect();
       timers.forEach((timer) => window.clearTimeout(timer));
+      dwells.forEach((dwell) => window.clearTimeout(dwell));
     };
   }, [targetId]);
 

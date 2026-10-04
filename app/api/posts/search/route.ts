@@ -1,24 +1,15 @@
+import { normalizeCategory } from '@/lib/content';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { listAllPosts } from '@/lib/posts';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import type { PostSearchResult } from '@/lib/types';
 
-// The one client-reachable route the link card needs (docs/link-card-requirements.md §5.3).
-//
-// A card stores a reference and nothing else, so the editor cannot draw one from the document
-// alone — the NodeView has to look the title up every time it renders. The insert flow needs the
-// same data to let the author search their own posts, so both go through here rather than through
-// two routes: it is one query over `posts`, asked either by slug or by substring.
-//
-// `lib/posts.ts` is `server-only` and talks to drizzle directly, which is why a route exists at
-// all; nothing in the editor can import it.
-//
-// Route Handlers are not cached by default in this version of Next, and this one must not be:
-// it answers with draft posts and with titles that change as the author types elsewhere.
+// The one route the link card needs (docs/link-card-requirements.md §5.3): the NodeView's slug
+// lookup and the insert flow's search share one query over `posts`. A route exists because
+// lib/posts.ts is `server-only`. Must stay uncached: it answers with drafts and live titles.
 
-// Caps the answer so a query of "" doesn't return the whole blog. Not a paging design: the search
-// is a menu the author picks from, and a list longer than this is a signal to type more.
+// A menu to pick from, not paging: a longer list means type more.
 const LIMIT = 20;
 
 export async function GET(req: NextRequest) {
@@ -32,9 +23,7 @@ export async function GET(req: NextRequest) {
   const slug = params.get('slug');
   const query = params.get('q')?.trim() ?? '';
 
-  // listAllPosts, not getAllPosts: drafts are included on purpose (§5.2-4). An author linking to
-  // a post they haven't published yet is a normal thing to do mid-writing, so the row is offered
-  // and marked instead of hidden — hiding it would look like the post doesn't exist.
+  // listAllPosts, not getAllPosts: drafts are offered and marked, not hidden (§5.2-4).
   const all = await listAllPosts();
 
   // Slug lookup: what a NodeView asks on every render.
@@ -44,10 +33,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(toResult(post));
   }
 
-  // Search: case-insensitive substring over the title. Not full text and not the body — the
-  // author is picking from a list of their own posts, and there are few enough that a title
-  // match is the whole of what's useful (article search over the public site was deferred
-  // 2026-06-29 for the same reason).
+  // Case-insensitive title substring: the author picks from a short list of their own posts.
   const needle = query.toLowerCase();
   const matches = all
     .filter((post) => post.slug !== null)
@@ -73,15 +59,11 @@ function toResult(post: {
     title: post.title,
     date: post.date,
     draft: post.draft,
-    // Resolved here rather than in the editor: `resolveThumbnail` is the one function that decides
-    // what a post's image is, and the post list, the public card and `og:image` all read it
-    // (lib/thumbnail.ts). The editor's card asking the same question of the body itself is how the
-    // editor and the published page would come to disagree. `listAllPosts` already selects every
-    // column, so this costs no second query.
+    // `resolveThumbnail` (lib/thumbnail.ts) is the one decider every surface reads; the editor asking
+    // the body itself would let the two disagree.
     thumbnail: resolveThumbnail(post),
-    // The column as it stands. Unlike `thumbnail` there is nothing to resolve —
-    // no label map exists, because the field is free text — so the row draws
-    // what the target post's own form holds (§5.2-5).
-    category: post.category,
+    // The id; the row turns it into a label (§5.2-5). Normalized because the
+    // lookup path hands over a raw row, whose column type is plain text.
+    category: normalizeCategory(post.category),
   };
 }

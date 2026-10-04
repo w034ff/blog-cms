@@ -1,32 +1,15 @@
-import Link from 'next/link';
 import { verifySession } from '@/lib/dal';
-import { logout } from '@/app/actions/auth';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const session = await verifySession();
+  // The second of two independent refusals: `proxy.ts` (matcher `/admin/:path*`) already redirects
+  // to /login, and removing either alone changes no response. It stays because an edge check is not
+  // where authorization should end, and as the one layout over /admin it covers routes not yet
+  // written. `cache`d in lib/dal.ts.
+  //
+  // No shell: 記事一覧 keeps SiteHeader (app/admin/(list)) and the editor screens do not
+  // (app/admin/posts), and a nested layout cannot take a parent's chrome back off. Each brings its
+  // own PageMain/SiteColumn (components/PageShell.tsx).
+  await verifySession();
 
-  return (
-    <div className='mx-auto w-full max-w-site'>
-      <div className='mb-8 flex items-center justify-between border-b border-zinc-200 pb-4 dark:border-zinc-800'>
-        <nav className='flex items-center gap-4'>
-          <Link href='/admin' className='font-bold tracking-tight'>
-            管理
-          </Link>
-          <Link href='/admin/posts/new' className='text-sm hover:underline'>
-            新規記事
-          </Link>
-          <Link href='/' className='text-sm hover:underline'>
-            サイトを見る
-          </Link>
-        </nav>
-        <form action={logout} className='flex items-center gap-3 text-sm'>
-          <span className='text-zinc-500 dark:text-zinc-400'>{session.username}</span>
-          <button type='submit' className='hover:underline'>
-            ログアウト
-          </button>
-        </form>
-      </div>
-      {children}
-    </div>
-  );
+  return <>{children}</>;
 }

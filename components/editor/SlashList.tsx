@@ -11,11 +11,9 @@ export type SlashItem = {
   id: string;
   title: string;
   keywords: string[];
-  // The range the `/query` occupies, handed along because a row may need to say *where* it acts
-  // rather than relying on where the caret ends up: the chain focuses the editor first, and a
-  // focus that follows a blur (the row was clicked) does not reliably restore the old selection —
-  // measured 2026-09-02, it landed at the end of the document about one run in six.
-  // `range.from` is that place, and it is the same before and after `deleteRange`.
+  // The range the `/query` occupies, so a row can say *where* it acts: a focus after a blur (the
+  // row was clicked) does not reliably restore the selection. `range.from` is unchanged by
+  // `deleteRange`.
   run: (chain: ChainedCommands, range: { from: number; to: number }) => ChainedCommands;
 };
 
@@ -64,7 +62,7 @@ export const SlashList = forwardRef<SlashListRef, SuggestionProps<SlashItem, Sla
     return (
       <div
         data-slash-menu
-        className='flex min-w-[8rem] flex-col overflow-hidden rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+        className='flex min-w-[8rem] flex-col overflow-hidden rounded-box border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
         {items.map((item, index) => (
           <button
             key={item.id}

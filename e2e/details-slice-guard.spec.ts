@@ -2,19 +2,11 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString, historyState } from './editor-probe';
 import { closeHistory, loadMarkdown, selectNode, setRange } from './editor-authoring';
 
-// The accordion's slice rules (docs/accordion-requirements.md §6.2, §6.3). Two of them, and
-// neither is the callout's:
-//
-//   • placement — an accordion may only ever land at the document's top level, so a slice
-//     carrying one into a quote, a list, a callout or a cell is refused (drop) or has its box
-//     dropped and its contents kept (paste);
-//   • the half-selected repair — a selection crossing an accordion's edge hands the gesture the
-//     accordion node itself. Unwrapping it one level, which is what the callout guard does, would
-//     splice `[detailsSummary, detailsContent]` into the document: neither may live there, so the
-//     unwrap goes two levels and the title comes back as a paragraph.
-//
-// Browser-only: the repair rides prosemirror-view's transformPasted, and the placement question is
-// asked of a resolved drop/paste target in the live editor.
+// The accordion's slice rules (docs/accordion-requirements.md §6.2, §6.3):
+//   • placement: top level only, so a slice carrying one into a quote, list, callout or cell is
+//     refused (drop) or unboxed (paste);
+//   • the half-selected repair unwraps two levels, not the callout's one: `[detailsSummary,
+//     detailsContent]` may not live outside, so the title returns as a paragraph.
 
 const MD =
   '前の段落です\n\n<details>\n<summary>題名</summary>\n\n畳んだ本文\n\n</details>\n\n後の段落です\n';
@@ -45,7 +37,7 @@ test('a whole accordion pasted into a quote arrives as plain blocks', async ({ p
 
   await selectNode(page, 'details');
   await page.keyboard.press('Control+c');
-  // Caret inside the quote.
+  // Caret in the quote.
   const at = await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
       | (Element & {
@@ -62,33 +54,26 @@ test('a whole accordion pasted into a quote arrives as plain blocks', async ({ p
   await page.keyboard.press('Control+v');
 
   const doc = await docString(page);
-  // The box did not go in — the title came back as a paragraph and the body followed it.
+  // No box: the title as a paragraph, then the body.
   expect(doc).toContain('blockquote(paragraph("題名"), paragraph("畳んだ本文")');
   expect(doc).not.toContain('blockquote(details');
 });
 
 test('a copy crossing the accordion edge pastes without building one', async ({ page }) => {
   await openEditor(page);
-  // From inside the body out into the paragraph below: the slice carries the accordion, cut open
-  // at the start and closed at the end — the shape that forces the box to be kept.
+  // From the body into the paragraph below: open at the start, closed at the end.
   await copyThenCaret(page, 14, 24, 7);
   await page.keyboard.press('Control+v');
 
   const doc = await docString(page);
   expect(doc).not.toContain('paragraph("前の段落です"), details');
-  // Nothing bare escaped into the document: both child types only ever appear inside an accordion.
+  // No bare child types escaped.
   expect(doc.match(/detailsSummary/g) ?? []).toHaveLength(1);
   expect(doc.match(/detailsContent/g) ?? []).toHaveLength(1);
 });
 
-// §9 criterion 16: a folded accordion's body is `hidden` but still in the document, so a
-// select-all has to take it and one undo has to bring the whole thing back — title and body
-// together, even though only the title was ever on screen.
-//
-// Built by typing rather than loaded: `setContent` puts the whole load into one history event, so
-// an undo after loading rolls back the load itself and lands on an empty document. Authoring the
-// accordion the way an author would keeps the deletion as its own event, which is the thing under
-// test.
+// §9 criterion 16: a folded body is `hidden` but in the document, so select-all takes it and one undo
+// restores title and body. Typed, not loaded: undo after a load rolls back the load.
 test('a folded accordion is selected, deleted and restored by one undo', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -100,30 +85,25 @@ test('a folded accordion is selected, deleted and restored by one undo', async (
   const built = await docString(page);
   expect(built).toContain('detailsSummary("題名")');
 
-  // Insertion leaves an accordion open (§7.4), so folding it is now part of setting this test up
-  // rather than something to assert. The toggle is a view action — it touches neither the document
-  // nor prosemirror-history — so it cannot disturb what follows.
+  // Fold it (insertion leaves it open, §7.4); the toggle touches neither document nor history.
   await page.locator('.ProseMirror [data-type="details"] > button').click();
-  // Folded: the body is in the document but not on screen.
+  // Folded: in the document, not on screen.
   await expect(page.locator('.ProseMirror [data-type="detailsContent"]')).toBeHidden();
   expect(await docString(page)).toBe(built);
 
-  // A scripted test types far faster than prosemirror-history's grouping window, so the deletion
-  // would join the authoring above and a single undo would roll back both — saying nothing about
-  // the deletion. The break is stated rather than waited out, and the events counted (this used to
-  // be a 700ms pause against a 500ms `newGroupDelay`, which a loaded machine can close).
+  // Break the history, or the deletion joins the typing (e2e/README.md).
   await closeHistory(page);
   const before = (await historyState(page)).undoDepth;
 
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
   expect(await docString(page)).not.toContain('details');
-  // The deletion is one event of its own — which is what makes the single undo below meaningful.
+  // The deletion is its own event.
   expect((await historyState(page)).undoDepth).toBe(before + 1);
 
   await page.keyboard.press('Control+z');
   expect(await docString(page)).toBe(built);
-  // And it undid only that event: the authoring is still on the stack.
+  // Only that event undone.
   expect((await historyState(page)).undoDepth).toBe(before);
 });
 

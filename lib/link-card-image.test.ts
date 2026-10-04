@@ -33,7 +33,7 @@ describe('externalCardImage', () => {
   });
 
   it('passes the signed proxy path through', () => {
-    // Already same-origin when it arrives: app/posts/[slug]/page.tsx signs it with `linkImageSrc`
+    // Already same-origin when it arrives: app/(site)/posts/[slug]/page.tsx signs it with `linkImageSrc`
     // before this is called, so nothing here has to know about the third party's URL.
     const signed = '/api/link-image?url=https%3A%2F%2Fcdn.example%2Fa.png&sig=0123456789abcdef0123';
     expect(externalCardImage(signed)).toEqual({ src: signed, placeholder: false });

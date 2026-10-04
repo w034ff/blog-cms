@@ -5,7 +5,7 @@ import type { ChangeEvent, RefObject } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Selection } from '@tiptap/pm/state';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
-import { selectionTouches } from './selection-scan';
+import { selectionTouches, type BlockAtom } from './selection-scan';
 
 const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
 
@@ -15,49 +15,24 @@ export function imageFilesFromList(list: FileList | null | undefined): File[] {
   return Array.from(list).filter((file) => ALLOWED_IMAGE_TYPE_SET.has(file.type));
 }
 
-// Build a starting alt text from a dropped/pasted file name: drop the extension
-// and turn separators into spaces so it reads as words. It seeds the image's alt
-// attribute (which tiptap-markdown serializes to `![alt](url)`); the author can
-// refine it later. Strip characters that would break the markdown image.
-function altTextFromFilename(name: string): string {
-  return name
-    .replace(/\.[^./\\]+$/, '')
-    .replace(/[[\]\r\n]+/g, ' ')
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// The refusal names the host(s) the selection touches, because the confusing case is a range that
+// merely reaches into a table without the author noticing. No 「中」: the caret need not be inside.
+// Built from the hosts touched rather than one constant per combination; the names match the other
+// guards' (docs/accordion-requirements.md §7.3).
+//
+// A Record over BLOCK_ATOMS (selection-scan.ts), so an atom added there cannot be missed here.
+// 「画像ブロック」 so the joined sentence reads (「画像には画像を挿入できません」 does not).
+const BLOCK_ATOM_NAMES: Record<BlockAtom, string> = {
+  linkCard: 'リンクカード',
+  embed: '埋め込み',
+  image: '画像ブロック',
+};
 
-// Shown when an insert is refused because of where the selection is. Named per host rather than
-// stating the rule both ways, because the case that most needs explaining is the one where the
-// author doesn't know they're near the host at all: a selection reaching out of a paragraph into a
-// table refuses, and naming the table is what makes that legible ("my selection runs into it")
-// where a message covering both would leave them working out which half applies. A selection can
-// touch both at once (a range from a table through to a code block, or Mod-a), which is what the
-// third message is for — rare, so its extra length costs nothing.
-//
-// None of them says 「中」: the guard fires on a selection *touching* a host, and for a range that
-// merely reaches into one the caret is not inside it, so "inside" would be quietly wrong in exactly
-// the case above. Neither host can hold a block node — a cell is paragraph-only, a code block is a
-// `code` textblock (see the guard below).
-//
-// Built from the hosts actually touched rather than written out per combination: with two hosts
-// three constants covered it, and the third (an accordion's title, added 2026-08-10) would have
-// made seven. The wording of the one- and two-host cases is unchanged. 「アコーディオンのタイトル」
-// matches what the footnote guard already calls it — the same feature carrying two names is the
-// mistake §7.3 of docs/accordion-requirements.md records about 囲み枠/コールアウト.
 export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
   table: '表のセル',
   codeBlock: 'コードブロック',
   detailsSummary: 'アコーディオンのタイトル',
-  // linkCard/embed fail differently from the three above: they're atoms, not containers an image
-  // could be split around, so a click on one gives a NodeSelection whose range is exactly that
-  // node. setImage's insertContent replaces a selection range wholesale, so the same guard's
-  // absence let an image swap the selected card/embed out entirely (reported 2026-09-05, same
-  // NodeSelection defect as setCallout/insertTable/toggleBlockquote — see callout-extension.ts,
-  // table-extensions.ts, blockquote-extension.ts).
-  linkCard: 'リンクカード',
-  embed: '埋め込み',
+  ...BLOCK_ATOM_NAMES,
 };
 
 function imageBlockedMessage(hosts: string[]): string {
@@ -67,10 +42,7 @@ function imageBlockedMessage(hosts: string[]): string {
 // Send one file to /api/uploads and report the path it now lives at, or null if
 // the upload was refused (the alert is raised here so no caller has to).
 //
-// Module-level rather than a hook member because it closes over nothing: the
-// thumbnail picker in PostEditor uploads through it too, and that one is not
-// inserting anything into the editor. Keeping one function means both entry
-// points meet the same size and type limits and report failure the same way.
+// Module-level so the thumbnail picker uploads through the same limits and error reporting.
 export async function uploadImageFile(file: File): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
@@ -81,16 +53,8 @@ export async function uploadImageFile(file: File): Promise<string | null> {
   return null;
 }
 
-// The editor's image-upload concern: send files to /api/uploads and insert each
-// as an image node at the cursor, from any of the three entry points — the
-// toolbar's file picker (handleImageChange), paste (uploadImages), and
-// window-wide drag-and-drop (handled here, surfaced as `dragging` for the drop
-// overlay). The editor arrives through a ref so every returned callback keeps a
-// stable identity and can be closed over by editor handlers created once.
-//
-// `showBlocked` is passed in rather than owned here (useEditorNotice). The notice used to live in
-// this hook because a refused image was the only thing that raised one; the table cell paste guard
-// now raises it too, so PostEditor holds the single instance and hands it to both.
+// Uploads images and inserts them at the cursor from the file picker, paste, and window-wide drop.
+// The editor arrives through a ref so the returned callbacks keep stable identities.
 export function useImageUpload(
   editorRef: RefObject<Editor | null>,
   showBlocked: (message: string) => void,
@@ -100,35 +64,16 @@ export function useImageUpload(
   // appears on the editor container as a target.
   const [dragging, setDragging] = useState(false);
 
-  // Upload each image and insert it at the cursor as an editor image node. The
-  // insertion is a transaction, so onUpdate re-serializes the body and marks the
-  // post edited — no manual body/markEdited bookkeeping needed here.
+  // The insertion is a transaction, so onUpdate handles serialization and the edited mark.
   const uploadImages = useCallback(
     async (files: File[]): Promise<void> => {
       const editor = editorRef.current;
       if (!editor) return;
-      // Not into a table cell or a code block. The image node is a block, and neither of those
-      // can hold one — cells are paragraph-only (table-extensions.ts), a code block is a `code`
-      // textblock — so ProseMirror makes room by splitting the host in two around the image,
-      // and both halves come out corrupt in the saved markdown:
-      //   table: the headerless half can't be a GFM pipe table, so it degrades to a raw <table>
-      //   code block: the code splits mid-token and the second fence loses its own line, so the
-      //     backticks and the code after them render as body text on the published page
-      // Same refusal as setCallout and the table picker, for the same reason. `editor.can()
-      // .setImage()` reports true in both, so this has to be an explicit check. Gating before
-      // the loop also means nothing is uploaded for an insert that was never going to land.
-      // Callouts and blockquotes are fine and deliberately absent: both are `block+`, so an
-      // image drops straight in without splitting anything.
-      //
-      // selectionTouches, not `editor.isActive(...)`: the latter only holds for a caret (see
-      // selection-scan.ts), and with a selection reaching from the paragraph above into either
-      // host, setImage replaced the range instead of splitting it — the table disappeared, and
-      // the code block came out empty (its markdown an empty fence).
-      // Asked per host so the notice can name the one in the way; both together is its own case.
-      // An accordion's title joins the two: it is `text*`, so an image splits the accordion in two
-      // and grows a second, untitled one — the same tear the callout and table pickers now refuse
-      // (measured 2026-08-10). Order fixed here, not by discovery order, so a selection touching
-      // two hosts always names them the same way round.
+      // A cell, code block or accordion title cannot hold a block, so ProseMirror splits the host
+      // around the image and corrupts it; `editor.can().setImage()` still reports true, so this
+      // is explicit, and it runs before anything is uploaded. Callouts and quotes are `block+` and
+      // fine. selectionTouches, not isActive, which misses a range reaching into a host. Order
+      // follows IMAGE_BLOCKED_HOSTS so the message is stable.
       const blockedHosts = Object.keys(IMAGE_BLOCKED_HOSTS).filter((name) =>
         selectionTouches(editor.state, name),
       );
@@ -141,11 +86,9 @@ export function useImageUpload(
         for (const file of files) {
           const url = await uploadImageFile(file);
           if (url === null) continue;
-          editor
-            .chain()
-            .focus()
-            .setImage({ src: url, alt: altTextFromFilename(file.name) })
-            .run();
+          // **No alt** (docs/project-status.md): nothing edits an alt, and one made from the file
+          // name was a hash read aloud.
+          editor.chain().focus().setImage({ src: url }).run();
         }
       } finally {
         setUploading(false);
@@ -154,14 +97,14 @@ export function useImageUpload(
     [editorRef, showBlocked],
   );
 
-  // While a file is dragged anywhere over the window, show a drop overlay and let
-  // a drop add the image where it was dropped. Intercepting the drag also stops the
-  // browser default (opening the dropped image as a page and navigating away from
-  // the editor, losing the draft). Only file drags count, so dragging text within
-  // the editor is unaffected. dragenter/dragleave fire for descendants too, so a
-  // depth counter tracks whether the pointer is still somewhere over the window.
+  // While a file is dragged over the window, show the drop overlay; a drop inserts the image there.
+  // Intercepting also stops the browser from navigating to the image and losing the draft. A depth
+  // counter handles dragenter/dragleave firing for descendants.
   useEffect(() => {
     let depth = 0;
+    // 'Files' means "from outside the page" only because `pressedNativeDragSource`
+    // (block-drag-handle.ts, docs/link-card-requirements.md §7.7) refuses in-editor native drags;
+    // Chrome would otherwise attach the picture as a File and it would be re-uploaded.
     const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false;
     const handleDragEnter = (event: DragEvent) => {
       if (!hasFiles(event)) return;
@@ -186,23 +129,10 @@ export function useImageUpload(
       setDragging(false);
       const files = imageFilesFromList(event.dataTransfer?.files);
       if (files.length === 0) return;
-      // Move the caret to where the file was let go, then hand over to the shared upload path,
-      // which inserts at the selection. The image used to land at whatever the caret happened to
-      // be when the drag started, so dropping onto a paragraph put the image somewhere else
-      // entirely — and the refusal notice then described the caret's surroundings rather than the
-      // place aimed at. Moving the selection first rather than inserting at a position keeps that
-      // one path: the guard, the per-host message and the insert all read the selection, so all
-      // three now speak about the drop point without a parallel position-aware copy of any of them.
-      //
-      // Selection.near rather than commands.focus(pos): posAtCoords can land on a spot that holds
-      // no text (between blocks, or on a block image), and near() resolves to the closest place a
-      // caret can actually sit. A selection-only transaction doesn't reach onUpdate (@tiptap/core
-      // only emits `update` when a transaction changed the doc), so this can't mark the post edited.
-      //
-      // A drop outside the editor leaves posAtCoords null; those keep the old behaviour and insert
-      // at the caret. The overlay covers the whole window and invites a drop anywhere, so refusing
-      // there would contradict it — and preventDefault above still has to run either way, or the
-      // browser navigates to the image and the draft is gone.
+      // Move the selection to the drop point first, so the guard, its message and the insert all
+      // speak about where the file was let go. Selection.near, since posAtCoords can land where no
+      // caret can sit; a selection-only transaction does not mark the post edited. A drop outside
+      // the editor inserts at the caret, since the overlay invites a drop anywhere.
       const editor = editorRef.current;
       const at = editor?.view.posAtCoords({ left: event.clientX, top: event.clientY });
       if (editor && at) {

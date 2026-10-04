@@ -1,29 +1,28 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { DEFAULT_CATEGORY } from '@/lib/content';
+import { normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { autosavePost, createPost, postExists } from '@/lib/posts-write';
+import { knownTagSlugs } from '@/lib/tags';
 import { isUploadPath } from '@/lib/thumbnail';
 import { generateUniqueSlug } from '@/lib/slug';
 
-// Autosave is intentionally lenient: it must persist partial, half-written work
-// without ever rejecting it. Strict validation (required title, slug shape) is
-// enforced only at publish time in app/actions/posts.ts. The publish date is not
-// part of the content — it is stamped automatically at first publish.
+// Lenient: partial work must always persist. Strict checks happen at publish
+// (app/actions/posts.ts); the date is stamped at first publish, not sent here.
 const autosaveSchema = z.object({
   // Present when updating an existing post. Absent on the first save of a
   // brand-new post, which has no row (and no slug) yet.
   id: z.number().int().optional(),
   content: z.object({
     title: z.string().catch(''),
-    description: z.string().catch(''),
-    category: z.string().catch(''),
-    tags: z.array(z.string()).catch([]),
+    // Off-list values (a form that lost the field, an old tab) save under the default rather than
+    // failing the save — the same trade `thumbnail` below makes.
+    category: z.unknown().transform(normalizeCategory),
+    // Only dictionary slugs are stored (lib/tags.ts `knownTagSlugs`).
+    tags: z.array(z.string()).catch([]).transform(knownTagSlugs),
     body: z.string().catch(''),
-    // Normalized rather than rejected, so a bad value can never be the reason a
-    // draft fails to save. '' is the column's "author chose none" state and the
-    // reader-facing image falls back to the body (lib/thumbnail.ts), so dropping
-    // an unusable path costs nothing an author would notice.
+    // Normalized rather than rejected, so a bad value never fails a save; '' falls back to
+    // the body's image (lib/thumbnail.ts).
     thumbnail: z
       .string()
       .transform((value) => (isUploadPath(value) ? value : ''))
@@ -54,21 +53,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ id, savedAt: Date.now() });
   }
 
-  // Create intent: don't materialize a row until there's something worth
-  // keeping, so an accidental focus on /new doesn't leave an orphan draft. The
-  // opaque slug is assigned now, at row creation, so publish never has to touch
-  // it and the post has a stable URL from the start.
+  // No row until there is something to keep, so focusing /new leaves no orphan. The slug is
+  // fixed now: the URL is stable from the start and publish never touches it.
   if (content.title.trim() === '' && content.body.trim() === '') {
     return NextResponse.json({ skipped: true });
   }
-  // Reported back below, not just written: the editor has to know its own address to refuse a
-  // link card pointing at it (docs/link-card-requirements.md §18), and this is the only moment a
-  // brand-new post learns one — publish is too late, and the row is already searchable from here.
+  // Returned: the editor needs its own address to refuse a card pointing at itself
+  // (docs/link-card-requirements.md §18), and this is when a new post first has one.
   const slug = generateUniqueSlug();
   const newId = createPost({
     slug,
     ...content,
-    category: content.category || DEFAULT_CATEGORY,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,

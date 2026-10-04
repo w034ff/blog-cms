@@ -2,19 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { markdown, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// The link card's heading picker (components/editor/LinkBubble.tsx, components/editor/
-// document-headings.ts): typing `#` into リンク先 offers this document's headings and writes the
-// fragment that reaches them.
-//
-// It exists because the fragment is not something an author can read off a heading — measured
-// against the render pipeline, `API と CLI（詳細）` is reached as `#api-と-cli詳細` and a second
-// `導入` as `#導入-1` — and a fragment that misses by one character is refused nowhere: it renders
-// as an ordinary link that lands on nothing. document-headings.test.ts pins the slugs themselves
-// against that pipeline; this file is about the interaction, which only a browser can answer.
+// The link card's heading picker (LinkBubble.tsx, document-headings.ts): `#` in リンク先 offers the
+// document's headings. A fragment cannot be read off a heading (`API と CLI（詳細）` is
+// `#api-と-cli詳細`, a second `導入` `#導入-1`), and one that misses renders as a dead link.
+// document-headings.test.ts pins the slugs; this is the interaction.
 
-// The link comes first so the caret position into it does not move when the headings below change.
-// Two `導入` deliberately: the second one is `#導入-1`, which is the rule no author can see, and it
-// is also an h3, so the row's indent has something to show.
+// The link first, so its position is stable. Two `導入`: the second is `#導入-1`, and an h3.
 const MD = [
   '前[リンク](https://example.com)後',
   '',
@@ -30,9 +23,8 @@ const IN_LINK = 3;
 const pageErrors: string[] = [];
 test.beforeEach(({ page }) => {
   pageErrors.length = 0;
-  // The card's own keydown handling has been broken by an event wrapper before (§5.5: `.key` on the
-  // menu's synthetic event throws "Illegal invocation"), and a throw inside a DOM handler shows up
-  // as nothing happening. Watch for it rather than infer it from a failed assertion.
+  // Watch for throws: the card's keydown broke once on a synthetic event (§5.5), and a throw in a DOM
+  // handler looks like nothing happening.
   page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error' && /Cannot update|Maximum update depth/.test(message.text())) {
@@ -48,8 +40,7 @@ function card(page: Page) {
   return page.getByRole('group', { name: 'リンク' });
 }
 function hrefField(page: Page) {
-  // Exact: the display card's open button is labelled リンク先を開く, and a substring match resolves
-  // to it once the field is gone — which would make "the field is still open" quietly true.
+  // Exact: リンク先を開く would match once the field is gone.
   return card(page).getByLabel('リンク先', { exact: true });
 }
 function textField(page: Page) {
@@ -66,7 +57,7 @@ async function openEditor(page: Page, md: string): Promise<void> {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
   await expect(editor).toBeVisible();
-  // Before loadMarkdown: a click afterwards would land on the loaded document and move the caret.
+  // Before loadMarkdown, so the click does not move the loaded caret.
   await editor.click();
   await loadMarkdown(page, md);
 }
@@ -85,8 +76,7 @@ test('a `#` lists every heading with the fragment it writes', async ({ page }) =
 
   await hrefField(page).fill('#');
   await expect(rows(page)).toHaveCount(3);
-  // The slug beside each heading is the part that teaches: these three strings are exactly what an
-  // author guessing from the heading would get wrong.
+  // The slug beside each heading is what an author would get wrong.
   await expect(rows(page).nth(0)).toContainText('#導入');
   await expect(rows(page).nth(1)).toContainText('#api-と-cli詳細');
   await expect(rows(page).nth(2)).toContainText('#導入-1');
@@ -101,8 +91,7 @@ test('a `#` lists every heading with the fragment it writes', async ({ page }) =
 });
 
 test('a `#` inside a URL is not a heading query', async ({ page }) => {
-  // Only the first character triggers it. An external URL carrying a fragment would otherwise raise
-  // this document's headings over a field that has nothing to do with them.
+  // Only a leading `#` triggers it, not an external URL's fragment.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await hrefField(page).fill('https://example.com/#section');
@@ -117,9 +106,9 @@ test('typing filters, and the arrow keys and Enter pick a row', async ({ page })
 
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  // The second `導入`, which is the one an author cannot name by hand.
+  // The second `導入`, unnameable by hand.
   await expect(hrefField(page)).toHaveValue('#導入-1');
-  // Picking closes the list; it does not apply the link. That takes the second Enter.
+  // Picking closes the list; the second Enter applies.
   await expect(suggestions(page)).toBeHidden();
 
   await page.keyboard.press('Enter');
@@ -128,12 +117,11 @@ test('typing filters, and the arrow keys and Enter pick a row', async ({ page })
 });
 
 test('Enter applies at once when the fragment is already written out in full', async ({ page }) => {
-  // The list holds Enter only while pressing it would change something. An author who typed the
-  // whole fragment — or every existing sequence that ends `#…` + Enter, `Mod-k` included — must not
-  // grow a second press for the same result.
+  // The list takes Enter only if it would change something, so a fully typed fragment, or `Mod-k`,
+  // needs no second press.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
-  // Matches two rows, and the highlighted one is exactly what is typed.
+  // Two rows match; the highlighted one is what is typed.
   await hrefField(page).fill('#導入');
   await expect(rows(page)).toHaveCount(2);
   await page.keyboard.press('Enter');
@@ -145,17 +133,14 @@ test('a click on a row picks it', async ({ page }) => {
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await hrefField(page).fill('#');
-  // mousedown is prevented on these rows so the field keeps the focus — a plain click that blurred
-  // it would take the card away a frame later and the press would land on nothing.
+  // Rows prevent mousedown so the field keeps focus; a blur would remove the card mid-press.
   await rows(page).nth(1).click();
   await expect(hrefField(page)).toHaveValue('#api-と-cli詳細');
   await expect(card(page)).toBeVisible();
 });
 
 test('Escape closes the list and keeps the card and what was typed', async ({ page }) => {
-  // The card's own Escape closes the whole card, taking an unapplied edit with it. While the list
-  // is up the key has to stop at the list — this is the one interaction here that can cost an
-  // author work.
+  // While the list is up Escape stops at the list; the card's Escape would discard the edit.
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
   await hrefField(page).fill('#導');
@@ -166,9 +151,8 @@ test('Escape closes the list and keeps the card and what was typed', async ({ pa
   await expect(card(page)).toBeVisible();
   await expect(hrefField(page)).toHaveValue('#導');
 
-  // And the second Escape still does what it always did: leave the field without applying it. The
-  // card itself stays, in display mode, because the caret is still inside the link — hiding it is
-  // the *display* card's Escape, one press further on.
+  // The second Escape leaves the field unapplied; the card stays in display mode (the caret is in
+  // the link).
   await page.keyboard.press('Escape');
   await expect(hrefField(page)).toBeHidden();
   await expect(card(page).getByRole('button', { name: '編集' })).toBeVisible();
@@ -180,7 +164,7 @@ test('a query that matches nothing says so, which is where a bad fragment shows 
 }) => {
   await openEditor(page, MD);
   await openEdit(page, IN_LINK);
-  // What an author writing the heading out by hand gets: the full-width brackets are not in the id.
+  // Written by hand: the full-width brackets are not in the id.
   await hrefField(page).fill('#api-と-cli（詳細）');
   await expect(rows(page)).toHaveCount(0);
   await expect(suggestions(page)).toContainText('一致する見出しがありません');
@@ -200,16 +184,14 @@ test('picking a heading fills an empty テキスト field with its text', async 
   await hrefField(page).fill('#');
   await rows(page).nth(1).click();
   await expect(textField(page)).toHaveValue('API と CLI（詳細）');
-  // And the heading's own text is what reaches the document — the slug is only the destination.
+  // The heading's text reaches the document; the slug is only the target.
   await page.keyboard.press('Enter');
   await settle(page);
   expect(await markdown(page)).toContain('[API と CLI（詳細）](#api-と-cli詳細)');
 });
 
-// A document long enough to put its last line near the bottom of the window, with enough headings
-// for the list to want its full height. Both halves matter: measured 2026-08-18, three headings made
-// a list short enough to fit below with 52px to spare, so a spec built on that fixture would have
-// passed against the broken build.
+// Its last line near the window's bottom, with headings enough for a full-height list (three made
+// a list that fitted below and would pass on the broken build).
 const TALL_MD = [
   ...Array.from({ length: 9 }, (_, i) => `## 見出し ${i + 1}\n`),
   ...Array.from({ length: 14 }, (_, i) => `段落 ${i + 1} — 本文の行がここに続きます。\n`),
@@ -217,7 +199,7 @@ const TALL_MD = [
   '',
 ].join('\n');
 
-// Opens the picker over that last link with the link's line `gap` px above the bottom edge.
+// The picker over the last link, its line `gap` px above the bottom.
 async function openNearBottom(page: Page, gap: number) {
   await openEditor(page, TALL_MD);
   const link = page.locator('.ProseMirror a', { hasText: 'リンク' });
@@ -240,21 +222,17 @@ test('a list that will not fit below the card goes above it', async ({ page }) =
   const field = (await hrefField(page).boundingBox())!;
   const viewport = page.viewportSize()!;
 
-  // On screen at all, which is the whole report: the card is chrome and scrolls with the view, so a
-  // row below the bottom edge cannot be reached by pointer or brought into view by scrolling.
+  // On screen at all: the report. The card scrolls with the view, so an offscreen row is unreachable.
   expect(list.y).toBeGreaterThanOrEqual(0);
   expect(list.y + list.height).toBeLessThanOrEqual(viewport.height);
-  // Above the card rather than merely shifted: its bottom edge clears the field it belongs to.
+  // Above the card, clear of its field.
   expect(list.y + list.height).toBeLessThanOrEqual(field.y);
-  // And it did not have to give up height to get there — that side had room (§5.5.17: flip and the
-  // cap answer different cases, and this is flip's).
+  // Full height: flip's case, not the cap's (§5.5.17).
   expect(list.height).toBeGreaterThan(150);
 });
 
 test('a list that fits on neither side is cut down to the roomier one', async ({ page }) => {
-  // Neither side can hold the full list in a window this short, which is the case flip alone leaves
-  // broken. 420px was not short enough — the space above the card was still 250px, so flip answered
-  // it on its own and nothing was cut.
+  // Neither side holds the list: flip alone fails here; 420px was not short enough.
   await page.setViewportSize({ width: 1280, height: 320 });
   await openNearBottom(page, 90);
   const list = (await suggestions(page).boundingBox())!;
@@ -262,7 +240,7 @@ test('a list that fits on neither side is cut down to the roomier one', async ({
   expect(list.y).toBeGreaterThanOrEqual(0);
   expect(list.y + list.height).toBeLessThanOrEqual(viewport.height);
   expect(list.height).toBeLessThan(192);
-  // Still worth opening: a list cut to nothing would satisfy the two bounds above.
+  // A list cut to nothing would pass the bounds.
   expect(await rows(page).count()).toBeGreaterThan(0);
   expect(list.height).toBeGreaterThan(40);
 });

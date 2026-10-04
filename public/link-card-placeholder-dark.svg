@@ -10,13 +10,13 @@
        can measure, and a mark that turns invisible when it is ignored is not a mark. Keep the two
        files in step: same geometry, only the two fills differ.
 
-       The colours are the site's own dark pair: the accent (#f85149, what `.accent-emphasis`
+       The colours are the site's own dark pair: the accent (#ec7a92, what `.accent-emphasis`
        becomes in dark) over the dark foreground (#e6edf3). The lockup is the one public/og.png
        draws (scripts/make-og-image.mts).
 
        The font is the system stack, not the site's Geist: an SVG rendered as an image may not fetch
        anything, so a webfont cannot reach it. -->
-  <rect x="96" y="8" width="48" height="6" rx="3" fill="#f85149" />
+  <rect x="96" y="8" width="48" height="6" rx="3" fill="#ec7a92" />
   <text
     x="120"
     y="72"

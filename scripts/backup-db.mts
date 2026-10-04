@@ -4,31 +4,21 @@ import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
 import { formatBytes } from './format-bytes.mts';
 
-// Point-in-time snapshot of the SQLite DB.
-//
-// Copying blog.db with `cp` is NOT a backup: the DB runs in WAL mode, so
-// committed transactions can still live in the -wal sidecar and a lone
-// blog.db is a stale, possibly inconsistent snapshot. `VACUUM INTO` makes
-// SQLite write the snapshot itself — one self-contained file, WAL content
-// folded in, compacted — so the output needs no sidecars to be restorable.
+// Point-in-time snapshot of the SQLite DB. Not `cp`: in WAL mode committed data can still be in the
+// -wal sidecar. `VACUUM INTO` writes one self-contained, compacted file.
 //
 //   node scripts/backup-db.mts                    # data/backups/blog-<stamp>.db
 //   node scripts/backup-db.mts --out=/mnt/x/b.db  # explicit destination
 //
-// Restoring is a file copy back over data/blog.db with the app stopped (delete
-// any leftover -wal/-shm alongside it first, or SQLite will replay them onto
-// the restored file).
-//
-// Old snapshots are never pruned — deleting backups is not something a backup
-// tool should do on its own.
+// Restore by copying it over data/blog.db with the app stopped, deleting any -wal/-shm first or
+// SQLite replays them onto it. Snapshots are never pruned: a backup tool does not delete backups.
 const ROOT = process.cwd();
 // A backup that silently snapshots the wrong file is worse than none.
 const DB_PATH = resolveDbPath();
 const BACKUP_DIR = path.join(ROOT, 'data', 'backups');
 
-// 2026-08-02T13:45:12.345Z → 20260802-134512Z, sorts chronologically as a filename.
-// The trailing Z is not decoration: the stamp is UTC, and without it a snapshot
-// taken at 14:33 JST reads as "05:33" and looks like the wrong file.
+// 2026-08-02T13:45:12.345Z → 20260802-134512Z, sorting chronologically. The Z says UTC, or a 14:33
+// JST snapshot reads as 05:33 and looks wrong.
 function timestamp(): string {
   const iso = new Date().toISOString();
   return `${iso.slice(0, 10).replaceAll('-', '')}-${iso.slice(11, 19).replaceAll(':', '')}Z`;
@@ -48,8 +38,7 @@ function main(): void {
   }
 
   const dest = parseOut(process.argv.slice(2));
-  // VACUUM INTO refuses to overwrite, which is the behaviour we want — but it
-  // reports it as a generic "output file already exists", so say it plainly.
+  // VACUUM INTO refuses to overwrite, as wanted, but says so generically.
   if (existsSync(dest)) {
     console.error(`Refusing to overwrite an existing backup at ${dest}.`);
     process.exitCode = 1;
@@ -64,8 +53,7 @@ function main(): void {
     db.close();
   }
 
-  // Read the snapshot back rather than trusting that it was written: a backup
-  // nobody has opened is a backup nobody knows is good.
+  // Read it back: a backup nobody has opened is not known to be good.
   const copy = new Database(dest, { readonly: true });
   let integrity: string;
   let posts: number;

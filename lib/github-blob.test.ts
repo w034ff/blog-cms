@@ -9,7 +9,7 @@ import {
 } from './github-blob';
 
 // docs/embed-requirements.md §19. The URL shapes below were taken from GitHub's own address bar and
-// its「Copy permalink」item (measured 2026-08-29); `refs/heads/…` is the form it writes when a
+// its「Copy permalink」item; `refs/heads/…` is the form it writes when a
 // branch name is ambiguous with a tag.
 //
 // **What this file has to hold is the boundary, not the happy path.** The one string that becomes a
@@ -126,7 +126,7 @@ describe('parseGithubBlob', () => {
 
   it('is handed a path new URL() has already collapsed (B4)', () => {
     // A dot segment never reaches this file in any spelling — the URL parser resolves `..`,
-    // `%2e%2e`, `%2E%2E` and `.%2e` alike (measured 2026-08-29). What arrives names a ref called
+    // `%2e%2e`, `%2E%2E` and `.%2e` alike. What arrives names a ref called
     // `etc` and a file called `passwd`, which is an ordinary blob URL for a file that will not be
     // there. Recorded rather than guarded again: what is left to refuse is the escaped *separator*
     // above, which that normalisation does not touch.

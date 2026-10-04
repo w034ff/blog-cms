@@ -14,11 +14,8 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-// Compared against when the username doesn't exist, so both outcomes cost the same
-// bcrypt work. Without it the miss returns in microseconds and the hit takes ~250ms,
-// which answers "is this a real account?" for anyone with a stopwatch. A real hash
-// of a value nobody holds — it is not a secret, and generating one at startup would
-// spend the same 250ms on every boot to arrive at the same behaviour.
+// Compared against for an unknown username, so a miss costs the same ~250ms bcrypt work as a hit
+// and timing does not reveal real accounts. A hash of a value nobody holds, so not a secret.
 const ABSENT_USER_HASH = '$2b$12$/PAuBnp8Q0XxExbEa87ws.gNZOfmm0XrLxj0okKDCwfJ0L1cIRdAC';
 
 export type LoginState = { error?: string };
@@ -42,16 +39,13 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   const user = db.select().from(users).where(eq(users.username, username)).get();
-  // Always hashes, even for a username that doesn't exist — see ABSENT_USER_HASH.
-  // Awaited rather than compareSync: the comparison is ~250ms of pure computation
-  // and Node serves everything else on the same thread, so the synchronous form
-  // stalled the whole site for the duration of every login attempt.
+  // Always hashes (see ABSENT_USER_HASH). Async, not compareSync: ~250ms on the only thread would
+  // stall the whole site on every login attempt.
   const passwordMatches = await bcrypt.compare(password, user?.passwordHash ?? ABSENT_USER_HASH);
 
   if (!user || !passwordMatches) {
     const failures = recordLoginFailure(username);
-    // The only record that an attempt happened at all; without it a run against
-    // this endpoint leaves nothing behind to notice.
+    // The only record that an attempt happened at all.
     console.warn(`login failed for "${username}" (${failures} consecutive)`);
     return { error: 'ユーザー名またはパスワードが違います。' };
   }

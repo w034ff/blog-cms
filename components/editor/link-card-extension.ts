@@ -1,4 +1,4 @@
-import { Node, mergeAttributes, type CommandProps } from '@tiptap/core';
+import { Node, mergeAttributes, type CommandProps, type Editor } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
@@ -9,7 +9,7 @@ import {
   type CardImage,
 } from '@/lib/link-card-image';
 import { resolveInsertTarget, SELF_REFERENCE_NOTE } from '@/lib/insert-target';
-import { DEFAULT_CATEGORY } from '@/lib/content';
+import { categoryLabel } from '@/lib/content';
 import {
   BACK_SHAPES,
   buildIcon,
@@ -19,6 +19,8 @@ import {
   type IconShape,
 } from './svg/icon-shapes';
 import { canPlaceAfterCaret } from './code-block-extension';
+import { focusThenRun } from './focus-then-run';
+import { escapeAttribute } from './html-escape';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
 
@@ -30,44 +32,21 @@ import { refuseChromeDrops } from './useDragContainment';
 //   <div class="link-card" data-href="/posts/f377f7a9a768a5b4d6f2"></div>
 //   <div class="link-card" data-href="https://example.com/article"></div>
 //
-// Empty on purpose (§4.2). The title, date and description are derived from the `posts` row at
-// render time — baking them in would leave a renamed post's old title sitting in every body that
-// linked to it. An external card's lines are derived too, from the `link_previews` row the editor
-// filled (§14.3); what differs is only which table answers.
-//
-// Storing a reference is also the one place this differs from the accordion, whose serializer
-// writes its `<summary>` text into the markdown: an accordion's content is the author's, a card's
-// belongs to another record.
-//
-// Raw HTML rather than a `@[card](url)` syntax because a node-written form has to survive the same
-// round trip an author's typing does, and text serialization escapes `[` unconditionally — the
-// same mechanism that turns a hand-typed `[電話](tel:…)` into `\[電話\]` (§4.1 (b)). markdown-it is
-// configured with `html: true` (PostEditor.tsx) and the public pipeline already runs rehype-raw,
-// so this passes both ways with no new parser. `accent-emphasis-extension.ts` round-trips through
-// raw HTML for the same reason.
-
-// HTML attribute escaping, not markdown escaping. The serializer writes this line as raw HTML, so
-// it is markdown-it that parses it back — and an unescaped `"` would end the attribute early,
-// taking the rest of the reference with it. `&` first, or it would double-escape the entities the
-// later replacements introduce.
-function escapeHref(href: string): string {
-  return href.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
+// Empty on purpose (§4.2): title, date and description are derived at render time from the `posts`
+// row (or, for an external card, the `link_previews` row, §14.3), so a renamed post never leaves a
+// stale title behind. Raw HTML rather than a `@[card](url)` syntax because text serialization
+// escapes `[` unconditionally (§4.1 (b)); markdown-it runs with `html: true` and the public side
+// with rehype-raw, as for accent emphasis.
 
 function serializeLinkCard(state: MarkdownSerializerState, node: PMNode): void {
   const href = typeof node.attrs.href === 'string' ? node.attrs.href : '';
-  state.write(`<div class="link-card" data-href="${escapeHref(href)}"></div>`);
-  // Closes the block for the same reason serializeImage does: without it, whatever follows is
-  // emitted onto this line, and a `>` or a fence there would reach the public pipeline glued to
-  // the card's div.
+  state.write(`<div class="link-card" data-href="${escapeAttribute(href)}"></div>`);
+  // Closes the block, or whatever follows is glued onto this line.
   state.closeBlock(node);
 }
 
-// Storage rather than an option, and the difference is the whole of §18's wiring: options are
-// fixed when the extension list is built, and `useEditor` keeps the list from the first render —
-// which is before a brand-new post has a row, and therefore before it has a slug at all. Storage is
-// the one piece of an extension the host may write later (`editor.storage.linkCard`, kept live by
-// ExtensionManager), and the card only needs the answer at the moment it draws itself.
+// Storage rather than an option (§18): options are fixed when the extension list is built, before
+// a new post has a slug, while storage is live and the host may write it later.
 export type LinkCardStorage = {
   // The post open in the editor, '' when it has none yet. What a card refuses to point at.
   ownSlug: string;
@@ -81,9 +60,8 @@ export type LinkCardStorage = {
 export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
   name: 'linkCard',
   group: 'block',
-  // A leaf the caret cannot enter. §7-1 hangs on this: with no position inside the card,
-  // `isActive('link')` never turns true there and the link bubble stays away without needing a
-  // rule of its own. It is also what lets the whole card be one drag target.
+  // A leaf the caret cannot enter, so the link bubble never appears in it (§7-1) and the whole card
+  // is one drag target.
   atom: true,
   draggable: true,
 
@@ -97,11 +75,8 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
     };
   },
 
-  // Matches what the serializer writes, and therefore also what an author can paste as raw HTML.
-  // The reference is NOT validated here: an editor-side check would only cover this one door, and
-  // the published side has to answer for hand-written HTML anyway — so validation lives in one
-  // place, at resolution time (lib/rehype-link-card.ts, §4.4). An unusable reference round-trips
-  // intact and simply renders as a plain link when published.
+  // Not validated here: the published side must answer for hand-written HTML anyway, so validation
+  // lives at resolution time (lib/rehype-link-card.ts, §4.4).
   parseHTML() {
     return [{ tag: 'div.link-card' }];
   },
@@ -112,15 +87,11 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
 
   addStorage(): LinkCardStorage {
     return {
-      // Starts as "there is no such post", the way the callout's onBlocked starts as a no-op: an
-      // extension mounted on its own, and a post that has no row yet, both want §18's question to
-      // simply not fire. PostEditor writes the real answer in as soon as there is one.
+      // '' until PostEditor writes the real slug, so §18's check doesn't fire without one.
       ownSlug: '',
       markdown: {
         serialize: serializeLinkCard,
-        // Parsing is markdown-it's raw-HTML passthrough plus parseHTML above, the same route
-        // accent emphasis takes. No `updateDOM` hook: the stored form already is the DOM shape
-        // this node parses, so nothing has to be reshaped on the way in.
+        // markdown-it's raw-HTML passthrough plus parseHTML above.
         parse: {},
       },
     };
@@ -128,15 +99,10 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
 
   addCommands() {
     return {
-      // Insert a resolved card at the caret (docs/embed-requirements.md §24, docs/link-card-requirements.md
-      // §5.2-2/§5.2-3). Mirrors `setEmbed` exactly: an empty textblock under the caret is replaced
-      // outright (so opening the shared insert dialog on a blank line does not leave that blank line
-      // behind, invisible in the editor but real in the markdown), otherwise the card goes after the
-      // caret's whole textblock so a caret mid-sentence does not split the line.
-      //
-      // canPlaceAfterCaret (code-block-extension.ts) is the placement rule for the fallback branch,
-      // and it is what `available` in the slash menu asks via `can()`. A cell (`paragraph+`) and an
-      // accordion title (`text*`) refuse; a list item accepts from its second child on.
+      // Insert a resolved card at the caret (docs/embed-requirements.md §24,
+      // docs/link-card-requirements.md §5.2-2/§5.2-3), exactly as `setEmbed` does: an empty textblock
+      // is replaced, otherwise the card goes after it. The fallback uses `canPlaceAfterCaret`
+      // (code-block-extension.ts), which the slash menu asks too.
       setLinkCard:
         (href = '') =>
         ({ chain, state }: CommandProps): boolean => {
@@ -168,17 +134,9 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
             .run();
         },
 
-      // §7-3: undo the card without losing the reference. Without this, a card is a one-way door —
-      // the caret can't enter an atom, so there is nothing to select and retype.
-      //
-      // The link text is the resolved title where one is known and the path otherwise, so the
-      // sentence the author gets back reads like something they would have written. The `link`
-      // mark carries the same href, which is why this is the exact inverse of what §5.2 builds.
-      // `at` is passed by the NodeView, which knows its own position; it falls back to the
-      // selection so a card picked up by the block drag handle (a NodeSelection) can be dissolved
-      // too. The fallback alone is not enough: clicking a button inside the card does not move the
-      // selection, so the command asked about wherever the caret happened to be and quietly
-      // refused (measured — it took the 4b spec red).
+      // §7-3: back to a link, so the atom is not a one-way door; the exact inverse of §5.2, with the
+      // resolved title (or the path) as text. `at` comes from the NodeView, since clicking its button
+      // doesn't move the selection; the fallback serves a drag-handle NodeSelection.
       unsetLinkCard:
         (at?: number) =>
         ({ chain, state }: CommandProps): boolean => {
@@ -206,36 +164,21 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
             )
             .run();
         },
-      // §14.6-2: turn the link the caret is in into a card, which is the second of the two
-      // entry points and the only one that starts from something already written.
-      //
-      // **Only when the link is the whole line.** A card occupies a block (§5.2-1), so making one
-      // out of a link inside a sentence would have to either take the sentence's words away or
-      // leave a copy of them behind. The range is passed in by the bubble, which resolved the mark
-      // to draw itself, and this refuses unless it covers the textblock exactly — the same shape
-      // §4.1 (d) described when it considered promoting a line-alone link at the parser instead.
-      //
-      // The whole textblock is replaced rather than emptied and followed by a card: an empty
-      // paragraph left above the card is invisible in markdown (it does not serialize) but real in
-      // the editor, which is the mismatch accordion-requirements.md §8.2 names.
+      // §14.6-2: turn the link the caret is in into a card. **Only when the link is the whole line**
+      // (§5.2-1). The whole textblock is replaced, not emptied, since an empty paragraph left above
+      // is real in the editor but absent in markdown (accordion-requirements.md §8.2).
       linkToCard:
         (range: { from: number; to: number }, href: string) =>
         ({ chain, state }: CommandProps): boolean => {
           const $from = state.doc.resolve(range.from);
           if (!$from.parent.isTextblock || $from.depth < 1) return false;
           if (range.from !== $from.start() || range.to !== $from.end()) return false;
-          // The placement question, asked about the link's own textblock rather than about the
-          // selection. **`canPlaceAfterCaret` is the wrong question here** and was used at first:
-          // it answers "may a block go *after* the caret's textblock", refuses a range outright
-          // (which is what the selection is right after 適用 — reported 2026-08-18), and would
-          // allow the first paragraph of a list item to be replaced, leaving the item headless.
-          // What this command does is replace one textblock with a card, so that is what is asked.
+          // Asked of the link's own textblock. Not `canPlaceAfterCaret`, which refuses a range and
+          // would let a list item's first paragraph be replaced.
           const parent = $from.node($from.depth - 1);
           const index = $from.index($from.depth - 1);
           if (!parent.canReplaceWith(index, index + 1, this.type)) return false;
-          // **This button is the author saying "ask again"** (§14.3.2). The remembered face is
-          // dropped along with the remembered failure: a cache hit skips `lookupCard` entirely, so
-          // leaving it would answer an explicit refresh without asking anyone anything.
+          // **This button is the author saying "ask again"** (§14.3.2), so the cached face goes too.
           cardCache.delete(href);
           forceRefresh.add(href);
           return chain()
@@ -248,40 +191,27 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
     };
   },
 
-  // The card as the author sees it (§7): a real card, not a placeholder, because a WYSIWYG editor
-  // that shows every block but this one has stopped being one — the same argument
-  // docs/link-requirements.md §3 makes against `autolink: false`.
-  //
-  // A plain-DOM NodeView, matching the callout and the code block. There is no contentDOM: the node
-  // is an atom, so nothing inside it is document content and everything here is chrome.
+  // A real card, not a placeholder (§7), as a plain-DOM NodeView with no contentDOM.
   addNodeView() {
     return ({ node, editor, getPos }) => {
-      // Read on every draw rather than captured here: a brand-new post gains its slug from the
-      // first autosave, and this NodeView may well have been built before that answer came back.
-      // `this.storage` is the editor's own object, not a copy — ExtensionManager hands the live one
-      // to every context it builds — so what PostEditor writes is what this reads.
+      // Read on every draw: a new post gains its slug on the first autosave, and `this.storage` is the
+      // live object PostEditor writes to.
       const ownSlug = () => this.storage.ownSlug;
       const dom = document.createElement('div');
       dom.className = 'link-card link-card-view';
-      // Nothing in here is editable text. Without this ProseMirror would let the caret into the
-      // chrome and try to read the fetched title back as document content.
+      // Chrome, not editable text.
       dom.setAttribute('contenteditable', 'false');
 
       const body = document.createElement('div');
       body.className = 'link-card-body';
       dom.appendChild(body);
 
-      // The target's image, in the same place the published card puts it: a fixed box to the right
-      // of the text column (§13). It is a sibling of `body` rather than a child, so the picker's
-      // list and the card's lines can be rebuilt without disturbing it — which also means
-      // `body.replaceChildren()` does not take it down and `render` has to.
+      // The image, right of the text column as on the published card (§13). A sibling of `body`, so
+      // `body.replaceChildren()` leaves it and `render` manages it.
       const image = document.createElement('img');
       // Decorative, for the published card's reason: the title it belongs to is right beside it.
       image.alt = '';
-      // The wrapper the house mark needs and a real picture does not (§17.3): a file per colour
-      // scheme, chosen by the page. Built once and used only while the mark is showing — the
-      // `<img>` moves in and out of it, so there is one image element either way and the layout
-      // rules, which key on `.link-card-image`, never see the difference.
+      // For the house mark's per-scheme file (§17.3). The single `<img>` moves in and out of it.
       const picture = document.createElement('picture');
       const darkSource = document.createElement('source');
       darkSource.media = '(prefers-color-scheme: dark)';
@@ -292,9 +222,7 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           image.remove();
           return;
         }
-        // Both classes are set on every draw, never toggled from the last one: the same `<img>` is
-        // reused across lookups, so a card that resolved to the house mark and is then pointed at
-        // a post with a real picture would otherwise keep painting it on the tint (§17).
+        // Set on every draw, never toggled: the `<img>` is reused across lookups (§17).
         image.className = drawn.placeholder
           ? 'link-card-image link-card-placeholder'
           : 'link-card-image';
@@ -303,8 +231,7 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           picture.append(darkSource, image);
           dom.appendChild(picture);
         } else {
-          // `appendChild` moves the image out of the wrapper, which is what leaves the previous
-          // card's `<source>` behind rather than letting it decide this card's picture.
+          // Moving the image out leaves the previous card's `<source>` behind.
           picture.remove();
           dom.appendChild(image);
         }
@@ -312,58 +239,33 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
 
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
 
-      // 「変更」 no longer touches the document at all (§7-3.1): it used to clear `href` outright,
-      // which made opening the picker itself an edit — the only way back to the card it had just
-      // been was undo, twice once a new target had also been picked. This flag is the whole fix:
-      // it is local chrome state, not a node attribute, so flipping it costs no transaction and
-      // needs none to reverse. `render` is the only thing that reads it.
+      // 「変更」 is local chrome state, not a node attribute (§7-3.1), so opening the picker is not an
+      // edit and needs no undo.
       let editing = false;
-      // What `render` was last called with, so the cancel button and the outside-click handler
-      // below — neither of which is inside a render pass — can ask for a fresh draw of the node as
-      // it stands now rather than the one closed over when the NodeView was built.
+      // The node `render` last drew, for callers outside a render pass.
       let current = node;
 
-      // Deferred by a frame so the DOM under the pointer is not rebuilt while the browser is still
-      // dispatching the click that hit it: without this, `update` → `render` → `replaceChildren`
-      // runs synchronously inside the result row's own handler.
-      //
-      // **This is not what fixes the double click** — the fixed head band in globals.css is, and
-      // it is sufficient on its own. Measured both ways: with the band reverted and this deferral
-      // kept, a second click 250ms later still destroys the card; with the band in place and this
-      // deferral removed, it does not. A frame is ~16ms and a second click is ~150-300ms, so this
-      // can only ever cover a synthetic gesture — which it does, and that is the trap it leaves
-      // behind: `dblclick()` in a spec fires both clicks inside one frame, so a regression spec
-      // written that way passes on this line alone while the geometry is broken. The spec spaces
-      // its clicks for that reason.
-      //
-      // `getPos()` is read inside the callback rather than captured: a frame is long enough for
-      // the document to have changed, and the NodeView may be gone entirely.
+      // Deferred a frame so the DOM isn't rebuilt inside the click that hit it. **This is not the
+      // double-click fix** (the fixed head band is): a real second click comes ~150-300ms later, so a
+      // spec using `dblclick()` passes on this line alone; the spec spaces its clicks. `getPos()` is
+      // read inside, since the NodeView may be gone.
       const setHref = (href: string) => {
         requestAnimationFrame(() => {
           const pos = getPos();
           if (typeof pos !== 'number') return;
-          // A pick is always the end of editing, whether it started from an empty card or from
-          // 「変更」 on a resolved one — `update` is about to redraw this NodeView with the new
-          // href, and there is nothing left to cancel back to.
+          // A pick always ends editing.
           editing = false;
           editor.view.dispatch(editor.state.tr.setNodeAttribute(pos, 'href', href));
-          // **`update` is not guaranteed to follow.** ProseMirror skips calling it when the node it
-          // diffs against is `eq()` to the one before the transaction — which a same-value
-          // `setNodeAttribute` produces exactly, the one case this reaches: 「変更」 on a card, then
-          // picking the very post it already pointed to. Nothing about `editing` flipping to false
-          // is visible in that diff, so without this the picker sits on screen forever with a
-          // document that already says the card resolved (measured 2026-09-04, §20f). Calling
-          // `render` directly makes this redraw whether or not that callback also runs — a second,
-          // idempotent draw where it does.
+          // **`update` is not guaranteed to follow:** re-picking the same post is an `eq()` node, so
+          // ProseMirror skips it and the picker would stay up (§20f). Render directly; a second
+          // draw is idempotent.
           const updated = editor.state.doc.nodeAt(pos);
           if (updated) render(updated);
         });
       };
 
-      // The picker's second answer (docs/embed-requirements.md §5-1): a URL a provider claims
-      // replaces this card with an embed outright, so one paste makes one block rather than a card
-      // the author then has to undo. Deferred by a frame for setHref's reason, and more so — this
-      // one destroys the NodeView whose button is still dispatching the click.
+      // The picker's second answer (docs/embed-requirements.md §5-1): a provider-claimed URL replaces
+      // the card with an embed. Deferred a frame, since this destroys the NodeView mid-click.
       const toEmbed = (href: string) => {
         requestAnimationFrame(() => {
           const pos = getPos();
@@ -406,13 +308,8 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
       };
       render(node);
 
-      // 「変更」／Escape／キャンセル all mean "stay in the editor, just abandon the edit" — so this
-      // puts both the selection and the focus back on the card, exactly where a click on its body
-      // would have put them. Without the reselect, `editor.view.dom.focus()` alone reveals whatever
-      // the document's *actual* selection still was — pressing 変更 never moves it, since a click on
-      // a button inside a `contenteditable="false"` island cannot place a native caret — and that
-      // stale position can be anywhere in the document the author last typed or clicked. Measured:
-      // Escape jumped the scrollbar to wherever that was, not to the card the author was looking at.
+      // Abandoning an edit puts selection and focus back on the card. A bare `view.dom.focus()` would
+      // reveal the document's actual selection, which 変更 never moved and can be anywhere.
       const cancelEditAndFocus = () => {
         editing = false;
         render(current);
@@ -420,15 +317,8 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
         if (typeof pos === 'number') editor.chain().setNodeSelection(pos).focus().run();
       };
 
-      // The other way to leave the picker without picking anything (§7-3.1's sibling to Escape):
-      // Docs closes its own card the same way. Only live while there is somewhere to go back to —
-      // a freshly-inserted card's picker has no cancel target, so a stray click elsewhere is left
-      // alone rather than deleting it.
-      //
-      // **No focus grab here**, unlike `cancelEditAndFocus` above: the press that triggers this has
-      // already put focus wherever the author's mouse landed — often a field outside the editor
-      // entirely (the post title, say) — and pulling it back to the card would fight the very thing
-      // the author's click just did.
+      // Clicking outside also cancels, only when there is a card to go back to. **No focus grab:**
+      // the click has already put focus where the author wanted.
       const onOutsidePointerDown = (event: MouseEvent) => {
         if (!editing) return;
         const target = event.target;
@@ -442,9 +332,8 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
       // What `stopEvent` below claims — stated once, because the drop refusal has to refuse exactly
       // what the claim takes out of ProseMirror's reach and no more (refuseChromeDrops).
       const claimsEvent = (target: HTMLElement) => target.closest('input, button') !== null;
-      // The picker's search box is a natively droppable text control, so a drop there was Chrome's
-      // to run: measured, dragging 前の段落 onto it left doc(paragraph("です"), linkCard, …) with the
-      // words in the box — the document's text destroyed by a move ProseMirror never authorized.
+      // The search box is natively droppable, and a drop there moved document text into it
+      // (docs/editor-pitfalls.md §18).
       refuseChromeDrops(dom, claimsEvent, () => editor.view);
 
       return {
@@ -454,19 +343,11 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
           render(updated);
           return true;
         },
-        // Everything in here is chrome the NodeView owns and rewrites; none of it is document
-        // content, so ProseMirror must never try to read a mutation back into the document.
+        // All chrome; never document content.
         ignoreMutation: () => true,
-        // Keeps ProseMirror's handlers off the search box and the buttons — without this a
-        // keystroke in the input is treated as a keystroke in the document, and typing a query
-        // edits the post instead.
-        //
-        // Narrowed to the controls themselves rather than to the whole card, and that distinction
-        // is load-bearing: claiming every event inside `dom` also swallowed the mousedown that
-        // makes a NodeSelection, so clicking a card selected nothing and §7-1's "the caret cannot
-        // enter, so the bubble stays away" had no visible selection to stand on (measured — it
-        // took the 4a spec red). A click on the card's own background is a click on a block, and
-        // belongs to the editor.
+        // Keeps ProseMirror off the search box and buttons, or typing a query edits the post.
+        // **Only the controls:** claiming the whole card swallowed the mousedown that makes a
+        // NodeSelection (docs/editor-pitfalls.md §18).
         stopEvent: (event: Event) => {
           const target = event.target;
           return target instanceof HTMLElement && claimsEvent(target);
@@ -479,10 +360,8 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
   },
 });
 
-// The lines a resolved card draws, whichever kind of target answered. Both lookups below build
-// one of these, so `draw` is a single function that cannot treat the two kinds differently by
-// accident — the failure §13 records (a cached card taking the "not looked up yet" branch of every
-// line) was exactly a second drawing path getting out of step with the first.
+// The lines a resolved card draws, from either lookup, so a single `draw` cannot treat the two
+// differently (the §13 failure).
 type CardFace = {
   title: string;
   // The second line, and '' when there is nothing wrong to say (§13.1).
@@ -494,71 +373,38 @@ type CardFace = {
   image: CardImage | null;
 };
 
-// Lookups already made, keyed by href. A card holds only a reference (§4.2), so every NodeView
-// built for one would otherwise be a round trip — and the same card is built again whenever the
-// node is replaced rather than updated: re-parsing the document, undoing a delete, picking the same
-// post back in the picker. (An edit elsewhere in the document is not one of those — ProseMirror
-// leaves an untouched node's view alone, measured 2026-08-18.) Scoped to the page: a reload picks
-// up a renamed post, and the published page resolves independently (§6), so a stale entry here can
-// never reach a reader.
-//
-// The whole answer is kept, not just the title. With a title-only cache the second card drew less
-// than the first: the fetch is skipped once the entry exists, so everything derived from the rest
-// of the answer — the draft note, and now the image — was missing from every build after the one
-// that fetched (§13).
+// Lookups already made, per page, keyed by href: a card is rebuilt whenever its node is replaced
+// (re-parse, undo, re-pick). A stale entry never reaches a reader (§6). **The whole answer is kept**,
+// not just the title, or later builds drew less than the first (§13).
 const cardCache = new Map<string, CardFace>();
 
-// References whose next lookup must ask the page again instead of believing a remembered failure
-// (docs/link-card-requirements.md §14.3.2). Written only by `linkToCard` — the author's explicit
-// 「カードにする」 — and consumed by the first `lookupCard` that draws that reference.
-//
-// Module state next to `cardCache` rather than a field on `LinkCardStorage`: storage exists for the
-// one thing the *host* writes after the extension list is built (`ownSlug`), and this is set and
-// consumed inside this file. Keyed by reference, so two cards pointing at the same URL share the
-// one refresh — which is what the author asked for, since the row they are refreshing is shared too.
+// References whose next lookup must bypass a remembered failure (docs/link-card-requirements.md
+// §14.3.2), set only by `linkToCard`. Module state, not storage, which is for what the host
+// writes; keyed by reference, so cards sharing a URL share the refresh.
 const forceRefresh = new Set<string>();
 
-// The other half of §14.3.2: the failure is remembered, and this is the gesture that forgets it.
-// Both buttons it names are on this card already — 「リンクに戻す」 here, 「カードにする」 in the
-// link bubble the reference falls back into — so it describes what the author can see, not a
-// control they have to find.
+// Names the two buttons on screen that re-ask (§14.3.2).
 const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに戻してカードにし直すと再取得します）';
 
-// What is known about a card's target. Three states rather than a nullable answer, because "the
-// answer has not come back yet" and "the route says there is nothing there" are the same `null` in
-// the data and must not be the same card on screen (§13.1): the second says so in the card's own
-// second line, and a card that said it for the ~10ms before its own answer arrives would call every
-// reference broken every time the document is opened. A failed request is `unknown` too — a lapsed
-// session is not a missing post, and the card has nothing to report about it.
-//
-// `missing` carries its own words because the two kinds fail differently and the author acts on
-// them differently: a reference naming no post is fixed by pointing the card somewhere else, an
-// external page that would not answer is often fixed by nothing at all (§14.7).
+// Three states (§13.1): "not answered yet" and "nothing there" are both `null` in the data but must
+// not look the same, or every card would read as broken for the ~10ms before its answer. A failed
+// request (e.g. a lapsed session) is `unknown` too. `missing` carries its own words: the two kinds
+// are fixed differently (§14.7).
 type Lookup =
   | { status: 'unknown' }
   | { status: 'found'; card: CardFace }
   | { status: 'missing'; note: string };
 
-// Which table answers is decided by the reference itself, the same way the published side decides
-// it (app/posts/[slug]/page.tsx), and there is exactly one shape that is not internal.
-//
-// The stored href is put through the same rewrite the two entry points apply (§14.5.1), because
-// this is the third door and it is open on purpose: `parseHTML` accepts any `data-href`, so a body
-// can arrive carrying `https://<this blog>/posts/<slug>` — hand-written, or pasted as raw HTML.
-// Without the rewrite that card asks the preview route about this server's own address, is refused
-// there, and reports that the author's own post could not be read.
+// The reference decides which table answers, as on the published side. The stored href gets the
+// §14.5.1 rewrite too, since `parseHTML` accepts any `data-href`: an absolute URL to one of this
+// blog's posts would otherwise be refused by the preview route.
 function lookupCard(href: string, ownSlug: string): Promise<Lookup> {
   const reference = normalizeCardHref(href, window.location.origin) ?? href;
-  // Consumed here, once, whatever the lookup then decides — **including when the page fails
-  // again**. Leaving it set would put the next ordinary render back on the network, which is the
-  // automatic path `FAIL_TTL_MS` exists to keep off it. Read before the branches below so a
-  // self-reference or an internal post cannot swallow it on the external card's behalf.
+  // Consumed once, even if the page fails again, or ordinary renders would hit the network that
+  // `FAIL_TTL_MS` keeps them off. Read first, so an internal branch can't swallow it.
   const force = forceRefresh.delete(href);
-  // The fourth door, and the only one that answers for a card that already exists (§18): a body
-  // carrying a self-reference — written before this rule, hand-edited, or pasted as raw HTML —
-  // reaches the editor as an ordinary card and would otherwise resolve to the post the author is
-  // looking at. `missing` rather than `found` with a note, because only `found` is written to
-  // `cardCache`, and a reference nobody may point at has no business being cached as a face.
+  // A stored self-reference (§18) would otherwise resolve to the post being edited. `missing`, since
+  // only `found` is cached.
   if (isOwnPostHref(reference, ownSlug)) {
     return Promise.resolve({ status: 'missing', note: SELF_REFERENCE_NOTE });
   }
@@ -585,9 +431,7 @@ async function fetchPost(href: string): Promise<Lookup> {
         // link there (§5.2-4, §6.1), which is only fixable from here.
         note: post.draft ? '未公開の記事' : '',
         domain: null,
-        // The route answers with `resolveThumbnail`'s value and this side turns a null into the
-        // house mark — the same function the published card's resolver calls, so the two cannot
-        // decide differently what a post with no picture looks like (§17).
+        // The same `internalCardImage` the published resolver uses (§17).
         image: internalCardImage(post.thumbnail),
       },
     };
@@ -598,9 +442,7 @@ async function fetchPost(href: string): Promise<Lookup> {
   }
 }
 
-// The external half (§14.5). The route decides whether this costs a SELECT or a fetch; the editor
-// only ever asks it, and asks it again on every render, which is what keeps the stored row warm
-// without a refresh button anyone has to remember to press (§14.3).
+// The external half (§14.5). Asked on every render, which keeps the stored row warm (§14.3).
 async function fetchPreview(href: string, force: boolean): Promise<Lookup> {
   const host = externalCardHost(href);
   if (host === null) return { status: 'missing', note: 'タイトルを取得できませんでした' };
@@ -612,19 +454,11 @@ async function fetchPreview(href: string, force: boolean): Promise<Lookup> {
     const { preview } = (await res.json()) as {
       preview: { title: string; image: string } | null;
     };
-    // The page answered nothing readable — a Cloudflare challenge, a timeout, a host that is
-    // this server itself (§14.5.1). The card keeps its reference and shows the URL instead.
-    // The way back, named in the card itself: the row remembers this failure for 30 minutes
-    // (`FAIL_TTL_MS`), so an author who has just fixed the other side — a sharing setting, most
-    // often — would otherwise be told the same thing by a card that never asked again (§14.3.2).
+    // Nothing readable (a challenge page, a timeout, this server itself, §14.5.1). The row
+    // remembers the failure for `FAIL_TTL_MS`, so the note says how to re-ask (§14.3.2).
     if (!preview) return { status: 'missing', note: RETRY_NOTE };
-    // The description is not drawn here. The NodeView has never shown one — §13 added the image,
-    // not the description — and this card inherits that rather than introducing a second answer to
-    // "what does the editor show" (§14.7).
-    //
-    // The image is already the signed /api/link-image path when it arrives: the route signs it, so
-    // the editor and the published page put the identical `<img src>` on screen and the third
-    // party's own URL never reaches this browser.
+    // No description: the NodeView has never shown one (§14.7). The image arrives already as the
+    // signed /api/link-image path, identical to the published card's.
     return {
       status: 'found',
       card: {
@@ -639,19 +473,9 @@ async function fetchPreview(href: string, force: boolean): Promise<Lookup> {
   }
 }
 
-// The band both states put their controls in, and the reason the card's buttons cannot be hit by a
-// second click meant for the picker.
-//
-// The two states are different heights — a resolved card is three lines, the picker is a search box
-// plus a list — so anything bottom-anchored moves *up* into the band the result rows occupied when
-// the card resolves. That is exactly what happened: 「変更」 and 「リンクに戻す」 rendered within
-// 3px of where the first result row had been, so a double-click on a row cleared or dissolved the
-// card the first click had just made (recovered from the WAL, then reproduced — a card the author
-// believed they had left behind was a plain text link by the time it reached the public page).
-//
-// So the controls are top-anchored instead, in a band of fixed height that holds the search box in
-// one state and the buttons in the other. The picker's only clickable rows live below this band,
-// and a stray click inside it lands on the search input, which does nothing to the document.
+// The fixed-height top band for both states' controls. Bottom-anchored, 「変更」 and 「リンクに戻す」
+// moved up under where the first result row had been, so a double-click on a row cleared or
+// dissolved the card just made. Here a stray second click lands on the search input.
 function head(): HTMLDivElement {
   const el = document.createElement('div');
   el.className = 'link-card-head';
@@ -664,7 +488,7 @@ function head(): HTMLDivElement {
 function renderCard(
   body: HTMLElement,
   href: string,
-  editor: { commands: { unsetLinkCard: (at?: number) => boolean } },
+  editor: Editor,
   onClear: () => void,
   pos: () => number | undefined,
   setImage: (picture: CardImage | null) => void,
@@ -672,21 +496,15 @@ function renderCard(
 ): void {
   const actions = head();
   actions.append(
-    // The card's own repayment of a debt (§7.4). `openOnClick: false` took opening a link away from
-    // inside the editor (docs/link-requirements.md §3) and the bubble gave it back to text links
-    // (§5.5); a card had no way at all — 「変更」 opens an empty picker and 「リンクに戻す」 destroys
-    // the card to get at the link underneath it.
-    //
-    // A control rather than a click on the title or the picture: the card is an atom, so a click on
-    // its body is how the author selects it to delete or drag, and the picture is a large target to
-    // lose to a navigation nobody meant. Same call the bubble's href line makes (LinkBubble.tsx),
-    // including the new tab, which is what the published card does now too
+    // Opening a card's target (§7.4), which `openOnClick: false` took away. A control, not a click on
+    // the card, which selects it. A new tab, as LinkBubble and the published card do
     // (docs/link-requirements.md §7.2).
     button('開く', () => window.open(href, '_blank', 'noopener,noreferrer'), {
       icon: EXTERNAL_LINK_SHAPES,
     }),
     button('変更', onClear, { icon: PENCIL_SHAPES }),
-    button('リンクに戻す', () => editor.commands.unsetLinkCard(pos()), {
+    // Refocused first, as the embed's does: the command removes this button, which holds focus.
+    button('リンクに戻す', () => focusThenRun(editor, (c) => c.unsetLinkCard(pos())), {
       icon: UNLINK_SHAPES,
       danger: true,
     }),
@@ -700,12 +518,8 @@ function renderCard(
   domain.className = 'link-card-domain';
   body.append(actions, title);
 
-  // The lines below the title are put up and taken down rather than emptied: a card whose target is
-  // fine has no second line at all (§13.1), and an empty span still carries the line's top margin.
-  //
-  // Both are detached first and appended in order, so the two cannot arrive in the order they
-  // happened to be set — the note is written by the answer and the host by the reference, which do
-  // not become known at the same moment.
+  // Added and removed rather than emptied (an empty span keeps its margin, §13.1), in a fixed order,
+  // since the note and the host become known at different moments.
   const setLines = (note: string, host: string | null) => {
     meta.remove();
     domain.remove();
@@ -719,9 +533,7 @@ function renderCard(
     }
   };
 
-  // Everything the lookup decides, in one place, so the cache hit and the answer that has just
-  // arrived draw the same card. Splitting them is what let the two disagree (§13): a card drawn
-  // from the cache took the "not looked up yet" branch of each line and kept it forever.
+  // One draw for a cache hit and a fresh answer, so they cannot disagree (§13).
   const draw = (lookup: Lookup) => {
     // The reference is what §5.3 degrades to: until the title is known, what the card names is what
     // the author wrote, which is the thing they can act on.
@@ -741,37 +553,24 @@ function renderCard(
   if (!cached) {
     void lookupCard(href, ownSlug).then((lookup) => {
       if (lookup.status === 'found') cardCache.set(href, lookup.card);
-      // The card this answer was for may be gone: 「変更」 detaches these spans while the lookup is
-      // still in flight. Harmless while `draw` only wrote into them — they were unreachable — but
-      // `setImage` reaches the NodeView's own `dom`, which by then belongs to the picker, so a late
-      // answer would hang a thumbnail beside its search box. (False on the way in as well, since
-      // ProseMirror inserts `dom` after the NodeView is built; only this path can be late.)
+      // 「変更」 may have detached these spans mid-lookup, and `setImage` would hang a thumbnail on
+      // the picker.
       if (!title.isConnected) return;
       draw(lookup);
     });
   }
 }
 
-// The insert flow (§5.2-3): search your own posts and pick one — or paste a URL, which is the
-// first of the two entry points an external card has (§14.6-1). It lives in the card rather than in
-// a popup of its own so the slash menu needs no second UI framework, and so an author who inserts
-// and then wanders off is left with a visible unfinished card instead of a silent no-op.
-//
-// One field answers both because the two are told apart by what was typed, not by a mode the author
-// has to choose: anything that parses as an http(s) URL is a reference, everything else is a search
-// for a title. `normalizeCardHref` also rewrites a URL pointing at this blog's own post into the
-// internal reference, so pasting the published address of your own article makes the card that
-// reads `posts` live rather than a stored snapshot of it (§14.5.1).
+// The insert flow (§5.2-3), in the card itself, so an abandoned insert leaves a visible card. One
+// field: an http(s) URL is a reference (§14.6-1), anything else a title search.
+// `normalizeCardHref` turns this blog's own post URL into the internal reference (§14.5.1).
 function renderPicker(
   body: HTMLElement,
   editor: { view: { dom: HTMLElement } },
   onPick: (href: string) => void,
   onEmbed: (href: string) => void,
   ownSlug: string,
-  // Set only when 「変更」 opened this picker on a card that already had a reference (§7-3's
-  // sibling): the author can still get back to it without touching the document at all, so this
-  // puts the control up and takes nothing else down. Null for a freshly-inserted, never-resolved
-  // card, which has nothing to go back to.
+  // Set only when 「変更」 opened this on a resolved card, which can be returned to.
   onCancel: (() => void) | null,
 ): void {
   const input = document.createElement('input');
@@ -794,10 +593,7 @@ function renderPicker(
     if (offered.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'link-card-empty';
-      // The one place dropping the row would say something untrue: the query matched this post and
-      // nothing else, so 「一致する記事がありません」 would deny an article the author can see the
-      // title of. Where other candidates remain, the quiet removal needs no explanation — there is
-      // something to pick, and the missing row is the article they are looking at.
+      // When the query matched only this post, say why rather than "no match".
       empty.textContent =
         offered.length < results.length ? SELF_REFERENCE_NOTE : '一致する記事がありません';
       list.appendChild(empty);
@@ -812,9 +608,7 @@ function renderPicker(
 
   let latest = 0;
 
-  // The one row a URL produces, whichever block it is going to become. `latest` is bumped here
-  // too: a search sent before the author finished pasting must not land on top of this row when its
-  // answer arrives.
+  // The one row a URL produces. Bumps `latest` so an older search can't land on top.
   const showReference = (label: string, apply: () => void) => {
     latest += 1;
     list.replaceChildren();
@@ -860,10 +654,7 @@ function renderPicker(
         showRefusal(target.message);
         return;
       case 'card-refused-self':
-        // This blog's own published address for this very post, which §14.5.1 has already
-        // rewritten into the internal reference by the time it gets here (§18). Refused with a
-        // line rather than with an unresponsive row: an offer that does nothing is worse than no
-        // offer.
+        // This post's own address (§18): a line, not a dead row.
         showRefusal(SELF_REFERENCE_NOTE);
         return;
       case 'card':
@@ -874,12 +665,8 @@ function renderPicker(
         return;
     }
   });
-  // Escape hands focus back to the document. Where there is a card to go back to, `onCancel`
-  // already puts both the selection and the focus on it (link-card-extension.ts's
-  // `cancelEditAndFocus`) — calling the raw `dom.focus()` on top of that was the bug §7.4.1 fixed:
-  // it reveals whatever the document's *actual* selection still is, which 「変更」 never moved and
-  // which can be anywhere, rather than the card the author is looking at. The raw fallback is only
-  // for the card-less picker, which has never had a selection of its own to lose.
+  // Escape: `onCancel` refocuses the card (§7.4.1); the raw `dom.focus()` is only for a card-less
+  // picker.
   input.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (onCancel) {
@@ -894,21 +681,10 @@ function renderPicker(
   requestAnimationFrame(() => input.focus());
 }
 
-// One row of the insert search (§5.2-5): the post's picture, its title, and the category it sits
-// in. It was a line of plain text until 2026-09-01 — the same data the card itself has drawn since
-// §13 was fetched for every row and then thrown away, so the author picked from a list of titles
-// and only saw the picture after committing to one.
-//
-// **The picture is `internalCardImage`, not `post.thumbnail`.** Every row here points at one of
-// this blog's own posts, so every row has a picture — the house mark stands in for a post with
-// none (§17). That matters more in a list than on a single card: a row with an empty frame reads
-// as a broken image next to rows that have one, and the frame is what makes the titles line up.
-//
-// **The accessible name is set explicitly and stays what it was.** A row now draws three things,
-// so its name would otherwise become "title 未公開 category" — and `e2e/editor-link-card.spec.ts`
-// asks for these rows by `getByRole('button', { name: CARD_TITLE })`, which is a full-string match.
-// The label is the title (plus the draft note, which is the one thing here a reader must not miss);
-// the category is supplementary and the picture is decorative, so neither joins it.
+// One row of the insert search (§5.2-5): picture, title, category. The picture is
+// `internalCardImage`, so every row has one (the house mark when needed, §17) and titles line up.
+// **The accessible name is the title (plus the draft note) only:** e2e/editor-link-card.spec.ts
+// matches it as a full string.
 function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElement {
   const el = document.createElement('button');
   // Not a submit button, for `button()`'s reason: PostEditor wraps the editor in one <form>.
@@ -924,9 +700,7 @@ function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElemen
   title.className = 'link-card-result-title';
   title.textContent = post.title;
   head.appendChild(title);
-  // 未公開 was appended to the title as 「（未公開）」 until this row grew a second line. A badge
-  // rather than more title text: what it says is a property of the post, not part of its name, and
-  // inside the title it was the first thing an ellipsis ate.
+  // A badge rather than title text: it is a property, and an ellipsis ate it first.
   if (post.draft) {
     const badge = document.createElement('span');
     badge.className = 'link-card-result-badge';
@@ -936,24 +710,17 @@ function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElemen
     head.appendChild(badge);
   }
   text.appendChild(head);
-  // Dropped when it is the blank field's sentinel: `DEFAULT_CATEGORY` is what a post with no
-  // category has, so printing it would put "uncategorized" under most of the list and say nothing.
-  if (post.category !== DEFAULT_CATEGORY) {
-    const category = document.createElement('span');
-    category.className = 'link-card-result-category';
-    category.textContent = post.category;
-    text.appendChild(category);
-  }
+  const category = document.createElement('span');
+  category.className = 'link-card-result-category';
+  category.textContent = categoryLabel(post.category);
+  text.appendChild(category);
 
   el.append(resultImage(internalCardImage(post.thumbnail)), text);
   el.addEventListener('click', onPick);
   return el;
 }
 
-// The row's picture. Same `<picture>` mechanism the card's own image uses (§17.3) and for the same
-// reason — the house mark is the site's name in the foreground colour, so the wrong file is
-// invisible rather than merely off — but built per row rather than reused: rows are thrown away and
-// rebuilt on every keystroke, so there is no previous state for a stale `<source>` to leak from.
+// The row's picture, with the card's `<picture>` mechanism (§17.3), built fresh per row.
 function resultImage(drawn: CardImage): HTMLElement {
   const image = document.createElement('img');
   // Decorative: the title it belongs to is on the same row, and the button is named above.
@@ -971,27 +738,16 @@ function resultImage(drawn: CardImage): HTMLElement {
   return picture;
 }
 
-// `icon` is what makes a band control; the picker's result rows pass none and stay plain text.
-//
-// **A control carries its icon AND its label at every width.** Both show above 30rem — and above
-// 40rem for a card with a picture, which has far less of the card's width to itself (§7.4.2). Below
-// either, the stylesheet's business (`app/globals.css`) hides the label and keeps the icon alone.
-// The label is visually-hidden rather than `display: none` on purpose — it is the button's
-// accessible name, so removing it from the tree at narrow widths would leave three unnamed buttons
-// for a screen reader and take every `getByRole('button', { name: … })` in the specs with it (§7.4).
-//
-// `danger` tints the control instead of filling it. That is how this editor already says
-// "destructive" — the bubble's 解除 and the toolbar's テーブルを削除 both wear the same red text
-// (`ToolbarButton`'s `destructive`), and a fill would read as a weight the rest of the chrome does
-// not carry.
+// `icon` makes a band control. **Icon and label at every width**: below 30rem (40rem with a picture,
+// §7.4.2) the label is visually hidden, not removed, since it is the accessible name (§7.4).
+// `danger` tints rather than fills, as elsewhere in the chrome.
 function button(
   label: string,
   onClick: () => void,
   options: { icon?: readonly IconShape[]; danger?: boolean } = {},
 ): HTMLButtonElement {
   const el = document.createElement('button');
-  // Not a submit button: PostEditor wraps the whole editor in one <form>, so a default-type
-  // button inside it submits the post (see the toolbar's dialogs, which hit this).
+  // Not a submit button inside PostEditor's <form>.
   el.type = 'button';
   if (options.icon) {
     const text = document.createElement('span');

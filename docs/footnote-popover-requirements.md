@@ -1,7 +1,7 @@
 # 脚注ポップオーバー（公開ページ）要件定義
 
 - 状態: **実装済み**（2026-08-09。設計もこの日）
-- 実装: `components/FootnotePopover.tsx`、`app/posts/[slug]/page.tsx`、`app/globals.css`、`e2e/public-footnote-popover.spec.ts`
+- 実装: `components/FootnotePopover.tsx`、`components/PostArticle.tsx`、`app/globals.css`、`e2e/public-footnote-popover.spec.ts`
 - 関連: `docs/footnote-requirements.md`（§4.2 が公開側の脚注の見た目を決めている）、`components/CodeCopyButtons.tsx`（最も近い前例 — 同じ形で書いた）
 
 公開ページで脚注の参照から本文の位置を失わずに注釈を読めるようにするための要件。**この文書は設計の記録であり、実装後もそのまま維持する** — 判断とその理由が書いてあり、コードだけでは復元できないのはそちらだからである。

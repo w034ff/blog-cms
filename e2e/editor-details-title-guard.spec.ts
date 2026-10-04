@@ -2,15 +2,10 @@ import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, selectNode, setRange } from './editor-authoring';
 import { docString, markdown } from './editor-probe';
 
-// An accordion's title is `text*` (docs/accordion-requirements.md §2.3, §6.5): it holds no block
-// node and, as of 2026-08-10, no marks either. ProseMirror does not *refuse* what does not fit —
-// the fitter splits the accordion in two around the intruder and grows a second, untitled one from
-// the title's remainder, which then saves as two `<details>`. Measured on all three routes the
-// toolbar and the slash menu offered (callout, table, image) before the guards below existed.
-//
-// These are the insertion-gesture guards only. Marks are answered by the schema instead, which is
-// why the two halves of this file assert different things: a refused command versus a mark that
-// never reaches the document.
+// An accordion's title is `text*` (docs/accordion-requirements.md §2.3, §6.5): no blocks, no marks.
+// ProseMirror does not refuse the intruder; the fitter splits the accordion and saves two
+// `<details>`. The insertion guards are here; marks are the schema's, so the two halves assert
+// different things.
 
 const TITLED = '<details>\n<summary>タイトル</summary>\n\n本文\n\n</details>\n';
 
@@ -32,9 +27,7 @@ type Probe = Element & {
   };
 };
 
-// The first position inside the title, and the first inside the body — asked of the document
-// rather than clicked, because a click places the DOM caret ~20ms before ProseMirror's state
-// catches up and every predicate below reads the state.
+// From the document, not a click: a click's caret reaches state ~20ms late.
 async function firstPos(page: Page, typeName: string): Promise<number> {
   return page.evaluate((name) => {
     const el = document.querySelector('.ProseMirror') as Probe | null;
@@ -48,8 +41,7 @@ async function firstPos(page: Page, typeName: string): Promise<number> {
   }, typeName);
 }
 
-// The start of the body's first line. Resolved to the first textblock inside `detailsContent`,
-// because a raw position that is not inside one lands somewhere else without saying so.
+// The first textblock in `detailsContent`; a raw position lands elsewhere silently.
 async function bodyFirstLine(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as Probe | null;
@@ -95,22 +87,18 @@ test('the callout and table controls are refused in an accordion title', async (
   await openWithAccordion(page);
   await setRange(page, await firstPos(page, 'detailsSummary'));
 
-  // The command's own predicate first: every route asks it, so this is where the rule lives.
+  // The command's predicate, which every route asks.
   expect(await blockPredicates(page)).toEqual({ setCallout: false, insertTable: false });
-  // …and the toolbar follows from it without a second rule of its own.
+  // The toolbar follows from it.
   await expect(page.getByRole('button', { name: '囲み枠' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '表', exact: true })).toBeDisabled();
 });
 
-// The body must keep taking both — §6.3 blesses a callout, a table and a code block *inside* an
-// accordion, and folding one away is most of the point. This is why the guards name
-// `detailsSummary` and never `details`; asserted here so a later widening cannot pass unnoticed.
+// The body takes both (§6.3), so the guards name `detailsSummary`, never `details`.
 test('the accordion body still takes a callout and a table', async ({ page }) => {
   await openWithAccordion(page);
-  // A loaded accordion is folded (§5) and a folded body takes no caret at all — setTextSelection
-  // into the hidden `detailsContent` normalizes back to the end of the title, which would test the
-  // title again under the body's name. Open it first, and aim at the body's first *textblock*
-  // rather than at `detailsContent` + 1, which is the position before that block.
+  // Open it first: a folded body takes no caret, and a selection there falls back to the title. Aim at
+  // the first textblock, not `detailsContent` + 1.
   const toggle = page.locator('.ProseMirror [data-type="details"] > button');
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを閉じる');
@@ -120,14 +108,13 @@ test('the accordion body still takes a callout and a table', async ({ page }) =>
 
   await page.getByRole('button', { name: '表', exact: true }).click();
   await page.getByLabel('2行2列の表を挿入').click();
-  // One accordion still, with the table inside its body rather than beside it.
+  // One accordion, the table in its body.
   expect(await docString(page)).toContain('detailsContent(table(');
   expect(await docString(page)).toContain('detailsSummary("タイトル")');
 });
 
-// Spelled out rather than imported from useImageUpload: this is user-visible copy, so a wording
-// change should turn a test red rather than travel with it. 「アコーディオンのタイトル」 is what the
-// footnote guard already calls the same place — one feature, one name (§7.3).
+// Spelled out, not imported: copy changes should fail a test. The name matches the footnote guard's
+// (§7.3).
 const BLOCKED_IN_TITLE = 'アコーディオンのタイトルには画像を挿入できません';
 
 const PNG_1x1_BASE64 =
@@ -137,8 +124,8 @@ test('an image is refused in an accordion title, and says why', async ({ page })
   await openWithAccordion(page);
   await setRange(page, await firstPos(page, 'detailsSummary'));
 
-  // The picker greys out; paste and drop have no control to grey, so they get the notice.
-  const picker = page.getByLabel(/画像/).first();
+  // The picker greys out; paste and drop get the notice.
+  const picker = page.getByRole('button', { name: '画像', exact: true });
   await expect(picker).toBeDisabled();
 
   const toast = page.getByRole('status');
@@ -157,16 +144,13 @@ test('an image is refused in an accordion title, and says why', async ({ page })
   await expect(toast).toBeVisible();
   await expect(toast).toHaveText(BLOCKED_IN_TITLE);
   await expect(page.locator('.ProseMirror img')).toHaveCount(0);
-  // The accordion is intact — one of it, its title unchanged.
+  // Intact: one accordion, title unchanged.
   expect(await docString(page)).toBe(
     'doc(details(detailsSummary("タイトル"), detailsContent(paragraph("本文"))), paragraph)',
   );
 });
 
-// With every row's predicate false, `hasAnyItem` is false and the trigger declines — so `/` stays
-// an ordinary character instead of opening an empty popup. The same thing already happens in a
-// table cell. One assertion pins the whole slash path, which is the second route the three block
-// insertions arrived by.
+// Every row refuses, so `hasAnyItem` is false and `/` stays a character, as in a table cell.
 test('`/` in an accordion title stays a literal character', async ({ page }) => {
   await openWithAccordion(page);
   await setRange(page, await firstPos(page, 'detailsSummary'));
@@ -176,9 +160,7 @@ test('`/` in an accordion title stays a literal character', async ({ page }) => 
   expect(await docString(page)).toContain('detailsSummary("/タイトル")');
 });
 
-// Marks are answered by the schema (`marks: ''`), not by a guard per command — so the assertion is
-// that the commands report false on their own, which is what greys the toolbar out with no UI-side
-// rule to keep in step.
+// `marks: ''` in the schema: the commands report false by themselves, greying the toolbar.
 test('no mark can be applied in an accordion title', async ({ page }) => {
   await openWithAccordion(page);
   await setRange(page, await firstPos(page, 'detailsSummary'));
@@ -207,11 +189,8 @@ test('no mark can be applied in an accordion title', async ({ page }) => {
   await expect(page.getByRole('button', { name: /太字/ })).toBeDisabled();
 });
 
-// The half of `marks: ''` that had to be measured before choosing the schema over a guard: a stored
-// title carrying emphasis keeps its *words*. §6.3 refuses schema restrictions because forbidding a
-// shape drops the content of markdown that carries it — a dropped mark does not, and the emphasis
-// was already being lost at save time (serializeDetails reads `textContent`), so nothing that
-// survived before is lost now.
+// A stored emphasized title keeps its words and drops the mark (§6.3 objects to dropping content,
+// not marks; serializeDetails already read `textContent`).
 test('a stored title with emphasis keeps its words and drops the mark', async ({ page }) => {
   await openWithAccordion(
     page,
@@ -222,13 +201,8 @@ test('a stored title with emphasis keeps its words and drops the mark', async ({
   expect(await markdown(page)).toBe('<details>\n<summary>強調と地</summary>\n\n本文\n\n</details>');
 });
 
-// The slice routes (§6.8). A block reaching the title does not have to come from a command: a
-// selection dragged or copied across a paragraph boundary carries block structure, and the fitter
-// splits the accordion around it exactly as an inserted callout did. What must keep working is the
-// selection made *within* one paragraph — that carries nothing but inline content, lands as text,
-// and is a gesture authors use.
-//
-// Stated as user-visible copy, pinned here rather than imported, like the image refusal above.
+// The slice routes (§6.8): a drag or copy across a paragraph boundary carries blocks and splits the
+// accordion. A selection within one paragraph is inline and still lands as text. Copy pinned.
 const TITLE_NO_BLOCKS = 'アコーディオンのタイトルには段落やブロックを入れられません';
 
 const WITH_PARAGRAPHS =
@@ -267,11 +241,11 @@ test('a paste crossing a paragraph boundary is refused in the title', async ({ p
   const toast = page.getByRole('status');
   await expect(toast).toBeVisible();
   await expect(toast).toHaveText(TITLE_NO_BLOCKS);
-  // Whole-document, not `toContain`: the defect's symptom is a second accordion appearing.
+  // The whole document: the symptom is a second accordion.
   expect(await docString(page)).toBe(INTACT);
 });
 
-// The other half of the rule, and the reason the guard reads the slice rather than the position.
+// Why the guard reads the slice, not the position.
 test('a paste from within one paragraph still lands as text in the title', async ({ page }) => {
   await openWithAccordion(page, WITH_PARAGRAPHS);
 
@@ -285,9 +259,7 @@ test('a paste from within one paragraph still lands as text in the title', async
   expect(await docString(page)).toContain('detailsSummary("一つ目の段落タイトル")');
 });
 
-// A whole block taken with the drag handle's node selection is a block wherever it is put. Before
-// the guard this one was not destructive — it landed *before* the accordion — but that is a
-// surprising place for content the author asked to put in the title, and the rule is now one rule.
+// A node-selected block is a block anywhere; it used to land before the accordion, now one rule.
 test('a whole callout pasted into the title is refused', async ({ page }) => {
   await openWithAccordion(
     page,

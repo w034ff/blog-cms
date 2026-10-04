@@ -1,0 +1,393 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { postRevisions, posts, tagAliases, tags } from '@/lib/db/schema';
+import { db } from '@/lib/db';
+import {
+  addAlias,
+  aliasTargets,
+  changeTagSlug,
+  createTag,
+  updateTag,
+  deleteTag,
+  knownTagSlugs,
+  listDictionary,
+  listTags,
+  removeAlias,
+  renameTag,
+  resolveTags,
+  tagUsage,
+} from '@/lib/tags';
+import { TAG_SYMBOL_MESSAGE } from '@/lib/content';
+import type { DraftContent } from '@/lib/types';
+
+// docs/editor-requirements.md §12.33. Backed by the real migrations in an in-memory DB.
+vi.mock('@/lib/db', async () => {
+  const { createTestDb } = await import('@/test/db');
+  return { db: createTestDb() };
+});
+
+beforeEach(() => {
+  db.delete(tagAliases).run();
+  db.delete(postRevisions).run();
+  db.delete(posts).run();
+  db.delete(tags).run();
+});
+
+function content(tagSlugs: string[]): DraftContent {
+  return { title: 'T', category: 'tech', tags: tagSlugs, thumbnail: '', body: 'b' };
+}
+
+function seedPost(live: string[], copy: string[] | null = null): number {
+  return db
+    .insert(posts)
+    .values({
+      slug: `s-${Math.random()}`,
+      title: 'T',
+      date: '2026-01-01',
+      tags: live,
+      draftContent: copy === null ? null : content(copy),
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    .returning({ id: posts.id })
+    .get().id;
+}
+
+describe('createTag', () => {
+  it('admits a name under its lowercased slug', () => {
+    expect(createTag('  NextJS ')).toEqual({
+      ok: true,
+      tag: { slug: 'nextjs', name: 'nextjs' },
+      created: true,
+    });
+  });
+
+  // The reason the dictionary exists: a second spelling of a tag it has is that tag.
+  it('hands back the tag a differently-cased name resolves to, without adding one', () => {
+    createTag('nextjs');
+    expect(createTag('NEXTJS')).toEqual({
+      ok: true,
+      tag: { slug: 'nextjs', name: 'nextjs' },
+      created: false,
+    });
+    expect(listTags()).toHaveLength(1);
+  });
+
+  it.each([
+    ['', 'タグ名を入力してください。'],
+    ['   ', 'タグ名を入力してください。'],
+    ['Next.js', TAG_SYMBOL_MESSAGE],
+    ['React Server Components', TAG_SYMBOL_MESSAGE],
+    ['C#', TAG_SYMBOL_MESSAGE],
+    ['x'.repeat(41), 'タグ名は 40 文字までです。'],
+  ])('refuses %j', (name, error) => {
+    expect(createTag(name)).toEqual({ ok: false, error });
+    expect(listTags()).toEqual([]);
+  });
+});
+
+describe('renameTag', () => {
+  it('changes the name and keeps the slug', () => {
+    createTag('nextjs');
+    expect(renameTag('nextjs', 'Next.js')).toEqual({
+      ok: true,
+      tag: { slug: 'nextjs', name: 'Next.js' },
+      created: false,
+    });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  it('refuses a name another tag already has', () => {
+    createTag('React');
+    createTag('Vue');
+    expect(renameTag('vue', 'React')).toEqual({
+      ok: false,
+      error: '「React」という名前のタグは既にあります。',
+    });
+  });
+
+  // Display names may carry symbols; what they may not do is read as another tag.
+  it.each([['REACT'], ['ＲＥＡＣＴ']])('refuses %j, which reads as the tag react', (name) => {
+    createTag('react');
+    createTag('Vue');
+    expect(renameTag('vue', name)).toEqual({
+      ok: false,
+      error: `「${name.normalize('NFKC')}」という名前のタグは既にあります。`,
+    });
+  });
+
+  // Symbols count: stripped, `C#` and `C++` would both be the tag `c`.
+  it('allows C# and C++ beside the tag c', () => {
+    createTag('c');
+    createTag('csharp');
+    createTag('cpp');
+    expect(renameTag('csharp', 'C#').ok).toBe(true);
+    expect(renameTag('cpp', 'C++').ok).toBe(true);
+  });
+
+  it('allows a rename that only changes its own case', () => {
+    createTag('nextjs');
+    expect(renameTag('nextjs', 'NextJS').ok).toBe(true);
+  });
+
+  it('refuses a tag that is not there', () => {
+    expect(renameTag('missing', 'x')).toEqual({ ok: false, error: 'タグが見つかりません。' });
+  });
+});
+
+describe('deleteTag', () => {
+  it('takes the tag off the live column, the working copy and the revisions', () => {
+    createTag('a');
+    createTag('b');
+    const id = seedPost(['a', 'b'], ['b', 'a']);
+    db.insert(postRevisions)
+      .values({ postId: id, createdAt: 1, reason: 'publish', content: content(['a', 'b']) })
+      .run();
+
+    expect(deleteTag('a')).toBe(true);
+
+    const row = db.select().from(posts).where(eq(posts.id, id)).get();
+    expect(row?.tags).toEqual(['b']);
+    expect(row?.draftContent?.tags).toEqual(['b']);
+    const [revision] = db.select().from(postRevisions).all();
+    expect(revision.content).toEqual(content(['b']));
+    expect(listTags()).toEqual([{ slug: 'b', name: 'b' }]);
+  });
+
+  // Not an edit the author made: a changed `updatedAt` would print 更新 on the post, and a revision
+  // would fill the history with versions nobody saved.
+  it('leaves updatedAt and the revision count alone, and posts without the tag untouched', () => {
+    createTag('a');
+    const holder = seedPost(['a']);
+    const other = seedPost(['z']);
+    deleteTag('a');
+    const rows = db.select().from(posts).all();
+    expect(rows.map((row) => row.updatedAt)).toEqual([
+      '2026-01-01T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z',
+    ]);
+    expect(rows.find((row) => row.id === other)?.tags).toEqual(['z']);
+    expect(rows.find((row) => row.id === holder)?.draftContent).toBeNull();
+    expect(db.select().from(postRevisions).all()).toEqual([]);
+  });
+
+  it('reports a tag that is not there', () => {
+    expect(deleteTag('missing')).toBe(false);
+  });
+});
+
+describe('changeTagSlug', () => {
+  function revision(postId: number, tagSlugs: string[]): void {
+    db.insert(postRevisions)
+      .values({ postId, createdAt: 1, reason: 'publish', content: content(tagSlugs) })
+      .run();
+  }
+
+  it('moves a tag to a new identifier in all three places, its untouched name with it', () => {
+    createTag('nextj');
+    const id = seedPost(['nextj', 'b'], ['b', 'nextj']);
+    revision(id, ['nextj']);
+
+    expect(changeTagSlug('nextj', 'NextJS')).toEqual({ ok: true, slug: 'nextjs', merged: false });
+
+    const row = db.select().from(posts).where(eq(posts.id, id)).get();
+    expect(row?.tags).toEqual(['nextjs', 'b']);
+    expect(row?.draftContent?.tags).toEqual(['b', 'nextjs']);
+    expect(db.select().from(postRevisions).get()?.content.tags).toEqual(['nextjs']);
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+
+  it('keeps a display name that was changed', () => {
+    createTag('nextj');
+    renameTag('nextj', 'Next.js');
+    changeTagSlug('nextj', 'nextjs');
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  // Two spellings that both made it into the dictionary become one.
+  it('merges into an identifier that is already a tag, once per post', () => {
+    createTag('next');
+    createTag('nextjs');
+    const both = seedPost(['next', 'nextjs'], ['nextjs', 'next']);
+    const one = seedPost(['next']);
+    revision(both, ['next', 'nextjs']);
+
+    expect(changeTagSlug('next', 'nextjs')).toEqual({ ok: true, slug: 'nextjs', merged: true });
+
+    const rows = db.select().from(posts).all();
+    expect(rows.find((row) => row.id === both)?.tags).toEqual(['nextjs']);
+    expect(rows.find((row) => row.id === both)?.draftContent?.tags).toEqual(['nextjs']);
+    expect(rows.find((row) => row.id === one)?.tags).toEqual(['nextjs']);
+    expect(db.select().from(postRevisions).get()?.content.tags).toEqual(['nextjs']);
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+
+  it('leaves updatedAt alone', () => {
+    createTag('a');
+    seedPost(['a']);
+    changeTagSlug('a', 'b');
+    expect(db.select().from(posts).get()?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it.each([
+    ['C#', TAG_SYMBOL_MESSAGE],
+    ['a'.repeat(19), 'タグは 18 文字まで入力できます。'],
+    ['A', '識別子が同じです。'],
+  ])('refuses %j and changes nothing', (to, error) => {
+    createTag('a');
+    const id = seedPost(['a']);
+    expect(changeTagSlug('a', to)).toEqual({ ok: false, error });
+    expect(db.select().from(posts).where(eq(posts.id, id)).get()?.tags).toEqual(['a']);
+  });
+
+  it('refuses a tag that is not there', () => {
+    expect(changeTagSlug('missing', 'x')).toEqual({ ok: false, error: 'タグが見つかりません。' });
+  });
+});
+
+describe('updateTag', () => {
+  it('sets a display name and leaves the identifier', () => {
+    createTag('nextjs');
+    expect(updateTag('nextjs', 'Next.js', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  it('changes both at once, keeping the name that was set', () => {
+    createTag('nextj');
+    seedPost(['nextj']);
+    expect(updateTag('nextj', 'Next.js', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+    expect(db.select().from(posts).get()?.tags).toEqual(['nextjs']);
+  });
+
+  it('lets an unchanged name follow a changed identifier', () => {
+    createTag('nextj');
+    expect(updateTag('nextj', 'nextj', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+
+  // A merge takes the target's name; the one sent (a disabled field sends none) is not applied.
+  it('merges into an existing identifier without renaming either tag', () => {
+    createTag('next');
+    createTag('nextjs');
+    renameTag('nextjs', 'Next.js');
+    expect(updateTag('next', '', 'nextjs')).toEqual({ ok: true, slug: 'nextjs' });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'Next.js' }]);
+  });
+
+  // The identifier is checked before the name is touched, so a refusal leaves the tag as it was.
+  it('changes nothing when the new identifier is refused', () => {
+    createTag('nextjs');
+    expect(updateTag('nextjs', 'Next.js', 'next.js')).toEqual({
+      ok: false,
+      error: TAG_SYMBOL_MESSAGE,
+    });
+    expect(listTags()).toEqual([{ slug: 'nextjs', name: 'nextjs' }]);
+  });
+});
+
+describe('aliases', () => {
+  it('are added under the identifier rules, one word to one tag', () => {
+    createTag('nextjs');
+    createTag('react');
+    expect(addAlias('nextjs', 'Next')).toEqual({ ok: true, alias: 'next' });
+    expect(addAlias('react', 'next')).toEqual({
+      ok: false,
+      error: '「next」は既に使われています。',
+    });
+    expect(addAlias('react', 'nextjs')).toEqual({
+      ok: false,
+      error: '「nextjs」は既に使われています。',
+    });
+    expect(addAlias('react', 'react.js')).toEqual({ ok: false, error: TAG_SYMBOL_MESSAGE });
+    expect(listDictionary()).toEqual([
+      { slug: 'nextjs', name: 'nextjs', aliases: ['next'] },
+      { slug: 'react', name: 'react', aliases: [] },
+    ]);
+    expect(removeAlias('next')).toBe(true);
+    expect(aliasTargets()).toEqual(new Map());
+  });
+
+  // A post never holds an alias: the write paths store the tag's identifier.
+  it('are stored as the identifier they stand for, once per post', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    expect(knownTagSlugs(['next', 'nextjs', 'gone'])).toEqual(['nextjs']);
+  });
+
+  it('resolve a new tag typed as one to the tag itself', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    expect(createTag('Next')).toEqual({
+      ok: true,
+      tag: { slug: 'nextjs', name: 'nextjs' },
+      created: false,
+    });
+  });
+
+  it('keep an identifier that was changed, so the old word still leads to the tag', () => {
+    createTag('nextj');
+    changeTagSlug('nextj', 'nextjs');
+    expect(aliasTargets()).toEqual(new Map([['nextj', 'nextjs']]));
+  });
+
+  it('carry a merged tag and its own aliases over to the tag it merged into', () => {
+    createTag('next');
+    createTag('nextjs');
+    addAlias('next', 'nxt');
+    changeTagSlug('next', 'nextjs');
+    expect(listDictionary()).toEqual([
+      { slug: 'nextjs', name: 'nextjs', aliases: ['next', 'nxt'] },
+    ]);
+  });
+
+  // Naming another tag's alias is naming that tag.
+  it('make a change to another tag’s alias a merge into that tag', () => {
+    createTag('go');
+    addAlias('go', 'golang');
+    createTag('gol');
+    const id = seedPost(['gol']);
+    expect(changeTagSlug('gol', 'golang')).toEqual({ ok: true, slug: 'go', merged: true });
+    expect(db.select().from(posts).where(eq(posts.id, id)).get()?.tags).toEqual(['go']);
+    expect(listDictionary()).toEqual([{ slug: 'go', name: 'go', aliases: ['gol', 'golang'] }]);
+  });
+
+  it('swap with the identifier when a tag is given one of its own', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    const id = seedPost(['nextjs']);
+    expect(changeTagSlug('nextjs', 'next')).toEqual({ ok: true, slug: 'next', merged: false });
+    expect(db.select().from(posts).where(eq(posts.id, id)).get()?.tags).toEqual(['next']);
+    expect(listDictionary()).toEqual([{ slug: 'next', name: 'next', aliases: ['nextjs'] }]);
+  });
+
+  it('go with their tag when it is deleted', () => {
+    createTag('nextjs');
+    addAlias('nextjs', 'next');
+    deleteTag('nextjs');
+    expect(aliasTargets()).toEqual(new Map());
+  });
+});
+
+describe('knownTagSlugs / resolveTags / tagUsage', () => {
+  it('keeps only dictionary slugs, once each, in order', () => {
+    createTag('a');
+    createTag('b');
+    expect(knownTagSlugs(['b', 'x', 'a', 'b'])).toEqual(['b', 'a']);
+    expect(resolveTags(['b', 'x', 'a'])).toEqual([
+      { slug: 'b', name: 'b' },
+      { slug: 'a', name: 'a' },
+    ]);
+  });
+
+  it('counts a post once whether the live column, the working copy or both hold the tag', () => {
+    seedPost(['a'], ['a', 'b']);
+    seedPost([], ['b']);
+    seedPost(['a']);
+    expect(tagUsage()).toEqual(
+      new Map([
+        ['a', 2],
+        ['b', 2],
+      ]),
+    );
+  });
+});

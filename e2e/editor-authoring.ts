@@ -1,19 +1,10 @@
-import type { Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { historyState } from './editor-probe';
 
-// Write-side companions to editor-probe.ts: they *change* the live editor rather than read it, and
-// exist for documents and selections the UI can't reach. Two cases keep coming up:
-//
-//   - structures no typing shortcut will build (a code block inside a list item — the fence input
-//     rule needs its target type to be valid at the caret, and a list item's first child must be a
-//     paragraph), but which ordinary saved or pasted markdown carries, so loading is how a real
-//     post arrives at them;
-//   - selections spanning more than one block, which a guard reading `editor.isActive(...)` sees
-//     differently from a caret (see components/editor/selection-scan.ts). Playwright can drag one,
-//     but the exact endpoints matter to these tests, and setTextSelection states them outright.
-//
-// closeHistory is the odd one out: it changes nothing in the document, only the undo history's
-// grouping, and it is here because it is a dispatch rather than a read.
+// Write-side companions to editor-probe.ts: they change the live editor, for documents and
+// selections the UI can't reach — structures no typing shortcut builds but saved markdown carries
+// (a code block inside a list item), and multi-block selections with exact endpoints, which a
+// guard reading `editor.isActive(...)` sees differently from a caret (selection-scan.ts).
 
 type Transaction = { setMeta(key: string, value: boolean): Transaction };
 
@@ -39,25 +30,14 @@ export function loadMarkdown(page: Page, markdown: string): Promise<void> {
   }, markdown);
 }
 
-// Put an explicit break in the undo history: whatever changes next starts its own event instead of
-// joining the one before it. This is what a test needs after loadMarkdown — setContent is a single
-// history event, so a gesture that groups with it is undone *together with the whole document*, and
-// the undo then proves nothing about what the gesture cost.
+// Put an explicit break in the undo history, so the next change starts its own event: after
+// loadMarkdown (one history event) a gesture would otherwise be undone together with the document.
 //
-// The break is stated, not waited for. prosemirror-history exports `closeHistory`, but nothing
-// exports it into a page that only has the bundled editor, so the meta it sets is set directly:
-// `closeHistory(tr)` is `tr.setMeta(closeHistoryKey, true)` with
-// `closeHistoryKey = new PluginKey("closeHistory")`, which prosemirror-state's `createKey` names
-// "closeHistory$" (`return name + "$"`), and `setMeta` takes that string as readily as the key.
-//
-// An empty transaction carries it, and that is deliberate: the plugin reads the meta *before* its
-// `if (tr.steps.length == 0) { return history; }` early return, and that return hands back the state
-// the meta already replaced — so `prevTime` becomes 0 while the document stays untouched.
-//
-// Checked, not assumed. A renamed key (a @tiptap family bump is a recurring operation here) or a
-// filterTransaction swallowing the empty transaction would drop every caller back onto time-based
-// grouping silently, where a test slow enough to outlast `newGroupDelay` still passes — which is the
-// vacuity this helper exists to remove, so it must not be able to reintroduce it quietly.
+// No page export reaches prosemirror-history's `closeHistory`, so its meta is set by name:
+// `closeHistoryKey = new PluginKey("closeHistory")`, which `createKey` names "closeHistory$". An
+// empty transaction carries it; the plugin reads the meta before its
+// `if (tr.steps.length == 0) { return history; }` return. **Checked, not assumed**: a renamed key
+// (a @tiptap bump) would silently fall back to time-based grouping, the vacuity this removes.
 export async function closeHistory(page: Page): Promise<void> {
   await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as EditorProbe | null;
@@ -70,9 +50,8 @@ export async function closeHistory(page: Page): Promise<void> {
   }
 }
 
-// Select a range by raw document position. The blunt one, for tests whose whole point is *where*
-// the endpoints are: a mouse drag lands them by font metrics, which is exactly what a test asserting
-// an exact resulting document cannot afford.
+// Select a range by raw document position, for tests about exactly where the endpoints are; a
+// mouse drag lands them by font metrics.
 export function setRange(page: Page, from: number, to = from): Promise<void> {
   return page.evaluate(
     ({ from, to }) => {
@@ -85,14 +64,8 @@ export function setRange(page: Page, from: number, to = from): Promise<void> {
 }
 
 // The inline-content edges of the first node of `typeName`: the start of its first textblock and
-// the end of its last. Both selection helpers below build on this.
-//
-// The textblocks are found rather than assumed. Both helpers used to arrive at their endpoints with
-// `± 2` — really "the node, then its first (or last) child" — which only holds when that child is a
-// textblock. It is not for a bulletList (the child is a listItem) or a table (a tableRow), so
-// prosemirror-state warned "TextSelection endpoint not pointing into a node with inline content"
-// and built a selection nobody had asked for. The arithmetic was wrong the other way for a node
-// that is *itself* a textblock: a codeBlock's own first and last character fell outside.
+// the end of its last. Found, not `± 2`, which fails for a list or table (no textblock child) and
+// for a node that is itself a textblock.
 function innerRange(page: Page, typeName: string): Promise<{ from: number; to: number }> {
   return page.evaluate((name) => {
     const el = document.querySelector('.ProseMirror') as EditorProbe | null;
@@ -112,8 +85,7 @@ function innerRange(page: Page, typeName: string): Promise<{ from: number; to: n
         }
         return;
       }
-      // descendants() keeps walking past the host, so stay inside its range. Nested textblocks come
-      // in document order, which is what makes the last assignment the last one.
+      // descendants() walks past the host, so stay inside it; textblocks come in document order.
       const { from, to } = host as { from: number; to: number };
       if (pos < from || pos >= to || !n.isTextblock) return;
       if (first === null) first = pos;
@@ -126,10 +98,7 @@ function innerRange(page: Page, typeName: string): Promise<{ from: number; to: n
   }, typeName);
 }
 
-// The inline-content start of the first node of `typeName`. `selectInside` is the whole-node form;
-// this is one endpoint on its own, for a range that *crosses* into a node — which is the shape the
-// isolating edge has to be measured at (a selection running from the paragraph above the footnotes
-// to where the first definition's text begins).
+// One endpoint on its own, for a range that crosses into a node (the isolating edge's shape).
 export async function contentStartOf(page: Page, typeName: string): Promise<number> {
   const { from } = await innerRange(page, typeName);
   return from;
@@ -141,22 +110,16 @@ export async function selectInside(page: Page, typeName: string): Promise<void> 
   await setRange(page, from, to);
 }
 
-// Put a collapsed caret at the start of the first node of `typeName`'s inline content — what a
-// native `Home` pressed in there is meant to produce, except that this one cannot be swallowed.
-// A `Home` sent inside the ~20ms selection-sync window (DOMObserver.flushSoon) that follows typing
-// is discarded: ProseMirror re-asserts its own pre-Home selection onto the DOM, the caret never
-// moves, and a poll watching the DOM offset waits for a value that will never arrive.
+// A collapsed caret at the start of `typeName`'s inline content: a native `Home` inside the ~20ms
+// selection-sync window after typing is discarded (docs/editor-pitfalls.md §1.1).
 export async function caretAtStartOf(page: Page, typeName: string): Promise<void> {
   const { from } = await innerRange(page, typeName);
   await setRange(page, from);
 }
 
-// Collapse the current selection to its end — the deterministic counterpart to pressing End after a
-// shift-selection. That key moves the *DOM* selection, which reaches state.selection a debounce
-// later (ProseMirror's DOMObserver.flushSoon, ~20ms), so a key pressed inside that window acts on
-// the ranged selection End was meant to collapse — and Enter *replaces* a ranged selection. This
-// reads `selection.to`, so it names the end of the range just selected rather than re-resolving a
-// node by type, which would be a different node the moment the document leads with something else.
+// Collapse the selection to its end: a pressed End acts on the DOM selection, which reaches
+// state a debounce later (docs/editor-pitfalls.md §1.1), and Enter would replace the range. Reads
+// `selection.to` rather than re-resolving a node by type.
 export function collapseToEnd(page: Page): Promise<void> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
@@ -168,12 +131,8 @@ export function collapseToEnd(page: Page): Promise<void> {
   });
 }
 
-// Select the first node of `typeName` *as a node* — the selection the block drag handle makes, and
-// the one to copy a whole block with. A TextSelection spanning the same ground has to put its
-// endpoints on the block boundaries either side, where the parent is the doc rather than a
-// textblock; prosemirror-state warns about that ("TextSelection endpoint not pointing into a node
-// with inline content") and the resulting slice picks up whatever the neighbouring blocks
-// contribute. A NodeSelection says "this node, closed on both sides" outright.
+// Select the first node of `typeName` as a node, as the drag handle does. A TextSelection over the
+// same ground has endpoints outside any textblock, warns, and picks up the neighbours.
 export function selectNode(page: Page, typeName: string): Promise<void> {
   return page.evaluate((name) => {
     const el = document.querySelector('.ProseMirror') as EditorProbe | null;
@@ -188,10 +147,9 @@ export function selectNode(page: Page, typeName: string): Promise<void> {
   }, typeName);
 }
 
-// Select from inside the document's first block *into* the first node of `typeName` — the mixed
-// selection an isActive-based guard reports false for. `backward` puts the anchor in the target and
-// the head in the first block instead, which is what a user dragging upwards produces; guards
-// reading `$head` alone (prosemirror-tables' isInTable) only miss that direction.
+// Select from the first block into the first node of `typeName`: the mixed selection an
+// isActive-based guard reports false for. `backward` is an upward drag, which guards reading
+// `$head` alone (prosemirror-tables' isInTable) miss.
 export async function selectAcross(
   page: Page,
   typeName: string,
@@ -203,15 +161,10 @@ export async function selectAcross(
   await (options.backward ? setRange(page, inner, outer) : setRange(page, outer, inner));
 }
 
-// Move the paragraph reading `text` to just before the first node of `typeName` — the reorder that
-// rebuilds the *jumped-over* block's NodeView (docs/embed-requirements.md §8.4, row 1 of its table;
-// the other direction rebuilds the moved block instead and leaves the target alone).
-//
-// A transaction rather than the block drag handle: what this exists to exercise is prosemirror-view's
-// child sync (`destroyBetween` on the node-diff pass), which a `delete` + `insert` reaches
-// identically, without depending on CDP input over an iframe (embed §8.1, criterion E12). Callers
-// that care whether the rebuild happened must check it themselves — stamping the old DOM and
-// asserting the stamp is gone is the only thing that proves this reached the diff at all.
+// Move the paragraph reading `text` above the first node of `typeName`, which rebuilds the
+// jumped-over block's NodeView (docs/embed-requirements.md §8.4). A transaction, not the drag
+// handle: prosemirror-view's `destroyBetween` is reached the same way without CDP input over an
+// iframe (§8.1, criterion E12). Callers must prove the rebuild, e.g. a stamp on the old DOM gone.
 export function moveBlockAbove(page: Page, text: string, typeName: string): Promise<void> {
   return page.evaluate(
     ({ needle, name }) => {
@@ -251,4 +204,84 @@ export function moveBlockAbove(page: Page, text: string, typeName: string): Prom
     },
     { needle: text, name: typeName },
   );
+}
+
+// 記事の設定 starts closed. Idempotent; reads the toggle's `aria-expanded`
+// (PostSettingsPanel.tsx, docs/editor-requirements.md §12.22).
+export async function openPostSettings(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: '記事の設定' });
+  if ((await toggle.getAttribute('aria-expanded')) === 'true') return;
+  await toggle.click();
+  await expect(page.getByLabel('カテゴリ')).toBeVisible();
+}
+
+// 記事の設定's タグ field (TagField.tsx): the combobox, and the hidden input a save sends, by
+// selector since `getByRole` cannot see it.
+export function tagCombobox(page: Page): Locator {
+  return page.getByRole('combobox', { name: 'タグ' });
+}
+
+export function tagsField(page: Page): Locator {
+  return page.locator('input[type="hidden"][name="tags"]');
+}
+
+// Type into タグ, Enter on the first row, wait for the chip `name` (the existing tag's name, or the
+// typed text when the first row adds it). The panel must be open.
+export async function addTag(page: Page, typed: string, name: string = typed): Promise<void> {
+  const box = tagCombobox(page);
+  await box.fill(typed);
+  await expect(
+    page.getByRole('listbox', { name: 'タグ' }).getByRole('option').first(),
+  ).toBeVisible();
+  await box.press('Enter');
+  await expect(page.getByRole('button', { name: `「${name}」を外す` })).toBeVisible();
+  await expect(box).toHaveValue('');
+}
+
+// The drawer is modal and its backdrop swallows clicks into the editor, so close it before
+// working outside the panel. Idempotent.
+export async function closePostSettings(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: '記事の設定' });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') return;
+  // Scoped: `name: '閉じる'` is a substring match, and WritingHelpDialog's close shares it.
+  await page.locator('#post-settings-panel').getByRole('button', { name: '閉じる' }).click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+}
+
+// 投稿 refuses a post with no category (docs/editor-requirements.md §12.32), so every spec that
+// publishes a new post calls this. Keeps a chosen one. Clicks the radio in the page rather than
+// opening 記事の設定, which would add two steps to every publish.
+export async function ensureCategory(page: Page): Promise<void> {
+  if ((await page.locator('input[name="category"]:checked').count()) > 0) return;
+  const first = page.locator('input[name="category"]').first();
+  await first.evaluate((input: HTMLInputElement) => input.click());
+  await expect(first).toBeChecked();
+}
+
+// The publish state, from the pinned row's `data-publish-state` (PostEditor.tsx). Attachment, not
+// visibility: the row carries no text. The button cannot stand in: publishDisabled is true both in
+// flight and after landing.
+function publishState(page: Page, state: string): Locator {
+  return page.locator(`[data-publish-state="${state}"]`);
+}
+
+// 投稿/更新 has landed and the live post is current. 20s, the suite's longest wait (a run failing
+// only here means memory, not code: docs/cms-features.md「E2E: 3シャードは開発サーバと同居できない」).
+export async function expectPublished(page: Page): Promise<void> {
+  await expect(publishState(page, 'published-current')).toBeAttached({ timeout: 20_000 });
+}
+
+// The last edit is persisted. Not 保存済み ✓, which fades (PostEditor.tsx); the attribute does not.
+export async function expectAutosaved(page: Page): Promise<void> {
+  await expect(page.locator('[data-autosave-state="saved"]')).toBeAttached({ timeout: 20_000 });
+}
+
+// Never published.
+export async function expectDraft(page: Page): Promise<void> {
+  await expect(publishState(page, 'draft')).toBeAttached();
+}
+
+// Published, with edits that have not been pushed public.
+export async function expectPublishPending(page: Page): Promise<void> {
+  await expect(publishState(page, 'published-pending')).toBeAttached();
 }

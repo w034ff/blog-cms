@@ -1,19 +1,12 @@
 import BaseImage from '@tiptap/extension-image';
+import { mergeAttributes } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 
-// tiptap-markdown registers prosemirror-markdown's *inline* image serializer for the `image`
-// node (see its dist: `serialize: defaultMarkdownSerializer.nodes.image`). That one writes
-// `![alt](src)` and stops — correct for an image sitting inside a paragraph, wrong here, because
-// @tiptap/extension-image's node is a block (`inline: false`). With no block close, whatever
-// follows the image is emitted onto the same line, so `![alt](src)> quoted` reaches the public
-// pipeline as one paragraph: the image renders, the `>` and its first line show up as literal
-// body text, and the blockquote loses that line. Anything block-level after an image was
-// affected — quotes, fences, the lot.
-//
-// Same output as upstream's, plus the closeBlock the block node needs. The escaping mirrors
-// prosemirror-markdown's own: alt through `esc`, parentheses in the URL backslashed (they would
-// otherwise close the link early), quotes in the title backslashed.
+// tiptap-markdown uses prosemirror-markdown's *inline* image serializer
+// (`serialize: defaultMarkdownSerializer.nodes.image`), but this node is a block, so without a
+// closeBlock the next block landed on the same line (`![alt](src)> quoted`). Same output as
+// upstream plus the closeBlock; escaping mirrors prosemirror-markdown's.
 function serializeImage(state: MarkdownSerializerState, node: PMNode): void {
   const { src, alt, title } = node.attrs;
   const url = typeof src === 'string' ? src.replace(/[()]/g, '\\$&') : '';
@@ -24,14 +17,33 @@ function serializeImage(state: MarkdownSerializerState, node: PMNode): void {
   state.closeBlock(node);
 }
 
+// Two boxes around the picture, editor-only (the stored form is still `![alt](src)`). An `<img>`
+// takes no ::before/::after, so the thumbnail badge needs `.image-box`, which hugs the picture.
+// The column-wide `.image-block` keeps the empty space beside a centred picture inside the drag
+// handle's `:has(+ :hover)` reveal area (e2e/image-layout.spec.ts). The handle's x is a fixed
+// offset and does not depend on either box.
+//
+// **Both rings must be re-scoped:** the thumbnail `Decoration.node` and `.ProseMirror-selectednode`
+// land on the outer `.image-block`, so globals.css draws them through `.image-box`.
 export const Image = BaseImage.extend({
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'div',
+      { class: 'image-block' },
+      [
+        'div',
+        { class: 'image-box' },
+        ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)],
+      ],
+    ];
+  },
+
   addStorage() {
     return {
       ...this.parent?.(),
       markdown: {
         serialize: serializeImage,
-        // Parsing is markdown-it's job, same as upstream — `![alt](src)` comes back through the
-        // HTML path and ProseMirror lifts the <img> out of its paragraph into the block node.
+        // Parsed by markdown-it as upstream; ProseMirror lifts the <img> into the block node.
         parse: {},
       },
     };

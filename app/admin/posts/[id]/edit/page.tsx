@@ -1,9 +1,15 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
-import { getPostForEdit } from '@/lib/posts';
+import { getPostForEdit, liveContent } from '@/lib/posts';
+import { listDictionary } from '@/lib/tags';
+import { EDIT_POST_TITLE } from '@/app/shared-metadata';
 
 export const dynamic = 'force-dynamic';
+
+// No h1: the editor's title field names the post. The tab title tells new from edit.
+export const metadata: Metadata = { title: EDIT_POST_TITLE };
 
 export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -11,29 +17,22 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
 
-  // Resume from the private working copy (pending edits) when present; otherwise
-  // load the published content.
-  const content = post.draftContent ?? {
-    title: post.title,
-    description: post.description,
-    category: post.category,
-    tags: post.tags,
-    body: post.body,
-    thumbnail: post.thumbnail,
-  };
-  // slug is null while a draft — the editor derives an editable preview from the
-  // title and finalizes it at publish.
+  // The private working copy (pending edits) when present, else the live content.
+  const content = post.draftContent ?? liveContent(post);
+  // Non-null for every row since creation (app/api/drafts/route.ts); the column is nullable only.
   const initial: PostEditorInitial = { id: post.id, slug: post.slug ?? '', ...content };
 
   return (
     <section>
-      <h1 className='mb-6 text-2xl font-bold tracking-tight'>記事を編集</h1>
       <PostEditor
         action={submitPostAction}
         initial={initial}
         mode='edit'
         published={!post.draft}
-        hasPendingEdits={post.draftContent !== null}
+        // `date` is stamped at first publish and never cleared (lib/posts-write.ts).
+        everPublished={post.date !== ''}
+        hasPendingEdits={post.hasPendingEdits}
+        tagDictionary={listDictionary()}
       />
     </section>
   );

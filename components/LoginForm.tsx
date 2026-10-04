@@ -6,7 +6,7 @@ import { login, type LoginState } from '@/app/actions/auth';
 const initialState: LoginState = {};
 
 const inputClass =
-  'w-full rounded border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
+  'w-full rounded-box border border-zinc-300 dark:border-zinc-700 bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400';
 
 export function LoginForm() {
   const [state, action, pending] = useActionState(login, initialState);
@@ -35,7 +35,7 @@ export function LoginForm() {
       <button
         type='submit'
         disabled={pending}
-        className='rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300'>
+        className='button-primary px-4 py-2 text-sm font-medium disabled:pointer-events-none disabled:opacity-50'>
         {pending ? 'ログイン中…' : 'ログイン'}
       </button>
     </form>

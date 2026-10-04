@@ -1,19 +1,9 @@
 import type { Page } from '@playwright/test';
 
-// A stand-in for X's embed endpoint (docs/embed-requirements.md §10.5).
-//
-// **The specs must not depend on a third party.** Everything the two surfaces do with an X embed is
-// driven by messages the iframe sends, so what has to be exercised is our handling of those three
-// outcomes — a height, a missing post, and silence — not X's ability to serve them today. A live
-// endpoint would also make "the timeout did not fire" untestable, since a real post answers before
-// the clock is interesting.
-//
-// The route is fulfilled at X's own URL, so `event.origin` is genuinely
-// `https://platform.twitter.com` and the origin check in `lib/embed-message.ts` is exercised rather
-// than bypassed.
-//
-// Which outcome an iframe produces is chosen by the post id the author wrote, because that is the
-// only part of the src a spec controls — `lib/embed-provider.ts` builds the rest.
+// A stand-in for X's embed endpoint (docs/embed-requirements.md §10.5). **Specs must not depend
+// on a third party**, and a live post would answer before a timeout became testable. Fulfilled at
+// X's own URL, so `event.origin` is real and lib/embed-message.ts's origin check runs. The post id
+// picks the outcome: it is the only part of the src a spec controls.
 
 // Answers with a height, the way a real post does.
 export const X_RESIZE_ID = '1111111111111111111';
@@ -22,16 +12,17 @@ export const X_MISSING_ID = '2222222222222222222';
 // **Answers nothing, ever.** What a changed entry point would look like, and the only way to
 // observe when the silence timeout starts (§10.6).
 export const X_SILENT_ID = '3333333333333333333';
-// Answers with a height nothing else uses. It exists for the impersonation case (§10.10): a second
-// frame carrying another frame's `embedId` has to be told apart from that frame by its number
-// alone, so the two must not agree.
+// A height nothing else uses, for the impersonation case (§10.10): a frame carrying another's
+// `embedId` must be told apart by its number.
 export const X_TALL_ID = '4444444444444444444';
 
 export const X_HEIGHT = 420;
 export const X_TALL_HEIGHT = 999;
 
-// Long enough to be observable, far below the 8s the timeout allows.
-const REPLY_MS = 300;
+// X's own pace: `resize` lands ~600ms after the iframe shows (EMBED_SILENCE_MS's note in
+// lib/embed-message.ts). Not faster: `EmbedFrames` attaches its listener 200-320ms after load under
+// suite load, and X's `resize` is fire-and-forget, so a faster reply invents a miss X never makes.
+export const REPLY_MS = 600;
 
 const url = (id: string) => `https://x.com/ClaudeDevs/status/${id}`;
 export const X_RESIZE_URL = url(X_RESIZE_ID);
@@ -42,8 +33,7 @@ export const X_SILENT_URL = url(X_SILENT_ID);
 function body(id: string, embedId: string): string {
   const call = (method: string, params: string) =>
     `parent.postMessage(JSON.stringify({"twttr.embed":{"jsonrpc":"2.0","method":"twttr.private.${method}","id":${JSON.stringify(embedId)},"params":[${params}]}}), '*');`;
-  // A string, which is one of the two forms the real endpoint uses and the one `readXCall` has to
-  // parse rather than read straight off `event.data`.
+  // A string, one of the real endpoint's two forms, which `readXCall` has to parse.
   const answer =
     id === X_RESIZE_ID
       ? call('resize', `{"width":550,"height":${X_HEIGHT},"data":{"tweet_id":"${id}"}}`)
@@ -66,9 +56,8 @@ export async function stubX(page: Page): Promise<void> {
   await page.route('https://platform.twitter.com/embed/Tweet.html*', async (route) => {
     const target = new URL(route.request().url());
     const id = target.searchParams.get('id') ?? '';
-    // The name the parent gave this placement. Echoing it back is the whole point of the id: a
-    // stub that answered under any other name would be indistinguishable from the `embed-0`
-    // collision the id exists to prevent (§10.5).
+    // Echoing the placement's name is the point: a stub answering under any name would not show the
+    // `embed-0` collision the id prevents (§10.5).
     const embedId = target.searchParams.get('embedId') ?? '';
     await route.fulfill({
       status: 200,

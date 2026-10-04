@@ -21,8 +21,8 @@ function main(): void {
   const passwordHash = bcrypt.hashSync(password, 12);
   const db = new Database(DB_PATH);
   db.prepare(
-    `INSERT INTO users (username, password_hash) VALUES (?, ?)
-     ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash`,
+    `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')
+     ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
   ).run(username, passwordHash);
   db.close();
 

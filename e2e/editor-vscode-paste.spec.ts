@@ -2,25 +2,17 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString, markdown } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// Base CodeBlock ships a paste handler that turns any clipboard carrying VS Code's
-// `vscode-editor-data` flavour into a code block without looking at the content — so copying a URL
-// out of an editor window produced a ```markdown fence, and over a selection it destroyed the
-// selected text on the way (`replaceSelectionWith`). components/editor/code-block-extension.ts
-// replaces it with one that requires the text to span more than one line.
-//
-// These specs are the standing check on that swap. The filter that removes the base plugin matches
-// an upstream PluginKey name, so a rename in @tiptap/extension-code-block would silently restore
-// the old behaviour — the single-line cases below are what would catch it.
-//
-// The clipboard is synthesised the way e2e/image-upload.spec.ts synthesises a pasted File:
-// `vscode-editor-data` is a real custom MIME type, and DataTransfer.setData accepts it.
+// Base CodeBlock turns any paste carrying VS Code's `vscode-editor-data` into a code block, so a URL
+// copied from an editor became a ```markdown fence, replacing any selection.
+// code-block-extension.ts swaps in one requiring more than one line. The filter matches an upstream
+// PluginKey name, so a rename would silently restore the old handler: the single-line cases catch
+// it. Synthesized, as image-upload.spec.ts synthesizes a File.
 
 const URL_TEXT = 'https://wikiwiki.jp/livejupiter';
 
 type Flavour = { type: string; data: string };
 
-// VS Code writes the source file's language into `mode`; that is where the code block's language
-// attribute comes from, and the only thing this clipboard flavour is actually good for.
+// VS Code puts the language in `mode`, this flavour's one use.
 const VSCODE: Flavour = {
   type: 'vscode-editor-data',
   data: JSON.stringify({ version: 1, mode: 'markdown' }),
@@ -61,8 +53,7 @@ test('a single-line paste from VS Code stays text', async ({ page }) => {
 test('copying a whole line from VS Code is still one line', async ({ page }) => {
   await openEditor(page, 'ここ\n');
   await setRange(page, 4);
-  // Ctrl+C with nothing selected copies the caret's line *including* its newline. That is one line
-  // of content, so the multi-line test strips a trailing newline before deciding.
+  // A line copy includes its newline; one line of content, so a trailing newline is stripped first.
   await paste(page, [plain(`${URL_TEXT}\n`), VSCODE]);
 
   await expect(page.locator('.ProseMirror pre')).toHaveCount(0);
@@ -73,8 +64,7 @@ test('a single-line paste from VS Code does not destroy the selection', async ({
   await setRange(page, 1, 3); // 「ここ」selected
   await paste(page, [plain('const x = 1;'), VSCODE]);
 
-  // The old handler replaced the selection with a code block holding the pasted text, so 「ここ」
-  // vanished. Now the paste lands as ordinary text.
+  // The old handler replaced 「ここ」 with a code block; now it lands as text.
   await expect(page.locator('.ProseMirror pre')).toHaveCount(0);
   expect(await docString(page)).toBe('doc(paragraph("const x = 1;"))');
 });
@@ -112,8 +102,7 @@ test('a multi-line paste from VS Code is still a code block with its language', 
     return found;
   });
   expect(language).toBe('markdown');
-  // The node is built with `language` only, so `filename` comes from its default. An empty one
-  // must not leave a dangling colon in the fence (```markdown:), which is what would be stored.
+  // Built with `language` only: an empty `filename` must not leave ```markdown: stored.
   expect(await markdown(page)).toBe('ここ\n\n```markdown\nline1\nline2\n```');
 });
 
@@ -122,8 +111,7 @@ test('a URL pasted from VS Code over a selection still makes a link', async ({ p
   await setRange(page, 1, 3);
   await paste(page, [plain(URL_TEXT), VSCODE]);
 
-  // Unaffected by the swap, and the reason the reported bug was not worse than it was: Link sets
-  // priority 1000, and ExtensionManager sorts by priority *after* reversing the extension list, so
-  // its handlePaste is asked before any code block handler whatever the array order.
+  // Unaffected: Link's priority 1000 puts its handlePaste first (ExtensionManager sorts by priority
+  // after reversing the list).
   expect(await docString(page)).toBe('doc(paragraph(link("ここ")))');
 });

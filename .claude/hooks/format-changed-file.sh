@@ -15,6 +15,12 @@ case "$FILE" in
   *) FILE="$ROOT/$FILE" ;;
 esac
 [ -f "$FILE" ] || exit 0
+# Only files inside this repository: prettier's config here is not the house
+# style of ~/.claude or of any other tree.
+case "$FILE" in
+  "$ROOT"/*) ;;
+  *) exit 0 ;;
+esac
 
 # --ignore-unknown lets prettier silently skip file types it can't format.
 "$ROOT/node_modules/.bin/prettier" --write --ignore-unknown "$FILE" >/dev/null 2>&1

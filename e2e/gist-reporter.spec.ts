@@ -3,16 +3,10 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { resolveEmbed } from '../lib/embed-provider';
 
-// docs/embed-requirements.md §18.5, criterion G11. **The document the gist is framed in, run for
-// real** — the half `e2e/public-embed.spec.ts` cannot reach, because a request from a frame
-// sandboxed without `allow-same-origin` does not pass through Playwright's routing (measured
-// 2026-08-29) and so GitHub's own script cannot be stubbed in place.
-//
-// `srcdoc` takes the script URL as an argument, which is what makes this measurable at all: the
-// document is built by the shipped code and pointed at a script served from here, so what runs is
-// the reporter as published and only the third party is substituted. A data: URL will not do —
-// Chrome refuses to load one as a `<script src>`, and the frame then reports zero files, which is
-// the failure signal rather than a stand-in for content (measured 2026-08-29).
+// docs/embed-requirements.md §18.5, criterion G11: the gist's frame document, run for real, which
+// public-embed.spec.ts cannot stub (sandboxed without `allow-same-origin`). `srcdoc` takes the script
+// URL, so the shipped reporter runs against a script served here. Not a data: URL: Chrome refuses it
+// as `<script src>`, reporting zero files.
 const GIST = 'https://gist.github.com/qiitan/fa7df2b570a3f16b39e990b2d2c20aae';
 const HEIGHT = 612;
 
@@ -35,13 +29,10 @@ test('the frame announces its height, answers an ask, and reports an empty gist 
   try {
     const target = resolveEmbed(GIST)!;
     const drawn = target.srcdoc!(`http://127.0.0.1:${port}/gist.js`, 'emb-drawn');
-    // A script that is not there is exactly what GitHub serves for an id that no longer resolves:
-    // the document parses, and nothing is drawn in it.
+    // A missing script is what GitHub serves for a dead id: nothing drawn.
     const empty = target.srcdoc!(`http://127.0.0.1:${port}/missing.js`, 'emb-empty');
 
-    // A real origin, not `about:blank`: a frame injected into `about:blank` could not load the
-    // script at all (measured 2026-08-29, it reported zero files), and zero files is this
-    // provider's failure signal rather than a neutral starting point.
+    // A real origin: from `about:blank` the script cannot load, reporting zero files.
     await page.goto('/');
     await page.evaluate(() => {
       (window as unknown as { reports: Report[] }).reports = [];
@@ -52,33 +43,33 @@ test('the frame announces its height, answers an ask, and reports an empty gist 
         }
       });
     });
-    await page.evaluate((docs) => {
-      for (const doc of docs) {
-        const frame = document.createElement('iframe');
-        frame.setAttribute('sandbox', 'allow-scripts allow-popups');
-        frame.style.cssText = 'width:600px;height:200px;border:0;display:block';
-        frame.srcdoc = doc;
-        document.body.appendChild(frame);
-      }
-    }, [drawn, empty]);
+    await page.evaluate(
+      (docs) => {
+        for (const doc of docs) {
+          const frame = document.createElement('iframe');
+          frame.setAttribute('sandbox', 'allow-scripts allow-popups');
+          frame.style.cssText = 'width:600px;height:200px;border:0;display:block';
+          frame.srcdoc = doc;
+          document.body.appendChild(frame);
+        }
+      },
+      [drawn, empty],
+    );
 
     const reports = async () =>
       page.evaluate(() => (window as unknown as { reports: Report[] }).reports);
+    // The latest, since both parents apply every report and the last one stands. The first can
+    // carry a height of 0 with the file already drawn — the frame's timed sends can run before it
+    // is laid out — and the resize path corrects it.
+    const latest = async (id: string) => (await reports()).findLast((r) => r.id === id);
 
-    // **The height, unprompted.** This is the whole reason the gist is framed in a document of ours
-    // rather than pointed at `.pibb` (§18.3).
-    await expect
-      .poll(async () => (await reports()).find((r) => r.id === 'emb-drawn')?.height)
-      .toBe(HEIGHT);
-    expect((await reports()).find((r) => r.id === 'emb-drawn')?.files).toBe(1);
-    // Zero files is the signal both surfaces turn into a link or a note (§18.5).
-    await expect
-      .poll(async () => (await reports()).find((r) => r.id === 'emb-empty')?.files)
-      .toBe(0);
+    // **The height, unprompted**, the reason for our own document over `.pibb` (§18.3).
+    await expect.poll(async () => (await latest('emb-drawn'))?.height).toBe(HEIGHT);
+    expect((await latest('emb-drawn'))?.files).toBe(1);
+    // Zero files: the signal for a link or a note (§18.5).
+    await expect.poll(async () => (await latest('emb-empty'))?.files).toBe(0);
 
-    // **The ask.** A parent that attached its listener after the frame had already spoken would
-    // otherwise be stuck with the published guess — measured 2026-08-29, that race lost the message
-    // outright. This is the reply, counted rather than merely observed.
+    // **The ask**: a parent listening late would keep the guess, so it asks, and the reply is counted.
     const before = (await reports()).filter((r) => r.id === 'emb-drawn').length;
     await page.evaluate(() => {
       document.querySelectorAll('iframe')[0].contentWindow?.postMessage({ ask: 'gist-embed' }, '*');

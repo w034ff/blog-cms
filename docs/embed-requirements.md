@@ -2,7 +2,7 @@
 
 - 状態: **プロバイダは 9 つ実装済み** — YouTube（2026-08-21、§9）、X（08-23、§10）、SlideShare（08-25、§14）、Figma（08-25、§15）、Speaker Deck（08-26、§16）、Docswell（08-26、§17）、GitHub Gist（08-29、§18）、CodeSandbox（08-30、§20）、CodePen（08-31、§21）。設計は実装より先に書き、実測値をあとから入れてある（§11、§12。`docs/link-card-requirements.md` と同じ順序）。共通の決定は §3〜§8、プロバイダ別は §9 以降で、**プロバイダを横断して比べる表は §3.4 にある**。**同じホストでも URL の形で結果が変わる**: X はアカウントがリンクカードで投稿が埋め込み（§10）、Docswell は動画がカードでスライドが埋め込み（§17.6）。**GitHub はファイルへのリンクを埋め込みにしない** — gist は埋め込み（§18）、`blob/` のファイルは挿入時に取り込んで普通のコードブロックにする（§19、実装済み）
 - 作成: 2026-08-21（`docs/youtube-embed-requirements.md` として書き、同日 `embed-requirements.md` に改名した。プロバイダを足す前提が先に来たため）
-- 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/embed-message.ts`（両側が聞くメッセージ — X のプロトコルと、§18.5 の自前プロトコル）、`lib/embed-fallback.ts`（素のリンクに落ちたときの形。§10.6 の 2 つの経路が同じものを作るための 1 箇所）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/EmbedFrames.tsx`（公開ページで高さを直し、取得できない投稿をリンクにする。`app/posts/[slug]/page.tsx` が 1 行で置く）、`components/editor/embed-extension.ts`（ノード + NodeView + 4 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 1）、`components/editor/link-card-extension.ts` のピッカー（入口 2）、`lib/speakerdeck-snippet.ts` と `components/editor/speakerdeck-snippet-paste.ts`（§16.9 の 3 つ目の入口。§5 の 2 つは URL を持っている場合の入口で、こちらは埋め込みコードを貼った場合である）、`components/editor/InsertDialog.tsx`（§24 の 4 つ目の入口。`speakerdeckSnippetHref` を同じように訊く。§24.2 でリンクカードの新規挿入も引き受け、`lib/insert-target.ts` の `resolveInsertTarget` を共有する）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
+- 実装: `lib/embed-provider.ts`（両側が訊く述語とレジストリ）、`lib/embed-message.ts`（両側が聞くメッセージ — X のプロトコルと、§18.5 の自前プロトコル）、`lib/embed-fallback.ts`（素のリンクに落ちたときの形。§10.6 の 2 つの経路が同じものを作るための 1 箇所）、`lib/rehype-embed.ts` と `lib/render.ts`（`divClasses` に 1 語、パイプラインに 1 段）、`components/EmbedFrames.tsx`（公開ページで高さを直し、取得できない投稿をリンクにする。`components/PostArticle.tsx` が 1 行で置く）、`components/editor/embed-extension.ts`（ノード + NodeView + 4 つのコマンド）、`components/editor/extensions.ts` の 1 行、`components/editor/block-drag-handle.ts` の `DRAGGABLE_TYPES` の 1 行、`components/editor/LinkBubble.tsx` と `components/editor/svg/icon-shapes.ts`（入口 1）、`components/editor/link-card-extension.ts` のピッカー（入口 2）、`lib/speakerdeck-snippet.ts` と `components/editor/speakerdeck-snippet-paste.ts`（§16.9 の 3 つ目の入口。§5 の 2 つは URL を持っている場合の入口で、こちらは埋め込みコードを貼った場合である）、`components/editor/InsertDialog.tsx`（§24 の 4 つ目の入口。`speakerdeckSnippetHref` を同じように訊く。§24.2 でリンクカードの新規挿入も引き受け、`lib/insert-target.ts` の `resolveInsertTarget` を共有する）、`app/globals.css`。**§19 の取り込みはこの一覧の外にある**（埋め込みではないため）: `lib/github-blob.ts`、`lib/github-mark.ts`、`lib/rehype-code-source.ts`、`components/editor/github-blob-import.ts`、`components/editor/code-block-extension.ts` のヘッダ
 - 測定（件数は数えた値。2026-09-01 時点）: `lib/embed-provider.test.ts`（66 件）、`lib/render.test.ts` の `renderMdxToHtml / embed`（27 件）、`components/editor/embed-placement.test.ts`（11 件）、`e2e/editor-embed.spec.ts`（26 件）、`e2e/public-embed.spec.ts`（12 件）、`e2e/editor-x-embed.spec.ts`（11 件）、`e2e/public-x-embed.spec.ts`（7 件）、`e2e/gist-reporter.spec.ts`（1 件）。§19 の取り込みは `lib/github-blob.test.ts`（21 件）、`lib/render.test.ts` の `renderMdxToHtml — GitHub blob code block header`（3 件）、`e2e/editor-github-blob.spec.ts`（12 件）
 - 関連: `docs/link-card-requirements.md`（本書はあちらの決定を 1 つも動かさない。借りるのはあちらの §4.2 の保存形式、§4.4 の検証の線、§6 の後段配置、§14.1 の「読者は取得しない」の 4 つで、§14.13 が本書の §3 を名指している）、`docs/link-requirements.md`（素のリンクのままにする形の行き先）
 
@@ -16,7 +16,7 @@
 
 ## 0. 前提 — 今どれだけ使われているか
 
-2026-08-21 に `data/blog.db`（`-wal` ごとコピー。`sqlite-copy-needs-wal.md`）を見た結果、対象になりうる URL は id 36「テスト」の中にだけある:
+2026-08-21 に `data/blog.db`（`-wal` ごとコピー。`docs/dev-environment.md` §3）を見た結果、対象になりうる URL は id 36「テスト」の中にだけある:
 
 | 形                                                             | 件数 | 今の姿                               |
 | -------------------------------------------------------------- | ---- | ------------------------------------ |
@@ -157,7 +157,7 @@
 
 | 接頭辞 | 対象                                    | 件数 | 節     |
 | ------ | --------------------------------------- | ---- | ------ |
-| E      | 共通（プロバイダによらない）            | 19   | §11    |
+| E      | 共通（プロバイダによらない）            | 20   | §11    |
 | Y      | YouTube                                 | 5    | §11    |
 | X      | X                                       | 11   | §11    |
 | S      | SlideShare                              | 6    | §14.9  |
@@ -274,7 +274,7 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 **`iframe` はポインタイベントを飲む。** ドラッグハンドルも範囲選択も、`iframe` の上では反応しない。ノードが選択されていない間は `pointer-events: none` を掛け、クリックでノード選択に入ってから操作を許す。**クリックは frame に当たり、frame は NodeView のものなので ProseMirror が NodeSelection を作る** — その選択がプレーヤーにポインタを渡す、という順序である（実測 2026-08-21、`e2e/editor-embed.spec.ts`）。
 
-操作ボタン（削除・リンクに戻す）はカードと同じくブロック上端の固定帯に置く（`link-card-requirements.md` §7.1）。カードと同じ理由でキャレットは中に入れない（`atom: true`）。
+操作ボタン（削除・リンクに戻す）はカードと同じくブロック上端の固定帯に置く（`link-card-requirements.md` §7.1）。帯の中では上寄せで、余りはボタンとプレーヤーのあいだに落とす（同 §7.1.1）。カードと同じ理由でキャレットは中に入れない（`atom: true`）。
 
 ### 7.1 アコーディオンのタイトルは拒む対象ですらない（2026-08-21、実装時に分かった）
 
@@ -346,7 +346,7 @@ NodeView は**公開側と同じ `iframe` を出す**。別物（静的なプレ
 
 **JS ではなく CSS で切る。** 掴んだ時点で `querySelectorAll('iframe')` を回す形は、ドラッグ中に解決してフレームを差し込む埋め込みを取りこぼす。`postMessage` には触れないので、高さの受け渡しと沈黙時計（§10.5）は前と変わらない。
 
-**ネイティブドラッグの経路には同じ穴が無い**（実測 2026-08-31、基準 E18）。枠の付いていないカード・埋め込み・画像を本体から押すと prosemirror-view 側のドラッグが立ち上がり、`body.block-dragging` は付かない。それでも塞がっているのは、**この経路では掴む操作がブロックを選択しないから**である — 埋め込みを本体から掴むとスライスには `embed` が乗る（`move` も立つ）が、選択はキャレットの位置に残ったままで `.ProseMirror-selectednode` が付かず、フレームは静止時の `pointer-events: none` のままドラッグ全体を通る。
+**ネイティブドラッグの経路には同じ穴が無い**（基準 E18）。枠の付いていないカード・埋め込み・画像を本体から押しても、**押下そのものが `dragstart` で拒否される**ので何も持ち上がらない（`pressedNativeDragSource`、`docs/link-card-requirements.md` §7.7）。フレームは静止時の `pointer-events: none` のままで、`body.block-dragging` も付かない。2026-08-31 の時点ではこの経路のドラッグは実際に立ち上がっており、塞がっている理由は「掴む操作がブロックを選択しないから」だった。2026-09-08 に押下ごと拒否されるようになり、理由が 1 段手前に移った。
 
 逆に、選択済みの埋め込みは**ドラッグを始められない**。フレームが生きているのは選択されているからで（§7）、その状態では押下が `iframe` に飲まれて親に届かないので `dragstart` 自体が起きない。**生きたフレームと動いているドラッグは、この経路では同時に成立しない** — ハンドルの経路で穴になっていた「掴む＝選択する」が、ここでは成り立たないためである。
 
@@ -594,7 +594,7 @@ ID は `/^\d{1,19}$/` で検証し、**この形を通ったものだけが `src
 落とす引き金は 2 つある:
 
 1. `no_results` を受けたとき
-2. **可視になってから 8 秒、resize も `no_results` も来ないとき。** 起点は読み込み時ではなく可視時でなければならない（§10.5 の 2）— 読み込み起点にすると折り返しより下の埋め込みが全て誤爆する。余裕は実測の約 7 倍で、resize の到達は cold で 1088ms、可視化からは約 600ms である
+2. **画面に留まってから 8 秒、resize も `no_results` も来ないとき。** 起点は読み込み時ではなく可視時でなければならない（§10.5 の 2）— 読み込み起点にすると折り返しより下の埋め込みが全て誤爆する。余裕は実測の約 7 倍で、resize の到達は cold で 1088ms、可視化からは約 600ms である。可視になった瞬間ではなく `EMBED_DWELL_MS`（500ms）留まったときが起点である — アンカーで途中に着地した読者はその上を全て通過し、着地点の上にある箱が交差しているのは約 156ms しかないので、瞬間を起点にすると読者が見ていない投稿がリンクに置き換わる。張られるかどうかはそのスクロールと IntersectionObserver の初回コールバックのレースで、同じコードが両方に転んでいた（2026-09-11 実測）
 
 **差し替えは一方向である。** リンクに落とした後に届いた resize は適用しない。`iframe` を残してリンクを併置する形も採らない — 同じ失敗が読者に 2 通りで見える。
 
@@ -691,8 +691,9 @@ YouTube 側では no-op である — プレイヤーは `<html>` と `<body>` �
 | E15 | 埋め込みを載せたスライスはアコーディオンのタイトルに入らず、アコーディオンは 2 つに割れない（§5、2026-08-31 追加）                                               | `components/editor/embed-placement.test.ts`（スライスは実際の選択から取り、開き深さも測っている）/ `e2e/editor-embed.spec.ts`（ブラウザのクリップボードを 1 往復させ、文書が 1 文字も変わらないことを測る。**同じコピーがアコーディオンの本体には埋め込みとして着地することも測っている** — `titleAcceptsSlice` は空のスライスにも false を返すので、これが無いとクリップボードが空でも通る）。ドロップは両方のフックが呼ぶ述語まで。ジェスチャは通していない                                                                                                                                                                                                   |
 | E16 | 埋め込みを載せたスライスは表のセルに入らず、ドロップの拒否理由は位置ではなく内容である（§5、2026-08-31 追加）                                                    | `components/editor/embed-placement.test.ts`（段落のペーストが今まで通り通ることも測り、基準が空振りでないことを担保している）。E15 と同じくドロップは述語まで — `tableDropRefusal` は `handleDrop` が呼ぶものそのものだが、ドロップ自体は通していない                                                                                                                                                                                                                                                                                                                                                                                                           |
 | E17 | 並べ替えでフレームが作り直されても、答えるプロバイダは高さを言い直し、再武装された沈黙時計は誤爆しない（§8.4、2026-08-31 追加）                                  | `e2e/editor-x-embed.spec.ts`（X をスタブで実測。**作り直しの印が消えたことを先に確かめる** — §8.4 の表のもう一方の向きでは印が残ることを確かめてあり、その場合この測定は空振りになる。`.embed-frame` にも印を打っているので、戻った高さが古い inline style ではないことも担保されている）。gist は**親の側だけ**を固定している（`e2e/editor-embed.spec.ts` — 作り直しが新しい `instanceId` を鋳直し、その名前の報告だけを聞く。同じ報告を退役した id で送ると届かない、を対で測っている）。フレームの側は実測してあるが spec には固定していない — 不透明なフレームは差し替えられず、実フレームの返事を基準にすると GitHub の稼働を測ることになる（§8.4、§18.6） |
-| E18 | ネイティブドラッグの経路では、埋め込みのフレームが生きている状態と、ドラッグが動いている状態が同時に成立しない（§8.1、2026-08-31 追加）                          | `e2e/editor-embed.spec.ts`（2 つの状態を測る。掴んだ側は**スライスに `embed` が乗っていることを先に確かめる** — でなければ静止時の値を測るだけになる。選択側は `dragstart` が起きないことを測る。E12 と同じく計算後の `pointer-events` であって、凍り付きそのものは CDP 入力では測れない）                                                                                                                                                                                                                                                                                                                                                                      |
+| E18 | ネイティブドラッグの経路では、埋め込みのフレームが生きている状態と、ドラッグが動いている状態が同時に成立しない（§8.1、2026-08-31 追加）                          | `e2e/editor-embed.spec.ts`（2 つの状態を測る。未選択側は **`dragstart` が発火して既に取り消されていることを門にする** — 何も持ち上がらないので、スライスや静止時の値では「拒否された」と「押下が CDP から届いていない」を見分けられない。選択側は `dragstart` が起きないことを測る。E12 と同じく計算後の `pointer-events` であって、凍り付きそのものは CDP 入力では測れない）                                                                                                                                                                                                                                                                                   |
 | E19 | 「リンクに戻す」がアイコンとラベルの両方を、320px の狭さでも持つ（§7.4、2026-09-04 追加）                                                                        | `e2e/editor-embed.spec.ts`（アイコンの `display` と、320px でもラベルの実幅が 0 でないことを測る）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| E20 | 「リンクに戻す」の直後の Ctrl+Z 1 回で埋め込みが戻る — ボタンは押した後に消えるので、フォーカスを先にエディタへ戻す（2026-09-28 追加）                           | `e2e/editor-embed.spec.ts`（「リンクに戻す hands the reference back verbatim」の続きで、クリックからそのまま Ctrl+Z を押す。修正前はフォーカスが `<body>` に落ちて何も起きなかった）                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 **YouTube**:
 
@@ -1327,6 +1328,8 @@ Qiita と Zenn が配る `<script src="….js">` を**そのまま記事に置�
 **X が本当にフレーム自身の最上位 document から送っていることは別に測った**（実測 2026-09-01）。`e2e/x-embed-stub.ts` は最上位から送るので、スタブだけでは「スタブと同じ形の送り主なら通る」しか言えず、実物が入れ子のフレームから送っていれば公開ページの X の箱は全部が初期値のまま止まる — しかも赤くならない。ローカルの親ページに `platform.twitter.com/embed/Tweet.html` を直接置いて測ったところ、`initialized`・`results`・`resize`・`rendered`・`no_results` のすべてで `event.source === iframe.contentWindow` が成立した（生きている投稿 id `20` と、返せない id `1878330297005854930` の両方）。
 
 **document は reporter の `</script>` で終わり、そのあとにタグを閉じない。** React のサーバレンダラはこの属性の中で `</script>` より後を再現せず、`</body></html>` を書いていたときは配信 HTML と RSC ペイロードが食い違って hydration の不一致が出た（React が記録する。実測 2026-08-29、YouTube だけの記事と埋め込みの無い記事では出ないことも確かめた）。どちらのタグも HTML では省略可能で、フレームの解釈は変わらない。**この document に何か足すときは、あのスクリプトより前に置く。**
+
+**最初の報告は高さ 0 で届くことがある。** `setTimeout(send,0)` や `load` による送信は、`.gist-file` がもう書かれていても、フレームのレイアウトより先に走ることがある。そのときは `files: 1` で `height: 0` になる。正しい高さは、レイアウトの後に ResizeObserver の経路が送る。親は届いた報告を毎回そのまま当てるので、箱は一瞬 0px に縮んでから gist の高さに落ち着く。フレーム側で「ファイルがあるのに高さ 0」の報告を送らないようにすれば防げるが、この一瞬の縮みは直していない（2026-09-30、`e2e/gist-reporter.spec.ts` が 4 並列で 13 回中 8 回、最初の報告に 0 を拾って失敗したことから測った）。したがって報告を検査するテストは、最初の報告ではなく最後の報告を見る。
 
 ### 18.6 sandbox — `<base target="_parent">` と、第三者の markup
 
@@ -2078,6 +2081,10 @@ isolation が無ければ `SharedArrayBuffer` が無く、WebContainer は起動
 - **`/~/github.com/<owner>/<repo>` の実測。** `/github/<owner>/<repo>` は測って走らないことが分かっており、同じリポジトリ由来のプロジェクトなので同じはずだが、確かめてはいない
 - **走る／走らないの、今日作られたプロジェクトでの率。** §23.2 の 11/18 は Qiita に残る過去の URL の率である。**§21.12 と違ってここは計器がある** — StackBlitz は CodePen（§21.13）のようなレート制限を見せず、`/edit/` は Cloudflare の後ろにいない（`server: StackBlitz`）ので、母集団を壊さずに数えられる。止めているのは 1 件あたり 100〜500 リクエストという単価だけである
 
+### 23.14 計測の罠 — 「走る」はプレビューの iframe で判定する
+
+走る／走らないを、`innerText` の先頭を切り出して分離ヘッダの注意書きが無いことで判定したところ、走らない 2 つのプロジェクトを「走る」と数えた。エディタのペインはどちらでも同じに描かれる。成功と呼ぶ前に、プレビューの iframe（`<slug>.stackblitz.io`）が存在することを要求する。
+
 ## 24. 挿入UIは1枚のモーダルに統合する（2026-09-02 決定。埋め込み側から作る）
 
 **決定**: 挿入の入口を**ひとつのモーダル**にまとめる。到達は2段階で、**先に埋め込み専用のモーダルを作り**、そこへリンクカードのピッカーを移す。移設が済んだ時点で `link-card-requirements.md` §5.2-2/§5.2-3 の「挿入UIはカードの中に置く」は上書きされる。コードはまだ無い。
@@ -2298,3 +2305,24 @@ SlideShare（`#008ED2`）と Speaker Deck（`#009287`）の hex は利用者か�
 **§24.1の「常設のヒントは置かない」（2026-09-02 決定）とは矛盾しない。** あの決定が退けた理由は2つ — 「貼れば即座に答えが出るので、常設の1行は答えが出る前に読ませる説明になる」と「9件を1行で言おうとすれば2〜3件だけ名乗ることになる」。後者はプロバイダを列挙しない一般的な文なので当てはまらない。前者は「常設の文が、解決した答えと同時に画面に残り続ける」ことを問題にしていたが、この文は`attempted`が立つ瞬間に動的な文言へ**置き換わる**ので、両者が同時に見える瞬間が無い — 競合が起きないため、あの決定の対象外である。
 
 **機構**: `components/editor/InsertDialog.tsx`の`status`は`!attempted`の間ずっとこのヒントを返す（それまで`value === ''`だけを見ていた分岐を`!attempted`に広げた）。入力中（まだ`attempted`が立っていない）もヒントは表示され続ける — §24.1の「答えは`attempted`が立つまで待つ」原則はURLごとの判定にだけ適用され、この文はどのURLについても常に真なので判定ではなく、待つ理由も無い。フッターの「対応9件（それ以外は…）」はこのヒントと重複するため削除した。
+
+### 24.9 「記事から選ぶ」は 2 つのタブに分ける（2026-09-04 決定、未実装）
+
+目標の形は、上段のタブ 3 つ — URL を貼り付け / 自分の記事 / 全記事。参考にしたサイトの「自分の / すべての」の分け方に合わせ、複数の著者で使うことを見込んでいる。
+
+- **実装も仮置きもしない。** `posts` に著者の列（`authorId`）が入るまで待ち、そのとき本物の絞り込みを作る。著者の列が無いうちに同じ結果を返すだけの「自分の記事」を置く案は見送った。それまでダイアログは「記事から選ぶ」1 つ（全記事）のまま。
+- 同じ日に、第 2 段階を行うかを作者と再検討し、確認した。URL の欄の下にカード / 埋め込みの小タブを作らない理由は 2 つある。① どちらになるかは URL が決め、小タブは知らせて食い違いを報告するだけになる（2026-09-02）。② 上段に既にタブが要るので、その下にさらに小タブを置くと、1 つのダイアログにタブ状の操作が 4 つ並ぶ。
+- 「大きなモーダルなら、同じ URL をカードにも埋め込みにもできる」は成り立たない。`link-card-extension.ts` の `renderPicker`（カードの本体で、狭いバブルではない）も、同じ理由で同じ排他をしている。プロバイダが引き受ける URL は、カードのプレビュー取得では読めないからである（§9.1）。大きさの違う 2 つの面が同じ規則に行き着いたことが、場所の問題ではない印である。カードのプレビューが読めるものが変わらない限り見直さない。
+- 実装の罠として残すもの: 閉じたときに `null` を返すダイアログは状態を保つ。閉じる経路ごとに欄を消すのではなく、開いている間だけマウントする（`{open && <Dialog />}`）。
+
+## 25. Google Slides の実測（2026-08-29、見送り）
+
+見送りの理由は §1 の非目標にある。ここには、見直すときに測り直さずに済むように、描画する側の実測を残す。単体のプローブ、システムの Chrome、未ログインのきれいなプロファイルで、headed と headless は同じ結果だった（SlideShare のような偽の陰性は無い）。
+
+- 描画はする。形は Figma と同じである。アドレスバーの `/presentation/d/<ID>/edit` の `ID` がそのまま埋め込みの id で、`/d/<ID>/embed` は取得なしに描画する（§3.2 を満たす）。`/d/e/<PUB_ID>/embed` も描画する。`/pub`・`/present`・`/htmlpresent` はフレームを拒み、`/preview`・`/edit`・`/view` は描画する。
+- 箱は `calc(56.25% + 36px)`。`.punch-viewer-navbar` は 320 / 500 / 750px のどれでも 36px 固定である（SlideShare の 38px と同じ形）。`lib/rehype-embed.ts` が出す属性の組で 750px 幅を測ると 457.9px（計算値 457.875）、スライドは 748×420.8 だった。
+- 全画面は `allow=""` + `allowfullscreen` で動く。スクリプトの `.click()` はユーザーの起動にならないので、本物の Playwright のクリックで測る（最初の null はプローブの誤り）。
+- `loading="lazy"` は遅延する（9000px の詰め物の後ろでは 1 リクエスト）。2400px の詰め物は Chrome の遅延の余白の内側で、先に読む。これを欠陥として報告しない。
+- `?slide=<n>` は効き、範囲に丸める（99 → 75、0 / -1 → 1）。`#slide=id.g…` も効く（Google 自身の JS が `?slide=` に書き換える）が、値は不透明な objid なので、渡すなら `FIGMA_KEY` のような文字種の検査が要る。`start=true&delayms=` は実際に自動再生する。postMessage は一切無い。
+- プレイヤーの設定メニューは、すべての読者に PDF / PPTX のダウンロード、印刷、「エディタで開く」を出す。`docs.google.com` は Docs / Sheets / Forms と共有する初めてのホストである。
+- **見直す条件**: 著者が自分のデッキを実際に記事に載せたくなったとき。その場合、著者と読者の非対称（§1）は著者自身が共有設定をすれば済む。未測定: 制限付きのデッキの読者側の見え方と、16:9 でないデッキの帯。

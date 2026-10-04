@@ -1,27 +1,17 @@
 import type { ReactElement } from 'react';
 
 // One glyph per provider, next to the name in `EmbedInsertDialog`'s table (docs/embed-requirements.md
-// §24.4). Four vector marks carry their own brand colour, fixed in both themes — YouTube red,
-// SlideShare blue, Speaker Deck teal and Figma's own four hues (`#24CB71`/`#FF7237`/`#00B6FF`/
-// `#FF3737`/`#874FFF`, from the provider's own full-colour asset, not the single flattened outline
-// Simple Icons ships). **X, GitHub, CodeSandbox and CodePen are the opposite problem**: their brand
-// mark really is near-black, so `fill='currentColor'` with `text-black dark:text-white` inverts it
-// rather than rendering true black on a dark row and disappearing. `aria-hidden`: the provider name
-// text beside it is already the row's accessible name, so a `<title>` here would have a screen
-// reader announce it twice.
+// §24.4). Coloured marks keep their brand colour in both themes (Figma's hues come from its own
+// full-colour asset, not Simple Icons' flattened outline). Near-black marks (X, GitHub,
+// CodeSandbox, CodePen) use `currentColor` with `text-black dark:text-white` so they don't vanish
+// on dark rows. `aria-hidden`: the provider name beside it is the accessible name.
 //
-// **Docswell is the one row with no logo at all** (§24.4, reversed 2026-09-03) — their terms
-// require asking permission before using the mark on an external site, which this repo has not
-// done. Its glyph is a generic slide pictogram rather than a monogram or a stand-in *for* their
-// mark: it borrows no colour, shape or detail from it, the way the hand-drawn mockups earlier in
-// this feature's history did before being set aside for looking like a real logo. It shares the
-// black/white treatment above for the unrelated reason of matching the other eight rows' weight —
-// a muted grey was tried first and was the only faint icon among nine bold ones.
+// **Docswell has no logo** (§24.4): its terms require permission to use the mark. Its glyph is a
+// generic slide pictogram borrowing nothing from their mark, in black/white to match the weight of
+// the other rows.
 const ICONS: Record<string, ReactElement> = {
-  // Two paths, not Simple Icons' one: their single path draws the play triangle as a hole (opposite
-  // winding), which shows whatever is *behind* the icon rather than a fixed colour — invisible on
-  // light rows, black on dark ones (reported 2026-09-03). A second path painted white on top fixes
-  // the triangle to white regardless of theme, matching the actual badge-plus-play-button mark.
+  // Two paths, not Simple Icons' one, whose play triangle is a hole showing the row's background.
+  // The second path paints it white in both themes, as the real mark does.
   YouTube: (
     <svg className='h-4 w-4 flex-none' viewBox='0 0 24 24' aria-hidden='true'>
       <path
@@ -68,11 +58,7 @@ const ICONS: Record<string, ReactElement> = {
       />
     </svg>
   ),
-  // A generic slide pictogram, not a monogram — its kind is already 「スライド」, so a frame with
-  // two content lines says the same thing a letter would without inventing an initial for it.
-  // Same `text-black dark:text-white` as the other four monochrome marks, not because black is
-  // Docswell's colour (it is not one at all), but because a muted grey was the only faint icon
-  // among nine bold ones and read as its own kind of outlier (reported 2026-09-03).
+  // A generic slide pictogram (see the header); black/white only to match the other rows' weight.
   Docswell: (
     <svg
       className='h-4 w-4 flex-none text-black dark:text-white'

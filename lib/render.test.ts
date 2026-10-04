@@ -45,13 +45,9 @@ describe('renderMdxToHtml — accent emphasis', () => {
     expect(html).not.toContain('evil');
   });
 
-  // Regression (found 2026-07-25): unlike bold/italic/strike, layering inline code onto an
-  // accent-emphasis span doesn't corrupt the surrounding markdown (a code span's content is
-  // never re-parsed, so no flanking-rule issue) — but nesting the *reverse* way, an
-  // accent-emphasis span inside a code span, is still broken: code-span content is always
-  // literal, so the span tags show up as escaped `&lt;span…&gt;` text instead of an element.
-  // accentEmphasis's `excludes: '… code'` (accent-emphasis-extension.ts) stops the editor from
-  // ever producing this nesting; this pins the underlying markdown-level reason why.
+  // Inline code on accent emphasis is harmless (a code span is never re-parsed), but a span *inside*
+  // a code span shows as escaped `&lt;span…&gt;` text. accentEmphasis's `excludes: '… code'` keeps the
+  // editor from producing it; this pins the markdown-level reason.
   it('does not parse a span nested inside a code span — it stays literal text', async () => {
     const { html } = await renderMdxToHtml('`<span class="accent-emphasis">a</span>`');
     expect(html).toContain('&#x3C;span class="accent-emphasis">a&#x3C;/span>');
@@ -100,7 +96,7 @@ describe('renderMdxToHtml — GFM pipe tables', () => {
   });
 });
 
-// The post page's table of contents (app/posts/[slug]/page.tsx) is built from this, not from
+// The post page's table of contents (app/(site)/posts/[slug]/page.tsx) is built from this, not from
 // re-parsing the rendered HTML — so the id rehype-slug assigns and the id collected here must
 // be the exact same one the heading renders with.
 describe('renderMdxToHtml — table of contents', () => {
@@ -226,7 +222,7 @@ describe('renderMdxToHtml — in-page links', () => {
 describe('renderMdxToHtml — link cards', () => {
   const CARD = '<div class="link-card" data-href="/posts/abc123"></div>';
 
-  // Stands in for the DB. The real one closes over getPostBySlug (app/posts/[slug]/page.tsx);
+  // Stands in for the DB. The real one closes over getPostBySlug (app/(site)/posts/[slug]/page.tsx);
   // this is the whole reason the resolver is injected rather than imported (§6, criterion 5a).
   const resolveCard = async (href: string) =>
     href === '/posts/abc123' ? { title: '参照先の記事', description: '説明文', image: null } : null;
@@ -236,10 +232,8 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<a class="link-card" href="/posts/abc123" target="_blank">');
     expect(html).toContain('<span class="link-card-title">参照先の記事</span>');
     expect(html).toContain('<span class="link-card-description">説明文</span>');
-    // Title and description are the card's text: the target's date was dropped 2026-08-15
-    // (lib/rehype-link-card.ts carries the reason). `.link-card-meta` still exists for the editor's
-    // NodeView, which says there that the target is a draft or cannot be found (§13.1), so its
-    // absence here is asserted rather than assumed.
+    // Title and description only: the date line was dropped (lib/rehype-link-card.ts says why).
+    // `.link-card-meta` still exists in the editor's NodeView (§13.1), so its absence is asserted.
     expect(html).not.toContain('link-card-meta');
     // This resolver answers with no picture, and the stage then draws no <img> at all rather than
     // an empty box — the text column is the whole card. In production that answer comes from an
@@ -367,9 +361,8 @@ describe('renderMdxToHtml — link cards', () => {
   });
 
   it('refuses references that are neither shape the stage accepts (2c/2d)', async () => {
-    // Neither `/posts/<slug>` nor an absolute http(s) URL (§14.2). `https://evil.example` is NOT
-    // in this list any more: an external URL is a legitimate reference since 2026-08-18 and gets
-    // the fallback link when nothing has been stored about it — see the external-card block below.
+    // Neither `/posts/<slug>` nor an absolute http(s) URL (§14.2). An external URL is a legitimate
+    // reference and gets the fallback link when unstored (see the external-card block below).
     for (const href of [
       // Protocol-relative, so `new URL()` cannot parse it without a base and the internal test
       // refuses the leading `//` — it is the shape that looks same-origin and is not.
@@ -447,7 +440,7 @@ describe('renderMdxToHtml — link cards', () => {
 //
 // **The reader's request never fetches anything** (§14.1). Nothing in this file could tell the
 // difference on its own, so the criterion is pinned where it is decided instead: the resolver is
-// injected, and the published page hands over one that only reads (app/posts/[slug]/page.tsx).
+// injected, and the published page hands over one that only reads (app/(site)/posts/[slug]/page.tsx).
 // What is measured here is that the stage asks the resolver and nothing else — a card whose URL
 // has no row renders the fallback link rather than reaching for the page.
 describe('renderMdxToHtml — external link cards', () => {
@@ -484,7 +477,7 @@ describe('renderMdxToHtml — external link cards', () => {
 
   it('shows the target’s picture through this site, never from its CDN (14j)', async () => {
     // §14.4: the card does show the target's og:image, but the `<img src>` is this site's own
-    // signed proxy path — the value the resolver hands over is what app/posts/[slug]/page.tsx
+    // signed proxy path — the value the resolver hands over is what app/(site)/posts/[slug]/page.tsx
     // builds with `linkImageSrc`. What must never appear here is the third party's URL: that would
     // be hotlinking, which lib/thumbnail.ts refuses in the same words.
     const withImage = async () => ({
@@ -592,10 +585,9 @@ describe('renderMdxToHtml / embed', () => {
   });
 
   it('refuses a hand-written javascript: reference (E2)', async () => {
-    // The same §4.4 hole the card has, one step worse: what this stage builds is an iframe, and
-    // nothing downstream checks its src. **Both exits have to refuse it** — the iframe and the
-    // plain-link fallback, which is published markup built after sanitize as well. The fallback was
-    // the one that let it through until this test was written.
+    // The card's §4.4 hole, one step worse: the stage builds an iframe whose src nothing checks.
+    // **Both exits must refuse it**, the iframe and the plain-link fallback (also built after
+    // sanitize), which is the one that once let it through.
     for (const href of ['javascript:alert(1)', 'data:text/html,x', '//evil.example/x']) {
       const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`);
       expect(html, href).not.toContain('<iframe');
@@ -900,20 +892,11 @@ describe('renderMdxToHtml / embed', () => {
 
   it('reaches no third party while rendering, for any provider (E10)', async () => {
     // docs/embed-requirements.md §3.2 and criterion E10: **the embed stage has no fetch in it**,
-    // which is what separates an embed from a link card. That the code contains no fetch is
-    // readable; that none runs is what this measures.
-    //
-    // `fetch` is the whole instrument because it is the whole egress: nothing under `lib/`,
-    // `app/` or `components/` imports `node:http`, `undici`, `axios` or `node-fetch` (grepped
-    // 2026-08-31), so a request that did not go through here would have to arrive with a new
-    // dependency, and that is a change this assertion is not the only thing standing in front of.
-    //
-    // The spy rejects rather than calling through. A render that started fetching would then fail
-    // loudly here rather than quietly reaching the network from a unit test.
-    //
-    // **Per render, not per process.** The processor is built once at module load (lib/render.ts),
-    // long before this spy is installed, so what is measured is what a page render does — which is
-    // what E10 claims — and not a one-time initialisation.
+    // measured rather than read. `fetch` is the whole egress: nothing under `lib/`, `app/` or
+    // `components/` imports `node:http`, `undici`, `axios` or `node-fetch`, so another route would
+    // need a new dependency. The spy rejects rather than calling through, so a fetch fails loudly.
+    // **Per render:** the processor is built at module load, before the spy, so this measures a
+    // page render, which is what E10 claims.
     const calls: string[] = [];
     const real = globalThis.fetch;
     globalThis.fetch = ((input: RequestInfo | URL) => {
@@ -1132,5 +1115,131 @@ describe('renderMdxToHtml — GitHub blob code block header (§19.4)', () => {
       const { html } = await renderMdxToHtml('```ts:' + name + '\nconst a = 1;\n```\n');
       expect(html, name).not.toContain('code-source');
     }
+  });
+});
+
+// The image caption (docs/cms-features.md「画像キャプション」). The rule is narrow on purpose —
+// the emphasis has to be the whole paragraph — so most of these pin what does NOT become a
+// caption, which is where a looser rule would take an author's ordinary prose with it.
+describe('renderMdxToHtml — image caption', () => {
+  const image = '![alt](/uploads/a.png)';
+
+  it('builds a figure from an image and the emphasis-only paragraph after it', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\n*キャプション*\n`);
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<figcaption>キャプション</figcaption>');
+    // The emphasis is the notation, not a request for italics — it does not survive into the
+    // caption, which is what keeps `.prose em`'s skew off the published line.
+    expect(html).not.toContain('<em>');
+    // And the paragraph wrappers are gone: the figure replaced both of them.
+    expect(html).not.toContain('<p><img');
+  });
+
+  it('leaves an image alone when the next paragraph is ordinary prose', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\nふつうの本文。\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<p><img src="/uploads/a.png" alt="alt"></p>');
+  });
+
+  it('refuses a paragraph that holds an emphasis plus anything else', async () => {
+    // The shape Zenn's general-sibling rule takes by mistake (measured: 6 of 71 sampled images
+    // sit one `*` away from it). Here the emphasis is not the paragraph's only child, so nothing
+    // happens and the author's sentence stays a sentence.
+    const { html } = await renderMdxToHtml(`${image}\n\nこの図は *重要* です。\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<em>重要</em>');
+  });
+
+  it('refuses two emphases in one paragraph', async () => {
+    const { html } = await renderMdxToHtml(`${image}\n\n*a* *b*\n`);
+    expect(html).not.toContain('figure');
+  });
+
+  it('keeps a caption whose emphasis wraps further markup', async () => {
+    // One `<em>` child still, so the rule holds and the inner markup rides along.
+    const { html } = await renderMdxToHtml(`${image}\n\n*a **b***\n`);
+    expect(html).toContain('<figcaption>a <strong>b</strong></figcaption>');
+  });
+
+  it('refuses a paragraph that follows something other than a lone image', async () => {
+    const { html } = await renderMdxToHtml(`本文。\n\n*キャプション*\n`);
+    expect(html).not.toContain('figure');
+    expect(html).toContain('<em>キャプション</em>');
+  });
+
+  it('captions each image when two of them are captioned in a row', async () => {
+    const { html } = await renderMdxToHtml(
+      `${image}\n\n*一枚目*\n\n![alt](/uploads/b.png)\n\n*二枚目*\n`,
+    );
+    expect(html).toContain('<figcaption>一枚目</figcaption>');
+    expect(html).toContain('<figcaption>二枚目</figcaption>');
+  });
+
+  it('captions an image inside a container, not just at the top level', async () => {
+    // A blockquote and a callout are both `block+`, so an image and its caption can sit inside
+    // one. The stage walks the whole tree, which is why the editor's own rule descends into
+    // containers too instead of skipping straight past them.
+    const { html } = await renderMdxToHtml(`> ${image}\n>\n> *キャプション*\n`);
+    expect(html).toContain('<blockquote>');
+    expect(html).toContain('<figure class="image-figure">');
+    expect(html).toContain('<figcaption>キャプション</figcaption>');
+  });
+
+  it('does not let a hand-written figure through sanitize', async () => {
+    // The stage runs after sanitize, so the only figure that can reach the page is the one this
+    // pipeline builds. An author's own is still stripped.
+    const { html } = await renderMdxToHtml(
+      '<figure><img src="/uploads/a.png"><figcaption>手書き</figcaption></figure>\n',
+    );
+    expect(html).not.toContain('<figure');
+    expect(html).not.toContain('figcaption');
+  });
+});
+
+// docs/summary-requirements.md §8: the containers pass sanitize by name, and rehype-summary adds the
+// titles the stored form leaves out.
+describe('renderMdxToHtml — まとめ and TL;DR', () => {
+  const summary = (sections: string) =>
+    `<div class="summary">\n\n総評の **文**。\n\n${sections}</div>\n`;
+  const section = (cls: string, items: string) => `<div class="${cls}">\n\n${items}\n\n</div>\n\n`;
+
+  it('keeps the container classes and adds the titles, not as headings', async () => {
+    const { html, toc } = await renderMdxToHtml(
+      summary(section('summary-good', '- 良い') + section('summary-bad', '- 悪い')),
+    );
+    expect(html).toContain('<div class="summary"><p class="summary-label">まとめ</p>');
+    expect(html).toContain('<p class="summary-section-label">良かった点</p>');
+    expect(html).toContain('<p class="summary-section-label">気になった点</p>');
+    expect(html).toContain('<strong>文</strong>');
+    expect(html.indexOf('summary-good')).toBeLessThan(html.indexOf('summary-bad'));
+    expect(toc).toEqual([]);
+  });
+
+  it('draws no empty section, and no empty box', async () => {
+    const { html } = await renderMdxToHtml(
+      summary(section('summary-good', '- 良い') + section('summary-bad', '- ')) +
+        '\n<div class="tldr">\n\n</div>\n',
+    );
+    expect(html).toContain('良かった点');
+    expect(html).not.toContain('気になった点');
+    expect(html).not.toContain('summary-bad');
+    expect(html).not.toContain('TL;DR');
+  });
+
+  it('titles a TL;DR', async () => {
+    const { html } = await renderMdxToHtml('<div class="tldr">\n\n要点。\n\n</div>\n');
+    expect(html).toContain(
+      '<div class="tldr"><p class="summary-label">TL;DR</p><div class="summary-body">',
+    );
+  });
+
+  it('strips an author’s other classes and attributes on the container', async () => {
+    const { html } = await renderMdxToHtml(
+      '<div class="summary evil" style="color:red" onclick="x()">\n\n総評。\n\n</div>\n',
+    );
+    expect(html).toContain('<div class="summary">');
+    expect(html).not.toContain('evil');
+    expect(html).not.toContain('onclick');
+    expect(html).not.toContain('style=');
   });
 });

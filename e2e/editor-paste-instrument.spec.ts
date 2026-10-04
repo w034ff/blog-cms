@@ -2,27 +2,14 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// Calibration for the instrument every other paste spec uses (docs/link-requirements.md §9).
+// Calibrates the synthetic paste the other specs use (docs/link-requirements.md §9). A synthesized
+// event always carries `clipboardData`, so it never takes prosemirror-view's other branch (paste into
+// a hidden node, read the DOM back). The same string is pasted both ways and the documents compared,
+// so if the instruments diverge one spec goes red. Checked, not assumed, like `closeHistory`.
 //
-// Eleven `setData` call sites across this suite build a `DataTransfer` and dispatch a `paste`
-// event, and §10's two paste rejections and §11's route-(a) guard all rest on what they measured.
-// A synthesized event always arrives *with* `clipboardData`, so it never takes prosemirror-view's
-// other branch — the one that lets the browser paste into a hidden node and reads the DOM back.
-// Whether the real key goes down the same road was assumed, never measured.
-//
-// So this file pastes the same string both ways and compares the documents to each other. It is
-// not here to pin what paste does; the other files do that. It is here so that the day the two
-// instruments diverge, one spec goes red and names every rejection built on the synthetic one.
-// The same shape as `closeHistory`'s read-back in editor-authoring.ts: checked, not assumed.
-//
-// **This calibrates the plain-text shape only, and that is a real limit.** `writeText` can put
-// nothing but `text/plain` on the clipboard, while a real copy from a web page also carries
-// `text/html` — and §2.5 is the standing proof that a flavour nobody asked about can decide the
-// outcome (`vscode-editor-data` turned a paste into a code block). Calibrating the HTML shape means
-// opening a page and copying a real selection, which is a different experiment.
-//
-// **It also uses the machine's clipboard**, which is why it is one file and not a pattern: running
-// it replaces whatever the developer had copied.
+// **Plain text only**: `writeText` cannot carry `text/html`, and a flavour can decide the outcome
+// (§2.5's `vscode-editor-data`). **It uses the machine's clipboard**, replacing whatever the
+// developer copied, so it stays one file.
 
 const URL_TEXT = 'https://example.com';
 
@@ -36,7 +23,7 @@ test.afterEach(() => {
   expect(pageErrors).toEqual([]);
 });
 
-// The instrument the other specs use: `text/plain` on a hand-built DataTransfer.
+// The other specs' instrument: `text/plain` on a hand-built DataTransfer.
 async function pasteSynthetic(page: Page, text: string): Promise<void> {
   await page.evaluate((value) => {
     const transfer = new DataTransfer();
@@ -49,10 +36,8 @@ async function pasteSynthetic(page: Page, text: string): Promise<void> {
   }, text);
 }
 
-// The real one: the system clipboard, then the key. Chrome treats 127.0.0.1 as a secure context, so
-// `navigator.clipboard` exists here. If it does not, this throws — a missing instrument fails the
-// test rather than quietly turning it green, which is why §9's reason for keeping the カード's
-// コピー button out of the specs does not apply to using the clipboard as a fixture.
+// The system clipboard, then the key. 127.0.0.1 is a secure context; a missing `navigator.clipboard`
+// throws, failing rather than passing.
 async function pasteReal(page: Page, text: string): Promise<void> {
   await page.evaluate((value) => navigator.clipboard.writeText(value), text);
   await page.keyboard.press('Control+v');
@@ -60,7 +45,7 @@ async function pasteReal(page: Page, text: string): Promise<void> {
 
 type Paste = (page: Page, text: string) => Promise<void>;
 
-// A fresh document, a caret or selection placed by position, then the given paste.
+// A fresh document, a positioned caret or selection, then the paste.
 async function docAfterPaste(
   page: Page,
   paste: Paste,
@@ -93,19 +78,16 @@ async function bothInstruments(
 }
 
 test('the real key and the synthesized event agree over a selection (16a)', async ({ context }) => {
-  // Route (a) — `linkOnPaste` over a non-empty selection. The shape §11 narrowed and §10 twice
-  // declined to touch, so the shape whose measurements most need the instrument to be honest.
+  // Route (a), `linkOnPaste` over a selection: §11's shape, the one most needing an honest instrument.
   const { synthetic, real } = await bothInstruments(context, { md: 'ここ\n', from: 1, to: 3 });
   expect(real).toBe(synthetic);
-  // Not vacuous: both actually made the link, rather than both doing nothing.
+  // Both made the link, not both nothing.
   expect(real).toBe(`doc(paragraph(link("ここ")))`);
 });
 
 test('the real key and the synthesized event agree on pasted HTML (16c)', async ({ page }) => {
-  // The flavour half. `ClipboardItem` puts both types on the real clipboard — `writeText` cannot,
-  // which is what the comment in editor-link-card.spec.ts was written against — so the browser
-  // builds the `clipboardData` this time and route (d) is reached by the key rather than by a
-  // hand-built DataTransfer.
+  // The flavour half: `ClipboardItem` puts both types on the real clipboard, so route (d) is reached by
+  // the key.
   const html = '<p>前<a href="https://example.com" title="t">リンク</a>後</p>';
   const text = '前リンク後';
   await page.goto('/admin/posts/new');
@@ -150,16 +132,13 @@ test('the real key and the synthesized event agree on pasted HTML (16c)', async 
 });
 
 test('a link copied off a page arrives with its href resolved (16d)', async ({ page }) => {
-  // **The one place the instrument and reality disagree — and it is not the event.** The browser
-  // serializes the resolved `a.href` property at copy time, not the literal attribute, so every
-  // href route (d) receives is absolute. A fragment link copied off a published post therefore
-  // arrives as a URL to that post, never as the bare `#user-content-…` the suite's fixtures pass.
-  // §2.1.1 was written the other way round until this was measured (2026-08-27).
+  // **Where instrument and reality disagree, and not in the event**: copy serializes the resolved
+  // `a.href`, so route (d) always gets an absolute URL; a fragment link copied from a post arrives as
+  // that post's URL, not `#user-content-…` (§2.1.1).
   await page.goto('/posts/hello-world');
   await page.evaluate(async () => {
     const host = document.createElement('div');
-    // The literal attribute a published post carries: sanitize renamed the id and
-    // rehypeClobberFragmentLinks rewrote the href to match it.
+    // The published attribute (sanitize renamed the id; rehypeClobberFragmentLinks followed).
     host.innerHTML = '<p><a href="#user-content-見出し">断片</a></p>';
     document.querySelector('#post-body')?.appendChild(host);
     const range = document.createRange();
@@ -181,16 +160,16 @@ test('a link copied off a page arrives with its href resolved (16d)', async ({ p
   await settle(page);
 
   const md = await markdown(page);
-  // Absolute, pointing at the post it was copied from, and percent-encoded by the resolution.
+  // Absolute, to the source post, percent-encoded.
   expect(md).toContain('/posts/hello-world#user-content-');
-  // Not the shape the fixtures use — which is the whole finding.
+  // Not the fixtures' shape: the finding.
   expect(md).not.toContain('](#user-content-見出し)');
 });
 
 test('the real key and the synthesized event agree on an empty selection (16b)', async ({
   context,
 }) => {
-  // Route (c) — the paste rule, which fires with no selection and links the URL itself.
+  // Route (c): the paste rule, no selection, links the URL itself.
   const { synthetic, real } = await bothInstruments(context, { md: '\n', from: 1 });
   expect(real).toBe(synthetic);
   expect(real).toBe(`doc(paragraph(link("${URL_TEXT}")))`);

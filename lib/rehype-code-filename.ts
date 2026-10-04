@@ -4,35 +4,22 @@ import { visit } from 'unist-util-visit';
 // rehype-pretty-code reads a code block's title from the code element's `data.meta`
 // (`title="…"`). Augment hast's element data so setting it below type-checks.
 //
-// **The type has to match `mdast-util-to-hast`'s own declaration of this property, character for
-// character.** That package (pulled in by remark-rehype) augments the same `ElementData` with
-// `meta?: string | null | undefined`, and TypeScript requires every declaration of one property to
-// agree — a bare `string` here is a TS2717 across the whole build, not just in this file. The
-// augmentation is kept rather than dropped in favour of that one so this module states the field it
-// writes instead of inheriting it from whichever dependency happens to be in the program.
+// **It must match `mdast-util-to-hast`'s own augmentation character for character**
+// (`meta?: string | null | undefined`), or TS2717 breaks the whole build. Kept so this module states
+// the field it writes rather than inheriting it.
 declare module 'hast' {
   interface ElementData {
     meta?: string | null | undefined;
   }
 }
 
-// Zenn/Qiita write a code block's filename in the fence info string as `lang:filename`
-// (e.g. ```ts:index.ts), and the editor (components/editor/code-block-extension.ts) writes a
-// diff-flagged block's fence as `diff`/`diff_<lang>` in place of the bare language (e.g.
-// ```diff_ts, or bare ```diff for "no language, just diff coloring" — including old posts
-// written before this attribute existed, which need no migration since this runs fresh on
-// every render). markdown/remark-rehype fold the whole no-whitespace info string into the
-// `language-...` class, which survives rehype-sanitize intact. This step — which MUST run
-// after sanitize (so the meta it sets isn't stripped) and before rehype-pretty-code — splits
-// that class: strips any `diff`/`diff_` prefix down to the real language and the `:filename`
-// suffix, restoring a clean `language-<lang>` class so Shiki highlights the real language —
-// or, when no real language was given (bare ```diff/```diff_), keeps `language-diff` so Shiki
-// still applies its own `diff` grammar (see the `isDiff` branch below for why that matters).
-// The filename moves into `data.meta` as `title="…"` (rendered by pretty-code as a
-// <figcaption data-rehype-pretty-code-title>) alongside a bare `diff` word that
-// lib/shiki-diff-line-transformer.ts's transformer reads back via `this.options.meta.__raw` to
-// decide whether to paint +/- rows — independent of the real Shiki language now. A plain
-// ```ts fence (no colon, no diff prefix) is left untouched.
+// Splits the fence info string, which remark-rehype folds whole into the `language-…` class
+// (surviving sanitize): ```ts:index.ts (Zenn/Qiita's filename form) and the editor's
+// `diff`/`diff_<lang>` prefix (components/editor/code-block-extension.ts; old bare ```diff posts
+// need no migration). **After sanitize** (which would strip the meta) and before pretty-code. The
+// class becomes the real `language-<lang>`, or stays `language-diff` without one (see `isDiff`); the
+// filename goes into `data.meta` as `title="…"` beside a bare `diff` word that
+// lib/shiki-diff-line-transformer.ts reads from `meta.__raw`. A plain ```ts is untouched.
 export function rehypeCodeFilename() {
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
@@ -61,13 +48,8 @@ export function rehypeCodeFilename() {
       if (language) {
         className[langIndex] = `language-${language}`;
       } else if (isDiff) {
-        // No real language (bare ```diff/```diff_): keep Shiki's own `diff` grammar rather than
-        // falling back to plaintext. Its markup.inserted/deleted scopes are what give +/- lines
-        // their token *foreground* color (the github-dark/light themes' green/red — the same
-        // values components/editor/code-block-extension.ts's CSS hardcodes for the editor's own
-        // decoration, since ProseMirror can't reuse Shiki's theme). diffLineHighlight only adds
-        // the *background* those scopes don't surface — losing the `diff` grammar here would
-        // lose that foreground coloring entirely, not just the background.
+        // No real language: keep Shiki's `diff` grammar, whose inserted/deleted scopes give +/- lines
+        // their foreground colour; diffLineHighlight only adds the background.
         className[langIndex] = 'language-diff';
       } else {
         className.splice(langIndex, 1);

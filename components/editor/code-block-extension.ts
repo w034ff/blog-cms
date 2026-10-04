@@ -11,6 +11,8 @@ import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-bo
 import { buildIcon, GITHUB_MARK_SHAPES, UNLINK_SHAPES } from './svg/icon-shapes';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import { refuseChromeDrops } from './useDragContainment';
+import { selectionTouches } from './selection-scan';
+import { BLOCK_REFUSING_BOXES } from './summary-rules';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -22,36 +24,25 @@ declare module '@tiptap/core' {
   }
 }
 
-// Whether an empty code block may be added as the caret's textblock's *next sibling* — the
-// question `setCodeBlock` never asks, because converting is all it does.
-//
-// A list item is the case this exists for: `listItem` is `paragraph block*`, so a code block is
-// legal there but only from the second child on, and converting the first paragraph would leave
-// the item headless. A table cell answers false and must keep doing so — ParagraphTableCell is
-// `paragraph+`, and a code block in a cell has no GFM pipe form (table-extensions.ts).
-// Exported because the link card asks exactly this question and gets exactly these answers — a
-// cell and an accordion title refuse, a list item accepts from the second child on. Two copies of
-// the walk would be two things to keep in step; see link-card-extension.ts.
+// Whether a code block may be added as the caret's textblock's *next sibling*, which
+// `setCodeBlock` (convert only) never asks. For a list item (`paragraph block*`) that is from the
+// second child on; a table cell refuses (`paragraph+`). Shared with the link card, which needs
+// exactly these answers.
 export function canPlaceAfterCaret(state: EditorState, type: NodeType): boolean {
   const { $from, empty } = state.selection;
-  // Only for a caret: with a range, "after the textblock" is not where the author is pointing.
-  // **A paste is the exception, and it collapses before asking rather than widening this** — for a
-  // paste, replacing the selection *is* the gesture (speakerdeck-snippet-paste.ts, which deletes
-  // the range and then asks this question about the caret the deletion left). The rule below stays
-  // what the slash menu, the bubble and the link card get.
+  // Only for a caret. A paste collapses its range before asking (speakerdeck-snippet-paste.ts).
   if (!empty || $from.depth < 1) return false;
+  // A まとめ section's list item is `paragraph block*` by the shared schema, but holds text only
+  // (docs/summary-requirements.md §3.1).
+  if (selectionTouches(state, ...BLOCK_REFUSING_BOXES)) return false;
   const parent = $from.node($from.depth - 1);
   const index = $from.index($from.depth - 1);
   return parent.canReplaceWith(index + 1, index + 1, type);
 }
 
-// Curated language menu for the in-editor code block. The ids are Shiki language ids
-// (the public render pipeline highlights via rehype-pretty-code → Shiki, lib/render.ts),
-// so what you pick here is exactly what gets highlighted on the published page. The empty
-// id means "no language": it stores `language: null`, which serializes to a plain ``` fence,
-// preserving the pre-existing behaviour. The dropdown also covers ids the ` ```lang ` typing
-// rule can't produce — it only captures `[a-z]+`, so `cpp` (C++) and `csharp` (C#) are
-// reachable only here.
+// Curated Shiki language ids, so the pick is what the published page highlights (lib/render.ts).
+// '' stores `language: null`, a plain fence. Covers ids the ` ```lang ` rule can't type (it
+// captures `[a-z]+`), such as `cpp` and `csharp`.
 const CODE_LANGUAGES: readonly { id: string; label: string }[] = [
   { id: '', label: 'Plain Text' },
   { id: 'bash', label: 'Bash' },
@@ -88,56 +79,31 @@ function stringAttr(value: string | null | undefined): string {
   return typeof value === 'string' ? value : '';
 }
 
-// The filename ends up in the ```lang:filename fence's info string, and only `[^\s`]+` survives
-// a round trip through it — the same class the input rules above capture, but the NodeView's text
-// field enforced nothing, so both failures were reachable by typing:
-//   - whitespace truncated the name at the next *load*, not at the edit. markdown-it folds only
-//     the info string's first token into the language class (```ts:a b arrives as
-//     `language-ts:a`), so updateCodeBlockDOM read the filename back as `a` and " b" was gone.
-//   - a backtick is illegal in a backtick fence's info string, so the fence stopped parsing as a
-//     fence at all: the code spilled out as literal paragraph text and an empty block was left
-//     behind.
-// Both looked correct until the post was reopened, which is what made them worth closing at the
-// field rather than at the serializer.
-//
-// Dropping those characters rather than truncating at the first one keeps the part that carries
-// the meaning — `my file.ts` becomes `myfile.ts`, not `my`. Callers write the result back into
-// the field so the correction is visible: a silent repair here would be the same
-// looks-right-until-reload shape as the bug.
+// The filename lives in the ```lang:filename info string, where only `[^\s`]+` survives: whitespace
+// truncated it on the next load (markdown-it keeps only the first token), and a backtick broke
+// the fence so the code spilled out as text. Both looked fine until reopening, so the field drops
+// those characters (`my file.ts` → `myfile.ts`) and shows the result.
 function sanitizeFilename(value: string): string {
   return value.replace(/[\s`]+/g, '');
 }
 
-// A form id that intentionally matches no <form> element, used to orphan the NodeView's
-// header controls from PostEditor's form (see the NodeView for why).
+// Matches no <form>, detaching the header controls from PostEditor's form (see the NodeView).
 const DETACHED_FORM_ID = 'code-block-detached-controls';
 
-// The fence text a just-fired code block input rule consumed, tracked so Backspace can
-// restore it. TipTap has this natively (undoInputRule), but its bookkeeping is wiped by any
-// appended transaction that changes the doc — and StarterKit's TrailingNode appends exactly
-// such a transaction whenever the block is created at the end of the document (the common
-// case: typing a fence at the bottom of the post). The plugin in addProseMirrorPlugins keeps
-// this record alive while — and only while — the caret still sits inside the still-empty
-// code block the rule just created, which TrailingNode's paragraph append doesn't disturb.
+// The fence text a just-fired rule consumed, so Backspace can restore it. TipTap's own record dies
+// with TrailingNode's append at the end of the document (docs/editor-pitfalls.md §2.1); this one
+// lives while the caret stays in the still-empty block. Predates trailing-node-extension.ts's fix
+// and is deliberately kept.
 type FenceUndo = { pos: number; text: string };
 
 const fenceUndoKey = new PluginKey<FenceUndo | null>('codeBlockFenceUndo');
 
-// Mirrors the public render pipeline's diff rules on any code block with `diff: true`
-// (independent of `language`, which is now just the underlying Shiki grammar). There's no
-// per-line node to decorate (a code block's lines are just \n characters inside one text node),
-// so this wraps each line's text — not the trailing \n — in an inline decoration; the class's
-// styling then covers exactly the line's own characters (see the CSS in app/globals.css for why
-// that reads as a full row in practice). The two rules, each matched separately against Shiki's
-// actual output on the public page:
-// 1. Text color (diff-text-*): only for blocks with NO real language, where the public page
-//    highlights with Shiki's own `diff` grammar and its markup.inserted/deleted scopes color
-//    every +/- led line — including +++/--- file headers. With a real language (```diff_ts),
-//    the public page tokenizes with that grammar instead, so green/red text here would show
-//    something publishing never does.
-// 2. Row background (diff-line-*, lib/shiki-diff-line-transformer.ts — added because Shiki
-//    only colors the text): +/- content lines of every diff block, language or not; the
-//    transformer excludes +++/--- there too.
+// Mirrors the published diff rules for `diff: true` blocks, as inline decorations over each line's
+// text (a block's lines are one text node):
+// 1. Text colour (diff-text-*) only without a real language, where Shiki's own `diff` grammar
+//    colours every +/- line; with ```diff_ts the page uses that grammar instead.
+// 2. Row background (diff-line-*, lib/shiki-diff-line-transformer.ts) for every diff block,
+//    excluding +++/--- headers.
 const diffHighlightKey = new PluginKey<DecorationSet>('codeBlockDiffHighlight');
 
 function diffLineDecorations(doc: PMNode, codeType: NodeType): DecorationSet {
@@ -168,9 +134,8 @@ function diffLineDecorations(doc: PMNode, codeType: NodeType): DecorationSet {
   return DecorationSet.create(doc, decorations);
 }
 
-// Wrap a fence input rule so the transaction it applies also stamps the matched fence text
-// for the fenceUndo plugin. An Enter trigger's trailing "\n" is stripped (it can't live in
-// the restored text node); a space trigger stays, matching what the native undo restores.
+// Wrap a fence rule so its transaction stamps the fence text for fenceUndo. An Enter trigger's
+// "\n" is stripped; a space trigger stays, as the native undo restores it.
 function undoableFenceRule(config: Parameters<typeof textblockTypeInputRule>[0]): InputRule {
   const rule = textblockTypeInputRule(config);
   const applyRule = rule.handler;
@@ -184,14 +149,10 @@ function undoableFenceRule(config: Parameters<typeof textblockTypeInputRule>[0])
   return rule;
 }
 
-// Deleting a code block's final character is normally left to the browser (ProseMirror
-// keymaps don't handle mid-text deletes) — but Chrome, after emptying the <code>, folds the
-// now-empty <pre> into the contenteditable=false header above and removes pre and code from
-// the NodeView entirely. That's a structural change outside the content hole, which
-// ignoreMutation used to hide, leaving the view desynced from the model until a reload.
-// Handle exactly the emptying deletion in ProseMirror instead, so the DOM never goes empty
-// mid-native-edit. (A word/line delete that empties a longer block still hits the native
-// path; the NodeView's ignoreMutation lets ProseMirror see and repair that destruction.)
+// Deleting a block's last character natively let Chrome fold the emptied <pre> into the
+// contenteditable=false header, desyncing the view. So that deletion is done in ProseMirror. (A
+// word delete that empties a longer block still goes native; ignoreMutation lets ProseMirror repair
+// it.)
 function deleteSoleCodeChar(
   codeType: NodeType,
   dir: -1 | 1,
@@ -199,8 +160,7 @@ function deleteSoleCodeChar(
 ): boolean {
   const { empty, $from } = state.selection;
   const text = $from.parent.textContent;
-  // Spread by code points so a sole surrogate-pair character (e.g. an emoji) still counts
-  // as "one character" and is deleted whole rather than natively.
+  // By code points, so a lone emoji counts as one character.
   if (!empty || $from.parent.type !== codeType || [...text].length !== 1) return false;
   if ($from.parentOffset !== (dir === -1 ? text.length : 0)) return false;
   if (dispatch) {
@@ -209,36 +169,11 @@ function deleteSoleCodeChar(
   return true;
 }
 
-// Backspace in an *empty* code block: turn it back into a paragraph. This is the keyboard way out
-// of a fence once the fence-undo record has expired, and it is the whole of what base CodeBlock's
-// Backspace was still being delegated to — so it is taken over here rather than delegated, and the
-// parent handler is no longer called at all (its other branch is the destructive `$anchor.pos === 1`
-// one, refused below).
-//
-// It is taken over because base answers it with TipTap's `clearNodes()`, which **throws** in this
-// document. That command picks the replacement type with
-//
-//   const { defaultType } = $mappedFrom.parent.contentMatchAt($mappedFrom.index());
-//   tr.setNodeMarkup(nodeRange.start, defaultType);
-//
-// and takes `defaultType` unchecked. Our `doc` is `block+ footnoteSection?` (footnote-extension.ts),
-// so once `block+` is satisfied — i.e. at every top-level position but the first child —
-// `ContentMatch.defaultType` returns `footnoteSection`, and setting a code block to a node whose
-// content is `footnoteDefinition+` raises "RangeError: Invalid content for node type
-// footnoteSection". Measured: an empty code block with any block above it could not be removed with
-// Backspace at all — the key threw, uncaught, and left the document untouched. Only a block that is
-// the doc's *first* child escaped (there `defaultType` is still `paragraph`), and only at the top
-// level: inside a list item or a quote the question is asked of *that* container, whose content
-// expression has no `footnoteSection` in reach.
-//
-// prosemirror-commands never had this problem because it resolves the same idiom through
-// `defaultBlockAt()`, which filters to textblocks. Naming `paragraph` outright is stronger than
-// re-deriving that filter: it is the type this conversion always wanted.
-//
-// One deliberate behaviour change comes with it. `clearNodes` also ran `tr.lift(...)`, so emptying a
-// code block inside a list item converted it *and* lifted it out of the bullet. A plain
-// `setNodeMarkup` leaves it where it is, which is what every other block does when you empty it —
-// the boundary specs assert the resulting document rather than just the block's disappearance.
+// Backspace in an *empty* code block turns it back into a paragraph, the keyboard way out once
+// the fence-undo record has expired. Base CodeBlock's handler is no longer called: it used
+// `clearNodes()`, which throws in this document (clear-nodes-extension.ts,
+// docs/editor-pitfalls.md §8.1). Naming `paragraph` is what the conversion always wanted. Unlike
+// `clearNodes`, this doesn't lift, so an emptied block in a list item stays in it.
 function clearEmptyCodeBlock(codeType: NodeType, { state, tr, dispatch }: CommandProps): boolean {
   const { $from, empty } = state.selection;
   if (!empty || $from.parent.type !== codeType || $from.parent.content.size > 0) return false;
@@ -251,42 +186,20 @@ function clearEmptyCodeBlock(codeType: NodeType, { state, tr, dispatch }: Comman
   return true;
 }
 
-// Backspace at the very start of a code block's code: select the whole block, so a second press
-// deletes it. Two jobs in one step.
+// Backspace at the very start of the code selects the whole block, so a second press deletes it.
 //
-// The first is to keep prosemirror-commands' `joinBackward` from reaching its *lift* fallback. That
-// command asks `findCutBefore` for a boundary to join across, and `findCutBefore` returns null
-// immediately when the caret's parent is `isolating` — which a code block always is. Null is not
-// read as "refuse", though: joinBackward falls through to `$cursor.blockRange()` + `liftTarget` and
-// lifts the block out of whatever contains it. So the flag that was added to protect the block's
-// edges is exactly what routed the gesture into the destructive branch. Measured, one Backspace at
-// the start of the code (`e2e/editor-codeblock-boundary.spec.ts`):
-//   • in a list item — the whole `listItem` was lifted, taking the bullet with it:
-//     `- 項目` + fence  →  `項目` + fence, the `bulletList` gone from the document;
-//   • in a blockquote — the code block escaped the quote and became a top-level sibling;
-//   • in an accordion (`details`) — the same escape; neither node is `isolating`.
-// A code block inside a *callout* was already immune, because prosemirror-transform's `liftTarget`
-// breaks its search loop on an isolating ancestor and the callout is one. So the container alone
-// decided between "nothing happens" and "torn apart", which is not a distinction the author can see.
+// First, it keeps `joinBackward` off its lift fallback: `findCutBefore` returns null for an
+// isolating parent, and joinBackward then lifted the block out of a list item (taking the bullet),
+// a quote or an accordion (e2e/editor-codeblock-boundary.spec.ts). Inside a callout it was already
+// immune, since `liftTarget` stops at an isolating ancestor.
 //
-// The second job is why this selects rather than simply refusing, which is what it did first and
-// what the author reported back as making a fence hard to get rid of. Refusing outright left no
-// Backspace route out of the block at all — and worse than inconvenient, it created a dead key: a
-// block loaded from markdown carries a **trailing newline** (markdown-it terminates fence content
-// with one — see serializeCodeBlock), so deleting its visible text leaves `codeBlock("\n")`. That
-// block looks empty on screen but is not `content.size === 0`, so step 4 declines, and a bare
-// refusal here then swallowed every further press. "Visually empty" and "empty" are different
-// states, and node-selection is what covers the gap without having to guess which whitespace counts.
+// Second, selecting rather than refusing: a refusal was worse than inconvenient, a dead key. A
+// block loaded from markdown keeps a trailing newline, so `codeBlock("\n")` looks empty but is not,
+// and every press was swallowed. Selecting (`selectNodeBackward`'s idiom) is visible and undone by
+// any arrow key.
 //
-// Selecting the node is prosemirror-commands' own idiom for "there is nothing to join into"
-// (`selectNodeBackward`), it is visible, any arrow key undoes it, and the second Backspace then goes
-// through baseKeymap's `deleteSelection` — measured to remove the block and leave the list, quote or
-// accordion around it standing.
-//
-// Last in the Backspace chain, so every step with something to do still runs first — undoing a
-// just-typed fence (step 1) in particular, which this would otherwise shadow. The `empty` test is
-// load-bearing in both directions: it keeps a ranged selection on the normal path, and it stops this
-// from re-selecting the block on the *second* press, which would make it undeletable.
+// Last in the chain, so fence undo still wins. The `empty` test keeps ranges on the normal path and
+// stops the second press from re-selecting.
 function selectCodeBlockBackward(
   codeType: NodeType,
   { state, tr, dispatch }: CommandProps,
@@ -299,9 +212,7 @@ function selectCodeBlockBackward(
   return true;
 }
 
-// Restore the fence text recorded by fenceUndoKey: swap the still-empty code block for a
-// paragraph holding the literal fence, caret at its end. False when no live record exists,
-// letting Backspace fall through to the inherited behaviour.
+// Restore the recorded fence as a paragraph, caret at its end; false when no live record exists.
 function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps): boolean {
   const stored = fenceUndoKey.getState(state);
   if (!stored) return false;
@@ -319,29 +230,14 @@ function undoFenceTyping(codeType: NodeType, { state, dispatch }: CommandProps):
   return true;
 }
 
-// Serialize a code block as a Zenn/Qiita-style fence: `language` plus, when set, `:filename`
-// (e.g. ```ts:index.ts). Mirrors prosemirror-markdown's default code_block serializer,
-// including the dynamic fence length so backtick runs inside the code can't close it early.
-// A `diff: true` block writes `diff` (or `diff_<language>`, when a language is also set) as
-// the fence's language segment instead of the bare language — the inverse of the `diff`/
-// `diff_<lang>` prefix updateCodeBlockDOM strips back out below.
+// Serialize as a ```lang:filename fence, as prosemirror-markdown's default does (including the
+// dynamic fence length). A `diff: true` block writes `diff`/`diff_<language>`, which
+// updateCodeBlockDOM strips back out.
 //
-// One deliberate departure from the default: the content's *trailing* newline is dropped before
-// it is written. A block loaded from markdown always has one — markdown-it's fence content is
-// terminated by a newline, so `- 項目 / ```ts / const a = 1 / ``` ` parses to the text
-// "const a = 1\n" (a block typed in the editor has no such newline). prosemirror-markdown's
-// `text()` splits on \n, so that terminator becomes a final *empty line*, and `write()` prefixes
-// every line it emits with the current delimiter — `if (this.delim && this.atBlank())`. At the
-// top level the delimiter is "" and nothing shows, which is why this went unnoticed; inside a
-// list item, a quote, or a callout it emitted a delimiter-only line ("  " / "> ") between the
-// code and the closing fence, and re-parsing read that line back as a blank line of *content*.
-// The block therefore grew one blank line per open→save cycle, indefinitely (measured across
-// list / quote / callout / nested list; only the top level was stable).
-//
-// `ensureNewLine()` below writes the terminator back, so dropping it here changes nothing about
-// the fence's shape — it only stops the empty line from being routed through `write()`. The one
-// visible consequence is that blank lines at the very *end* of a code block are trimmed over the
-// next couple of saves rather than preserved; that converges, which the growth did not.
+// **The trailing newline is dropped before writing** (docs/editor-pitfalls.md §9.1): markdown-it
+// gives loaded blocks one, and `write()` prefixed the resulting empty line with the list or quote
+// delimiter, so nested blocks grew a blank line per save. `ensureNewLine()` restores the
+// terminator; trailing blank lines inside a block converge away over a save or two.
 function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void {
   const language = stringAttr(node.attrs.language);
   const filename = stringAttr(node.attrs.filename);
@@ -356,18 +252,10 @@ function serializeCodeBlock(state: MarkdownSerializerState, node: PMNode): void 
   state.closeBlock(node);
 }
 
-// Parse hook (runs on markdown-it's HTML before ProseMirror parses it). markdown-it folds
-// the whole no-whitespace info string into the language class, so ```ts:index.ts arrives as
-// `<code class="language-ts:index.ts">`. Split it: restore the real `language-ts` class (so
-// the base `language` attr parses right) and stash the filename on the <pre> as `data-title`
-// for the `filename` attr below. A plain ```ts fence has no colon and is left untouched.
-//
-// Also recognizes a `diff`/`diff_<language>` prefix on the language segment itself (before the
-// `:filename` colon, same convention) — e.g. ```diff_ts:index.ts arrives as
-// `language-diff_ts:index.ts`. Strips the prefix down to the real language (or no class at all,
-// for bare ```diff/```diff_), and stashes a `data-diff` marker on the <pre> for the `diff`
-// attr's parseHTML below. This also covers old posts' bare ```diff fences (no colon, no `_lang`),
-// which is exactly what lets them load as `language: null, diff: true` with no migration step.
+// Parse hook: markdown-it folds the info string into the class (```ts:index.ts →
+// `language-ts:index.ts`). Split it back into `language-ts` plus `data-title` on the <pre>, and
+// strip a `diff`/`diff_<lang>` prefix into a `data-diff` marker, which also loads old bare ```diff
+// fences as `language: null, diff: true`.
 function updateCodeBlockDOM(element: HTMLElement): void {
   element.querySelectorAll('pre > code').forEach((code) => {
     const languageClass = Array.from(code.classList).find((c) => c.startsWith('language-'));
@@ -388,14 +276,9 @@ function updateCodeBlockDOM(element: HTMLElement): void {
   });
 }
 
-// The `language-*` class value on a <pre>'s first child <code> — what base CodeBlock's
-// `language` parseHTML reads ('' when absent). Re-read by both attribute overrides below:
-// directly pasted HTML never goes through updateCodeBlockDOM (a markdown-parse-only hook), so
-// a `<pre><code class="language-diff">` from an external page (Prism/highlight.js emit exactly
-// this) must be folded into `language: null, diff: true` — the same state a ```diff fence
-// loads as. Left unfolded, `language: 'diff'` would be a shadow state: undecorated in the
-// editor and shown as a stray select entry, yet serialized as a bare ```diff fence that flips
-// to diff-on at the next load.
+// The `language-*` class on a <pre>'s <code> ('' when absent). Pasted HTML skips
+// updateCodeBlockDOM, so a `<pre><code class="language-diff">` from Prism or highlight.js must be
+// folded into `diff: true` here too, or it becomes a shadow state that flips on the next load.
 function domLanguage(element: HTMLElement): string {
   const code = element.firstElementChild;
   const languageClass = code
@@ -404,46 +287,28 @@ function domLanguage(element: HTMLElement): string {
   return languageClass ? languageClass.slice('language-'.length) : '';
 }
 
-// Base CodeBlock ships a paste handler (`codeBlockVSCodeHandler`) that turns *any* clipboard
-// carrying VS Code's `vscode-editor-data` flavour into a code block (docs/link-requirements.md
-// §2.5, where this was found and measured — a link investigation walked into it). Its whole test
-// is "is there
-// text, and does the flavour name a language" — it never looks at what was pasted. So copying a
-// URL, a word or a sentence out of an editor window produced a code block, and because it runs
-// `replaceSelectionWith`, it did so by destroying whatever was selected.
-//
-// It is replaced rather than dropped: a multi-line paste out of a code editor really is a code
-// block, and that flavour is the only place its language can come from. The added condition is
-// that the text actually span more than one line — a single line is ambiguous enough that the
-// ``` fence and the `/` menu are the better ways to ask for code.
-//
-// Only reached when the link extension's own paste handler declines, which it does unless the
-// selection is non-empty and the pasted text is exactly one URL: `Link` sets `priority: 1000`, and
-// ExtensionManager sorts by priority *after* reversing the extension list, so it is asked first
-// regardless of array position (see PostEditor's note on ordering, which holds only among equal
-// priorities).
+// Base CodeBlock's `codeBlockVSCodeHandler` turned *any* paste carrying VS Code's
+// `vscode-editor-data` flavour into a code block, replacing the selection (docs/link-requirements.md
+// §2.5). Replaced, not dropped: a multi-line paste from a code editor is code, and only that flavour
+// carries the language; a single line is left to ``` and `/`. Link's paste handler (priority
+// `1e3`) is asked first regardless of array position.
 const VSCODE_HANDLER_KEY = 'codeBlockVSCodeHandler';
 
-// A PluginKey's name, for identifying someone else's plugin in a list. prosemirror-state stores it
-// (suffixed, e.g. 'codeBlockVSCodeHandler$') on the key object but leaves it out of its type
-// declarations, so it is read through this narrow shape rather than an `any` cast.
+// A PluginKey's name (suffixed `$`), read through a narrow shape because prosemirror-state's types
+// omit it.
 function pluginKeyName(plugin: Plugin): string {
   const key = plugin.spec.key as { key?: string } | undefined;
   return key?.key ?? '';
 }
 
-// Whether the pasted text has content on more than one line. A trailing newline is stripped first
-// because VS Code's Ctrl+C with nothing selected copies the caret's whole line *including* its
-// newline — that is still one line of content, and treating it as multi-line would put the common
-// "copy this one line" case straight back into a code block.
+// More than one line of content. A trailing newline is stripped first: VS Code's Ctrl+C with no
+// selection copies one whole line including it.
 function spansMultipleLines(text: string): boolean {
   return text.replace(/\r\n?/g, '\n').trimEnd().includes('\n');
 }
 
-// The replacement for the handler described above. Mirrors base CodeBlock's version — same
-// language source, same `paste` meta, same post-insert caret fix — with the multi-line condition
-// added and the unguarded `JSON.parse` made total (a malformed flavour must fall through to the
-// normal paste, not throw inside a DOM event handler).
+// Base's handler plus the multi-line condition, with `JSON.parse` made total so a malformed flavour
+// falls through instead of throwing.
 function vscodeMultilinePastePlugin(type: NodeType, editor: Editor): Plugin {
   return new Plugin({
     key: new PluginKey('codeBlockVSCodeMultilineHandler'),
@@ -479,57 +344,27 @@ function vscodeMultilinePastePlugin(type: NodeType, editor: Editor): Plugin {
   });
 }
 
-// StarterKit's plain CodeBlock, extended so the editor surfaces (and can edit) the block's
-// language and filename. The base node (input rule, whitespace handling, etc.) is inherited;
-// we add a `filename` attribute, a NodeView with a language <select> + filename field, and a
-// markdown round-trip that reads/writes the ```lang:filename fence. Register it in place of
-// StarterKit's built-in codeBlock (`StarterKit.configure({ codeBlock: false })`); the node
+// StarterKit's CodeBlock with a `filename` attribute, a NodeView (language <select>, filename
+// field) and a ```lang:filename markdown round trip. Registered in place of StarterKit's; the node
 // name stays `codeBlock`.
 export const CodeBlockWithLanguage = CodeBlock.extend({
-  // Treat the code block's edges as hard boundaries (like the callout). Without this, Backspace at
-  // the start of the block below merges that block's text *into* the code — turning prose into code
-  // (and corrupting the stored fence). `isolating` blocks that join; the Backspace shortcut below
-  // then steps the caret into the code block's end instead of ProseMirror's node-selection default.
+  // Hard edges: without this, Backspace below the block merged prose into the code.
   isolating: true,
 
-  // Keep CodeBlock's own shortcuts (empty → clear on Backspace, exit-on-arrow-down, Mod-Alt-c, …)
-  // and only augment Backspace, trying in order:
-  // 1. undoInputRule. Extension keymaps run before the core Keymap extension (ExtensionManager
-  //    reverses the extension list), so the inherited "empty → clear" handler would consume the
-  //    Backspace typed right after a ``` fence conversion (the new block is empty) and the core
-  //    escape hatch that restores the literal ```lang:filename text could never fire. Trying it
-  //    here first restores that heading/list-like undo; the command only succeeds while the
-  //    input rule is the latest transaction, so normal Backspace behaviour is untouched.
-  // 2. undoFenceTyping — covers the case native undo can't: a fence typed at the end of the
-  //    document, where TrailingNode's appended transaction has already wiped the native record
-  //    (see fenceUndoKey).
-  // 3. deleteSoleCodeChar — keeps the emptying deletion away from the browser (see its comment);
-  //    also bound to Delete and the word-delete chords, where it guards the same case.
-  // 4. clearEmptyCodeBlock — an empty block goes back to being a paragraph. Base CodeBlock's own
-  //    handler used to do this and is no longer called at all (see the binding's comment).
-  // 5. The shared isolating-boundary step-in.
-  // 6. selectCodeBlockBackward — the last word at the block's start: baseKeymap's joinBackward
-  //    can't lift the block out of a list item / quote / accordion, and the block is selected so a
-  //    second Backspace removes it (see that function).
+  // Backspace tries, in order:
+  // 1. undoInputRule, first because this keymap runs before the core Keymap and step 4 would
+  //    otherwise swallow the Backspace right after a fence;
+  // 2. undoFenceTyping, for a fence typed at the end of the document (see fenceUndoKey);
+  // 3. deleteSoleCodeChar (also on Delete and the word-delete chords);
+  // 4. clearEmptyCodeBlock;
+  // 5. the shared isolating step-in;
+  // 6. selectCodeBlockBackward.
+  // Delete falls back to stepIntoNextIsolating after deleteSoleCodeChar.
   //
-  // Delete gets the mirror treatment at the block's *end*: after deleteSoleCodeChar, fall back to
-  // stepIntoNextIsolating, which only acts when the following top-level block is empty (deletes
-  // it) — a non-empty one is already a safe no-op via `isolating` (see that function's comment),
-  // so nothing else is needed here.
-  // One entry point for "give me a code block here", because the two that existed disagreed. The
-  // `/` menu asks `can().setCodeBlock()` and so offered nothing inside a list item, while the
-  // inherited Mod-Alt-c ran `toggleCodeBlock` ungated: it lifted the item out of the list and made
-  // its text the code. Neither was a decision about lists — `setCodeBlock` converts the caret's
-  // paragraph, and a list item's first child must stay a paragraph, so every route that could only
-  // convert was refused there by the schema. Nothing forbade the block itself: `listItem` is
-  // `paragraph block*`, and `- 項目\n\n  ```ts …` already loads and round-trips.
-  //
-  // So convert where converting is legal, and otherwise place the block as the item's next child —
-  // which is what the callout and table buttons have always done there. Where the caret sits inside
-  // the item decides which branch runs: on its first paragraph there is nothing to convert, so the
-  // block is added after it; on a second paragraph `setCodeBlock` converts in place, as anywhere
-  // else. The ` ```lang ` input rule is untouched and still only converts, so it stays inert on a
-  // first paragraph.
+  // `insertCodeBlock` is the one entry point for "a code block here": convert where converting is
+  // legal, and otherwise (a list item's first paragraph, which must stay a paragraph) add the block
+  // as the item's next child, which is what the callout and table buttons have always done. The
+  // ` ```lang ` input rule only converts, so it stays inert on a first paragraph.
   addCommands() {
     return {
       ...this.parent?.(),
@@ -539,9 +374,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
           if (can().setCodeBlock()) return commands.setCodeBlock();
           if (!canPlaceAfterCaret(state, this.type)) return false;
           const at = state.selection.$from.after(state.selection.$from.depth);
-          // insertContentAt rather than insertContent: the latter inserts *at the selection*, which
-          // splits the paragraph when the caret is mid-text. `at` is past the whole textblock, so
-          // the item keeps one paragraph and gains one block after it.
+          // insertContentAt past the textblock, so a mid-text caret doesn't split the paragraph.
           return chain()
             .insertContentAt(at, { type: this.name })
             .setTextSelection(at + 1)
@@ -559,35 +392,16 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         editor.commands.command((props) => deleteSoleCodeChar(codeType, dir, props));
     return {
       ...parentShortcuts,
-      // The inherited binding is `toggleCodeBlock`, and inside a fence that is the only keyboard
-      // way back out to a paragraph — so keep it for that case and only route the *creating*
-      // direction through insertCodeBlock. The `/` menu needs no such split: it is already gated on
-      // `!editor.isActive('codeBlock')`.
+      // Inside a fence the inherited `toggleCodeBlock` is the keyboard way back to a paragraph, so
+      // only the creating direction goes through insertCodeBlock.
       'Mod-Alt-c': ({ editor }) =>
         editor.isActive(this.name)
           ? (parentShortcuts?.['Mod-Alt-c']?.({ editor }) ?? false)
           : editor.commands.insertCodeBlock(),
-      // Base CodeBlock's Backspace is no longer delegated to at all: it answers exactly two cases,
-      // and both are now handled here.
-      //   • an *empty* block clears to a paragraph. Kept as behaviour, but performed by
-      //     clearEmptyCodeBlock — base does it with `clearNodes()`, which throws in this document
-      //     (see that function: `defaultType` resolves to `footnoteSection`).
-      //   • `$anchor.pos === 1` — the caret at the start of a code block that happens to be the
-      //     document's *first* node — clears it as well. That is upstream's generic "nothing above
-      //     to join into, so escape the block" hatch, and it fires on a *non-empty* block: one
-      //     Backspace at the start of the code destroyed the fence, took its language and filename
-      //     with it, and left multi-line code in a single paragraph holding literal \n characters
-      //     (which reload as headings/lists). The identical keystroke with any block above the code
-      //     block is a plain no-op — `isolating` refuses the join — so the position in the document
-      //     was the only thing deciding between "no-op" and "lose the block", which is not a
-      //     distinction the author can see. Dropped, which restores the no-op and matches the
-      //     callout, whose own start is likewise left alone while it holds content
-      //     (callout-extension.ts).
-      // Nothing is lost at the top of the document by dropping it: ArrowUp there lands on a gap
-      // cursor before the block (measured), so typing still opens a paragraph above it with the
-      // fence left standing — which is the gesture that "escape" was standing in for. That gap
-      // cursor exists *because* the block is isolating: prosemirror-gapcursor's needsGap() tests
-      // exactly that spec flag.
+      // Base CodeBlock's Backspace is not delegated to. Its empty-block case is clearEmptyCodeBlock;
+      // its `$anchor.pos === 1` case (a code block that is the document's first node) destroyed a
+      // *non-empty* fence on one Backspace, while the same key anywhere else is a no-op. Dropped;
+      // ArrowUp still reaches a gap cursor above the block (`needsGap()` tests `isolating`).
       Backspace: ({ editor }) =>
         editor.commands.undoInputRule() ||
         editor.commands.command((props) => undoFenceTyping(codeType, props)) ||
@@ -605,27 +419,18 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
     };
   },
 
-  // The base ``` / ~~~ rules, recreated (not inherited) so every fence rule stamps the
-  // fence-undo meta, plus a Zenn/Qiita-style ` ```lang:filename ` variant (e.g. ```ts:index.ts)
-  // that sets both attrs — the plain backtick rule matches only `[a-z]+`, so a colon made the
-  // whole fence fail and left it as literal text. The language is optional (```:memo.txt): the
-  // serializer/parser already round-trip that form. The filename must be a single token without
-  // backticks — whitespace splits the fence info string and CommonMark forbids backticks in
-  // it — matching the NodeView field's trim-to-one-token rule.
+  // The base ``` / ~~~ rules, recreated so each stamps the fence-undo meta, plus
+  // ` ```lang:filename ` (language optional). The filename is one token without backticks, as the
+  // info string requires.
   addInputRules() {
     const language = (match: RegExpMatchArray) => ({ language: match[1] });
-    // Bare `diff` and `diff_<lang>` both set `diff: true`; the captured letters (if any)
-    // become the real `language` — empty/absent means "no language, just diff coloring".
+    // `diff` and `diff_<lang>` set `diff: true`; the captured letters become `language`.
     const diffLanguage = (match: RegExpMatchArray) => ({
       language: match[1] ? match[1] : null,
       diff: true,
     });
     return [
-      // Diff-specific rules must come first: a bare ```diff also matches the generic
-      // `[a-z]+` rule below (diff reads as a plain "language" to that regex), so these need
-      // to win the race for that literal prefix. `diff_<lang>` (contains `_`) never matches
-      // the generic rule at all, but it's kept alongside bare `diff` here for one shared
-      // `diffLanguage` mapping.
+      // Diff rules first: a bare ```diff also matches the generic `[a-z]+` rule.
       undoableFenceRule({
         find: /^```diff(?:_([a-z]*))?[\s\n]$/,
         type: this.type,
@@ -658,8 +463,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
-      // Base CodeBlock's `language`, re-read via domLanguage so 'diff' folds into the `diff`
-      // attr below instead of surviving as a literal language (see domLanguage's comment).
+      // Re-read via domLanguage so 'diff' folds into `diff`.
       language: {
         default: null,
         rendered: false,
@@ -668,18 +472,11 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
           return language === '' || language === 'diff' ? null : language;
         },
       },
-      // Round-trips through the `data-title` attribute on the <pre>: updateCodeBlockDOM
-      // stashes it when parsing markdown, and renderHTML writes it back out. The write-out
-      // matters for in-editor copy/paste — ProseMirror serializes a copied block to clipboard
-      // HTML via the schema's renderHTML (never the NodeView DOM), so without it a pasted
-      // copy would silently lose the filename. Storage is unaffected (markdown, via
-      // serializeCodeBlock's `:filename` suffix).
+      // Via `data-title` on the <pre>. renderHTML writes it back because copy/paste serializes
+      // through the schema's renderHTML, not the NodeView.
       filename: {
         default: null,
-        // Sanitized here too, not just at the field: markdown-parsed HTML can't carry a bad
-        // filename (updateCodeBlockDOM splits it out of a class the fence already tokenized),
-        // but *pasted* HTML reaches this hook directly, and an external `<pre data-title="a b">`
-        // would otherwise store a name that breaks on the next save.
+        // Sanitized here too: pasted HTML reaches this hook directly.
         parseHTML: (element) => {
           const filename = sanitizeFilename(stringAttr(element.getAttribute('data-title')));
           return filename === '' ? null : filename;
@@ -689,13 +486,8 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
           return filename === '' ? {} : { 'data-title': filename };
         },
       },
-      // Independent of `language`: whether this block is a manually-authored diff (+/- lines
-      // get row/text coloring — see diffLineDecorations). Round-trips through the `data-diff`
-      // marker on the <pre> (stashed by updateCodeBlockDOM, written back by renderHTML for
-      // the same clipboard reason as `filename`) — or, for pasted external HTML that never
-      // met that hook, through a literal language-diff class (see domLanguage); serialized as
-      // the `diff`/`diff_<lang>` fence prefix instead of the bare language (see
-      // serializeCodeBlock).
+      // A manually authored diff, independent of `language`. Via `data-diff` (or a pasted
+      // `language-diff` class, see domLanguage); serialized as the fence prefix.
       diff: {
         default: false,
         parseHTML: (element) =>
@@ -715,27 +507,18 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
     };
   },
 
-  // The fence-undo record (see fenceUndoKey). Stored when a fence rule's transaction carries
-  // the meta; kept afterwards only while the caret still sits inside the same still-empty
-  // code block. TrailingNode's appended paragraph-insert passes that test (it touches nothing
-  // before the doc end), while typing in the block, deleting it, or moving the caret out all
-  // invalidate the record — so a stale fence can never resurface later.
+  // The fence-undo record lives only while the caret stays in the same still-empty block;
+  // TrailingNode's append leaves it alone, anything else invalidates it.
   addProseMirrorPlugins() {
     const codeType = this.type;
     const parentPlugins = this.parent?.() ?? [];
-    // Base CodeBlock's VS Code paste handler, swapped for the multi-line-only one above. Filtered
-    // by key rather than by dropping the parent's plugins wholesale, which would also lose
-    // anything else the base extension contributes now or later. PluginKey suffixes its name
-    // ('codeBlockVSCodeHandler$'), hence the prefix test.
+    // Base's VS Code handler, swapped out by key (suffixed `$`), keeping any other base plugin.
     const withoutVSCodeHandler = parentPlugins.filter(
       (plugin) => !pluginKeyName(plugin).startsWith(VSCODE_HANDLER_KEY),
     );
     if (withoutVSCodeHandler.length === parentPlugins.length) {
-      // The key belongs to upstream, so a rename there makes this filter a no-op — and then the
-      // base handler is still in the list *and* ours is appended after it, so the unconditional
-      // behaviour comes back in full (handlePaste is first-wins and the base plugin comes first).
-      // This warning is a breadcrumb, not a guard: e2e/editor-vscode-paste.spec.ts's single-line
-      // cases are what actually catch the revert.
+      // An upstream rename would silently restore the unconditional handler, which comes first.
+      // A breadcrumb only; e2e/editor-vscode-paste.spec.ts's single-line cases catch it.
       console.warn(
         `[code-block] base CodeBlock plugin '${VSCODE_HANDLER_KEY}' not found — its unconditional "VS Code paste becomes a code block" behaviour is back`,
       );
@@ -771,8 +554,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
               return null;
             }
             const pos = $from.before();
-            // On a plain carry-over, the caret must still be in the block recorded (mapped
-            // through this transaction) — not in some other empty code block.
+            // A carried-over record must still point at the block the caret is in.
             if (!meta && prev && tr.mapping.map(prev.pos) !== pos) return null;
             return { pos, text };
           },
@@ -781,10 +563,8 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
     ];
   },
 
-  // Vanilla-DOM NodeView (mirrors the Callout node): a contenteditable=false chrome header
-  // (filename input + language <select>) sits alongside the editable <code> content hole.
-  // The wrapper lives only in the editor view — storage is markdown and the public page
-  // renders from that, so this DOM never leaks outside the editor.
+  // Plain-DOM NodeView: a contenteditable=false header (filename, language) beside the editable
+  // <code>. Editor-only; the page renders from markdown.
   addNodeView() {
     const name = this.name;
     return ({ editor, node, getPos }) => {
@@ -800,28 +580,18 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       const filenameInput = document.createElement('input');
       filenameInput.type = 'text';
       filenameInput.className = 'code-block-filename';
-      // The filename renders as a borderless caption, so the placeholder copy (not a background)
-      // is what signals the empty field is an add-a-filename control.
+      // A borderless caption, so the placeholder is what marks the empty field.
       filenameInput.placeholder = 'ファイル名を追加';
       filenameInput.setAttribute('aria-label', 'コードブロックのファイル名');
-      // Filenames aren't dictionary words, so opt this field out of the browser's native
-      // spellcheck too (matching the code body <code>) — otherwise `useState.tsx` and the
-      // like get red squiggles. The <select> is a picker, so it needs no such opt-out.
+      // No spellcheck squiggles on filenames.
       filenameInput.setAttribute('spellcheck', 'false');
-      // These chrome controls sit inside PostEditor's single <form>. A server-action submit
-      // (投稿/更新) makes React auto-reset that form, which would blank an associated
-      // <input>/<select> — the node's attrs survive, but the *displayed* value clears (no
-      // ProseMirror transaction fires, so the NodeView never re-syncs). Point their `form` at
-      // a non-existent id so they have no form owner: immune to the reset, never submitted.
+      // Detached from PostEditor's <form>: React resets form controls after a server action, which
+      // would blank the displayed value without any transaction to re-sync it.
       filenameInput.setAttribute('form', DETACHED_FORM_ID);
 
-      // The same header, when the filename is a GitHub blob URL rather than a name: a link to the
-      // file, wearing GitHub's mark (docs/embed-requirements.md §19.4). It stands *in place of* the
-      // field — the URL is a reference, not something to rename, and showing it raw in a text input
-      // is what made the first shape of this feature noisy.
-      //
-      // The published pipeline draws the same two halves from the same stored string
-      // (lib/rehype-code-source.ts), which is what makes this WYSIWYG rather than a preview.
+      // For a GitHub blob URL filename, a link to the file with GitHub's mark instead of the field
+      // (docs/embed-requirements.md §19.4), drawn from the same string as the published header
+      // (lib/rehype-code-source.ts).
       const sourceLink = document.createElement('a');
       sourceLink.className = 'code-block-source';
       sourceLink.target = '_blank';
@@ -833,14 +603,8 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       sourcePath.className = 'code-block-source-path';
       sourceLink.append(sourceRepo, sourcePath);
 
-      // The way back out of an import (§19.4). Same wording as the embed's and the link card's,
-      // because it is the same door — and shown only for a block that has a reference to return to,
-      // which is exactly the set that shows the source link above.
-      // An icon *and* a label, and **exactly one of them shows** — a width question, answered the
-      // way the link card's control band answers it (app/globals.css). Wide, the words are enough
-      // and the icon is out of the flow; below 30rem the label goes visually-hidden and the icon
-      // carries the button, so the header's width goes back to the file it names. The label stays
-      // in the tree rather than being removed: it is the button's accessible name at both widths.
+      // The way back out of an import (§19.4), shown only with the source link. Icon and label, one
+      // showing by width as in the link card's band; the label stays as the accessible name.
       const toLink = document.createElement('button');
       toLink.type = 'button';
       toLink.className = 'code-block-to-link';
@@ -860,8 +624,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         select.appendChild(option);
       }
 
-      // Keep an unknown stored language (e.g. an old post's ```perl) selectable rather
-      // than silently snapping it to the first option and losing it on the next edit.
+      // Keep an unknown stored language selectable, not snapped to the first option.
       const ensureOption = (value: string) => {
         if (value === '' || Array.from(select.options).some((o) => o.value === value)) return;
         const option = document.createElement('option');
@@ -870,12 +633,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         select.appendChild(option);
       };
 
-      // Diff-display toggle: independent of the language <select>, sits after it in the header's
-      // right-hand cluster — matching the existing title-fills-left/controls-cluster-right layout.
-      // It was the outermost control until the import's 「リンクに戻す」 was added past it (§19.4),
-      // which is shown for one kind of block rather than for every one. Icon-only; the tip span is a
-      // hover-revealed tooltip built the same way as ToolbarButton's (CSS opacity transition,
-      // not the native `title` attribute, which renders with a browser-controlled delay).
+      // The diff toggle, icon-only, with a ToolbarButton-style CSS tooltip.
       const diffToggle = document.createElement('button');
       diffToggle.type = 'button';
       diffToggle.className = 'code-block-diff-toggle';
@@ -901,16 +659,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         if (document.activeElement !== filenameInput) {
           filenameInput.value = filename;
         }
-        // One of the two is shown, never both. `hidden` rather than removal so neither element has
-        // to be rebuilt when a block's filename changes from one kind to the other.
+        // One of the two, via `hidden`, so neither is rebuilt.
         const source = blobSourceFromFilename(filename);
         filenameInput.hidden = source !== null;
         sourceLink.hidden = source === null;
         toLink.hidden = source === null;
         if (source) {
           sourceLink.href = source.href;
-          // The whole reference, for the reader who wants to check the ref before following it —
-          // the visible halves drop it, since a 40-character SHA is most of the header's width.
+          // The full reference, including the SHA the visible text omits.
           sourceLink.title = source.href;
           sourceRepo.textContent = source.repo;
           sourcePath.textContent = source.path;
@@ -919,8 +675,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       };
       sync();
 
-      // Both writes go through setNodeMarkup at this node's position (getPos), the same
-      // way the Callout NodeView commits its type change.
+      // Through setNodeMarkup at getPos, as the callout does.
       const setAttr = (attrs: Record<string, string | boolean | null>) => {
         const pos = getPos();
         if (typeof pos !== 'number') return;
@@ -933,21 +688,15 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         editor.view.focus();
       });
 
-      // Commit on `change` (blur/Enter), not per keystroke, so filename edits are one
-      // transaction. The typed value is normalized to what the fence can actually carry (see
-      // sanitizeFilename — the same limitation Zenn/Qiita have) and written back into the field:
-      // `sync()` below only mirrors the model while the input is *unfocused*, and Enter fires
-      // `change` with focus still here, so without this the field would go on showing a name the
-      // document no longer holds.
+      // One transaction per edit, on `change`. The sanitized value is written back, since `sync()`
+      // only mirrors the model while unfocused and Enter fires `change` with focus still here.
       filenameInput.addEventListener('change', () => {
         const filename = sanitizeFilename(filenameInput.value);
         if (filenameInput.value !== filename) filenameInput.value = filename;
         setAttr({ filename: filename === '' ? null : filename });
       });
 
-      // Unlike the <select> (one commit per pick, so it hands focus back to the editor), a
-      // switch invites repeated activation: keep focus on the button, or a keyboard user's
-      // second Space would type a space into the document instead of flipping it back.
+      // Keep focus on the switch, or a second Space types into the document.
       diffToggle.addEventListener('click', () => {
         setAttr({ diff: !currentNode.attrs.diff });
       });
@@ -957,28 +706,8 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
         if (typeof pos === 'number') unsetGithubBlob(editor, pos);
       });
 
-      // Content dragged out of this document must not land in the header's controls. The filename
-      // <input> is a natively droppable text control, and `stopEvent` below keeps ProseMirror out
-      // of every event over the header — so `eventBelongsToView` stops short of the view and a
-      // drop here misses ProseMirror's own drop path entirely: no `handleDrop` prop is consulted
-      // (the callout and table guards among them), the dragged range is never removed by a
-      // transaction, and Chrome is left to run its default action — which, for a move out of a
-      // contenteditable, deletes the source nodes behind ProseMirror's back. A selection spanning
-      // the code body and the prose around it meets all of that at once.
-      //
-      // Cancelling dragover takes the drop away from the input's native handling, `dropEffect =
-      // 'none'` marks it refused (which is what shows the no-drop cursor — the only feedback the
-      // gesture gets, the same role hiding the drop indicator plays for the callout guard), and
-      // `drop` is cancelled as well. All three together; the refusal was verified end to end rather
-      // than attributed to one of them.
-      //
-      // Gated on `view.dragging`, which prosemirror-view sets only while content from this
-      // document is being dragged. A file dragged in from the OS (useImageUpload's overlay), text
-      // from another application, and a drag within the field itself all leave it null and go on
-      // working normally.
-      // The whole header, matching this NodeView's `stopEvent` below — what the claim takes out of
-      // ProseMirror's reach is exactly what has to be refused (refuseChromeDrops, shared with the
-      // link card and the embed, which claim their own controls the same way).
+      // The header is all claimed by `stopEvent`, so a drop on the filename field would get the
+      // browser's native move (docs/editor-pitfalls.md §18); refused as in useDragContainment.ts.
       refuseChromeDrops(
         header,
         (target) => header.contains(target),
@@ -991,9 +720,7 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
       header.appendChild(diffToggle);
       header.appendChild(toLink);
 
-      // Turn off the browser's native spellcheck for the code body: variable/function names
-      // aren't dictionary words, so it paints most of the code with red squiggles. Prose
-      // outside the code block keeps spellcheck (the editor sets no spellcheck attr globally).
+      // No spellcheck on code.
       const pre = document.createElement('pre');
       const code = document.createElement('code');
       code.setAttribute('spellcheck', 'false');
@@ -1011,17 +738,14 @@ export const CodeBlockWithLanguage = CodeBlock.extend({
           sync();
           return true;
         },
-        // The header is chrome: keep its clicks/keys away from ProseMirror (so editing the
-        // filename or opening the dropdown never moves the editor selection or types into
-        // the code), and ignore any DOM mutation outside the <code> content hole.
+        // The header is chrome: its events stay away from ProseMirror, and mutations outside <code>
+        // are ignored.
         stopEvent: (event: Event) => header.contains(event.target as globalThis.Node),
         ignoreMutation: (
           mutation: MutationRecord | { type: 'selection'; target: globalThis.Node },
         ) => {
           if (mutation.type === 'selection') return false;
-          // If a native edit destroyed the content hole itself (Chrome folds an emptied
-          // <pre> into the ce=false header — see deleteSoleCodeChar), report the mutation
-          // so ProseMirror redraws the NodeView instead of silently diverging.
+          // If Chrome destroyed the content hole (see deleteSoleCodeChar), let ProseMirror redraw.
           if (!code.isConnected) return false;
           return !code.contains(mutation.target);
         },

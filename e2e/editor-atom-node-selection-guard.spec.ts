@@ -1,18 +1,17 @@
 import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, selectNode } from './editor-authoring';
 
-// linkCard and embed are atoms (link-card-extension.ts, embed-extension.ts): selecting one gives a
-// NodeSelection whose range is exactly that node, with no content inside it. setCallout,
-// insertTable, toggleBlockquote and setImage each ran their normal insert/wrap path over that
-// range instead of refusing, which either replaced the card/embed outright (callout, table,
-// image) or wrapped it in a blockquote it was never meant to sit inside (reported 2026-09-05). All
-// four now guard on the node's type name the same way they already guard 'table' etc.
+// A node-selected atom (linkCard, embed, image) is a range with no inside: setCallout, insertTable,
+// toggleBlockquote and setImage replaced or wrapped it. All four guard on the type name
 // (callout-extension.ts, table-extensions.ts, blockquote-extension.ts, useImageUpload.ts).
 
 const CARD_HREF = '/posts/second-post';
 const CARD_MD = `<div class="link-card" data-href="${CARD_HREF}"></div>`;
 const EMBED_MD =
   '<div class="embed" data-href="https://www.youtube.com/watch?v=hDPybQwAuVo"></div>';
+// A real upload: the pasted 1x1 would be indistinguishable from a 1x1 original.
+const IMAGE_MD =
+  '![](/uploads/125b9697a8fd9e40c31b371d57e50da3c75a4b2dc91facd63adbbcef723c41ef.png)';
 
 const PNG_1x1_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -30,9 +29,30 @@ async function pasteImage(page: Page): Promise<void> {
   }, PNG_1x1_BASE64);
 }
 
-for (const { label, typeName, markdown, viewClass } of [
-  { label: 'a link card', typeName: 'linkCard', markdown: CARD_MD, viewClass: 'link-card-view' },
-  { label: 'an embed', typeName: 'embed', markdown: EMBED_MD, viewClass: 'embed-view' },
+// The row's name in IMAGE_BLOCKED_HOSTS, quoted exactly so another refusal cannot pass.
+for (const { label, typeName, markdown, viewClass, blockedLabel } of [
+  {
+    label: 'a link card',
+    typeName: 'linkCard',
+    markdown: CARD_MD,
+    viewClass: 'link-card-view',
+    blockedLabel: 'リンクカード',
+  },
+  {
+    label: 'an embed',
+    typeName: 'embed',
+    markdown: EMBED_MD,
+    viewClass: 'embed-view',
+    blockedLabel: '埋め込み',
+  },
+  // A body image is the same shape; its losses were visible rather than silent.
+  {
+    label: 'an image',
+    typeName: 'image',
+    markdown: IMAGE_MD,
+    viewClass: 'image-box',
+    blockedLabel: '画像ブロック',
+  },
 ]) {
   test(`selecting ${label} disables 囲み枠/表/引用/画像 and none of them touch it`, async ({
     page,
@@ -58,29 +78,27 @@ for (const { label, typeName, markdown, viewClass } of [
     await expect(quoteButton).toBeDisabled();
     await expect(imagePicker).toBeDisabled();
 
-    // Disabled buttons refuse the click at the browser level, so this also proves the guard: were
-    // it not disabled, the click would run the command and the assertions below would catch the
-    // node vanishing or getting wrapped.
+    // A disabled button refuses the click; enabled, the command would run and fail below.
     await calloutButton.click({ force: true });
     await tableButton.click({ force: true });
     await quoteButton.click({ force: true });
 
-    // Paste has no toolbar affordance to grey out, so it has to be exercised directly rather than
-    // inferred from a disabled control (useImageUpload.ts's own reasoning for the table/code-block
-    // cases this mirrors).
-    //
-    // Baseline rather than an absolute 0: the link card's own resolved view carries a favicon
-    // `<img>` of its own (fetched async off /api/posts/search, so it wasn't there right after
-    // loadMarkdown — the disabled-button assertions above gave it time to resolve), so what a
-    // refused paste must leave unchanged is the *count*, not "none".
-    const imgCountBefore = await page.locator('.ProseMirror img').count();
+    // Paste has no control to grey, so it is exercised. **The refusal is asserted first**: it is
+    // synchronous, while a paste that gets through waits on the upload, so an immediate document check
+    // passes either way. srcs, not a count: a failed guard swaps the picture and keeps one.
+    const srcs = () =>
+      page
+        .locator('.ProseMirror img')
+        .evaluateAll((els) => els.map((el) => (el as HTMLImageElement).getAttribute('src')));
+    const srcsBefore = await srcs();
     await selectNode(page, typeName);
     await pasteImage(page);
+    await expect(page.getByRole('status')).toHaveText(`${blockedLabel}には画像を挿入できません`);
 
     await expect(view).toBeVisible();
     await expect(page.locator('.ProseMirror div.markdown-alert')).toHaveCount(0);
     await expect(page.locator('.ProseMirror table')).toHaveCount(0);
     await expect(page.locator(`.ProseMirror blockquote .${viewClass}`)).toHaveCount(0);
-    await expect(page.locator('.ProseMirror img')).toHaveCount(imgCountBefore);
+    expect(await srcs()).toEqual(srcsBefore);
   });
 }

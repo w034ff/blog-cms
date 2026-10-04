@@ -3,24 +3,12 @@ import { docString, historyState, markdown } from './editor-probe';
 import { closeHistory, loadMarkdown, selectNode, setRange } from './editor-authoring';
 import { cdpNativeDrag, dragSelect } from './native-drag';
 
-// A paste into a table cell used to leave the table intact on screen but no longer representable as
-// a GFM pipe table, so the markdown serializer wrote the whole thing as raw HTML — silently, and
-// only visible in the stored markdown and on the published page. Three things go with the pipe
-// form: column alignment (`align="…"` survives the public render; the fallback's inline
-// `text-align` is stripped by rehype-sanitize), `<thead>`, and `<colgroup>`. The markdown also stops
-// being markdown, gaining `min-width: 50px` and `colspan="1"` nobody can hand-edit.
-//
-// Two pastes reach it, and they arrive by different routes:
-//   A. a multi-paragraph paste — a cell ends up holding more than one block;
-//   B. a whole table pasted into a cell — prosemirror-tables merges it cell-wise and the copied
-//      header row lands in the body, where a row of `th` has no pipe form.
-//
-// tablePasteRepair (components/editor/table-extensions.ts) normalizes both *after* the paste rather
-// than refusing or repairing the slice: B is performed by prosemirror-tables' own handlePaste, which
-// runs ahead of this extension's plugins and is the same code that makes cell-to-cell paste work.
-//
-// So these specs are written against the saved markdown as much as the document. The document shape
-// is the mechanism; the markdown is what the defect was about.
+// A cell paste could leave a table with no GFM pipe form, silently saved as raw HTML: alignment
+// (the fallback's inline `text-align` is sanitized away), `<thead>` and hand-editability lost.
+// Route A: multiple paragraphs in a cell. Route B: a whole table pasted into a cell, which
+// prosemirror-tables merges cell-wise, landing a `th` row in the body. tablePasteRepair
+// (table-extensions.ts) normalizes after the paste, since B is prosemirror-tables' own handlePaste.
+// The markdown is asserted: it is what the defect was about.
 
 const ALIGNED = [
   '| 見出しA | 見出しB |',
@@ -41,12 +29,8 @@ async function openEditor(page: Page, md: string): Promise<void> {
   await loadMarkdown(page, md);
 }
 
-// A caret position inside the table's first cell of `typeName`, by raw document position rather than
-// a click plus an End key: ProseMirror syncs a native selection on a 20ms debounce, so a key pressed
-// straight after a programmatic setRange can act on the caret that was there before.
-//
-// 'middle' is where the report puts the caret — the position that visibly cuts the cell's own text
-// in half, so a paste that lands wrong is unmistakable in the failure output.
+// A caret in the first `typeName` cell by raw position: a key right after setRange can act on the
+// old caret (20ms sync). 'middle' visibly halves the cell's text, as in the report.
 function cellCaret(
   page: Page,
   where: 'middle' | 'end',
@@ -63,7 +47,7 @@ function cellCaret(
         const n = node as { type: { name: string }; textContent: string };
         if (found !== null || n.type.name !== typeName) return;
         const length = at === 'end' ? n.textContent.length : Math.floor(n.textContent.length / 2);
-        // +1 into the cell, +1 into its first paragraph.
+        // +1 into the cell, +1 into its paragraph.
         found = pos + 2 + length;
       });
       if (found === null) throw new Error(`no ${typeName}`);
@@ -73,8 +57,7 @@ function cellCaret(
   );
 }
 
-// A caret `chars` characters into the paragraph reading `text` — the outside-a-table control for
-// the Enter binding, which must decline everywhere this one goes.
+// The outside-a-table control for the Enter binding.
 function posInParagraph(page: Page, text: string, chars: number): Promise<number> {
   return page.evaluate(
     ({ line, offset }) => {
@@ -95,8 +78,7 @@ function posInParagraph(page: Page, text: string, chars: number): Promise<number
   );
 }
 
-// Route A: copy the two trailing paragraphs (a selection across a blank line — Shift+Enter would
-// stay one paragraph and never reach this) and paste them into a cell.
+// Route A: copy two paragraphs (Shift+Enter would stay one) into a cell.
 async function pasteTwoParagraphsIntoCell(
   page: Page,
   typeName: 'tableCell' | 'tableHeader' = 'tableCell',
@@ -121,7 +103,7 @@ async function pasteTwoParagraphsIntoCell(
   await page.keyboard.press('Control+v');
 }
 
-// Route B: copy the whole table and paste it into one of its own cells.
+// Route B: the whole table into one of its cells.
 async function pasteWholeTableIntoCell(page: Page): Promise<void> {
   await selectNode(page, 'table');
   await page.keyboard.press('Control+c');
@@ -134,8 +116,7 @@ test('a multi-paragraph paste keeps the table in its pipe form', async ({ page }
 
   await pasteTwoParagraphsIntoCell(page);
 
-  // The two paragraphs became one, joined by a hard break — which is what Shift+Enter makes in a
-  // cell by hand, so the repair produces a shape the editor already supported rather than a new one.
+  // Joined by a hard break, as Shift+Enter makes: an existing shape.
   expect(await docString(page)).toContain(
     'tableCell(paragraph("セル一つ目の段落です", hardBreak, "二つ目の段落ですの中身"))',
   );
@@ -144,9 +125,7 @@ test('a multi-paragraph paste keeps the table in its pipe form', async ({ page }
   );
 });
 
-// The same route into a header cell. isPipeTable rejects a multi-block cell in the header row too
-// (its `headerBad` check), and the join is the same code — but the demotion half must stay off here,
-// since row 0 is where a `tableHeader` belongs.
+// A header cell: `headerBad` rejects multi-block header cells too, but no demotion in row 0.
 test('a multi-paragraph paste into a header cell keeps the header a header', async ({ page }) => {
   await openEditor(page, ALIGNED);
 
@@ -165,7 +144,7 @@ test('a whole table pasted into a cell keeps the table in its pipe form', async 
 
   await pasteWholeTableIntoCell(page);
 
-  // The copied header row landed in the body; demoting it there leaves exactly one header row.
+  // The copied header row is demoted: one header row.
   expect(await docString(page)).toContain(
     'tableRow(tableHeader(paragraph("見出しA")), tableHeader(paragraph("見出しB"))), ' +
       'tableRow(tableCell(paragraph("見出しA")), tableCell(paragraph("見出しB")))',
@@ -175,13 +154,8 @@ test('a whole table pasted into a cell keeps the table in its pipe form', async 
   );
 });
 
-// The same slice, dropped instead of pasted, and the case that shows where the drop guard stops and
-// the repair starts: two *paragraphs* are content a cell may hold, so the guard lets them in (it
-// refuses blocks, and positions at a cell's block edge) and the repair joins them with a hard break
-// afterwards. So the repair listens for `drop` as well as `paste`.
-//
-// The endpoints come from a real drag-select and so depend on font metrics; what is asserted is the
-// shape, not which characters ended up either side of the break.
+// Dropped: paragraphs are allowed in a cell, so the drop guard lets them in and the repair joins them;
+// it listens for `drop` too. Font metrics set the endpoints, so only the shape is asserted.
 test('a multi-paragraph drop into a cell keeps the table in its pipe form', async ({ page }) => {
   await openEditor(page, ALIGNED);
   const editor = page.locator('.ProseMirror');
@@ -190,8 +164,7 @@ test('a multi-paragraph drop into a cell keeps the table in its pipe form', asyn
   const cell = await editor.getByText('セルの中身').boundingBox();
   if (!first || !second || !cell) throw new Error('missing boxes');
 
-  // dragstart only fires on a mousedown inside a live selection, so the range has to be dragged out
-  // rather than set with setRange.
+  // dragstart needs a live selection, so it is dragged, not set.
   const from = await dragSelect(
     page,
     { x: first.x + 20, y: first.y + first.height / 2 },
@@ -199,16 +172,14 @@ test('a multi-paragraph drop into a cell keeps the table in its pipe form', asyn
   );
   await cdpNativeDrag(page, from, { x: cell.x + cell.width / 2, y: cell.y + cell.height / 2 });
 
-  // One paragraph with a hard break in it, not two paragraphs.
+  // One paragraph with a hard break.
   expect(await docString(page)).toMatch(/tableCell\(paragraph\("[^"]*", hardBreak, "[^"]*"\)\)/);
   const md = await markdown(page);
   expect(md).not.toContain('<table');
   expect(md).toContain('| :--: | --- |');
 });
 
-// The concrete loss the report measured, asserted from the other end: the raw-HTML fallback carries
-// alignment as an inline `text-align`, which rehype-sanitize strips on the public page. Both routes
-// above already assert the `:--:` delimiter; this states outright that no `<table` reaches storage.
+// No `<table` reaches storage: the fallback's alignment is sanitized away on the public page.
 for (const [name, paste] of [
   ['a multi-paragraph paste', pasteTwoParagraphsIntoCell],
   ['a whole table pasted into a cell', pasteWholeTableIntoCell],
@@ -225,17 +196,12 @@ for (const [name, paste] of [
 test('one undo restores the document the paste started from', async ({ page }) => {
   await openEditor(page, ALIGNED);
   const before = await docString(page);
-  // This spec's own setContent is an edit like any other, and a paste that groups with it makes
-  // Ctrl+Z empty the document — measuring the harness rather than the repair. The break is stated
-  // rather than waited out (it was a 700ms pause against a 500ms `newGroupDelay`, and a loaded
-  // machine can close that margin).
+  // Break the history, or Ctrl+Z empties the document (e2e/README.md).
   await closeHistory(page);
   const depthBefore = (await historyState(page)).undoDepth;
 
   await pasteTwoParagraphsIntoCell(page);
-  // The repair rides in the paste's own history event, so it costs no second undo: it is an
-  // appendTransaction dispatched in the same tick, which is what keeps this one step. Counting the
-  // events says that directly — the document check below cannot tell one step from two.
+  // The repair is an appendTransaction in the paste's event: one undo, which only a count shows.
   expect((await historyState(page)).undoDepth).toBe(depthBefore + 1);
 
   await page.keyboard.press('Control+z');
@@ -243,8 +209,7 @@ test('one undo restores the document the paste started from', async ({ page }) =
   expect((await historyState(page)).undoDepth).toBe(depthBefore);
 });
 
-// The shape the repair produces, pinned independently of the repair: it has to survive a save and a
-// reload, or the paste would come back as something else the next time the post is opened.
+// The repair's shape survives save and reload.
 test('a hard break in a cell round-trips through the pipe form', async ({ page }) => {
   await openEditor(page, '| A | B |\n| --- | --- |\n| x<br>y | z |\n');
 
@@ -252,12 +217,8 @@ test('a hard break in a cell round-trips through the pipe form', async ({ page }
   expect(await markdown(page)).toBe('| A | B |\n| --- | --- |\n| x<br>y | z |\n');
 });
 
-// The fourth route into a cell, and the last one to agree with the other three. Enter used to open
-// a second paragraph here — legal for a `paragraph+` cell, and the table still looked right, but it
-// has no pipe form, so from that keystroke on the whole table saved as raw HTML. The repair above
-// deliberately did not touch it: an unconditional join would undo every Enter the instant it was
-// typed, which is the right call *after* the fact and the wrong one for the gesture itself. So the
-// gesture changed instead (MarkdownTable's Enter binding) and this spec records the new answer.
+// Enter in a cell made a second paragraph, with no pipe form. The repair leaves typing alone (it
+// would undo every Enter), so MarkdownTable's Enter makes a hard break instead.
 test('Enter inside a cell makes a hard break, not a second paragraph', async ({ page }) => {
   await openEditor(page, ALIGNED);
 
@@ -273,8 +234,7 @@ test('Enter inside a cell makes a hard break, not a second paragraph', async ({ 
   expect(md).toContain('| セルの中身<br>二行目 | 二つ目 |');
 });
 
-// The binding is document-wide, so the half that says it is a *cell* rule rather than an Enter rule
-// has to be pinned too: outside a table, Enter still splits the block.
+// Document-wide binding: outside a table Enter still splits.
 test('Enter outside a table still splits the paragraph', async ({ page }) => {
   await openEditor(page, ALIGNED);
 
@@ -288,25 +248,21 @@ test('Enter outside a table still splits the paragraph', async ({ page }) => {
 // Must not repair
 // ---------------------------------------------------------------------------
 
-// The same shapes arrive from setContent when a post already stored in the HTML fallback is opened.
-// Repairing there would rewrite stored content on open and hand the autosave an edit the author
-// never made, so loading is left alone entirely.
+// Opening a post stored as HTML must not rewrite it and hand autosave an edit.
 test('opening a post already stored as raw HTML changes nothing', async ({ page }) => {
   const html =
     '<table><tbody><tr><th><p>A</p></th><th><p>B</p></th></tr>' +
     '<tr><th><p>c1</p></th><td><p>c2</p><p>二行目</p></td></tr></tbody></table>';
   await openEditor(page, html);
 
-  // Both repairable shapes are present — a header cell in a body row and a two-paragraph cell — and
-  // both are still there.
+  // Both repairable shapes remain.
   expect(await docString(page)).toContain(
     'tableRow(tableHeader(paragraph("c1")), tableCell(paragraph("c2"), paragraph("二行目")))',
   );
 });
 
-// The toolbar's 見出し行 button deliberately produces a table with no header row, which is also not
-// a pipe table. A table already in the fallback for a reason of its own gains nothing from having
-// its cells rewritten, so the repair only acts when it would actually restore the pipe form.
+// 見出し行 makes a headerless table, not a pipe table on purpose; the repair acts only when it would
+// restore the pipe form.
 test('a headerless table is left as the author left it', async ({ page }) => {
   await openEditor(page, ALIGNED);
   await setRange(page, await cellCaret(page, 'middle'));
@@ -321,15 +277,13 @@ test('a headerless table is left as the author left it', async ({ page }) => {
 
   await pasteTwoParagraphsIntoCell(page);
 
-  // Two paragraphs, unjoined: the header row is still gone, so nothing here restores a pipe table.
+  // Unjoined: nothing restores a pipe table here.
   expect(await docString(page)).toContain(
     'paragraph("見出一つ目の段落です"), paragraph("二つ目の段落ですしA")',
   );
 });
 
-// A merged cell has no pipe form at any width, so the same reasoning applies — and this one cannot
-// be reached by the repair even in principle, which is why it is the second half of the rule rather
-// than a special case in it.
+// A merged cell has no pipe form at all: the second half of the rule, not a special case.
 test('a table with a merged cell is left as the author left it', async ({ page }) => {
   await openEditor(
     page,
@@ -338,12 +292,12 @@ test('a table with a merged cell is left as the author left it', async ({ page }
       '一つ目の段落です\n\n二つ目の段落です\n',
   );
 
-  // docString does not print attributes, so the span itself is asserted through the DOM.
+  // docString prints no attributes.
   await expect(page.locator('.ProseMirror td[colspan="2"]')).toHaveCount(1);
 
   await pasteTwoParagraphsIntoCell(page);
 
-  // Two paragraphs, unjoined.
+  // Unjoined.
   expect(await docString(page)).toContain(
     'tableCell(paragraph("セル一つ目の段落です"), paragraph("二つ目の段落ですの中身"))',
   );

@@ -7,10 +7,7 @@ import { CALLOUT_MENU_ORDER } from './callout-extension';
 import { CALLOUT_TITLES, type CalloutType } from '@/lib/callout-types';
 import { EMBED_PROVIDERS } from '@/lib/embed-provider';
 
-// Extra search terms per callout type, beyond the visible "囲み枠（…）" label (which already
-// matches `/囲み`) — so `/info`, `/danger`, `/callout`, `/コ` all filter sensibly. Aligned with
-// the `:::` directive words (info/warning/danger) plus the former name "コールアウト" (kept as an
-// alias for discoverability).
+// Extra search terms per callout type: the `:::` directive words plus the former name コールアウト.
 const CALLOUT_KEYWORDS: Record<CalloutType, string[]> = {
   note: ['info', 'note', 'callout', 'コールアウト'],
   warning: ['danger', 'error', 'callout', 'コールアウト'],
@@ -18,21 +15,11 @@ const CALLOUT_KEYWORDS: Record<CalloutType, string[]> = {
 };
 
 // The blocks the `/` menu can insert. Each row's `run` receives a chain that has already focused
-// the editor and deleted the `/query` text, and applies its block command onto it:
-//  - callouts go through setCallout (which also switches an existing callout's type in place)
-//  - the code block converts the now-empty line via setCodeBlock (`set`, not `toggle`, since the
-//    line is empty); its NodeView's language <select>/filename field take over from there.
-// Callout rows prefix the tool name so the menu makes clear what gets inserted (the bare
-// 情報/注意/警告 alone don't say "which tool"): 囲み枠（情報 / 注意 / 警告）.
-// `available` hides a row where its command would refuse to run, so the menu never offers a
-// no-op. Kept local to this file rather than on SlashItem: which rows exist is a menu-population
-// concern, and SlashList only renders whatever it is handed. Asking the command itself via
-// `can()` — instead of re-testing the context here — means the menu can't drift from the rules
-// in the extension: setCallout refuses inside a table and inside a blockquote (a quote is
-// someone else's words, a callout the author's own aside), and still accepts inside an existing
-// callout, where it switches that callout's type in place. The code block asks the same way and
-// drops out inside a table cell, which is paragraph-only (table-extensions.ts: markdown's pipe
-// form holds one line of inline content). A row with no predicate would always be offered.
+// the editor and deleted the `/query`. Callout rows are prefixed 囲み枠（…） because 情報/注意/警告
+// alone don't say which tool.
+//
+// `available` hides a row whose command would refuse, asked through `can()` so the menu can't
+// drift from the extensions' rules. Local to this file: SlashList renders whatever it is handed.
 type SlashEntry = SlashItem & { available?: (editor: Editor) => boolean };
 
 const ITEMS: SlashEntry[] = [
@@ -44,15 +31,8 @@ const ITEMS: SlashEntry[] = [
     available: (editor) => editor.can().setCallout(type),
   })),
   {
-    // アコーディオン, not 折りたたみ (§7.3, revised 2026-08-03). This row first read 折りたたみ,
-    // to follow 囲み枠 above in preferring a native word — but that principle was never held:
-    // the callout is 囲み枠 in this menu and コールアウト in its own refusal notice, and this
-    // block's notice named it that way too. With the convention that thin, the author's own word
-    // wins, and 折りたたみ stays a search keyword so either spelling finds the row.
-    //
-    // setDetails is top-level only (details-extension.ts), and `available` is what keeps the row
-    // out of a quote, a list item or a cell — it can only be trusted because that command is
-    // wrapped with the placement check; the official one accepts everywhere.
+    // アコーディオン, with 折りたたみ as a keyword (docs/accordion-requirements.md §7.3). `available`
+    // is trustworthy only because setDetails is wrapped with the top-level placement check.
     id: 'details',
     title: 'アコーディオン',
     keywords: ['details', 'accordion', 'toggle', '折りたたみ', 'たたむ'],
@@ -63,31 +43,15 @@ const ITEMS: SlashEntry[] = [
     id: 'code-block',
     title: 'コードブロック',
     keywords: ['code', 'codeblock', 'code block', 'コード'],
-    // insertCodeBlock, not setCodeBlock: inside a list item the latter is invalid (converting the
-    // item's first paragraph would leave it headless) and dropped this row, while the block itself
-    // is legal there — see code-block-extension.ts.
+    // insertCodeBlock, not setCodeBlock, which is invalid in a list item's first paragraph.
     run: (chain) => chain.insertCodeBlock(),
     available: (editor) => editor.can().insertCodeBlock(),
   },
   {
-    // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md
-    // §21): one row for both a link card and an embed, because the URL the author pastes into the
-    // dialog is what decides which lands — never this row. Two rows here, one named after the
-    // card and the other after the embed, was the shape §24 fixed in the first place (a row called
-    // 「リンクカード」 is what an author pressed to embed a video); reintroducing that split with
-    // the rows merged back under either name would restore the same wrong name for the other half.
-    // 「リンク」 commits to neither outcome, matching how `LinkBubble.tsx` already treats card-making
-    // and embed-making as two actions on one thing — a link — rather than as different tools.
-    //
-    // **The keywords carry the discoverability the reference site buys with a permanent 「+」
-    // button.** That button exists because its editor writes markdown and the syntax cannot be
-    // remembered; here the provider is derived from the URL, so what an author needs is to find
-    // this row while thinking 「youtube」, 「スライド」 or 「記事」 — which is a search, not a
-    // button. Every provider name is a keyword, so the list grows with `EMBED_PROVIDERS`.
-    //
-    // `openInsertDialog` inserts nothing; it asks the host for the dialog and reports whether
-    // EITHER outcome could land here at all, so a table cell drops the row rather than opening a
-    // dialog whose insert would then refuse either way.
+    // One row for both card and embed (docs/embed-requirements.md §24.2,
+    // docs/link-card-requirements.md §21): the pasted URL decides, and 「リンク」 names neither.
+    // **Every provider name is a keyword**, so an author thinking 「youtube」 finds this row.
+    // `openInsertDialog` reports whether either outcome could land, so a table cell drops the row.
     id: 'insert-link',
     title: 'リンク',
     keywords: [
@@ -97,9 +61,7 @@ const ITEMS: SlashEntry[] = [
       'link card',
       'リンク',
       'カード',
-      // The compound spelling the old, single-purpose row wore (`title` there, 2026-09-02 to
-      // 2026-09-04) — kept as a keyword rather than dropped, so an author's muscle memory still
-      // finds this row.
+      // The old row's title, kept for muscle memory.
       'リンクカード',
       '記事',
       'embed',
@@ -116,13 +78,25 @@ const ITEMS: SlashEntry[] = [
     run: (chain, range) => chain.openInsertDialog(range.from),
     available: (editor) => editor.can().openInsertDialog(),
   },
+  {
+    // Inserted at the end of the post wherever `/` was typed (docs/summary-requirements.md §3.2).
+    id: 'summary',
+    title: 'まとめ',
+    keywords: ['summary', 'review', 'まとめ', '総評', '良かった点', '気になった点'],
+    run: (chain) => chain.setSummary(),
+    available: (editor) => editor.can().setSummary(),
+  },
+  {
+    id: 'tldr',
+    title: 'TL;DR',
+    keywords: ['tldr', 'tl;dr', 'summary', '要約', '要点', '概要'],
+    run: (chain) => chain.setTldr(),
+    available: (editor) => editor.can().setTldr(),
+  },
 ];
 
-// Whether the menu has anything at all to offer at the caret. Drives the trigger below, so a
-// context where every row is unavailable — a table cell, where neither a callout nor a code
-// block fits — leaves `/` an ordinary character instead of opening an empty popup. Phrased as
-// "is any row available" rather than naming the contexts, so a row added later is covered by
-// its own predicate without touching the trigger.
+// Whether any row is available at the caret; otherwise `/` stays an ordinary character. Phrased
+// over the rows, so a new row is covered by its own predicate.
 function hasAnyItem(editor: Editor): boolean {
   return ITEMS.some((item) => item.available?.(editor) ?? true);
 }
@@ -140,11 +114,7 @@ function filterItems(query: string, editor: Editor): SlashItem[] {
 
 const slashPluginKey = new PluginKey('slashMenu');
 
-// A `/` block-insert menu: at the start of a line, `/` opens a caret-anchored menu of the
-// insertable blocks (callouts + code block); choosing one deletes the `/query` and runs that
-// block's command. Built on the official (headless) @tiptap/suggestion utility — the popup UI is
-// SlashList, and positioning/outside-click come from the utility (its mount uses floating-ui, a
-// peer dep it already pulls in).
+// The `/` block-insert menu at the start of a line, on @tiptap/suggestion with SlashList as the UI.
 export const SlashCommand = Extension.create({
   name: 'slashCommand',
   addProseMirrorPlugins() {
@@ -154,19 +124,8 @@ export const SlashCommand = Extension.create({
         pluginKey: slashPluginKey,
         char: '/',
         startOfLine: true,
-        // Two separate reasons the trigger stays inert, so `/` is an ordinary keystroke rather
-        // than a popup with nothing behind it.
-        //
-        // Code block: `/` is just a character there, and `startOfLine` puts the trigger exactly
-        // where `// comment`, `</div>` and a leading path all begin, so the popup would fire on
-        // ordinary code. This matches how the block markdown shortcuts already behave inside a
-        // `code` textblock, where ProseMirror disables input rules and `# `, `- `, `> ` stay
-        // literal. It needs naming explicitly because setCallout still *accepts* there (it
-        // lands the callout after the block), so the emptiness test below wouldn't catch it.
-        //
-        // Nothing on offer: every row's command refuses at the caret — a table cell, where
-        // neither a callout nor a code block fits. Opening a menu just to show an empty list
-        // is worse than not opening.
+        // Inert in code, where `// comment` and `</div>` start lines (named explicitly because
+        // setCallout still accepts there), and where no row is available.
         allow: ({ editor }) => !editor.isActive('codeBlock') && hasAnyItem(editor),
         placement: 'bottom-start',
         dismissOnOutsideClick: true,

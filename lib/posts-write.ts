@@ -1,6 +1,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
+import { normalizeNewlines } from '@/lib/draft-content';
+import { deleteRevisionsOf, liveContentOfRow, recordRevision } from '@/lib/revisions';
 import type { DraftContent } from '@/lib/types';
 
 export type PostInput = {
@@ -9,23 +11,12 @@ export type PostInput = {
   slug: string;
   title: string;
   date: string;
-  description: string;
   category: string;
   tags: string[];
   draft: boolean;
   body: string;
   thumbnail: string;
 };
-
-// The two ways content reaches the server disagree about line endings: autosave posts JSON and
-// keeps the editor's LF, while publish/unpublish go through a form, and form submission rewrites
-// every newline in a value to CRLF. Left alone, a post's stored markdown flips between the two
-// depending on which button was pressed, and every line-based reader of the body has to know it —
-// lib/footnotes.ts did not, and counted written footnotes as empty. One form is stored: LF, what
-// the editor serialized in the first place.
-function normalizeNewlines(body: string): string {
-  return body.replace(/\r\n?/g, '\n');
-}
 
 // Whether a slug is already taken. Used at publish time to keep public URLs
 // unique; null slugs (drafts) never match a lookup.
@@ -45,21 +36,33 @@ export function createPost(input: PostInput): number {
   const now = new Date().toISOString();
   const row = db
     .insert(posts)
-    .values({ ...input, body: normalizeNewlines(input.body), createdAt: now, updatedAt: now })
+    .values({
+      ...input,
+      body: normalizeNewlines(input.body),
+      createdAt: now,
+      updatedAt: now,
+      editedAt: now,
+    })
     .returning({ id: posts.id })
     .get();
   return row.id;
 }
 
 export function updatePost(id: number, input: PostInput): void {
+  const now = new Date().toISOString();
   db.update(posts)
-    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: new Date().toISOString() })
+    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: now, editedAt: now })
     .where(eq(posts.id, id))
     .run();
 }
 
+// Revisions go with the post, in the same transaction (docs/revision-requirements.md §4 says why
+// this is not a foreign-key cascade).
 export function deletePost(id: number): void {
-  db.delete(posts).where(eq(posts.id, id)).run();
+  db.transaction(() => {
+    deleteRevisionsOf(id);
+    db.delete(posts).where(eq(posts.id, id)).run();
+  });
 }
 
 // Persist in-progress edits without publishing. The destination depends on the
@@ -73,7 +76,7 @@ export function deletePost(id: number): void {
 // No-op if the post no longer exists (e.g. deleted in another tab).
 export function autosavePost(id: number, content: DraftContent): void {
   const row = db
-    .select({ draft: posts.draft, title: posts.title })
+    .select({ draft: posts.draft, title: posts.title, draftContent: posts.draftContent })
     .from(posts)
     .where(eq(posts.id, id))
     .get();
@@ -84,14 +87,25 @@ export function autosavePost(id: number, content: DraftContent): void {
   // that window (or the in-progress retype is then lost to navigation), the
   // blank would overwrite a real title and surface as an empty title in the
   // admin list. Keep the stored title when the incoming one is blank.
-  const safe = normalized.title.trim() === '' ? { ...normalized, title: row.title } : normalized;
+  //
+  // The title to keep is the one this save's own destination already holds. For a published post
+  // that is the working copy's, not the live column's: the author may have retitled the post in an
+  // earlier session and not published it yet, and restoring the live title there would silently
+  // undo that edit — the guard against losing a title would be the thing losing one. `draft_content`
+  // is JSON whose shape is only asserted (see lib/posts.ts), so a row written before a field
+  // existed can hand back undefined; a missing or blank title there falls back to the live column.
+  const pendingTitle = row.draft ? '' : (row.draftContent?.title ?? '');
+  const keptTitle = pendingTitle.trim() === '' ? row.title : pendingTitle;
+  const safe = normalized.title.trim() === '' ? { ...normalized, title: keptTitle } : normalized;
+  const now = new Date().toISOString();
   if (row.draft) {
     db.update(posts)
-      .set({ ...safe, updatedAt: new Date().toISOString() })
+      .set({ ...safe, updatedAt: now, editedAt: now })
       .where(eq(posts.id, id))
       .run();
   } else {
-    db.update(posts).set({ draftContent: safe }).where(eq(posts.id, id)).run();
+    // `updatedAt` stays: it is the public 更新日, and nothing public changed.
+    db.update(posts).set({ draftContent: safe, editedAt: now }).where(eq(posts.id, id)).run();
   }
 }
 
@@ -106,16 +120,42 @@ export function autosavePost(id: number, content: DraftContent): void {
 // at first publish and preserved verbatim thereafter (re-publish, plain update,
 // and unpublish all pass the existing value back), so it reflects when the post
 // first went live rather than the latest edit.
-export function commitPost(id: number, content: DraftContent, draft: boolean, date: string): void {
-  db.update(posts)
+// Returns false if the row was gone by the time this ran (e.g. deleted from
+// another tab between the caller's existence check and this call) instead of
+// silently no-oping the update.
+//
+// A published post's live version is kept as a `publish` revision before it is replaced
+// (docs/revision-requirements.md §3) — here rather than at the moment it went live, so a post
+// published before revisions existed still has its version kept on its first update. A draft's
+// live columns are not a published version, and what replaces them is what autosave just wrote.
+export function commitPost(
+  id: number,
+  content: DraftContent,
+  draft: boolean,
+  date: string,
+): boolean {
+  return db.transaction(() => {
+    const row = db.select().from(posts).where(eq(posts.id, id)).get();
+    if (!row) return false;
+    if (!row.draft) recordRevision(id, 'publish', liveContentOfRow(row));
+    return writeCommit(id, content, draft, date);
+  });
+}
+
+function writeCommit(id: number, content: DraftContent, draft: boolean, date: string): boolean {
+  const now = new Date().toISOString();
+  const result = db
+    .update(posts)
     .set({
       ...content,
       body: normalizeNewlines(content.body),
       date,
       draft,
       draftContent: null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
+      editedAt: now,
     })
     .where(eq(posts.id, id))
     .run();
+  return result.changes > 0;
 }

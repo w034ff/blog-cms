@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// The toolbar tooltips are a custom CSS element (not the native `title`), so
-// their placement is ours to control. This guards that hovering an icon button
-// reveals its label centered directly below the button.
+// Tooltips are our own element, not `title`: hovering reveals the label centred below the button.
 test('toolbar tooltip appears centered below the button on hover', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
@@ -28,13 +26,11 @@ test('toolbar tooltip appears centered below the button on hover', async ({ page
   expect(label.y).toBeGreaterThanOrEqual(btn.y + btn.height);
 });
 
-// The shortcut of any command that has one is surfaced in its tooltip: icon
-// buttons pair it with their name; text buttons (label already visible) show the
-// key alone. Rendered on Linux CI, so "Mod" formats as "Ctrl".
+// A command's shortcut appears in its tooltip. Every ToolbarButton with a `shortcut` has a `title`,
+// including the H2/H3 glyphs (docs/editor-requirements.md §12.10). On Linux "Mod" reads "Ctrl".
 test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
-  // Icon button: name + shortcut.
   const bold = page.getByRole('button', { name: '太字' });
   await expect(bold).toContainText('太字');
   await expect(bold).toContainText('Ctrl+B');
@@ -43,8 +39,8 @@ test('toolbar tooltips include keyboard shortcuts', async ({ page }) => {
   const strike = page.getByRole('button', { name: '取り消し線' });
   await expect(strike).toContainText('Ctrl+Shift+S');
 
-  // Text button: shortcut only (its name is already the visible label).
   const heading2 = page.getByRole('button', { name: '大見出し' });
+  await expect(heading2).toContainText('大見出し');
   await expect(heading2).toContainText('Ctrl+Alt+2');
   await expect(heading2).toHaveAttribute('aria-keyshortcuts', 'Control+Alt+2');
 

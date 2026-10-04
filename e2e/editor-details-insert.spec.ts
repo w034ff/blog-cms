@@ -1,15 +1,10 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, devices, type Page } from '@playwright/test';
 import { loadMarkdown, selectInside, setRange } from './editor-authoring';
 import { markdown, docString, caret, caretPos } from './editor-probe';
 
-// The accordion's two insertion routes and the one placement rule behind them
-// (docs/accordion-requirements.md §6.3, §7). Browser-only: both routes run through the live
-// editor, and the menu's own predicate reads editor state.
-//
-// The placement rule is worth its own coverage because the official setDetails has no such check
-// — it inserts wherever `detailsContent` can hold the caret's block range, which includes a table
-// cell's paragraph. Without the wrapper in details-extension.ts the menu offers the row there and
-// running it splits the table.
+// The accordion's two insertion routes and their placement rule (docs/accordion-requirements.md
+// §6.3, §7). The official setDetails has no check and would insert into a table cell, splitting the
+// table; details-extension.ts wraps it.
 
 const DETAILS = 'div[data-type="details"]';
 
@@ -28,8 +23,39 @@ test('the slash menu inserts an accordion with the caret in its title', async ({
   expect(await markdown(page)).toBe('<details>\n<summary>タイトル</summary>\n\n</details>');
 });
 
-// The row was labelled 折りたたみ until 2026-08-03 (§7.3). That word stays a search keyword, so an
-// author who reaches for it still finds the row under its new name — the point of keeping it.
+// §7.9, criterion 45: the ＋ drawer's アコーディオン row (`hover: none`). Pixel 7 keys only, as in
+// editor-mobile-toolbar.spec.ts.
+test.describe('on an emulated phone', () => {
+  const PIXEL_7 = devices['Pixel 7'];
+  test.use({
+    viewport: PIXEL_7.viewport,
+    userAgent: PIXEL_7.userAgent,
+    deviceScaleFactor: PIXEL_7.deviceScaleFactor,
+    isMobile: PIXEL_7.isMobile,
+    hasTouch: PIXEL_7.hasTouch,
+  });
+
+  test("the ＋ drawer's アコーディオン row inserts with the caret in its title, and closes the sheet", async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+    await editor.click();
+
+    await page.getByRole('button', { name: 'ブロックを追加' }).click();
+    const panel = page.getByTestId('insert-menu-panel');
+    await panel.getByRole('button', { name: 'アコーディオン', exact: true }).click();
+
+    // As the slash-menu route, and the sheet closes after the insert.
+    await expect(panel).not.toBeVisible();
+    expect(await docString(page)).toContain('details(detailsSummary, detailsContent(paragraph))');
+    await page.keyboard.type('タイトル');
+    expect(await caret(page)).toBe('タイトル@4');
+  });
+});
+
+// 折りたたみ, the old label (§7.3), is still a search keyword.
 test('the old wording still finds the row in the slash menu', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -51,18 +77,13 @@ test('the `:::details ` shortcut converts the line and keeps what follows it', a
   await page.keyboard.type(':::details ');
   expect(await docString(page)).toContain('details(detailsSummary, detailsContent(paragraph))');
 
-  // The caret is in the title, as with the menu route.
+  // The caret is in the title, as with the menu.
   await page.keyboard.type('タイトル');
   expect(await markdown(page)).toBe('<details>\n<summary>タイトル</summary>\n\n</details>');
 });
 
-// A newly inserted accordion is open (§7.4), which is what makes the caret-in-the-title landing
-// useful: Enter from a *closed* title deliberately leaves the accordion (§7.2), so an author who
-// inserted one and pressed Enter to start writing would have been thrown below it.
-//
-// The document must not learn about it. `persist: false` (§5) means the schema carries no `open`
-// attribute at all, so this is a NodeView-only change — asserted here and not only in
-// editor-details-view.spec.ts, because opening is now something an insertion does on its own.
+// A new accordion is open (§7.4), so Enter in the title starts the body instead of leaving
+// (§7.2). `persist: false` (§5): the document has no `open` attribute, so this is NodeView-only.
 for (const route of ['menu', 'shortcut'] as const) {
   test(`a newly inserted accordion is open (${route}) without touching the document`, async ({
     page,
@@ -91,10 +112,8 @@ for (const route of ['menu', 'shortcut'] as const) {
     expect(await docString(page)).toContain('details(detailsSummary, detailsContent(paragraph))');
     expect(await markdown(page)).toBe('<details>\n<summary></summary>\n\n</details>');
 
-    // Open, so Enter in the title reaches the body instead of escaping below the accordion — and
-    // lands in the empty line already there rather than inserting one ahead of it (§7.4). The
-    // exact body is asserted, not `toContain`: the leftover this replaced was a second, empty
-    // paragraph, which only a whole-body match can rule out.
+    // Open, so Enter reaches the body's existing empty line (§7.4). The exact body: the old
+    // leftover was a second empty paragraph.
     await page.keyboard.type('タイトル');
     await page.keyboard.press('Enter');
     await page.keyboard.type('本文');
@@ -107,15 +126,8 @@ for (const route of ['menu', 'shortcut'] as const) {
   });
 }
 
-// Backspace out of an accordion nobody filled in (§7.2, §7.5). The rule is that the title's
-// characters survive the dissolve — an empty title has none, so it must not leave a paragraph
-// standing for nothing. Asserted as the whole document: the defect was an extra empty node, which
-// only a whole-document match can see.
-//
-// `doc(paragraph, paragraph)` rather than a single one because the trailing paragraph belongs to
-// TrailingNode, which added it while a non-textblock was last in the document and does not take it
-// back. Every block node in this editor leaves it — the callout, measured the same way, leaves
-// exactly this — so it is not the accordion's to fix.
+// Backspace out of an untitled accordion (§7.2, §7.5) leaves no paragraph for the empty title;
+// whole-document match. The second paragraph is TrailingNode's, left by every block node.
 test('backspacing out of an untitled accordion leaves no paragraph for the title', async ({
   page,
 }) => {
@@ -133,8 +145,7 @@ test('backspacing out of an untitled accordion leaves no paragraph for the title
   expect(await markdown(page)).toBe('');
 });
 
-// The other half of the same rule, and the reason the fix above is scoped to an empty title: a
-// title that was written must still come back as a paragraph, ahead of the body (§7.2).
+// A written title comes back as a paragraph before the body (§7.2).
 test('backspacing out of a titled accordion keeps the title as a paragraph', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -143,9 +154,8 @@ test('backspacing out of a titled accordion keeps the title as a paragraph', asy
   await loadMarkdown(page, '<details>\n<summary>題名</summary>\n\n本文\n\n</details>\n');
   await page.locator(`.ProseMirror ${DETAILS} summary`).click();
   await page.keyboard.press('Home');
-  // Poll the *state* caret, not the DOM one: a click places the caret in the DOM ~20ms before
-  // ProseMirror's state catches up, and Backspace fired inside that window reads the stale offset
-  // and deletes a character of the title instead of dissolving.
+  // Poll the state caret: a clicked caret reaches state ~20ms late, and Backspace would delete a
+  // title character instead.
   await expect.poll(() => caret(page)).toBe('題名@0');
   await page.keyboard.press('Backspace');
 
@@ -153,11 +163,8 @@ test('backspacing out of a titled accordion keeps the title as a paragraph', asy
   expect(await markdown(page)).toBe('題名\n\n本文');
 });
 
-// The two edges of that narrowing (§7.4). It only applies to a body that is one empty line — the
-// shape insertion leaves — because there "insert a first line" and "enter the existing one" land
-// the caret identically and differ only in the leftover. Everywhere else the official Enter stands,
-// and both of these are cases where taking it away would lose real behaviour: content would be
-// pushed into a line the author did not ask for, and a folded body would swallow the caret.
+// The narrowing applies only to a body of one empty line (§7.4). Elsewhere the official Enter
+// stands, or content would be pushed down and a folded body would take the caret.
 test('Enter in the title of an accordion with a body still opens a new first line', async ({
   page,
 }) => {
@@ -177,8 +184,7 @@ test('Enter in the title of a folded accordion still lands below it', async ({ p
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
 
-  // Loaded, so it is folded (§5) — and its body is one empty line, the exact shape the override
-  // acts on when open. Folded, it must not: the caret would go somewhere invisible.
+  // Loaded, so folded (§5): the override must not send the caret somewhere invisible.
   await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n</details>\n');
   await page.locator(`.ProseMirror ${DETAILS} summary`).click();
   await page.keyboard.press('Enter');
@@ -189,17 +195,67 @@ test('Enter in the title of a folded accordion still lands below it', async ({ p
   );
 });
 
-// Tab from the title, the motion Enter above cannot offer: it enters the body *as it stands*, where
-// Enter inserts a first line in front of it. Three cases, one rule — only from the title, only while
-// open, and never a document change.
-//
-// The key has to be dispatched rather than pressed. Playwright's synthetic Tab, sent through CDP,
-// escapes the contenteditable to the browser's own focus cycling instead of reaching ProseMirror's
-// keydown handler (the same harness quirk recorded in editor-table-whole-cell-selection.spec.ts;
-// real keypresses in a browser do not do this). Dispatching the event on `.ProseMirror` reaches the
-// handler exactly as a real one does — what it cannot reproduce is the native focus move a declined
-// Tab falls through to, which is why the two declining cases below assert "nothing happened" rather
-// than where focus went.
+// Enter over a range with its head in the title (docs/editor-pitfalls.md §6.4): the title binding
+// declines a range and IsolatingBoundary clamps it. Positions: 前の段落です 1..7, 題名 10..12,
+// 畳んだ本文 15..20.
+const EDGE_MD =
+  '前の段落です\n\n<details>\n<summary>題名</summary>\n\n畳んだ本文\n\n</details>\n\n後の段落です\n';
+
+async function openEdgeDoc(page: Page): Promise<void> {
+  await page.goto('/admin/posts/new');
+  const editor = page.locator('.ProseMirror');
+  await expect(editor).toBeVisible();
+  await editor.click();
+  await loadMarkdown(page, EDGE_MD);
+  const toggle = page.locator(`.ProseMirror ${DETAILS} > button`);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを閉じる');
+}
+
+test('Enter over a range from the body back into the title replaces it', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 17, 11);
+  await expect.poll(() => caret(page)).toBe('題名@1');
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), details(detailsSummary("題"), detailsContent(paragraph("だ本文"))), paragraph("後の段落です"))',
+    );
+});
+
+test('Enter over a range from the paragraph above into the title replaces it', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 3, 11);
+  await expect.poll(() => caret(page)).toBe('前の段落です@2');
+  await page.keyboard.press('Enter');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の"), paragraph, details(detailsSummary("名"), detailsContent(paragraph("畳んだ本文"))), paragraph("後の段落です"))',
+    );
+});
+
+// A range inside the title is deleted, then the title's Enter opens a first body line.
+test('Enter over a range inside the title deletes it, then opens the body', async ({ page }) => {
+  await openEdgeDoc(page);
+  await setRange(page, 10, 11);
+  await expect.poll(() => caret(page)).toBe('題名@0');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('追加');
+
+  await expect
+    .poll(() => docString(page))
+    .toBe(
+      'doc(paragraph("前の段落です"), details(detailsSummary("名"), detailsContent(paragraph("追加"), paragraph("畳んだ本文"))), paragraph("後の段落です"))',
+    );
+});
+
+// Tab from the title enters the body as it stands. Only from the title, only while open, never a
+// document change. Dispatched, not pressed: Playwright's Tab escapes the contenteditable
+// (e2e/README.md), so the declining cases assert nothing happened rather than where focus went.
 async function dispatchTab(page: Page): Promise<void> {
   await page.evaluate(() => {
     document
@@ -217,14 +273,11 @@ test('Tab in the title enters the existing body without adding a line', async ({
   await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
   await page.locator(`.ProseMirror ${DETAILS} > button`).click();
   await page.locator(`.ProseMirror ${DETAILS} summary`).click();
-  // Poll the *state* caret before pressing anything: a click lands in the DOM ~20ms before
-  // ProseMirror's state catches up, and a key fired inside that window reads the stale selection
-  // (the same race the Backspace test above waits out).
+  // Poll the state caret first (the ~20ms click lag).
   await expect.poll(() => caret(page)).toMatch(/^題@/);
   await dispatchTab(page);
 
-  // At the start of the body's own first line — not a new one, which is the whole difference from
-  // Enter (the test above lands `paragraph("追加"), paragraph("本文")` on the same document).
+  // The start of the body's own line, not a new one: the difference from Enter.
   expect(await caret(page)).toBe('本文@0');
   await page.keyboard.type('追加');
   expect(await docString(page)).toContain('detailsContent(paragraph("追加本文"))');
@@ -234,8 +287,7 @@ test('Tab in the title of a folded accordion does nothing', async ({ page }) => 
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
 
-  // Loaded, so folded (§5). The caret must not go into a body no one can see (§7.2); declining
-  // hands Tab back to the browser, whose focus move is the behaviour every other prose Tab has.
+  // Folded (§5): declining hands Tab to the browser's focus move (§7.2).
   await loadMarkdown(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
   await page.locator(`.ProseMirror ${DETAILS} summary`).click();
   await expect.poll(() => caret(page)).toMatch(/^題@/);
@@ -263,8 +315,7 @@ test('Tab in the body itself is not the title binding', async ({ page }) => {
   expect(await markdown(page)).toBe('<details>\n<summary>題</summary>\n\n本文\n\n</details>');
 });
 
-// The counterpart: opening belongs to the insertion gesture, not to the node. A document arriving
-// from storage renders as a reader sees it — every accordion closed (§5).
+// Opening belongs to insertion: a loaded accordion stays closed (§5).
 test('an accordion loaded from markdown stays closed', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -280,7 +331,7 @@ test('the shortcut carries text typed after the trigger into the body', async ({
   await expect(editor).toBeVisible();
 
   await editor.click();
-  // Type the tail first, then go back and complete the trigger in front of it.
+  // The tail first, then complete the trigger in front of it.
   await page.keyboard.type(':::details本文');
   for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowLeft');
   await page.keyboard.type(' ');
@@ -288,25 +339,12 @@ test('the shortcut carries text typed after the trigger into the body', async ({
   expect(await docString(page)).toContain('detailsContent(paragraph("本文"))');
 });
 
-// Backspace undoing the `:::details ` shortcut must leave the caret where the author was typing,
-// not one block further on (§7.6). Measured in absolute positions: both the restored line and the
-// one after it can be非empty, and the text-based caret probe cannot tell which block it is in.
-//
-// A paragraph has to follow the accordion for the undo to happen at all: at the document end
-// TrailingNode's appended paragraph clears the input rule's inverse first, and Backspace dissolves
-// instead. That is true of every block shortcut in this editor — `:::info `, `> `, `- ` and `## `
-// all behave the same way there, measured — so it is not something these specs pin on the
-// accordion.
+// Backspace undoing `:::details ` leaves the caret where the author was typing (§7.6), in absolute
+// positions since both lines can be non-empty. A paragraph must follow: at the document's end
+// TrailingNode clears the input rule's inverse, true of every block shortcut here.
 
-// Builds an empty line above an existing paragraph and leaves the caret on it.
-//
-// The caret is placed by command and the click only takes focus — and the click happens *before*
-// the content is loaded, so its own caret cannot arrive late and overwrite anything. This used to
-// be `click(p)` + `Home`, which is the click→key lag in its purest form: the click's caret reaches
-// `state.selection` ~20ms after the keypress, so Home moved a caret that was then replaced by the
-// click's own at the end of the line, and the poll sat on `後続の段落@5` until it timed out.
-// Diagnosed from the retained trace on 2026-08-10 after it failed both in a full run and, later, on
-// its own. Fixed by construction, which is the standing remedy for this family.
+// An empty line above a paragraph, caret on it. Placed by command, the click only focusing and made
+// before loading, so its late caret cannot overwrite anything (the click→key lag).
 async function lineAboveAParagraph(page: Page) {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -326,8 +364,7 @@ test('undoing the shortcut leaves the caret at the end of the restored text', as
 
   await page.keyboard.press('Backspace');
   expect(await docString(page)).toBe('doc(paragraph(":::details "), paragraph("後続の段落"))');
-  // paragraph(":::details ") spans 0..13, so 12 is the end of its text — where the space was
-  // typed. 14 would be the start of 後続の段落, which is where this used to land.
+  // 0..13, so 12 ends the text, where the space was typed; 14 would be the next paragraph.
   await expect.poll(() => caretPos(page)).toBe(12);
 });
 
@@ -336,22 +373,18 @@ test('undoing the shortcut puts the caret before the text it carried', async ({ 
   await page.keyboard.type(':::details本文');
   await expect.poll(() => caret(page)).toBe(':::details本文@12');
   for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowLeft');
-  // The arrows have to have landed in ProseMirror's *state* before the space is typed: the
-  // selection sync lags a key by ~20ms, and a space typed inside that window completes the trigger
-  // at the old offset, producing a different document (a full-suite-only failure, since the lag is
-  // longer when the run is busy).
+  // The arrows must reach state before the space, or the trigger completes at the old offset.
   await expect.poll(() => caret(page)).toBe(':::details本文@10');
   await page.keyboard.type(' ');
   await expect(page.locator(`.ProseMirror ${DETAILS}`)).toBeVisible();
 
   await page.keyboard.press('Backspace');
   expect(await docString(page)).toBe('doc(paragraph(":::details 本文"), paragraph("後続の段落"))');
-  // The caret belongs between the trigger and 本文 — 2 characters back from the line's end (15).
+  // Between the trigger and 本文.
   await expect.poll(() => caretPos(page)).toBe(12);
 });
 
-// Every container refuses both routes. The menu hides its row (the predicate asks the wrapped
-// command); the input rule declines and leaves the text alone.
+// Every container refuses both routes: the menu hides its row, the input rule leaves the text.
 const CONTAINERS: Record<string, { source: string; node: string }> = {
   引用: { source: '> 引用文\n', node: 'blockquote' },
   callout: { source: '> [!NOTE]\n>\n> 本文\n', node: 'callout' },
@@ -369,18 +402,10 @@ for (const [where, { source, node }] of Object.entries(CONTAINERS)) {
     await expect(editor).toBeVisible();
 
     await loadMarkdown(page, source);
-    // Click first: the selection below is set through the editor's own commands, which does not
-    // give the DOM node focus, and without focus the keystrokes go nowhere.
+    // Click first: a command-set selection does not focus the DOM.
     await editor.click();
-    // Put the caret at the *start* of the container's first line: both routes need a line start
-    // (the input rule is anchored there, and the slash trigger is `startOfLine`), so anything else
-    // would let the test pass without ever asking the question. ArrowLeft collapses the selection
-    // to its beginning.
-    //
-    // Programmatic rather than by keyboard: a closed accordion's body is `hidden`, so arrow keys
-    // cannot reach it at all. Opening a fresh line with Enter would work too, but Enter inside a
-    // detailsContent can *leave* the accordion — the caret would end up exactly where an
-    // accordion is allowed, and the test would be measuring the wrong position.
+    // The start of the container's first line, which both routes require, or the test passes without
+    // asking. Programmatic: a closed accordion's body is `hidden`, and Enter in a body can leave it.
     await selectInside(page, node);
     await page.keyboard.press('ArrowLeft');
 
@@ -392,8 +417,7 @@ for (const [where, { source, node }] of Object.entries(CONTAINERS)) {
     }
     await page.keyboard.type(':::details ');
 
-    // The shortcut stayed literal, and no new accordion exists: the one the アコーディオン case
-    // loaded is the only detailsSummary allowed in the document.
+    // The shortcut stayed literal: only the loaded accordion exists.
     const summaries = (await docString(page)).split('detailsSummary').length - 1;
     expect(summaries).toBe(node === 'detailsContent' ? 1 : 0);
     expect(await docString(page)).toContain(':::details');
@@ -421,20 +445,11 @@ test('inside a table cell the row is hidden and the table survives', async ({ pa
   expect(before).toContain('| a | b |');
 });
 
-// §7.8 — Backspace at the START OF THE BODY. The document said nothing about this position until
-// 2026-08-10, and what happens there turns out to depend on the body's first block. These two pin
-// the paragraph cases, which are the ones the accordion itself decides; the list / quote / code /
-// callout rows of §7.8's table are what those nodes do at the start of *any* container and belong
-// to them, not here.
-//
-// `pageerror` is watched on both: the symptom being asserted is a document that did not change,
-// and a byte-identical document is exactly what an uncaught throw also leaves behind (the lesson
-// from the clearNodes RangeError). Without this the two are indistinguishable.
+// §7.8: Backspace at the start of the body depends on its first block; these pin the paragraph
+// cases. `pageerror` is watched: an unchanged document is also what an uncaught throw leaves.
 
-// The start of the body's first line. Resolved to the first *textblock* inside `detailsContent`:
-// `detailsContent` + 1 is the position before that block, and a raw position that is not inside a
-// textblock silently lands somewhere else — measuring the title's end while claiming to measure
-// the body, which is how the first pass at §7.8 got the wrong answer.
+// Resolved to the first textblock in `detailsContent`: a raw position outside one lands elsewhere,
+// which once measured the title's end instead.
 async function bodyFirstLine(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as Element & {
@@ -469,9 +484,7 @@ async function bodyFirstLine(page: Page): Promise<number> {
   });
 }
 
-// Open the accordion and put the caret at the body's first line. A loaded accordion is folded
-// (§5) and a folded body takes no caret at all — a selection set into the hidden `detailsContent`
-// normalizes back to the end of the title.
+// Open first: a folded body takes no caret, and a selection set there normalizes to the title's end.
 async function caretAtBodyStart(page: Page, md: string): Promise<void> {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -500,18 +513,15 @@ for (const { label, md } of [
     const at = await caretPos(page);
     await page.keyboard.press('Backspace');
 
-    // Both, not just the document: half of the tear this refuses would show only as a moved caret
-    // (the text absorbed into the title leaves the body's own node in place).
+    // Both: half of the tear shows only as a moved caret.
     expect(await docString(page)).toBe(doc);
     expect(await caretPos(page)).toBe(at);
     expect(errors).toEqual([]);
   });
 }
 
-// The one shape that does act, and the only motion from body back to title anywhere in the editor
-// (§7.2 declined to *bind* one, which is not the same as saying the motion is unreachable). It
-// needs a sibling after it: joinBackward's branch here has to produce a legal delete step, and
-// `block+` cannot give up its only child — which is exactly why the case above does nothing.
+// The one shape that acts, and the only body-to-title motion: with a sibling, joinBackward can
+// delete; `block+` cannot lose its only child.
 test('Backspace on an empty first body line with a sibling deletes it and returns to the title', async ({
   page,
 }) => {
@@ -519,7 +529,7 @@ test('Backspace on an empty first body line with a sibling deletes it and return
   page.on('pageerror', (error) => errors.push(error.message));
   await caretAtBodyStart(page, '<details>\n<summary>題</summary>\n\n本文\n\n</details>\n');
 
-  // Enter at the body's start opens an empty line ahead of 本文 — the shape under test.
+  // An empty line ahead of 本文.
   await page.keyboard.press('Enter');
   const target = await bodyFirstLine(page);
   await setRange(page, target);
@@ -528,7 +538,7 @@ test('Backspace on an empty first body line with a sibling deletes it and return
 
   await page.keyboard.press('Backspace');
 
-  // The empty line is gone and the caret sits at the END of the title, so typing continues it.
+  // Gone, and the caret continues the title from its end.
   expect(await docString(page)).toContain('detailsContent(paragraph("本文"))');
   expect(await caret(page)).toBe('題@1');
   await page.keyboard.type('名');

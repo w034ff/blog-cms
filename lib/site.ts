@@ -32,6 +32,15 @@ function resolveSiteOrigin(): URL {
 
 export const siteOrigin = resolveSiteOrigin();
 
+// Does `target` point at this site? Compared against the Host the browser addressed, because
+// `req.nextUrl.origin` normalises (`localhost` for `127.0.0.1`), which would make every own link
+// external. `siteOrigin` covers a pasted published URL while working locally. The one test for the
+// link-title and link-preview routes, so an own URL is never fetched back through the Funnel by one
+// and answered by the other.
+export function isOwnOrigin(target: URL, requestHost: string | null): boolean {
+  return target.host === requestHost || target.origin === siteOrigin.origin;
+}
+
 // Whether search engines are welcome. Opt-in, so every environment that isn't
 // explicitly the published one — a LAN host, the Tailscale Funnel address this
 // site is reachable at while the real domain is decided — stays out of the index

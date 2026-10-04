@@ -1,49 +1,51 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
-import { SiteHeader } from '@/components/SiteHeader';
-import { SiteFooter } from '@/components/SiteFooter';
+import { IBM_Plex_Mono, IBM_Plex_Sans_JP } from 'next/font/google';
 import { siteIndexable, siteOrigin } from '@/lib/site';
-import { SITE_DESCRIPTION, SITE_NAME, sharedOpenGraph } from './shared-metadata';
+import { SITE_DESCRIPTION, SITE_NAME, TITLE_TEMPLATE, sharedOpenGraph } from './shared-metadata';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
+// One family for Japanese and Latin, so a heading like 「Next.js のキャッシュ」 is one weight and
+// one height; the OS's Japanese face is no longer what a reader sees. Not a variable font, so the
+// weights are listed: the ones Tailwind's `font-*` utilities in use ask for.
+//
+// `preload: false`: Google serves this family as ~90 numbered unicode-range slices per weight with
+// no `latin` label, so `subsets` cannot narrow the preload and every slice got a <link
+// rel=preload> — 368 fonts on each page, which held hydration back past the X embed's one
+// `resize` (docs/embed-requirements.md §10.5). Unpreloaded, a page fetches only the slices its
+// text uses.
+const plexSans = IBM_Plex_Sans_JP({
+  variable: '--font-plex-sans',
+  weight: ['400', '500', '600', '700'],
+  preload: false,
 });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const plexMono = IBM_Plex_Mono({
+  variable: '--font-plex-mono',
+  weight: ['400', '500', '600', '700'],
   subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  // The base every relative metadata URL resolves against (og:image, canonical).
-  // Nothing sets one of those yet, so this changes no output today — it is here so
-  // that when they land, the host they point at comes from SITE_ORIGIN (lib/site.ts)
-  // instead of being written into the source. Without it, Next fails the build on
-  // the first relative metadata URL rather than guessing.
-  // The base every relative metadata URL resolves against — og:url below is
-  // written as a path and becomes absolute through this, so moving the site is a
+  // og:url and og:image are written as paths and made absolute here, so moving the site is a
   // change of SITE_ORIGIN (lib/site.ts) and nothing else.
   metadataBase: siteOrigin,
-  // Off unless the environment says this is the published address (lib/site.ts).
-  // app/robots.ts refuses crawlers on the same signal; this covers the page a
-  // crawler reaches anyway, having found the URL somewhere other than robots.txt.
+  // Off unless this is the published address (lib/site.ts). app/robots.ts refuses crawlers on the
+  // same signal; this covers one that found the URL elsewhere.
   ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
   title: {
     default: SITE_NAME,
-    template: `%s | ${SITE_NAME}`,
+    template: TITLE_TEMPLATE,
   },
   description: SITE_DESCRIPTION,
+  // Emits <link rel="alternate" type="application/rss+xml">; app/rss.xml/route.ts serves it.
+  alternates: { types: { 'application/rss+xml': '/rss.xml' } },
   openGraph: {
     ...sharedOpenGraph,
     title: SITE_NAME,
     description: SITE_DESCRIPTION,
     url: '/',
   },
-  // The wide card, now that there is an image to fill it. Inherited by every page
-  // that doesn't set `twitter` itself, and Twitter/X falls back to the og: tags
-  // for the title, description and image.
+  // Inherited by every page that doesn't set `twitter`; X falls back to the og: tags for the rest.
   twitter: { card: 'summary_large_image' },
 };
 
@@ -53,17 +55,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // No scroll-behavior here: it belongs to the scrolling element, so a `smooth` set on <html>
-    // would reach every route — including the editor, where it degrades typing (app/globals.css
-    // scopes it to the post page instead, with the reason spelled out there).
-    <html lang='ja' className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    // No scroll-behavior here: on <html> it would reach the editor, where it degrades typing
+    // (app/globals.css scopes it to the post page and says why).
+    <html lang='ja' className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}>
       <body className='min-h-full flex flex-col'>
-        <SiteHeader />
-        {/* No max-width here (moved into each page's own root element): the post page needs to
-            go wider than the rest of the site for its table-of-contents rail, and a shared
-            constraint here would clip that per-page choice. */}
-        <main className='flex-1 w-full px-4 py-8'>{children}</main>
-        <SiteFooter />
+        {/* No chrome here: a nested layout cannot take a parent's chrome back off, so the reader's
+            shell (app/(site)/layout.tsx) and /admin's bring their own. Both put a `flex-1` main in
+            this flex column. */}
+        {children}
       </body>
     </html>
   );

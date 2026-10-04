@@ -1,22 +1,16 @@
-// Run the Playwright E2E suite as N independent processes, one per shard.
+// Run the E2E suite as N processes, one per shard. The levers multiply: `workers: 4`
+// (playwright.config.ts) runs four files on one server; this runs N such servers. Both split by
+// file (`fullyParallel: false` keeps a file's tests in order, which drag and autosave specs need).
+// Reach for workers first: a browser context is ~0.3GB against ~1.6GB per `next dev`. Shards buy a
+// second server and DB copy, for runs that cannot share one.
 //
-// Sharding rather than raising `workers` in playwright.config.ts, because the thing that makes the
-// suite slow is not that any test is slow — measured 2026-09-01: 693 tests, median 1.10s, no
-// dominant file — it is that they run one after another. Splitting into processes keeps each
-// shard's run exactly as it is today (`workers: 1`, `fullyParallel: false`), which is what the
-// drag-select and autosave specs depend on; raising workers inside one process would instead put
-// several of them on one server and one DB copy at the same time.
-//
-// Each shard gets its own port, and every other per-server path is derived from that port in
-// e2e/constants.ts — DB copy, saved session, build dir, tsconfig. So the only thing this script
-// sets is E2E_PORT.
+// Only E2E_PORT is set per shard; every other per-server path derives from it (e2e/constants.ts).
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// `node scripts/e2e-shards.mts [count] [playwright args...]` — a leading integer is the shard
-// count, and everything after it is handed to each shard's `playwright test` unchanged, so a
-// sharded run can be narrowed the same way a plain one is (a file, a --grep).
+// `node scripts/e2e-shards.mts [count] [playwright args...]`: a leading integer is the shard count,
+// the rest goes to each shard's `playwright test` (a file, a --grep).
 const argv = process.argv.slice(2);
 const countArg = /^\d+$/.test(argv[0] ?? '') ? argv.shift() : undefined;
 const shards = Number(countArg ?? process.env.E2E_SHARDS ?? 3);
@@ -31,9 +25,8 @@ const blobRoot = path.join(root, 'blob-report');
 fs.rmSync(blobRoot, { recursive: true, force: true });
 fs.mkdirSync(blobRoot, { recursive: true });
 
-// Each shard's console output goes to its own file: three interleaved reporters on one terminal are
-// unreadable, and the merged report below is what the run is actually read from. The tail of a
-// failing shard's log is printed, so a red run says something without needing the file opened.
+// One log file per shard (interleaved reporters are unreadable); a failing shard's tail is
+// printed.
 const logDir = path.join(root, 'test-results');
 fs.mkdirSync(logDir, { recursive: true });
 
@@ -80,8 +73,8 @@ const runs = Array.from({ length: shards }, (_, i) => {
 
 const results = await Promise.all(runs);
 
-// merge-reports wants every blob in one directory; the shards each wrote into their own so that
-// the reporter's start-up wipe of its output dir could not race another shard's.
+// merge-reports wants one directory; each shard wrote its own so the reporter's start-up wipe
+// could not race another.
 const merged = path.join(blobRoot, 'all');
 fs.mkdirSync(merged, { recursive: true });
 for (const entry of fs.readdirSync(blobRoot, { withFileTypes: true })) {
@@ -99,12 +92,9 @@ for (const { shard, logPath } of failed) {
   console.log(fs.readFileSync(logPath, 'utf8').split('\n').slice(-40).join('\n'));
 }
 
-// Merged through the JSON reporter rather than `list`. The console reporters replay every test's
-// captured stdout, and this suite's is enormous — the specs' own `[measure]` lines plus the piped
-// `next dev` log, which is what `stdout: 'pipe'` in playwright.config.ts asks for. Merging 695
-// tests that way truncates partway through with exit 0, so the summary never prints and a third of
-// the run silently goes missing from it (measured 2026-09-01: 465 of 695 listed). The JSON goes to
-// a file, and what reaches the terminal is counted from it.
+// Merged through JSON, not `list`: console reporters replay every test's stdout (the specs' logs
+// and the piped `next dev` output), and that truncated partway with exit 0, dropping tests from the
+// summary. The JSON goes to a file and the terminal gets counts.
 const mergedJson = path.join(blobRoot, 'merged.json');
 const run = (args: string[], env: Record<string, string> = {}) =>
   new Promise<number>((resolve) => {

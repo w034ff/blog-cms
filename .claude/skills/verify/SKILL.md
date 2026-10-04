@@ -1,63 +1,98 @@
 ---
 name: verify
-description: Drive the real TipTap editor in a browser to verify editor changes end-to-end via the lean Playwright E2E harness (isolated seeded DB + saved admin auth). Use before committing nontrivial editor changes; the editor is browser-only, so vitest/tsc can't observe its runtime behavior.
+description: Drive the real TipTap editor in a browser via the lean Playwright E2E harness (isolated seeded DB + saved admin auth). Use before committing an editor change whose behaviour only a browser can show — input rules, keymaps, NodeViews, geometry, IME, a real drag, the clipboard, autosave, publish. A claim about a Slice, a content expression or a markdown string belongs in vitest instead; see "Where an editor test goes" in AGENTS.md.
 ---
 
 # Verify editor changes (Playwright E2E harness)
 
-The editor is browser-only (TipTap / ProseMirror) — vitest and tsc can't catch its
-runtime behavior. This harness drives the **real editor** in system Chrome against
-an **isolated seeded copy** of the DB, so a change can be observed working
-end-to-end (not just unit-tested).
+Drives the **real editor** in system Chrome against an **isolated seeded copy** of
+the DB, so a change can be observed working end-to-end.
+
+This is the expensive layer and it is for what only a browser answers. The
+document-level guards — slice repair, placement, schema content expressions — are
+vitest cases over `components/editor/test-schema.ts` and cost about a millisecond
+each; AGENTS.md holds the question to ask before writing either.
+
+`e2e/README.md` is the reference: how the harness is built, the shared helpers, how
+to drive selections, history, native drags, touch and locators, and what makes a
+wait valid. Read the section you need before writing a spec.
 
 ## Run it
 
+**Run the files your change touches, not the suite.** One file takes well under
+two minutes; the whole suite is many times that (the dated measurement is in
+`e2e/README.md`, "Why four workers and not shards"). A full run belongs before a
+merge, not before a commit.
+
 ```bash
-npm run test:e2e
+npx playwright test e2e/editor-embed.spec.ts          # one file — the default
+npx playwright test e2e/<a>.spec.ts e2e/<b>.spec.ts   # several: one command, one boot
+npx playwright test e2e/<name>.spec.ts:<line>         # one test, by line
+npx playwright test e2e/editor-embed.spec.ts --repeat-each=5 --workers=1   # is it flaky?
+npm run test:e2e                                      # the whole suite
 ```
 
-It **coexists with `npm run dev`** (port 3001) — no need to stop your dev server.
+`npm run test:e2e:shards` is not a faster way to run the suite; it is for a run
+that needs its own server and DB copy (`e2e/README.md`, "Why four workers and not
+shards").
 
-Under the hood (`playwright.config.ts`):
+**A change with no files of its own gets a new spec, not the suite.** The rule
+above assumes the change belongs to a spec: an extension, a NodeView, one screen.
+Shared chrome — `components/PostEditor.tsx`, a layout under `app/`,
+`app/globals.css` — has no "its files", and its blast radius is real: `20a3f24`
+(記事の設定 moved onto the top line) landed in 17 specs at once, through geometry
+and a locator that no longer matched. That hazard is why the claim needs a spec —
+it is not a licence to run the suite. **Write the spec that covers the new claim,
+run that file, and stop.** The merge-only rule above is not suspended here; it
+wins. If the blast radius still worries you, say so and ask — the user's machine
+is not yours to spend.
 
-1. `e2e/prepare-db.mts` copies `data/blog.db` → `e2e/.tmp/blog.e2e.db` (WAL-safe
-   `better-sqlite3` backup) and upserts a test admin. **The real DB is never touched.**
-2. A second `next dev` boots on **port 3100** (override with `E2E_PORT`) in an
-   isolated build dir (`NEXT_DIST_DIR=.next-e2e`) so it doesn't collide with the
-   dev server's `<distDir>/dev/lock`, with a test `SESSION_SECRET` and `BLOG_DB_PATH`.
-3. The `setup` project logs in via the real `/login` form once and saves the
-   session to `e2e/.auth/admin.json`; the spec projects reuse it.
+**The dev server and a full run.** A serial run coexisted with `npm run dev`
+(port 3001) on 2026-09-13; three shards beside it did not (61 red, then an OOM
+kill on a 19GB machine). Four workers beside the dev server has not been measured
+— if the machine is loaded, stop the dev server first. **Never delete a
+`.next-e2e-*` directory while a run holds it**: the server panics and every
+remaining test fails for no reason.
 
 Prerequisite: `data/blog.db` must exist (run `npm run db:seed` on a fresh clone).
 
-Working in a git worktree: everything above is cwd-relative and so already private
-to it — except the port. Set `E2E_PORT` (e.g. 3101) in that worktree's
-`.claude/settings.local.json` before running, or the second run fails to bind
-(`reuseExistingServer: false`, so it never silently tests the other tree's server).
-
-## What it covers (`e2e/*.spec.ts`)
-
-- **editor-smoke** — the editor mounts, the toolbar renders, and autosave persists
-  a draft (`保存済み ✓`) to the isolated DB.
-- **table-selection** — dragging across table cells shows the `.selectedCell`
-  highlight (guards the `app/globals.css` `.prose .selectedCell::after` overlay).
-- **image-upload** — the toolbar image control uploads a file and inserts an
-  `<img src="/uploads/…">`.
+Working in a git worktree: every path is cwd-relative and so already private to it
+— except the port. Set `E2E_PORT` (e.g. 3101) in that worktree's
+`.claude/settings.local.json` before running, or the second run fails to bind.
 
 ## Add a spec
 
 Drop `e2e/<name>.spec.ts`; it inherits admin auth + `baseURL` from the config.
-Use `page.mouse` for cell-selection drags, `setInputFiles` for uploads, and
-`getByRole` / `getByLabel` for toolbar buttons and fields. **Avoid native HTML5
-drag-and-drop** — Playwright's DnD support is weak, which is why the table
-drop-guard regression (`43f9917`) has no spec yet (it needs CDP-level drag events).
+Use `getByRole` / `getByLabel` for toolbar buttons and fields, and `setInputFiles`
+for uploads (it works on a hidden `<input type="file">`). Build on the shared
+helpers in `e2e/editor-probe.ts`, `e2e/editor-authoring.ts` and
+`e2e/native-drag.ts` instead of writing the gesture by hand.
 
-## Notes / constraints
+## When something goes red
 
-- System Chrome via `channel: 'chrome'` — no bundled-browser download.
-- `.next-e2e/` and `tsconfig.e2e.json` are gitignored; `next dev`'s tsconfig
-  auto-edits are redirected to `tsconfig.e2e.json` (via
-  `typescript.tsconfigPath`) so the tracked `tsconfig.json` stays clean.
-- Runs serially (`workers: 1`) — editor interactions are timing-sensitive.
-- Adding Playwright followed the repo's supply-chain rules (`@playwright/test`
-  exact-pinned, `--min-release-age 7`, `--ignore-scripts`).
+Measured 2026-09-13: three full runs produced three reds and **zero product
+defects** — every one was the harness's own input timing. So triage before
+debugging, in this order, changing only the set of tests while the commit and the
+build stay the same:
+
+1. **The one test alone** (`--repeat-each=5 --workers=1`; parallel copies share the DB,
+   `e2e/README.md`). Green here and red in a full run means the suite, not the code.
+2. **Its file.** Green per-file and red in a full run is the shape
+   `docs/cms-features.md` records twice (the image-bubble 22s case, and this one).
+3. **A full run**, only once 1 and 2 have said something.
+
+Copy the trace out of `test-results/` before running anything else; the next run
+wipes it.
+
+Then read the failure as one of two kinds:
+
+- **The setup did not land** — a caret that never moved, a click that made no
+  NodeSelection, a row that is still the previous query's. Fix the wait, not the
+  product. A wait must be a predicate that is **false before the thing it waits for
+  and true after** (`e2e/README.md`, "Waits").
+- **The product changed.** Only then open the app code.
+
+Native keys are for when the key _is_ the subject. When a keystroke is only setup,
+place the caret through the editor (`caretAtStartOf`, `setRange`) — a `Home` or an
+arrow sent inside ProseMirror's 20ms selection-sync window is discarded, and no
+amount of waiting produces it.

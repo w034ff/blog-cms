@@ -3,22 +3,16 @@ import type { EditorState } from '@tiptap/pm/state';
 // Does the selection touch a node of any of these types — anywhere in its range, not just as the
 // block it sits in?
 //
-// This exists because `editor.isActive(name)` cannot answer that question. For a non-empty
-// selection isActive requires the matching nodes to *cover* the whole range (@tiptap/core's
-// isNodeActive ends in `range >= selectionRange`), so it reports false the moment a selection
-// reaches out of the node — one character past the edge of a table or a code block is enough. Every
-// guard written as `if (editor.isActive('table')) return false` therefore held only for a caret and
-// waved a mixed selection straight through, and what came next was not a near miss: inserting a
-// block node over such a range *replaces* it, so the table or the code was silently gone (the
-// callout/image guards) or overwritten by a fresh empty table (insertTable, which read
-// prosemirror-tables' isInTable — the same defect, since that reads `$head` alone and so missed a
-// selection dragged the other way).
+// `editor.isActive(name)` cannot answer that: for a non-empty selection it requires the nodes to
+// *cover* the range (@tiptap/core's isNodeActive ends in `range >= selectionRange`), so a
+// selection reaching one character out of a table reads as outside it — and inserting a block over
+// that range replaces the table. prosemirror-tables' `isInTable` has the same gap, since it reads
+// `$head` alone.
 //
-// `selection.from`/`to` are normalized, so drag direction doesn't matter. An empty selection is
-// covered too: nodesBetween(pos, pos) still visits the nodes containing pos, which is what makes
-// this a superset of the isActive checks it replaces rather than a different test. A cursor resting
-// *between* two blocks (a gap cursor before a table) is correctly not counted — the node starts
-// where the cursor is, so it isn't inside it, and inserting there is safe.
+// `from`/`to` are normalized, so drag direction doesn't matter. An empty selection is covered
+// (nodesBetween(pos, pos) visits the nodes containing pos), making this a superset of the isActive
+// checks it replaces. A gap cursor before a block is correctly not counted: inserting there is
+// safe.
 export function selectionTouches(state: EditorState, ...typeNames: string[]): boolean {
   const { from, to } = state.selection;
   let found = false;
@@ -27,3 +21,11 @@ export function selectionTouches(state: EditorState, ...typeNames: string[]): bo
   });
   return found;
 }
+
+// The block atoms a selection can hold whole. The four insert controls (setCallout, insertTable,
+// toggleBlockquote, setImage) refuse over any of them as one predictable rule: insertContent
+// replaces a selected linkCard or embed, and wrapIn quotes one, which no author asks for. `image`
+// is refused too, though inserting over it is not always destructive, so the rule has no exception
+// to learn. Cost: a text selection running across a picture cannot be quoted either.
+export const BLOCK_ATOMS = ['linkCard', 'embed', 'image'] as const;
+export type BlockAtom = (typeof BLOCK_ATOMS)[number];

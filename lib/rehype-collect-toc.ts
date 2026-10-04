@@ -11,30 +11,18 @@ declare module 'vfile' {
   }
 }
 
-// Must run after rehype-sanitize (reads the final, clobber-prefixed `id` — see lib/render.ts).
-// The editor caps body headings at h2/h3 (components/PostEditor.tsx:
-// Heading.configure({ levels: [2, 3] })), so those are the only two levels a post can ever
-// produce — nothing to filter out here.
+// After rehype-sanitize (reads the final clobber-prefixed `id`, see lib/render.ts). Body headings
+// are only h2/h3 (`Heading.configure({ levels: [2, 3] })` in components/editor/extensions.ts), so
+// there is nothing else to filter.
 export function rehypeCollectToc() {
   return (tree: Root, file: VFile) => {
-    // Headings inside an accordion are left out (docs/accordion-requirements.md §8.1): a table of
-    // contents lists what the reader can see, and the author folded these away deliberately. It
-    // also keeps the default navigation off a path whose behaviour is the browser's to decide —
-    // whether following a fragment into a closed <details> opens it varies, and Chrome's automatic
-    // expansion is not something to build the only route to a heading on.
+    // Headings inside an accordion are left out (docs/accordion-requirements.md §8.1): the author
+    // folded them away, and whether a fragment opens a closed <details> is up to the browser.
+    // Collected as a node set first, since `visit` gives only the parent, not the ancestry. Their ids
+    // are untouched, so in-page links still resolve.
     //
-    // Collected as a set of nodes first rather than asked per heading: `visit` hands over a parent
-    // but not a full ancestry, so a nested heading could not answer the question on its own, and
-    // an ancestry walk would mean pulling in unist-util-visit-parents for one predicate.
-    //
-    // The ids themselves are untouched — rehype-slug still assigns one to every heading, so an
-    // in-page `[…](#見出し)` or an external `#user-content-…` still resolves here.
-    // The footnote section is excluded for a different reason (docs/footnote-requirements.md §8):
-    // it is not a section the author wrote. remark-gfm labels it with its own
-    // `<h2 class="sr-only" id="footnote-label">Footnotes</h2>`, so without this the table of
-    // contents of a Japanese post gains an English entry reading "Footnotes" — measured, not
-    // feared. It is screen-reader-only chrome, and the jumps into it are the backref links, not
-    // the contents.
+    // The footnote section is out too (docs/footnote-requirements.md §8): remark-gfm's sr-only
+    // `<h2 id="footnote-label">Footnotes</h2>` would add an English entry to a Japanese post.
     const hidden = new Set<Element>();
     visit(tree, 'element', (node: Element) => {
       const isDetails = node.tagName === 'details';

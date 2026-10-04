@@ -2,12 +2,9 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// `linkOnPaste` (extension-link's pasteHandler) marks the whole selection as a link when the pasted
-// content is a bare URL — and unlike an ordinary paste it does not replace that selection, so the
-// selected text survives as the link's own label. Selecting the whole post out of habit (Ctrl+A) and
-// pasting a URL from the clipboard turned every paragraph into a link to it.
-// LinkPasteParagraphGuard (components/editor/link-paste-paragraph-guard.ts) narrows route (a) —
-// docs/link-requirements.md §2.1 — to a selection confined to one paragraph.
+// `linkOnPaste` links the whole selection to a pasted URL without replacing it, so Ctrl+A then a paste
+// linked every paragraph. LinkPasteParagraphGuard (link-paste-paragraph-guard.ts) confines route (a)
+// (docs/link-requirements.md §2.1) to one paragraph.
 
 type EditorProbe = Element & { editor?: { state: { doc: { content: { size: number } } } } };
 
@@ -53,10 +50,8 @@ test('a URL pasted over a selection spanning two paragraphs replaces them, one l
   const size = await docSize(page);
   await setRange(page, 1, size - 1); // start of "AAA" through end of "BBB", both inside the doc
   await pastePlainText(page, 'https://example.com');
-  // Collapses to one paragraph, not "AAA" and "BBB" each keeping their own mismatched link — the
-  // bug this guard fixes. `autolink` (left alone, docs/link-requirements.md §4) then recognises the
-  // lone URL the same way it would recognise one just typed; label and href now agree, which is why
-  // that follow-on link is accepted rather than suppressed.
+  // One paragraph, not each keeping a mismatched link; autolink (§4) then links the lone URL, label and
+  // href agreeing.
   expect(await docString(page)).toBe('doc(paragraph(link("https://example.com")))');
 });
 

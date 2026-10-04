@@ -3,9 +3,12 @@ import { createHash } from 'node:crypto';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getOptionalSession } from '@/lib/dal';
+import { UPLOAD_DIR } from '@/lib/upload-dir';
+import { prepareUploadImage } from '@/lib/upload-image';
 import { ALLOWED_IMAGE_EXTENSIONS, MAX_UPLOAD_BYTES } from '@/lib/uploads';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
+// Runtime data beside the DB, not `public/` (app/uploads/[name]/route.ts serves these and says
+// why); `scripts/gc-uploads.mts` sweeps the same directory. Where it is: lib/upload-dir.ts.
 
 export async function POST(req: NextRequest) {
   const session = await getOptionalSession();
@@ -19,8 +22,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
   }
 
-  const ext = ALLOWED_IMAGE_EXTENSIONS.get(file.type);
-  if (!ext) {
+  if (!ALLOWED_IMAGE_EXTENSIONS.has(file.type)) {
     return NextResponse.json(
       { error: 'unsupported file type (png, jpg, gif, webp only)' },
       { status: 400 },
@@ -30,11 +32,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'file too large (max 5MB)' }, { status: 400 });
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  // Content-addressed name: re-uploading the same image resolves to the same
-  // file, so identical content is stored once (dedup). Skip the write when the
-  // file already exists. Deletion must stay reference-based (the GC sweep is),
-  // since one file can now be referenced by multiple posts.
+  const prepared = await prepareUploadImage(Buffer.from(await file.arrayBuffer()));
+  if (!prepared) {
+    return NextResponse.json({ error: 'file is not a readable image' }, { status: 400 });
+  }
+  const { bytes, ext } = prepared;
+  // Content-addressed, so identical images are stored once and one file may serve several posts:
+  // deletion must stay reference-based (the GC sweep is). The hash is of the stored bytes, not the
+  // uploaded ones, so an upload that carries metadata never resolves to a file stored with it.
   const name = `${createHash('sha256').update(bytes).digest('hex')}.${ext}`;
   const filePath = path.join(UPLOAD_DIR, name);
   await mkdir(UPLOAD_DIR, { recursive: true });

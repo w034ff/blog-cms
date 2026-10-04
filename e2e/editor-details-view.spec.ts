@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loadMarkdown } from './editor-authoring';
+import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from './editor-authoring';
 import { markdown, docString } from './editor-probe';
+import { gotoPublished } from './published-post';
 
 // The accordion's editor chrome (docs/accordion-requirements.md §5.1, §7.3, §8.2): the toggle's
-// Japanese label, the untitled placeholder, and the rule that folding is a view action — it must
-// not touch the document, or every collapse would mark the post dirty and fire autosave.
+// label, the untitled placeholder, and folding as a view action that must not dirty the post.
 
 const DETAILS = '.ProseMirror [data-type="details"]';
 
@@ -19,7 +19,7 @@ test('the toggle carries a Japanese label and folds without touching the documen
   const toggle = page.locator(`${DETAILS} > button`);
   const body = page.locator(`${DETAILS} [data-type="detailsContent"]`);
 
-  // Closed to begin with, as the public page renders it.
+  // Closed at first, as published.
   await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを開く');
   await expect(body).toBeHidden();
 
@@ -30,8 +30,7 @@ test('the toggle carries a Japanese label and folds without touching the documen
   await expect(toggle).toHaveAttribute('aria-label', 'アコーディオンを閉じる');
   await expect(body).toBeVisible();
 
-  // The open state lives in the NodeView, not in the document: same doc, same markdown, so
-  // nothing marks the post dirty.
+  // The open state is the NodeView's: same doc and markdown, nothing dirty.
   expect(await docString(page)).toBe(docBefore);
   expect(await markdown(page)).toBe(before);
 
@@ -40,8 +39,7 @@ test('the toggle carries a Japanese label and folds without touching the documen
   expect(await markdown(page)).toBe(before);
 });
 
-// The placeholder is a ::before, which is not reachable through toHaveCSS — that reports the
-// element's own computed style.
+// A ::before, unreachable through toHaveCSS.
 function summaryMarker(page: Page): Promise<string> {
   return page.evaluate(() => {
     const summary = document.querySelector('.ProseMirror summary');
@@ -50,11 +48,8 @@ function summaryMarker(page: Page): Promise<string> {
   });
 }
 
-// How far the caret is drawn from where the title's own text begins. Generated content is laid out
-// inline by default, so a placeholder written as a plain ::before takes real width on the line and
-// pushes the caret past itself — 52.5px, the width of 「タイトル」 — even though the caret is at
-// offset 0. Measured in pixels because that is the whole of the defect: the document position was
-// right the entire time.
+// The caret's drawn distance from the title's text start: an inline ::before takes width and pushes
+// the caret past it while its offset stays 0, so pixels are the whole defect.
 function caretOffsetFromTextStart(page: Page): Promise<number> {
   return page.evaluate(() => {
     const dom = document.querySelector('.ProseMirror') as
@@ -83,12 +78,10 @@ test('an untitled accordion shows a placeholder but still saves', async ({ page 
   await editor.click();
   await page.keyboard.type(':::details ');
   expect(await summaryMarker(page)).toContain('タイトル');
-  // The caret sits where the first character will go, not after the placeholder. Within a pixel,
-  // since both sides are sub-pixel layout measurements; the defect this guards was 52.5px.
+  // Where the first character will go, within a pixel.
   expect(await caretOffsetFromTextStart(page)).toBeCloseTo(0, 0);
 
-  // §5.1: an empty title is allowed through save and publish — the placeholder is the whole of
-  // the safeguard, so the markdown must still be produced.
+  // §5.1: an empty title saves, so the markdown must still be produced.
   expect(await markdown(page)).toBe('<details>\n<summary></summary>\n\n</details>');
 
   await page.keyboard.type('題名');
@@ -96,16 +89,9 @@ test('an untitled accordion shows a placeholder but still saves', async ({ page 
 });
 
 // The marker is placed by arithmetic over the title row's own padding and line box (app/globals.css),
-// not by the flow, so it cannot shrink along with a row that collapses.
-//
-// `markerBelowRow` is a within-shape sign check, NOT a number to compare across the two: the two
-// branches below measure from different origins. The editor's button is read with
-// getBoundingClientRect, i.e. against the card's *border* box; the public marker's `top` comes from
-// the computed style of an absolutely positioned ::before, which resolves against the card's
-// *padding* box. The 1px border between them makes the public figure one too small (measured with
-// a titled accordion: editor -9, public -15 where the true value is -14). That is why only
-// `rowHeight` — a plain height, same meaning in both — is asserted across the shapes, and
-// `markerBelowRow` is only ever asserted against 0, which it clears by 9px or more.
+// so it does not shrink with a collapsing row. `markerBelowRow` is only a sign: the button is read
+// against the border box, the ::before against the padding box. `rowHeight` is compared across
+// shapes.
 function titleRowGeometry(page: Page, cardSelector: string) {
   return page.evaluate((selector) => {
     return Array.from(document.querySelectorAll(selector)).map((card) => {
@@ -113,8 +99,7 @@ function titleRowGeometry(page: Page, cardSelector: string) {
       if (!summary) throw new Error('no summary in the card');
       const cardBox = card.getBoundingClientRect();
       const rowBox = summary.getBoundingClientRect();
-      // The editor's marker is a real <button>; the public page's is the summary's ::before, whose
-      // box is only reachable through the computed style.
+      // A <button> in the editor; the page's ::before only through computed style.
       const button = card.querySelector('button');
       const marker = button
         ? { top: button.getBoundingClientRect().top - cardBox.top, height: button.offsetHeight }
@@ -124,19 +109,15 @@ function titleRowGeometry(page: Page, cardSelector: string) {
           };
       return {
         rowHeight: Math.round(rowBox.height),
-        // Positive means the marker hangs below the row it belongs to — onto the body, once open.
+        // Positive: the marker hangs below its row.
         markerBelowRow: Math.round(marker.top + marker.height - (rowBox.bottom - cardBox.top)),
       };
     });
   }, cardSelector);
 }
 
-// §5.1 lets an untitled accordion save and publish, so the published page has to lay one out. It
-// is the only place that can go wrong: `<summary></summary>` has no inline content and so makes no
-// line box, collapsing the row to its padding, while the editor's summary always holds
-// ProseMirror's trailing <br> and keeps its height. The row is asserted against a titled one in
-// the same document rather than a fixed pixel count — matching is the actual requirement (§8.2),
-// and a number here would have to be re-derived every time the padding changes.
+// §5.1: a published `<summary></summary>` has no line box and collapses to its padding, while the
+// editor's keeps a trailing <br>. Compared with a titled row: matching is the requirement (§8.2).
 test('an untitled accordion keeps its title row in both DOM shapes', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -154,11 +135,11 @@ test('an untitled accordion keeps its title row in both DOM shapes', async ({ pa
   expect(inEditor[0].rowHeight).toBe(inEditor[1].rowHeight);
   expect(inEditor[0].markerBelowRow).toBeLessThanOrEqual(0);
 
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('link', { name: '表示' }).click();
-  await page.waitForURL(/\/posts\//);
+  await expectPublished(page);
+  await gotoPublished(page);
 
   const published = page.locator('article details');
   await expect(published).toHaveCount(2);
@@ -171,7 +152,7 @@ test('an untitled accordion keeps its title row in both DOM shapes', async ({ pa
     const onPage = await titleRowGeometry(page, 'article details');
     expect(onPage[0].rowHeight).toBe(onPage[1].rowHeight);
     expect(onPage[0].markerBelowRow).toBeLessThanOrEqual(0);
-    // …and the same row the author saw while writing it.
+    // The row the author saw.
     expect(onPage[0].rowHeight).toBe(inEditor[0].rowHeight);
   }
 });
@@ -183,12 +164,12 @@ test('the published page folds and unfolds', async ({ page }) => {
 
   await page.getByLabel('タイトル').fill('accordion-public');
   await loadMarkdown(page, '<details>\n<summary>詳細</summary>\n\n畳まれた本文\n\n</details>\n');
-  await expect(page.getByText(/保存済み/)).toBeVisible({ timeout: 20_000 });
+  await expectAutosaved(page);
+  await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
-  await expect(page.getByText('公開済み（最新）')).toBeVisible({ timeout: 20_000 });
+  await expectPublished(page);
 
-  await page.getByRole('link', { name: '表示' }).click();
-  await page.waitForURL(/\/posts\//);
+  await gotoPublished(page);
 
   const details = page.locator('article details');
   await expect(details).toHaveCount(1);

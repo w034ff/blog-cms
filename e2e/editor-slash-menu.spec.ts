@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// The `/` slash menu (components/editor/slash-command.ts) is built on the official
-// @tiptap/suggestion utility with a custom popup (SlashList). Browser-only: the suggestion
-// trigger, the floating popup, and the block-insert commands only run in the editor.
+// The `/` menu (slash-command.ts), on @tiptap/suggestion with a custom popup (SlashList).
 test('the slash menu opens on `/` and inserts the chosen callout', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -15,7 +13,7 @@ test('the slash menu opens on `/` and inserts the chosen callout', async ({ page
   await expect(menu).toContainText('警告');
   await expect(menu).toContainText('注意');
 
-  // Choosing 警告 inserts a warning callout and removes the typed `/`.
+  // 警告 inserts a warning callout and removes the `/`.
   await menu.getByRole('button', { name: '警告' }).click();
   await expect(editor.locator('div.markdown-alert.markdown-alert-warning')).toBeVisible();
   await expect(editor).not.toContainText('/');
@@ -26,17 +24,15 @@ test('the slash menu inserts a code block', async ({ page }) => {
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // `code` now matches two rows: コードブロック, and リンク through its provider keywords —
-  // CodeSandbox and CodePen both contain it (embed-requirements.md §24.2). **The order is what
-  // keeps `/code` + Enter usable**, and it is the menu's own declaration order, so this pins the
-  // thing that would actually hurt rather than the count.
+  // `code` matches コードブロック and, through provider keywords (CodeSandbox, CodePen), リンク
+  // (embed-requirements.md §24.2). **The declaration order keeps `/code` + Enter usable.**
   await page.keyboard.type('/code');
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
   await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンク']);
 
   await page.keyboard.press('Enter');
-  // The code block's NodeView wrapper (its language <select>/filename chrome) confirms insertion.
+  // The NodeView's chrome confirms the insertion.
   await expect(editor.locator('.code-block')).toBeVisible();
   await expect(editor).not.toContainText('/');
 });
@@ -46,7 +42,7 @@ test('the slash menu filters by query and inserts with Enter', async ({ page }) 
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // `danger` is the keyword for 警告 only.
+  // `danger` finds 警告 only.
   await page.keyboard.type('/danger');
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
@@ -71,12 +67,8 @@ test('Escape closes the slash menu without inserting', async ({ page }) => {
   await expect(editor.locator('div.markdown-alert')).toHaveCount(0);
 });
 
-// The menu only offers rows whose command can actually run where the caret is
-// (slash-command.ts asks each row via `editor.can()`). setCallout refuses inside a quote —
-// a blockquote is someone else's words, a callout the author's own aside — so the three
-// 囲み枠 rows drop there while コードブロック stays, since a fenced block nests fine in a
-// quote. リンク stays for the same reason: a quote is `block+`, so a card or an embed is a
-// legal child of it. Browser-only: the availability check reads the live editor state.
+// Rows are offered only where `editor.can()` says so. No callout in a quote; a code block, a card or
+// an embed nests fine (`block+`).
 test('the slash menu hides the callout rows inside a quote, keeping the code block', async ({
   page,
 }) => {
@@ -95,8 +87,7 @@ test('the slash menu hides the callout rows inside a quote, keeping the code blo
   await expect(menu.getByRole('button')).toHaveText(['コードブロック', 'リンク']);
 });
 
-// The same check must not hide the rows where setCallout *does* work. Inside an existing
-// callout it switches that callout's type in place, so all three stay offered.
+// Inside a callout setCallout retypes it, so all three stay.
 test('the slash menu still offers the callout rows inside an existing callout', async ({
   page,
 }) => {
@@ -112,15 +103,12 @@ test('the slash menu still offers the callout rows inside an existing callout', 
 
   const menu = page.locator('[data-slash-menu]');
   await expect(menu).toBeVisible();
-  // 3 callout types + code block + the merged link/embed row
+  // 3 callout types + code block + the link/embed row.
   await expect(menu.getByRole('button')).toHaveCount(5);
 });
 
-// The `/` trigger is gated off inside a code block (slash-command.ts's `allow`): with
-// `startOfLine` the trigger sits exactly where `// comment`, `</div>` and a leading path
-// begin, so the menu would pop up over ordinary code. `/` must stay a plain character
-// there, matching the block markdown shortcuts, which ProseMirror already leaves literal
-// inside a `code` textblock.
+// Gated off in a code block (`allow`): `startOfLine` is where `// comment`, `</div>` and paths
+// begin.
 test('the slash menu never opens inside a code block', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
@@ -133,14 +121,12 @@ test('the slash menu never opens inside a code block', async ({ page }) => {
 
   await page.keyboard.type('// a comment');
   await expect(page.locator('[data-slash-menu]')).toHaveCount(0);
-  // The slashes are ordinary text in the code, not a swallowed trigger.
+  // Ordinary text, not a swallowed trigger.
   await expect(editor.locator('.code-block')).toContainText('// a comment');
 });
 
-// A table cell is paragraph-only (table-extensions.ts), so neither a callout nor a code block
-// fits and every row's `available` predicate is false. The trigger's emptiness test then keeps
-// the menu shut rather than opening it on an empty list — before that check it still opened,
-// offering コードブロック as a row that did nothing when picked.
+// A cell is paragraph-only, so every row is unavailable and the menu stays shut rather than
+// opening on nothing.
 test('the slash menu never opens inside a table cell', async ({ page }) => {
   await page.goto('/admin/posts/new');
 

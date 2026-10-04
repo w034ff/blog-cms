@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 
-// Guards the table drag-select highlight: prosemirror-tables tags selected cells
-// with .selectedCell, and the globals.css `.prose .selectedCell::after` overlay
-// is what actually paints the selection (that overlay is the kept fix — without
-// it the drag works but shows nothing, reading as "can't select across cells").
+// prosemirror-tables tags `.selectedCell`, and the globals.css `.prose .selectedCell::after` overlay
+// paints it; without it a cross-cell drag shows nothing.
 test('dragging across table cells shows the selection highlight', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -15,8 +13,7 @@ test('dragging across table cells shows the selection highlight', async ({ page 
   await page.getByRole('button', { name: '3行3列の表を挿入' }).click();
   await expect(editor.locator('table')).toBeVisible();
 
-  // TipTap renders the header row as bare <th> (no <thead>) and body rows as
-  // <td>; the first two <td> are adjacent cells in the first body row.
+  // Header cells are bare <th> (no <thead>); the first two <td> are adjacent body cells.
   const first = editor.locator('td').nth(0);
   const second = editor.locator('td').nth(1);
   const a = await first.boundingBox();
@@ -38,8 +35,7 @@ test('dragging across table cells shows the selection highlight', async ({ page 
   expect(overlayBg.replace(/\s/g, '')).toContain('51,144,255');
 });
 
-// The destructive 表を削除 button was moved to the far end of the table BubbleMenu
-// and restyled red; guard that it still removes the whole table.
+// 表を削除, red at the BubbleMenu's far end, still removes the table.
 test('the table toolbar 表を削除 button removes the table', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -50,8 +46,7 @@ test('the table toolbar 表を削除 button removes the table', async ({ page })
   await page.getByRole('button', { name: '3行3列の表を挿入' }).click();
   await expect(editor.locator('table')).toBeVisible();
 
-  // insertTable leaves the cursor in a cell, so the table BubbleMenu (appended to
-  // <body>) is showing; its delete button is red and lives at the far end.
+  // The caret is in a cell, so the BubbleMenu (in <body>) is showing.
   const del = page.getByRole('button', { name: '表を削除' });
   await expect(del).toHaveClass(/text-red-600/); // destructive tint
   await del.click();

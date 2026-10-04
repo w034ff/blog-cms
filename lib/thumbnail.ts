@@ -5,12 +5,12 @@
 // value a reader sees comes from `resolveThumbnail`, which falls back to the
 // first upload the body already references — so the archive gained card images
 // without anyone editing it. That fallback is the reason this is a function and
-// not a column read at each call site: three surfaces show the image (the post
-// list, the public link card, and `og:image`) and they must not disagree about
-// which one it is.
+// not a column read at each call site: four surfaces show the image (the post
+// list, the admin post list, the public link card, and `og:image`) and they must
+// not disagree about which one it is.
 
 // The shape a thumbnail may take: a site-relative path into the uploads
-// directory. The character class matches scripts/gc-uploads.mts's `UPLOAD_REF`,
+// directory. The character class matches scripts/upload-refs.mts's `UPLOAD_REF`,
 // which is what decides whether the file is still referenced — a thumbnail this
 // accepts but the sweep does not recognise would be deleted out from under the
 // post.
@@ -64,4 +64,23 @@ export function firstBodyImage(body: string): string | null {
 export function resolveThumbnail(post: { thumbnail: string; body: string }): string | null {
   if (isUploadPath(post.thumbnail)) return post.thumbnail;
   return firstBodyImage(post.body);
+}
+
+// Whether the body still references this exact path as an image, in either syntax. The editor
+// asks it twice, of the old body and the new one, to drop a choice whose image has just left the
+// body (components/PostEditor.tsx) — an image the author marked in place is a body reference, so
+// once it goes the choice is stale. A single absence proves nothing: the field's own picker
+// uploads a card image the body need never contain.
+//
+// Every match is checked rather than just the first, unlike firstBodyImage: the question here is
+// membership, not order.
+export function bodyContainsImage(body: string, path: string): boolean {
+  for (const pattern of [MARKDOWN_IMAGE, HTML_IMAGE]) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(body)) !== null) {
+      if (match[1] === path) return true;
+    }
+  }
+  return false;
 }

@@ -15,7 +15,13 @@ export default async function proxy(req: NextRequest) {
   }
 
   const res = NextResponse.next();
-  if (session) {
+  // Not on a Server Action (`Next-Action` header). Next merges a proxy's Set-Cookie into the
+  // action's own cookie store, and a modified cookie counts as a revalidation: every publish came
+  // back with the whole page re-rendered for the address bar's URL. On a post begun at
+  // /admin/posts/new, whose URL autosave rewrites to /edit, that swapped in the edit page and
+  // remounted the editor — a refused publish lost its message (docs/editor-requirements.md
+  // §12.27). Page loads still slide the window.
+  if (session && !req.headers.has('next-action')) {
     // Sliding session: extend the 14-day window on each authenticated request.
     const refreshed = await encryptSession(session);
     res.cookies.set(SESSION_COOKIE, refreshed, {

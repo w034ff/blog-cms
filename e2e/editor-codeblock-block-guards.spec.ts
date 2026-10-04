@@ -2,16 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { caret, docString } from './editor-probe';
 import { loadMarkdown, selectInside, setRange } from './editor-authoring';
 
-// Converting a code block into a heading or a list destroys it: TipTap's toggleHeading and
-// toggleList both run clearNodes() first, so the code becomes prose and the node's language /
-// filename attributes are gone, silently. guarded-block-toggles.ts makes both commands refuse
-// inside a code block, which greys the toolbar controls out (they read `editor.can()`) and
-// covers the keyboard shortcuts too. Browser-only: the guard lives in a command, not the schema.
+// toggleHeading and toggleList run clearNodes() first, silently turning code into prose and losing
+// language and filename. guarded-block-toggles.ts refuses inside a code block, greying the toolbar
+// (it reads `editor.can()`) and covering the shortcuts.
 
-// The trailing space commits the fence — the input rule requires it (`[\s\n]` in
-// code-block-extension.ts). Without it the fence stays literal until the first space *inside* the
-// code, which lands a code block with language "jsconst" holding "a = 1;": the assertions below
-// still pass, but on a document nobody meant to write.
+// The trailing space commits the fence (`[\s\n]`, code-block-extension.ts); without it the first
+// space inside the code does, producing language "jsconst", and the tests pass on the wrong document.
 async function typeCodeBlock(page: import('@playwright/test').Page): Promise<void> {
   await page.locator('.ProseMirror').click();
   await page.keyboard.type('```js ');
@@ -28,8 +24,7 @@ test('the heading and list controls are disabled inside a code block', async ({ 
   await expect(page.getByRole('button', { name: '大見出し' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '小見出し' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'リスト' })).toBeDisabled();
-  // The quote button stays live on purpose: wrapping a code block in a blockquote preserves it
-  // (`> ```…` is valid markdown), so there is nothing to guard against there.
+  // The quote stays live: `> ```…` preserves the block.
   await expect(page.getByRole('button', { name: '引用' })).toBeEnabled();
 });
 
@@ -38,8 +33,7 @@ test('the heading and list keyboard shortcuts leave a code block intact', async 
   await expect(page.locator('.ProseMirror')).toBeVisible();
   await typeCodeBlock(page);
 
-  // Pin the whole document, not just "contains codeBlock": a fence that fails to commit still
-  // produces a code block, just a different one (see typeCodeBlock above).
+  // The whole document: an uncommitted fence still makes some code block.
   const before = await docString(page);
   expect(before).toBe('doc(codeBlock("const a = 1;"), paragraph)');
 
@@ -51,10 +45,8 @@ test('the heading and list keyboard shortcuts leave a code block intact', async 
   expect(await docString(page)).toBe(before);
 });
 
-// The other half of the guard: it must not reach beyond code blocks. Both controls still work
-// from a plain paragraph, by button and by shortcut, and the heading levels stay capped at 2/3
-// (the post title is the page's only H1) now that Heading is configured in PostEditor's own
-// extension list rather than through StarterKit.
+// Outside a code block both still work, by button and shortcut, with headings capped at 2/3 (the
+// title is the page's H1), configured in PostEditor's extension list.
 test('headings and lists still work outside a code block', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -77,17 +69,15 @@ test('headings and lists still work outside a code block', async ({ page }) => {
   await page.keyboard.type('## via markdown');
   expect(await docString(page)).toContain('heading("via markdown")');
 
-  // `# ` stays literal: H1 is not among the configured levels.
+  // `# ` stays literal: no H1.
   await page.goto('/admin/posts/new');
   await editor.click();
   await page.keyboard.type('# not a heading');
   expect(await docString(page)).toContain('paragraph("# not a heading")');
 });
 
-// A selection that only *reaches into* a code block used to slip past the guard: isActive
-// requires the matching nodes to cover the whole range, so it reported false for a mixed
-// selection and clearNodes shredded the block anyway (Mod-a then 大見出し was enough). The guard
-// scans the selected range instead, so the refusal holds here too.
+// A selection reaching into a code block passed `isActive` (it needs full coverage) and clearNodes
+// shredded the block; the guard scans the range.
 test('a selection spanning a paragraph and a code block leaves the code block intact', async ({
   page,
 }) => {
@@ -108,14 +98,13 @@ test('a selection spanning a paragraph and a code block leaves the code block in
   await expect(page.getByRole('button', { name: '大見出し' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'リスト' })).toBeDisabled();
 
-  // The shortcuts are covered by the same guard, so they can't get past the greyed-out buttons.
+  // The shortcuts share the guard.
   await page.keyboard.press('Control+Alt+Digit2');
   await page.keyboard.press('Control+Shift+Digit8');
   expect(await docString(page)).toBe(before);
 });
 
-// The scan must not over-reach either: a multi-block selection with no code block in it still
-// converts, so the fix costs nothing for ordinary prose.
+// No over-reach: two paragraphs still become two headings.
 test('a selection spanning two paragraphs still becomes two headings', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -130,14 +119,12 @@ test('a selection spanning two paragraphs still becomes two headings', async ({ 
   const heading = page.getByRole('button', { name: '大見出し' });
   await expect(heading).toBeEnabled();
   await heading.click();
-  // Trailing paragraph: TrailingNode keeps one after the last block.
+  // TrailingNode's paragraph.
   expect(await docString(page)).toBe('doc(heading("一つ目"), heading("二つ目"), paragraph)');
 });
 
-// The list guard has to be narrower than the heading one, because only one of toggleList's three
-// paths destroys anything: a selection already inside a list is lifted out or re-typed in place,
-// leaving the children alone. So a list that *contains* a code block must still be un-listable —
-// the code block just moves up a level, intact.
+// The list guard is narrower: only one of toggleList's paths destroys anything. A selection inside
+// a list lifts or re-types in place, so a list holding a code block can be un-listed intact.
 test('a list holding a code block can still be un-listed, code block intact', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -159,8 +146,7 @@ test('a list holding a code block can still be un-listed, code block intact', as
   );
 });
 
-// The other in-place path: switching that same list between 箇条書き and 番号付き only re-types the
-// list node, so the code block survives that too.
+// Switching between 箇条書き and 番号付き only re-types the list.
 test('a list holding a code block can still switch to numbered', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -176,8 +162,7 @@ test('a list holding a code block can still switch to numbered', async ({ page }
   );
 });
 
-// And the destructive path through the same document is still refused: a select-all takes the
-// selection outside the list, so toggleList would clearNodes + wrap rather than lift.
+// A select-all leaves the list, so toggleList would clearNodes and wrap: refused.
 test('a select-all over a list holding a code block is refused', async ({ page }) => {
   await page.goto('/admin/posts/new');
   const editor = page.locator('.ProseMirror');
@@ -192,19 +177,15 @@ test('a select-all over a list holding a code block is refused', async ({ page }
   await page.keyboard.press('Control+Shift+Digit8');
   expect(await docString(page)).toBe(before);
 
-  // Caret inside the nested code block: the same refusal, by the plain isActive route.
+  // Caret in the nested block: refused by plain isActive.
   await selectInside(page, 'codeBlock');
   await expect(page.getByRole('button', { name: 'リスト' })).toBeDisabled();
 });
 
-// The mirror of the guards above: where a code block *is* legal but `setCodeBlock` cannot reach it.
-// A list item is `paragraph block*`, so it can hold one — but only from its second child on, and
-// every route into a code block used to be a conversion of the caret's paragraph, which the schema
-// rightly refuses on an item's first one. The `/` menu, gated on that same `can()`, therefore
-// offered nothing there, while the inherited Mod-Alt-c ran an ungated toggleCodeBlock and lifted
-// the item out of the list, making its text the code. insertCodeBlock (code-block-extension.ts)
-// converts where converting is legal and otherwise places the block as the item's next child, the
-// way the callout and table buttons already did.
+// A list item (`paragraph block*`) may hold a code block from its second child on, but every route
+// converted the caret's paragraph, refused on the first one: `/` offered nothing and Mod-Alt-c
+// lifted the item out. insertCodeBlock (code-block-extension.ts) converts where legal, else adds the
+// block as the item's next child.
 async function caretIn(page: Page, text: string, offset: number): Promise<void> {
   const at = await page.evaluate(
     ({ text, offset }) => {
@@ -233,14 +214,13 @@ test('a code block goes inside a list item, by shortcut and by the / menu', asyn
   await expect(editor).toBeVisible();
   await editor.click();
 
-  // The caret is at the END of the item's text here and MID-text below: both must leave the item
-  // with one paragraph and one code block. insertContentAt targets the position past the whole
-  // textblock, where plain insertContent would have split the paragraph around the new block.
+  // At the item's end here and mid-text below: one paragraph and one code block either way.
+  // insertContentAt targets past the textblock, so the paragraph is not split.
   await loadMarkdown(page, '- 項目一\n- 項目二\n');
   await caretIn(page, '項目一', 3);
   await page.keyboard.press('Control+Alt+c');
   expect(await docString(page)).toBe(ITEM_WITH_CODE);
-  // The caret lands inside the new block, so the next thing typed is code — the point of it.
+  // The caret is in the new block, ready for code.
   expect(await caret(page)).toBe('@0');
   await page.keyboard.type('const x = 1;');
   expect(await docString(page)).toContain('codeBlock("const x = 1;")');
@@ -250,7 +230,7 @@ test('a code block goes inside a list item, by shortcut and by the / menu', asyn
   await page.keyboard.press('Control+Alt+c');
   expect(await docString(page)).toBe(ITEM_WITH_CODE);
 
-  // The `/` menu offers the row there now, and picking it lands the same document.
+  // `/` offers the row now, with the same result.
   await loadMarkdown(page, '- 項目一\n- 項目二\n');
   await caretIn(page, '項目一', 0); // the menu's trigger is startOfLine
   await page.keyboard.type('/');
@@ -266,22 +246,20 @@ test('insertCodeBlock leaves the contexts that refuse a code block alone', async
   await expect(editor).toBeVisible();
   await editor.click();
 
-  // A plain paragraph still converts in place — the branch that was always there.
+  // A plain paragraph still converts in place.
   await loadMarkdown(page, '本文です\n');
   await caretIn(page, '本文です', 2);
   await page.keyboard.press('Control+Alt+c');
   expect(await docString(page)).toContain('codeBlock("本文です")');
 
-  // Inside a fence the shortcut still toggles back out to a paragraph. The inherited binding is
-  // the only keyboard way out, so only the *creating* direction is rerouted.
+  // Inside a fence the shortcut still toggles out, the only keyboard way; only creation is rerouted.
   await loadMarkdown(page, '```ts\nconst x = 1;\n```\n');
   await caretIn(page, 'const x = 1;\n', 3);
   await page.keyboard.press('Control+Alt+c');
   expect(await docString(page)).not.toContain('codeBlock');
 
-  // A table cell is `paragraph+` and a code block in one has no GFM pipe form, so both routes stay
-  // shut: the shortcut is a no-op, and `/` at the cell's line start remains an ordinary character
-  // rather than opening a menu with nothing in it (the invariant slash-command.ts documents).
+  // A cell is `paragraph+`, and a code block there has no pipe form: the shortcut does nothing and
+  // `/` stays a character (slash-command.ts).
   await loadMarkdown(page, '| A | B |\n| --- | --- |\n| c1 | c2 |\n');
   const before = await docString(page);
   await caretIn(page, 'c1', 2);

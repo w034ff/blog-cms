@@ -1,9 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// Drives the real editor: the strikethrough toolbar button must sit alongside
-// the other inline-format controls, toggle the `strike` mark on the selection
-// (reflected in its active tint), and round-trip to GFM `~~…~~` in the markdown
-// mirrored into the hidden body input that autosave/publish read.
+// The strike button toggles the mark (active tint) and round-trips to `~~…~~` in the hidden body.
 test('strikethrough button toggles strike and serializes to ~~', async ({ page }) => {
   await page.goto('/admin/posts/new');
 

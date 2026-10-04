@@ -2,20 +2,15 @@ import { test, expect, type Page } from '@playwright/test';
 import { docString, markdown, settle } from './editor-probe';
 import { loadMarkdown, setRange } from './editor-authoring';
 
-// The link mark is not inclusive (components/editor/link-extension.ts, docs/link-requirements.md
-// §5.5.12): what is typed at a link's right edge stays out of the link, the same as at its left.
-//
-// `extension-link` writes `inclusive() { return this.options.autolink; }`, so keeping autolink on
-// (§4) had also decided the right edge. In Japanese prose the character after a link is usually 。
-// or 、, and it was being swallowed: `前[リンク](…)後` became `前[リンク。](…)後` on one keystroke.
-//
-// The rest of this file is the other half of that change: the things that ride on the same option
-// and had to be measured *not* to move. Only one did — the card, which used to read the link off
-// the caret and now resolves it from the text before the caret (LinkBubble.tsx `linkAtCaret`). The
-// card's own cases live in editor-link-bubble.spec.ts; what is pinned here is the boundary itself.
+// The link mark is not inclusive (link-extension.ts, docs/link-requirements.md §5.5.12): text typed
+// at the right edge stays out, as at the left. `extension-link`'s
+// `inclusive() { return this.options.autolink; }` tied it to autolink (§4), and the 。 after a link
+// was swallowed. The rest pins what rides on the option and must not move; the card now resolves
+// from the text before the caret (`linkAtCaret`, whose cases, 7f among them, are in
+// components/editor/link-at-caret.test.ts; the card's are in editor-link-bubble.spec.ts).
 
 const MD = '前[リンク](https://example.com "タイトル")後\n';
-// 「前リンク後」— paragraph content starts at 1. 前 = 1..2, リンク = 2..5, 後 = 5..6.
+// 「前リンク後」: 前 = 1..2, リンク = 2..5, 後 = 5..6.
 const LINK_LEFT_EDGE = 2;
 const LINK_RIGHT_EDGE = 5;
 
@@ -41,8 +36,7 @@ async function openEditor(page: Page, md?: string): Promise<void> {
 }
 
 test('a character typed at a link right edge stays outside the link', async ({ page }) => {
-  // The gesture this change exists for. Asserted on the markdown as well as the document, because
-  // what is at stake is the stored form: `[リンク。](…)` publishes the 。 inside the anchor.
+  // The gesture this is for, asserted on the markdown too: `[リンク。](…)` publishes the 。 linked.
   await openEditor(page, MD);
   await setRange(page, LINK_RIGHT_EDGE);
   await page.keyboard.type('。');
@@ -52,8 +46,7 @@ test('a character typed at a link right edge stays outside the link', async ({ p
 });
 
 test('a character typed at a link left edge stays outside the link', async ({ page }) => {
-  // Unchanged by all of this — the left edge was never inclusive. Kept so the pair reads as one
-  // rule rather than as one measured edge and one assumed one.
+  // The left edge never was inclusive; kept so the pair is one rule.
   await openEditor(page, MD);
   await setRange(page, LINK_LEFT_EDGE);
   await page.keyboard.type('新');
@@ -62,9 +55,8 @@ test('a character typed at a link left edge stays outside the link', async ({ pa
 });
 
 test('autolink still links a typed URL followed by a space', async ({ page }) => {
-  // `inclusive()` returned `this.options.autolink`, so the two looked like one decision. They are
-  // not: the autolink plugin applies the mark to an explicit range from its own appendTransaction
-  // (`tokenize` → `tr.addMark(link.from, link.to, …)`), and never asks what the caret carries.
+  // Autolink marks an explicit range from `appendTransaction` (`tokenize` →
+  // `tr.addMark(link.from, link.to, …)`), never asking what the caret carries.
   await openEditor(page);
   await page.keyboard.type('https://example.org ');
   await settle(page);
@@ -72,8 +64,7 @@ test('autolink still links a typed URL followed by a space', async ({ page }) =>
 });
 
 test('typing on after an autolink stays outside it', async ({ page }) => {
-  // True before the change too, and for a reason that has nothing to do with inclusiveness: the
-  // space that triggers autolink is itself outside the marked range, so the caret is already out.
+  // The triggering space is outside the range, so the caret is already out.
   await openEditor(page);
   await page.keyboard.type('https://example.org /foo');
   await settle(page);
@@ -81,8 +72,7 @@ test('typing on after an autolink stays outside it', async ({ page }) => {
 });
 
 test('the []() input rule still leaves the text after it unlinked', async ({ page }) => {
-  // The rule used to need `tr.removeStoredMark(type)` for this; the mark not being inclusive is
-  // what retired that line (link-input-rule.ts). The behaviour it bought has to stay.
+  // No longer needs `tr.removeStoredMark(type)` (link-input-rule.ts); the behaviour must stay.
   await openEditor(page);
   await page.keyboard.type('[断片](#見出し)つづき');
   await settle(page);
@@ -93,17 +83,10 @@ test('the []() input rule still leaves the text after it unlinked', async ({ pag
 test('the card goes away when an IME keystroke moves the caret out of the link', async ({
   page,
 }) => {
-  // Reported 2026-08-17: typing at a link's right edge left the card standing over a caret that
-  // was no longer in a link. Only through an IME, which is why nothing above catches it —
-  // `@tiptap/extension-bubble-menu`'s `updateHandler` opens with `const { composing } = view;` and
-  // returns, and the transaction carrying the composed text arrives while that flag is still set.
-  // The plugin re-evaluates only on a transaction that moves the selection or changes the
-  // document, so there is no later one to ask. Before the mark stopped being inclusive the typed
-  // character stayed inside the link and the card was right to stay, which is why this surfaced
-  // with §5.5.12 rather than before it.
-  //
-  // Composition is synthesized over CDP; `keyboard.type` never sets `view.composing`, and a spec
-  // written with it passes against the broken build (measured).
+  // Typing at the right edge through an IME left the card over a caret no longer in a link:
+  // `@tiptap/extension-bubble-menu`'s `updateHandler` returns on `const { composing } = view;`, and
+  // no later transaction re-asks. Composition over CDP: `keyboard.type` never sets `view.composing`
+  // and passes on the broken build.
   await openEditor(page, MD);
   await setRange(page, LINK_RIGHT_EDGE);
   await expect(card(page)).toBeVisible();
@@ -116,7 +99,7 @@ test('the card goes away when an IME keystroke moves the caret out of the link',
 });
 
 test('a composition inside the link keeps the card', async ({ page }) => {
-  // The other half, so the repair above is not "hide whenever anything is composed".
+  // The other half: not "hide whenever composing".
   await openEditor(page, MD);
   await setRange(page, LINK_RIGHT_EDGE - 1);
   await expect(card(page)).toBeVisible();
@@ -126,29 +109,4 @@ test('a composition inside the link keeps the card', async ({ page }) => {
   await settle(page);
   expect(await docString(page)).toBe('doc(paragraph("前", link("リンあク"), "後"))');
   await expect(card(page)).toBeVisible();
-});
-
-test('the caret at a right edge no longer reads as being in a link', async ({ page }) => {
-  // The fact the card had to be rewritten around, pinned directly: `isActive('link')` and
-  // `getAttributes('link')` — the two questions LinkBubble used to ask — both answer "no link" at
-  // the right edge now. A future bump that restored inclusiveness would turn this red, which is the
-  // point: the card's own resolution (`linkAtCaret`) would then be answering a question nobody asks.
-  await openEditor(page, MD);
-  await setRange(page, LINK_RIGHT_EDGE);
-  const atCaret = await page.evaluate(() => {
-    const el = document.querySelector('.ProseMirror') as
-      | (Element & {
-          editor?: {
-            isActive(name: string): boolean;
-            getAttributes(name: string): Record<string, unknown>;
-          };
-        })
-      | null;
-    if (!el?.editor) throw new Error('no live editor on .ProseMirror');
-    return {
-      isActive: el.editor.isActive('link'),
-      attrs: Object.keys(el.editor.getAttributes('link')).length,
-    };
-  });
-  expect(atCaret).toEqual({ isActive: false, attrs: 0 });
 });

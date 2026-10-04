@@ -3,26 +3,15 @@ import { caret, docString, historyState, markdown, settle } from './editor-probe
 import { closeHistory, loadMarkdown, setRange } from './editor-authoring';
 import { caretPoint, cdpNativeDrag, dragSelect } from './native-drag';
 
-// `isolating` blocks placement, not ranged replacement. prosemirror-transform's isolating checks
-// guard where a slice may be *placed*; they say nothing about the frontier a ranged replacement
-// closes over — so a selection spanning a callout's or code block's edge corrupted the document on
-// the most ordinary editing path there is: select a range, then press a key.
+// `isolating` guards where a slice is placed, not the frontier a ranged replacement closes over, so a
+// selection across a callout's or code block's edge corrupted the document on select-then-key: the
+// lower edge swallowed the block below into the box, the upper edge dissolved the box into the
+// paragraph above (a fence losing its language and filename).
 //
-// Two directions, both measured before the fix:
-//   • lower edge — the box swallowed the block below (`callout(paragraph("囲み段落です"))`, and for
-//     a code block the prose-becomes-code failure `isolating` was added to prevent);
-//   • upper edge — the box was *destroyed*, its content absorbed into the paragraph above as plain
-//     prose (`paragraph("前のの中身です")`), taking a fence's language and filename with it.
-//
-// components/editor/isolating-boundary.ts clamps the replacement to the boundary instead: the
-// pieces inside and outside the box are deleted separately and the boundary is left standing. Every
-// gesture that replaces a range goes through that one rule, which is what these specs pin — the
-// keys, the chords, typing, Enter, cut, paste, an IME commit and a move-drag's own source deletion
-// all reach the same deletion by different routes. Alongside them are the cases that must *not*
-// clamp: a selection wholly inside one box, one spanning a whole box, select-all, and a
-// multi-cell table selection.
-//
-// Browser-only: this is live-editor edit behaviour, invisible to tsc and vitest.
+// components/editor/isolating-boundary.ts clamps the replacement at the boundary. Every
+// range-replacing gesture reaches that one rule: keys, chords, typing, Enter, cut, paste, IME, a
+// move-drag's source deletion. Also pinned: what must not clamp (inside one box, a whole box,
+// select-all, a multi-cell selection).
 
 // The issue's own reproduction document.
 const CALLOUT = `前の段落です
@@ -33,12 +22,9 @@ const CALLOUT = `前の段落です
 
 後の段落です`;
 
-// The same shape again with a table in the middle — the boundary the callout fix did not reach. A
-// table is the one node here with *two* isolating levels: @tiptap/extension-table marks the `table`
-// as well as each cell. The clamp took the outermost, so it ran the deletion to the table's own
-// content edge — which starts at the first row — and a Backspace from the paragraph above into a
-// body cell took the header row with it. A headerless table has no GFM pipe form, so the post then
-// saved as raw HTML. The cell is the box the endpoint is in; the table is only the frame.
+// A table has two isolating levels (`table` and each cell). The clamp once took the outermost, so
+// Backspace from above into a body cell took the header row, and a headerless table saves as raw
+// HTML. The cell is the box the endpoint is in; the table is only the frame.
 const TABLE = `前の段落です
 
 | 元A | 元B |
@@ -47,17 +33,14 @@ const TABLE = `前の段落です
 
 後の段落です`;
 
-// The whole table as it must come back out of the serializer: a header row, a delimiter row, and
-// one body row. What the defect actually cost was this — a headerless table has no GFM pipe form,
-// so the serializer falls back to raw HTML (`<table style="min-width: 50px;">…`), losing the
-// column alignment on the public page, `<thead>`, and any chance of hand-editing the markdown.
+// The table as the serializer must write it. Headerless, it falls back to raw HTML, losing
+// alignment, `<thead>` and hand-editability.
 function pipeTable(bodyRow: string): string {
   return `| 元A | 元B |\n| --- | --- |\n${bodyRow}`;
 }
 
-// The same shape with a fenced block in the callout's place. The fence carries a language *and* a
-// filename precisely so the upper-edge test can show they survive — `doc.toString()` prints no
-// attributes, so a spec that only compared tree shapes would pass while the fence was being lost.
+// A fence with a language and a filename: `doc.toString()` prints no attributes, so only these show
+// the fence surviving.
 const CODE = `前の段落です
 
 \`\`\`ts:a.ts
@@ -66,9 +49,7 @@ const x = 1;
 
 後の段落です`;
 
-// The document position `chars` characters into the textblock whose text is `text`. Every endpoint
-// these specs need is "part-way into this line, part-way into that one", which a raw number states
-// no more precisely and a great deal less legibly.
+// The position `chars` characters into the textblock reading `text`: "part-way into this line".
 function posInText(page: Page, text: string, chars: number): Promise<number> {
   return page.evaluate(
     ({ line, offset }) => {
@@ -97,9 +78,7 @@ function posInText(page: Page, text: string, chars: number): Promise<number> {
   );
 }
 
-// Load the document, focus the editor, and put an exact range on it. The click is what gives the
-// editor DOM focus — `setRange` only moves ProseMirror's own selection, and keystrokes sent to an
-// unfocused editor land nowhere at all (which reads, in a spec, as a document that never changed).
+// Load, focus (setRange moves only ProseMirror's selection; unfocused keys go nowhere), set range.
 async function selectAcross(
   page: Page,
   markdown: string,
@@ -118,10 +97,8 @@ async function openEditor(page: Page): Promise<void> {
   await expect(page.locator('.ProseMirror')).toBeVisible();
 }
 
-// The issue's headline gesture: drag from inside the callout down into the paragraph below, press
-// Backspace. Before the fix the paragraph's text was pulled *inside* the box and an empty paragraph
-// was left behind. The boundary now holds, and both sides keep exactly what the selection didn't
-// cover.
+// The headline gesture: from inside the callout into the paragraph below, Backspace. The boundary
+// holds and both sides keep what the selection did not cover.
 test('Backspace across a callout lower edge deletes both sides, keeping the box', async ({
   page,
 }) => {
@@ -139,8 +116,7 @@ test('Backspace across a callout lower edge deletes both sides, keeping the box'
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("段落です"))');
 
-  // The caret stays where the selection started — inside the box — so the next keystroke lands
-  // there rather than below it.
+  // The caret stays inside the box, where the selection started.
   expect(await caret(page)).toBe('囲み@2');
   await page.keyboard.type('Z');
   await expect
@@ -148,8 +124,7 @@ test('Backspace across a callout lower edge deletes both sides, keeping the box'
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲みZ")), paragraph("段落です"))');
 });
 
-// Delete is the same ranged replacement as Backspace and was broken identically — the key pressed
-// makes no difference to a non-empty selection.
+// Delete is the same ranged replacement.
 test('Delete across a callout lower edge clamps the same way', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -166,8 +141,8 @@ test('Delete across a callout lower edge clamps the same way', async ({ page }) 
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("段落です"))');
 });
 
-// The word-delete chords replace a non-empty selection exactly like the plain keys, and the code
-// block binds all six of them itself (deleteSoleCodeChar), so all six had to answer here too.
+// The word-delete chords replace a selection like the plain keys, and the code block binds all six
+// (deleteSoleCodeChar).
 test('the word-delete chords across a callout edge clamp too', async ({ page }) => {
   await openEditor(page);
   const clamped =
@@ -192,9 +167,8 @@ test('the word-delete chords across a callout edge clamp too', async ({ page }) 
   await expect.poll(() => docString(page)).toBe(clamped);
 });
 
-// Typing over the same range reproduced the corruption with no key-handler involved at all — this
-// is the entry point that made "guard the drag" the wrong layer to fix it at. The character lands
-// at the selection's start, inside the box.
+// Typing corrupts with no key handler, which is why guarding a drag was the wrong layer. The
+// character lands inside the box.
 test('typing over a callout lower edge inserts inside the box', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -211,9 +185,7 @@ test('typing over a callout lower edge inserts inside the box', async ({ page })
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲みX")), paragraph("段落です"))');
 });
 
-// The upper edge, which was the destructive direction: the callout used to disappear entirely and
-// its surviving text end up in the paragraph above as ordinary prose. Now the paragraph is
-// truncated, the box survives, and the caret stays above it.
+// The upper edge, the destructive one: the paragraph is truncated, the box survives.
 test('Backspace across a callout upper edge keeps the box standing', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -231,10 +203,7 @@ test('Backspace across a callout upper edge keeps the box standing', async ({ pa
   expect(await caret(page)).toBe('前の@2');
 });
 
-// The code block's lower edge is the case its own `isolating` comment names outright: without the
-// boundary, "Backspace at the start of the block below merges that block's text *into* the code —
-// turning prose into code (and corrupting the stored fence)". Typing reached that with no Backspace
-// at all, and measured `codeBlock("coX段落です")` before the fix.
+// The case the code block's own `isolating` comment names: prose merged into the code.
 test('typing across a code block lower edge does not turn prose into code', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -249,13 +218,12 @@ test('typing across a code block lower edge does not turn prose into code', asyn
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), codeBlock("coX"), paragraph("段落です"))');
-  // The fence itself is intact — the attributes `doc.toString()` doesn't print.
+  // The fence's attributes, which `doc.toString()` does not print.
   await expect(page.locator('.code-block-filename')).toHaveValue('a.ts');
   await expect(page.locator('.code-block-lang')).toHaveValue('ts');
 });
 
-// The code block's upper edge, where the loss was worst: the block was destroyed and the code
-// became a paragraph, so the fence's language and filename went with it. Both must come through.
+// The upper edge used to turn the code into a paragraph, losing language and filename.
 test('Backspace across a code block upper edge keeps the fence and its attributes', async ({
   page,
 }) => {
@@ -276,10 +244,8 @@ test('Backspace across a code block upper edge keeps the fence and its attribute
   await expect(page.locator('.code-block-lang')).toHaveValue('ts');
 });
 
-// The over-correction guard, first half: a selection made wholly inside one callout crosses no
-// edge, so it must take ProseMirror's own path untouched. The clamp asks whether each endpoint has
-// an isolating ancestor the *other* endpoint is outside of — here the callout contains both, so
-// there is nothing to clamp.
+// Not over-corrected: wholly inside one callout, no endpoint has an isolating ancestor the other is
+// outside of, so ProseMirror's own path runs.
 test('a selection wholly inside a callout deletes normally', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -298,10 +264,8 @@ test('a selection wholly inside a callout deletes normally', async ({ page }) =>
     );
 });
 
-// The other half: a selection running from the paragraph above, clean across the *whole* callout,
-// into the paragraph below. Neither endpoint sits inside a box the other is outside of, so the
-// callout is covered end-to-end and deleting it whole — joining the two partial paragraphs — is
-// exactly right. Clamping here would have left an empty box behind.
+// A selection across the whole callout deletes it and joins the halves; clamping would leave an
+// empty box.
 test('a selection spanning a whole callout still deletes it', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -313,14 +277,12 @@ test('a selection spanning a whole callout still deletes it', async ({ page }) =
 
   await page.keyboard.press('Backspace');
 
-  // "前の" + "段落です" — the two surviving halves, joined into one paragraph.
+  // The two surviving halves, joined.
   await expect.poll(() => docString(page)).toBe('doc(paragraph("前の段落です"))');
 });
 
-// Enter replaces the selection and then splits, so it corrupted the document the same way — it
-// measured `callout(paragraph("囲み"), paragraph("段落です"))`, the following paragraph pulled into
-// the box. Clamped, the split happens inside the box the selection started in and the paragraph
-// below stays outside it.
+// Enter replaces then splits, pulling the paragraph below into the box; clamped, the split stays
+// inside the box.
 test('Enter across a callout lower edge splits inside the box', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -339,10 +301,8 @@ test('Enter across a callout lower edge splits inside the box', async ({ page })
     );
 });
 
-// Enter on a range that crosses nothing must keep behaving exactly as it did — one split, not two.
-// The clamp is asked before the chain runs for this reason: a TipTap chain dispatches whether or
-// not its commands succeeded, so an unguarded chain would split, dispatch, report failure, and hand
-// the same Enter to the next binding to split again.
+// A range crossing nothing splits once. The clamp is asked before the chain: a TipTap chain
+// dispatches whether or not its commands succeed, so the next binding would split again.
 test('Enter on an ordinary range still splits once', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -361,9 +321,8 @@ test('Enter on an ordinary range still splits once', async ({ page }) => {
     );
 });
 
-// Enter left inside a code block must still make a newline rather than split the block in two —
-// which is why the clamp is followed by baseKeymap's own Enter chain (newlineInCode first) instead
-// of a bare splitBlock.
+// Inside a code block Enter still makes a newline: baseKeymap's chain (newlineInCode first)
+// follows the clamp, not a bare splitBlock.
 test('Enter inside a code block still inserts a newline', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -382,10 +341,8 @@ test('Enter inside a code block still inserts a newline', async ({ page }) => {
     );
 });
 
-// Cut ends in prosemirror-view's own `tr.deleteSelection()`, which is the same ranged replacement
-// and was broken identically — and it is reachable from the context menu as well as the chord, so
-// it needed a DOM handler rather than a keymap entry. The clipboard half still happens: the text
-// comes back on paste.
+// Cut ends in prosemirror-view's `tr.deleteSelection()` and is also reachable from the context
+// menu, so it needed a DOM handler. The text still reaches the clipboard.
 test('cut across a callout edge clamps and still copies', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -401,9 +358,8 @@ test('cut across a callout edge clamps and still copies', async ({ page }) => {
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("段落です"))');
 
-  // The cut really put the range on the clipboard — pasting brings both halves back. The box does
-  // not come with them: the slice carries a half-selected callout, which the paste guard unwraps
-  // (see callout-slice-guard.ts), so the text lands as body blocks of the callout the caret is in.
+  // The paste brings both halves back; the half-selected callout is unwrapped by the paste guard
+  // (callout-slice-guard.ts).
   await page.keyboard.press('Control+v');
   await expect
     .poll(() => docString(page))
@@ -412,9 +368,7 @@ test('cut across a callout edge clamps and still copies', async ({ page }) => {
     );
 });
 
-// The clamped deletion is one transaction, not one per piece — so undo is still a single step. The
-// issue measured undo as already correct before the fix, which made it something the fix had to
-// avoid regressing rather than something it had to repair.
+// One transaction, so one undo; correct before the fix, and must not regress.
 test('one undo restores a clamped deletion', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -423,9 +377,7 @@ test('one undo restores a clamped deletion', async ({ page }) => {
     { line: '囲みの中身です', at: 2 },
     { line: '後の段落です', at: 2 },
   );
-  // The setContent above is an edit like any other, and an undo that steps over both it and the
-  // deletion would read a grouping artefact as a defect. The break is stated rather than waited out
-  // — it was a 600ms pause against a 500ms `newGroupDelay`, i.e. 100ms of margin.
+  // Break the history so the undo covers only the deletion (e2e/README.md).
   await closeHistory(page);
   const before = (await historyState(page)).undoDepth;
 
@@ -433,8 +385,7 @@ test('one undo restores a clamped deletion', async ({ page }) => {
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("段落です"))');
-  // One transaction, not one per piece — the claim this test exists to keep from regressing, and
-  // the count is what states it. The document check alone cannot tell one step from two.
+  // One transaction: only the count can tell one step from two.
   expect((await historyState(page)).undoDepth).toBe(before + 1);
 
   await page.keyboard.press('Control+z');
@@ -446,15 +397,14 @@ test('one undo restores a clamped deletion', async ({ page }) => {
   expect((await historyState(page)).undoDepth).toBe(before);
 });
 
-// Paste replaces the selected range too, so Ctrl+V reached the same corruption as Backspace. This
-// is the branch callout-slice-guard.ts passes on — a slice with no callout to repair — which the
-// isolating plugin's own `handlePaste` picks up.
+// Paste replaces the range too. A slice with no callout, which callout-slice-guard.ts passes on to
+// this plugin's `handlePaste`.
 test('pasting over a callout edge lands inside the box', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CALLOUT);
   await page.locator('.ProseMirror').click();
 
-  // Copy 「前の段落です」 whole, then paste it over a selection crossing the callout's lower edge.
+  // Copy 「前の段落です」, paste over the callout's lower edge.
   await setRange(
     page,
     await posInText(page, '前の段落です', 0),
@@ -475,11 +425,9 @@ test('pasting over a callout edge lands inside the box', async ({ page }) => {
     );
 });
 
-// The other paste branch, and the one that pins the plugin order: a slice carrying a half-selected
-// callout needs the callout guard's repair *and* this clamp. `someProp` stops at the first
-// handlePaste to return true, so only one of the two plugins ever runs for a given paste — which is
-// why the callout guard applies the clamp itself and this extension sits below it in priority. If
-// that ordering inverted, the box would come back into the document here.
+// A half-callout slice needs the callout guard's repair and the clamp, but `someProp` stops at the
+// first `handlePaste` returning true, so the callout guard applies the clamp itself and ranks above
+// this extension. Inverted, the box would come back here.
 test('pasting a half-callout slice over a callout edge is both repaired and clamped', async ({
   page,
 }) => {
@@ -487,8 +435,7 @@ test('pasting a half-callout slice over a callout edge is both repaired and clam
   await loadMarkdown(page, CALLOUT);
   await page.locator('.ProseMirror').click();
 
-  // Copy across the callout's lower edge: the slice is `<callout(paragraph("中身です")),
-  // paragraph("後の")>`, the shape that forces the box to be kept (see callout-paste-guard.spec.ts).
+  // The slice `<callout(paragraph("中身です")), paragraph("後の")>` (callout-paste-guard.spec.ts).
   await setRange(
     page,
     await posInText(page, '囲みの中身です', 3),
@@ -502,7 +449,7 @@ test('pasting a half-callout slice over a callout edge is both repaired and clam
   );
   await page.keyboard.press('Control+v');
 
-  // No second box anywhere, and the paragraph below the callout is still outside it.
+  // No second box; the paragraph below stays outside.
   await expect(page.locator('.ProseMirror .markdown-alert')).toHaveCount(1);
   await expect
     .poll(() => docString(page))
@@ -537,11 +484,9 @@ test('pasting over a code block edge keeps the fence and its attributes', async 
   await expect(page.locator('.code-block-lang')).toHaveValue('ts');
 });
 
-// IME is the typing path on a Japanese site, not an edge case — and a composition never reaches
-// `handleTextInput`: the browser edits the DOM itself and ProseMirror reads the result back at
-// composition end, so a commit over a spanning selection reproduced the corruption
-// (`callout(paragraph("囲みあ段落です")), paragraph`) with the clamp never consulted. The deletion
-// is done at `compositionstart` instead, before the browser removes the selected text.
+// IME is the typing path on a Japanese site, and a composition never reaches `handleTextInput`: the
+// browser edits the DOM and ProseMirror reads it back at the end. So the deletion runs at
+// `compositionstart`, before the browser removes the text.
 test('an IME commit over a callout edge lands inside the box', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CALLOUT);
@@ -552,13 +497,11 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     await posInText(page, '後の段落です', 2),
   );
 
-  // The setContent above is an edit like any other; break the history here so the undos below can
-  // only be undoing the composition (this was a 600ms pause against a 500ms `newGroupDelay`).
+  // Break the history so the undos below can only undo the composition.
   await closeHistory(page);
   const before = (await historyState(page)).undoDepth;
 
-  // Playwright's keyboard cannot compose, so the IME is driven over CDP directly: set a
-  // composition, then commit it.
+  // Playwright cannot compose, so the IME is driven over CDP.
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Input.imeSetComposition', { text: 'あ', selectionStart: 1, selectionEnd: 1 });
   await cdp.send('Input.insertText', { text: 'あ' });
@@ -567,13 +510,8 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲みあ")), paragraph("段落です"))');
 
-  // This is the one gesture whose clamp is a transaction of its own: the deletion is dispatched at
-  // compositionstart and the composition's own read-back arrives as a second one, where every other
-  // entry point here builds a single transaction and is therefore a single undo step. Whether
-  // prosemirror-history groups these two depends on how long the composition took — within
-  // newGroupDelay (500ms) it is one step, and a composition the author lingered over is two — so
-  // what is asserted is what actually holds either way: undo converges on the original document,
-  // and never leaves it half-deleted.
+  // The one clamp that is its own transaction: the composition's read-back is a second one, grouped or
+  // not by timing (`newGroupDelay`). So undo must converge on the original, never half-deleted.
   const original =
     'doc(paragraph("前の段落です"), callout(paragraph("囲みの中身です")), paragraph("後の段落です"))';
   for (let press = 0; press < 3 && (await docString(page)) !== original; press += 1) {
@@ -581,14 +519,11 @@ test('an IME commit over a callout edge lands inside the box', async ({ page }) 
     await settle(page);
   }
   expect(await docString(page)).toBe(original);
-  // Whichever of the two it cost, the undos stopped there rather than eating the load as well —
-  // stated as a count, since a document that matches `original` cannot distinguish the two.
+  // The undos stopped at the original, not eating the load: a count, since the text cannot tell.
   expect((await historyState(page)).undoDepth).toBe(before);
 });
 
-// The control for the above: composing at a plain caret, and over a selection that crosses nothing,
-// must be completely untouched — the clamp dispatches nothing in either case, so composition keeps
-// ProseMirror's own path.
+// Control: at a caret, or over a range crossing nothing, the clamp dispatches nothing.
 test('composing at a caret and over an ordinary selection is unaffected', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CALLOUT);
@@ -619,28 +554,19 @@ test('composing at a caret and over an ordinary selection is unaffected', async 
     );
 });
 
-// The drop path's own source deletion, which nothing above could reach: prosemirror-view deletes a
-// move-drag's source with a bare `tr.deleteSelection()` — no keymap, no DOM handler — so the drop
-// is performed by isolating-boundary.ts itself, mirroring upstream with the clamped deletion in its
-// place. The code block is the node where getting that wrong costs the most: the fence goes with it.
+// A move-drag's source deletion is a bare `tr.deleteSelection()` with no keymap or handler, so
+// isolating-boundary.ts performs the drop itself with the clamped deletion.
 test('dragging a selection out of a code block leaves the fence standing', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CODE);
   const editor = page.locator('.ProseMirror');
   await editor.click();
 
-  // Drag-select the paragraph below *upwards* into the code — the same cross-edge range, made the
-  // direction that actually produces one here. Dragging downwards out of a `<pre>` collapses the
-  // native selection to a caret in Chrome, which leaves no range to pick up and no drag at all.
+  // Upwards from the paragraph: dragging down out of a `<pre>` collapses Chrome's selection.
   const above = await editor.getByText('前の段落です').boundingBox();
   if (!above) throw new Error('missing box');
-  // Both ends are measured caret boundaries (caretPoint, e2e/native-drag.ts). The paragraph end
-  // decides how much of it crosses the edge, which is what the clamp is being asked about. The code
-  // end has to be in the code's *text*: the fence renders a trailing "\n", so the <code> box is two
-  // lines tall and `code.y + height / 2` — what this used to aim at — lands on the empty second
-  // line. Chrome 143 still swept the line above into the selection on the way there; Chrome 151
-  // anchors it at that empty line instead, so the range covered no code at all and the slice
-  // carried no fence to the destination.
+  // Measured caret boundaries (e2e/native-drag.ts). The code end must be in the code's text: the
+  // <code> box is two lines tall, and its midpoint's empty line anchors a range with no code.
   const dragFrom = await dragSelect(
     page,
     await caretPoint(editor.getByText('後の段落です'), 3),
@@ -649,10 +575,7 @@ test('dragging a selection out of a code block leaves the fence standing', async
 
   await cdpNativeDrag(page, dragFrom, { x: above.x + 10, y: above.y + above.height / 2 });
 
-  // Two fences: the one the selection came out of, still standing where it was, and the one the
-  // slice carried to the destination. Before the fix the drag's own deletion destroyed the source
-  // block — the code became a paragraph and the fence's language and filename went with it, which
-  // would leave exactly one here.
+  // Two fences: the source still standing, and the carried copy. Without the fix, one.
   await expect(editor.locator('pre code')).toHaveCount(2);
   await expect(page.locator('.code-block-filename').first()).toHaveValue('a.ts');
   await expect(page.locator('.code-block-filename').last()).toHaveValue('a.ts');
@@ -660,11 +583,8 @@ test('dragging a selection out of a code block leaves the fence standing', async
   await expect(page.locator('.code-block-lang').last()).toHaveValue('ts');
 });
 
-// The over-correction guard for the selection *kinds*, which is what the clamp gates on rather than
-// the range: Ctrl+A then a keystroke means "replace the document", boxes included, and it must not
-// come back as a callout the deletion tiptoed around. An AllSelection's endpoints sit at depth 0,
-// where there are no ancestors to be isolating, so the clamp declines it structurally — and the
-// TextSelection gate in handleTextInput says so outright.
+// Selection kinds: Ctrl+A then a key replaces everything. An AllSelection's endpoints are at depth
+// 0 with no isolating ancestors, and handleTextInput gates on TextSelection.
 test('select-all then typing still replaces the whole document', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CALLOUT);
@@ -680,18 +600,15 @@ test('select-all then typing still replaces the whole document', async ({ page }
   await expect.poll(() => docString(page)).toBe('doc(paragraph)');
 });
 
-// The other excluded kind, and the one with a real chance of colliding: table cells are `isolating`
-// too, so every multi-cell selection spans isolating edges. Typing over one must stay
-// prosemirror-tables' own behaviour — clear the selected cells, then insert at the caret — not a
-// clamped deletion that tiptoes around each cell wall.
+// Cells are isolating too, so a CellSelection spans isolating edges; typing must stay
+// prosemirror-tables' clear-then-insert.
 test('typing over a multi-cell selection still clears the cells', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, '| a | b |\n| --- | --- |\n| c | d |');
   await page.locator('.ProseMirror').click();
 
-  // A CellSelection is set through the editor rather than dragged: the drag that produces one is
-  // pointer-timing-sensitive (see table-selection.spec.ts), and what this test needs is the
-  // selection *kind*, stated outright.
+  // Set through the editor: the drag is timing-sensitive (table-selection.spec.ts), and the kind is
+  // what matters.
   await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
       | (Element & {
@@ -722,14 +639,9 @@ test('typing over a multi-cell selection still clears the cells', async ({ page 
     );
 });
 
-// The issue's reproduction, made the way it is written: a mouse drag-select, not a range set
-// through the editor. The two are not interchangeable here. A native selection reaches ProseMirror
-// only through `selectionchange`, on a 20ms flushSoon debounce, and a keystroke inside that window
-// bypasses every keymap — the internal selection still sits at the old spot, so no handler matches
-// and the browser's own edit mutates the DOM instead (see editor-callout-boundary.spec.ts, where
-// exactly that re-parsed mutation nested the following block inside the callout). This whole fix
-// lives in the handler layer those keystrokes would miss, so the literal gesture is pinned here
-// rather than inferred from the ones that state their endpoints outright.
+// The literal gesture, a mouse drag-select: its selection reaches state through the 20ms debounce,
+// and a key in that window bypasses every keymap, where this fix lives (docs/editor-pitfalls.md
+// §1.1; editor-callout-boundary.spec.ts).
 test('the reported gesture — drag across the edge, press Backspace — clamps', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, CALLOUT);
@@ -744,10 +656,8 @@ test('the reported gesture — drag across the edge, press Backspace — clamps'
 
   await page.keyboard.press('Backspace');
 
-  // The gesture reaches one character further than the stated-endpoint tests above, so the tail here
-  // is 「落です」 where they leave 「段落です」 — same clamp, a longer range. Its endpoints are caret
-  // boundaries measured on the rendered text (caretPoint, e2e/native-drag.ts), so that is a property
-  // of the range this test states, not of the font it happened to be run against.
+  // One character more than the stated-endpoint tests (「落です」): a property of the measured range
+  // (caretPoint), not of the font.
   await expect
     .poll(() => docString(page))
     .toBe('doc(paragraph("前の段落です"), callout(paragraph("囲み")), paragraph("落です"))');
@@ -757,11 +667,8 @@ test('the reported gesture — drag across the edge, press Backspace — clamps'
 // A table's edges
 // ---------------------------------------------------------------------------
 
-// The issue's headline gesture: select from the paragraph above into a body cell, press Backspace.
-// The header row used to go with the deletion — `table(tableRow(tableCell("ル"), tableCell("元二")))`,
-// the surviving cells demoted to `td` — and a headerless table has no pipe form, so the post saved
-// as raw HTML. Both the shape and the saved markdown are asserted: the document is the mechanism,
-// the markdown is what the defect was about.
+// From the paragraph above into a body cell, Backspace: the header row went too, and headerless the
+// post saved as raw HTML. Shape and markdown both asserted.
 test('Backspace from above a table into a cell keeps the header row', async ({ page }) => {
   await openEditor(page);
   await selectAcross(page, TABLE, { line: '前の段落です', at: 1 }, { line: '元セル', at: 2 });
@@ -776,9 +683,7 @@ test('Backspace from above a table into a cell keeps the header row', async ({ p
   expect(await markdown(page)).toContain(pipeTable('| ル | 元二 |'));
 });
 
-// Typing reaches the same replacement through `handleTextInput`, with no key handler involved —
-// which is why this could never have been fixed by guarding a single key. The character lands at
-// the range's start, above the table.
+// Typing, via `handleTextInput`: no single key guard could fix this.
 test('typing over a table upper edge keeps the header row too', async ({ page }) => {
   await openEditor(page);
   await selectAcross(page, TABLE, { line: '前の段落です', at: 1 }, { line: '元セル', at: 2 });
@@ -793,11 +698,8 @@ test('typing over a table upper edge keeps the header row too', async ({ page })
   expect(await markdown(page)).toContain(pipeTable('| ル | 元二 |'));
 });
 
-// The mirror, and the half the issue reported as already correct — but only because it measured the
-// *last* cell of the last row, where the old clamp's stopping point happened to sit just inside the
-// row's closing token with nothing left to swallow. Starting in the first cell instead, the middle
-// range ran from inside the row across 元二, the row's close and the table's close: the frame the
-// upper edge lost, lost from the other side. It is the same rule, so it is pinned the same way.
+// Out of the first cell: the old clamp was right only for the last cell, where its stop sat just
+// inside the row's close. From the first, it crossed the row and table close.
 test('Backspace out of a non-last cell leaves the table whole', async ({ page }) => {
   await openEditor(page);
   await selectAcross(page, TABLE, { line: '元セル', at: 2 }, { line: '後の段落です', at: 2 });
@@ -812,12 +714,8 @@ test('Backspace out of a non-last cell leaves the table whole', async ({ page })
   expect(await markdown(page)).toContain(pipeTable('| 元セ | 元二 |'));
 });
 
-// The seam the clamp opens rather than closes: a selection running *out* of a cell clamps with the
-// caret back inside that cell, and finishing with baseKeymap's splitBlock opened a second paragraph
-// there — a shape a cell can hold (`paragraph+`) but the pipe form cannot, so the table would save
-// as raw HTML by a different route than the one above. A hard break instead: the same thing
-// Shift+Enter makes in a cell by hand, serialized as `<br>`, which is valid GFM and reloads as the
-// same node.
+// Out of a cell, the clamp leaves the caret in the cell, and splitBlock made a second paragraph there,
+// which the pipe form cannot hold. A hard break instead, as Shift+Enter, serialized as `<br>`.
 test('Enter out of a cell makes a hard break, not a second paragraph', async ({ page }) => {
   await openEditor(page);
   await selectAcross(page, TABLE, { line: '元セル', at: 2 }, { line: '後の段落です', at: 2 });
@@ -829,10 +727,8 @@ test('Enter out of a cell makes a hard break, not a second paragraph', async ({ 
     .toBe(
       'doc(paragraph("前の段落です"), table(tableRow(tableHeader(paragraph("元A")), tableHeader(paragraph("元B"))), tableRow(tableCell(paragraph("元セ", hardBreak)), tableCell(paragraph("元二")))), paragraph("段落です"))',
     );
-  // Still a pipe table, which is the whole point. The break itself writes nothing *while it is
-  // trailing* — prosemirror-markdown's hard_break serializer skips one with no content after it, the
-  // same as a Shift+Enter typed at the end of a cell — so the markdown is asserted here and again
-  // once the new line has been typed into.
+  // Still a pipe table. A trailing break writes nothing (prosemirror-markdown skips it), so this is
+  // asserted again after typing.
   expect(await markdown(page)).toContain(pipeTable('| 元セ | 元二 |'));
 
   await page.keyboard.type('X');
@@ -840,10 +736,8 @@ test('Enter out of a cell makes a hard break, not a second paragraph', async ({ 
   expect(await markdown(page)).toContain(pipeTable('| 元セ<br>X | 元二 |'));
 });
 
-// The clamp stops at the depth where the endpoints are siblings — *not* at the outermost wrapper it
-// can find. A table nested in a callout says which of the two rules is running: both endpoints are
-// inside the callout, so the callout is not a boundary here (the existing "wholly inside one box"
-// specs above pin that), and the frame the range must stop outside of is the table it half-covers.
+// The clamp stops where the endpoints are siblings, not at the outermost wrapper: inside a callout,
+// the frame is the half-covered table.
 test('a table nested in a callout clamps to the table, not the callout', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -862,12 +756,8 @@ test('a table nested in a callout clamps to the table, not the callout', async (
     );
 });
 
-// The same defect with no table in it, and the one that says which half of the fix is doing the
-// work here: two isolating boxes on one branch, the outer one crossed by the range. The clamp used
-// to take the outermost — the callout — so the deletion ran from the *callout's* content start,
-// straight through its paragraph and the fence's own opening: the code became prose and the
-// language and filename went with it, which is the header row's fate spelled with different nodes.
-// The innermost box is the one the endpoint is actually in.
+// Two isolating boxes on one branch: taking the outermost (the callout) ran the deletion through the
+// fence's opening. The innermost box is the one the endpoint is in.
 test('a range into a code block inside a callout keeps the callout body and the fence', async ({
   page,
 }) => {
@@ -890,11 +780,8 @@ test('a range into a code block inside a callout keeps the callout body and the 
   await expect(page.locator('.code-block-lang')).toHaveValue('ts');
 });
 
-// The third reproduction in the report, and the one no keymap or DOM handler sees: a *move* drag
-// deletes its source range itself, so dragging this selection anywhere left the same wreckage
-// behind at the source regardless of where it landed — which is why the gesture "looked broken at
-// the destination" when the destination was never the problem. It goes through the same clamped
-// deletion as the keys above; what is pinned here is that it reaches it at all.
+// A move drag deletes its source itself, unseen by keymaps and handlers; pinned that it reaches the
+// clamped deletion.
 test('dragging a selection out of a table leaves the header row standing', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, TABLE);
@@ -913,21 +800,15 @@ test('dragging a selection out of a table leaves the header row standing', async
 
   await cdpNativeDrag(page, dragFrom, { x: below.x + 40, y: below.y + below.height / 2 });
 
-  // The endpoints land by font metrics, so what the surviving cell reads is not asserted. The
-  // *source* table is, and it has to be addressed as the first one in the document: the slice
-  // carries a copy of the table to the destination, so a docString match on "a table with a header
-  // row" would find that copy and pass while the source lay in ruins. Before the fix the source's
-  // header row was gone and its cells demoted to `td` — no `th` left in it at all.
+  // The source is the first table: the slice carries a copy, which a docString match would find
+  // instead. Font metrics decide the surviving text, so it is not asserted.
   await expect(editor.locator('table').first().locator('th')).toHaveCount(2);
-  // And the pipe form with it: a headerless table has none, so the serializer would write that one
-  // out as raw `<table style="min-width: 50px;">…` HTML. Neither table does.
+  // Both tables keep the pipe form.
   expect(await markdown(page)).not.toContain('<table');
 });
 
-// The same defect with no table in it, which is what says the widening is a rule rather than a
-// table patch: a code block inside a list item is isolating two levels down, so the old clamp
-// stopped inside the `listItem` and the middle range closed over the list's own open token. The
-// bullet and its text survive now, and so does the fence's language and filename.
+// A code block in a list item is isolating two levels down; the old clamp stopped in the `listItem`
+// and closed over the list's open token. A rule, not a table patch.
 test('a range from above a list into a code block inside it keeps the list', async ({ page }) => {
   await openEditor(page);
   await selectAcross(
@@ -947,11 +828,8 @@ test('a range from above a list into a code block inside it keeps the list', asy
   await expect(page.locator('.code-block-filename')).toHaveValue('a.ts');
 });
 
-// Enter is the one gesture whose clamp has to hand the caret back to somebody else's key binding,
-// and a list item is where that stops being baseKeymap's business: ListItem binds Enter to
-// splitListItem on top of the default chain. A selection running out of a list item into a callout
-// clamps with the caret back in that item, and finishing with a plain splitBlock opened a second
-// paragraph inside the same bullet instead of a new bullet — so splitListItem leads the chain.
+// Enter hands the caret to another binding, and in a list item that is splitListItem (ListItem binds
+// it), so it leads the chain; a plain splitBlock made a second paragraph in the same bullet.
 test('Enter from a list item across a callout edge still makes a new bullet', async ({ page }) => {
   await openEditor(page);
   await loadMarkdown(page, '- 一つ目\n- 二つ目\n\n> [!NOTE]\n>\n> 囲みの中身です');

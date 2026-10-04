@@ -2,20 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import { loadMarkdown, setRange } from './editor-authoring';
 import { docString, settle } from './editor-probe';
 
-// `Mod-Alt-0` — @tiptap/extension-paragraph's unconditional binding for `setParagraph()`, and the
-// only gesture in this editor that reaches TipTap's `clearNodes`. It got there because
-// prosemirror-commands' `setBlockType` skips a node that already `hasMarkup` the target, so asking
-// for a paragraph while the caret is in one leaves nothing applicable and `setNode` falls through.
-//
-// `clearNodes` used to pick the replacement type with `contentMatchAt(index).defaultType`, and this
-// document is `block+ footnoteSection?` — so past the first child that default is `footnoteSection`
-// and the command threw "RangeError: Invalid content for node type footnoteSection". Reported from
-// ordinary use: a blank line under a paragraph was enough. components/editor/clear-nodes-extension.ts
-// replaces the command with upstream's body picking a textblock instead.
-//
-// Every case watches `pageerror`, because that is the only thing that can see this failure: the
-// throw left the document byte-identical, so a spec asserting only the document reads the crash as
-// "the key does nothing" and passes either way.
+// `Mod-Alt-0` (@tiptap/extension-paragraph's `setParagraph()`) is the one gesture reaching TipTap's
+// `clearNodes`: `setBlockType` skips a node already `hasMarkup`. `clearNodes` took
+// `contentMatchAt(index).defaultType`, which past the first child of `block+ footnoteSection?` is
+// `footnoteSection`, throwing "RangeError: Invalid content for node type footnoteSection".
+// clear-nodes-extension.ts picks a textblock. **`pageerror` is watched**: the throw left the
+// document unchanged.
 function watchErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(`${error.name}: ${error.message}`));
@@ -31,9 +23,7 @@ async function openEditor(page: Page) {
   return editor;
 }
 
-// A caret at the start of the first textblock inside the first node of `typeName`. Found by walking
-// the document rather than by arithmetic, so a fixture that nests one level deeper doesn't silently
-// point somewhere else.
+// The first textblock's start in `typeName`, by walking the document.
 function caretInside(page: Page, typeName: string): Promise<number> {
   return page.evaluate((name) => {
     const el = document.querySelector('.ProseMirror') as Element & {
@@ -61,9 +51,7 @@ function caretInside(page: Page, typeName: string): Promise<number> {
   }, typeName);
 }
 
-// The last position inside the document's final textblock — the far end of a selection meant to
-// span every top-level node. Derived from the document rather than counted out by hand, which for a
-// fixture of Japanese text would be an off-by-one waiting to happen.
+// The final textblock's end, derived, not counted.
 function lastTextblockEnd(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as Element & {
@@ -74,8 +62,7 @@ function lastTextblockEnd(page: Page): Promise<number> {
   });
 }
 
-// The report. A blank line below a paragraph is top-level index 1, which is where `defaultType`
-// stops being `paragraph` — and it is the most common caret position in a post.
+// The report: top-level index 1, where `defaultType` stops being `paragraph`.
 test('Mod-Alt-0 on a blank line below a paragraph does not throw', async ({ page }) => {
   const errors = watchErrors(page);
   await openEditor(page);
@@ -89,17 +76,15 @@ test('Mod-Alt-0 on a blank line below a paragraph does not throw', async ({ page
   await settle(page);
 
   expect(errors).toEqual([]);
-  // The correct answer is a no-op: the line is already a paragraph, and a top-level block has
-  // nothing to lift out of.
+  // A no-op: already a paragraph, nothing to lift from.
   expect(await docString(page)).toBe('doc(paragraph("本文"), paragraph)');
 
-  // The caret survived, so the key cost the author nothing.
+  // The caret survived.
   await page.keyboard.type('つづき');
   expect(await docString(page)).toBe('doc(paragraph("本文"), paragraph("つづき"))');
 });
 
-// The same key one index earlier, which never threw — `defaultType` is still `paragraph` at the
-// document's first child. Pins that the fix did not change the position that already worked.
+// Index 0 never threw; the fix must not change it.
 test('Mod-Alt-0 in the document first paragraph stays a no-op', async ({ page }) => {
   const errors = watchErrors(page);
   await openEditor(page);
@@ -114,9 +99,7 @@ test('Mod-Alt-0 in the document first paragraph stays a no-op', async ({ page })
   expect(await docString(page)).toBe('doc(paragraph("唯一の段落"))');
 });
 
-// A selection spanning index 0 *and* index 1 — the only case where the throw landed part-way
-// through `nodesBetween` rather than on the first node it visited. The half-built transaction was
-// discarded with the exception, so this read as a no-op too.
+// Spanning index 0 and 1: the throw landed mid-`nodesBetween`, also reading as a no-op.
 test('Mod-Alt-0 over a selection spanning two top-level paragraphs does not throw', async ({
   page,
 }) => {
@@ -137,10 +120,8 @@ test('Mod-Alt-0 over a selection spanning two top-level paragraphs does not thro
   expect(await docString(page)).toBe('doc(paragraph("前の段落"), paragraph("二つ目"))');
 });
 
-// `clearNodes` re-types *and lifts*, and the lift is the half a narrower fix would have removed
-// without anyone noticing. Both expectations below are the behaviour measured on the unfixed build,
-// so they are a real before/after baseline rather than a restatement of the new code: Mod-Alt-0 is
-// how an author takes a line back out of a list or a quote.
+// `clearNodes` re-types and lifts, the half a narrower fix could lose: measured on the unfixed
+// build, this is how a line leaves a list or quote.
 const LIFTED: { name: string; md: string; host: string; before: string; after: string }[] = [
   {
     name: 'a list item',
@@ -177,10 +158,7 @@ for (const { name, md, host, before, after } of LIFTED) {
   });
 }
 
-// The conversion the key is actually named for, which never went near `clearNodes`: a heading is a
-// different type from a paragraph, so `setBlockType` is applicable and converts in place. Inside a
-// list item, so the assertion also says the node stays where it was — this is the path that must
-// NOT start lifting.
+// A heading converts in place via `setBlockType`, staying in its list item: this path must not lift.
 test('Mod-Alt-0 converts a heading in place, leaving it in its list item', async ({ page }) => {
   const errors = watchErrors(page);
   await openEditor(page);
@@ -202,8 +180,7 @@ test('Mod-Alt-0 converts a heading in place, leaving it in its list item', async
   );
 });
 
-// A heading at top-level index 1 — the same conversion at the position that throws for a paragraph.
-// It passed before the fix too (nothing reached clearNodes), and pins that it still does.
+// A heading at index 1: converts, as before the fix.
 test('Mod-Alt-0 converts a top-level heading below a paragraph', async ({ page }) => {
   const errors = watchErrors(page);
   await openEditor(page);

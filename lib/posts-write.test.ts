@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { posts } from '@/lib/db/schema';
 import { db } from '@/lib/db';
@@ -29,8 +29,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     slug: 'slug',
     title: 'Title',
     date: '2026-01-01',
-    description: '',
-    category: 'uncategorized',
+    category: 'tech',
     tags: [],
     draft: true,
     body: 'body',
@@ -41,8 +40,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
 
 const content: DraftContent = {
   title: 'Edited',
-  description: 'desc',
-  category: 'cat',
+  category: 'blog',
   tags: ['a', 'b'],
   thumbnail: '',
   body: 'edited body',
@@ -93,6 +91,24 @@ describe('autosavePost', () => {
     expect(r?.body).toBe('edited body'); // other fields still updated
   });
 
+  // The same guard on the published branch, where the title to keep is the working copy's. An
+  // author who retitles a published post and then clears the field to retype must not have the
+  // unpublished title silently replaced by the live one.
+  it('keeps the working copy’s title when the incoming title is blank on a published post', () => {
+    const id = seed({ slug: 'pub-blank', draft: false, title: 'Live' });
+    autosavePost(id, { ...content, title: 'Renamed' }); // an unpublished retitle
+    autosavePost(id, { ...content, title: '   ' }); // cleared to retype
+    const r = row(id);
+    expect(r?.draftContent?.title).toBe('Renamed'); // not reverted to 'Live'
+    expect(r?.title).toBe('Live'); // the live column is still frozen
+  });
+
+  it('falls back to the live title when a published post has no working copy yet', () => {
+    const id = seed({ slug: 'pub-first', draft: false, title: 'Live' });
+    autosavePost(id, { ...content, title: '   ' });
+    expect(row(id)?.draftContent?.title).toBe('Live');
+  });
+
   it('is a no-op when the row does not exist', () => {
     expect(() => autosavePost(9999, content)).not.toThrow();
   });
@@ -120,6 +136,58 @@ describe('commitPost', () => {
     const id = seed({ slug: 'u', draft: false });
     commitPost(id, content, true, '2026-01-01');
     expect(row(id)?.draft).toBe(true);
+  });
+
+  it('returns false and does not throw when the row does not exist', () => {
+    expect(commitPost(9999, content, false, '2026-01-01')).toBe(false);
+  });
+
+  it('returns true when it updates a row', () => {
+    const id = seed({ slug: 'v', draft: true });
+    expect(commitPost(id, content, false, '2026-01-01')).toBe(true);
+  });
+});
+
+// 記事一覧 sorts by editedAt (lib/db/schema.ts). It follows every author write; updatedAt, the public
+// 更新日, must not follow the one that only touches the working copy.
+describe('editedAt', () => {
+  const T0 = new Date('2026-10-01T00:00:00.000Z');
+  const T1 = new Date('2026-10-02T00:00:00.000Z');
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is stamped on create', () => {
+    expect(row(seed())?.editedAt).toBe(T0.toISOString());
+  });
+
+  it('moves on a published post’s autosave, which leaves updatedAt alone', () => {
+    const id = seed({ draft: false });
+    vi.setSystemTime(T1);
+    autosavePost(id, content);
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T0.toISOString());
+  });
+
+  it('moves with updatedAt on a draft’s autosave', () => {
+    const id = seed({ draft: true });
+    vi.setSystemTime(T1);
+    autosavePost(id, content);
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T1.toISOString());
+  });
+
+  it('moves with updatedAt on publish', () => {
+    const id = seed({ draft: true });
+    vi.setSystemTime(T1);
+    commitPost(id, content, false, '2026-10-02');
+    expect(row(id)?.editedAt).toBe(T1.toISOString());
+    expect(row(id)?.updatedAt).toBe(T1.toISOString());
   });
 });
 

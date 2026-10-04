@@ -3,31 +3,18 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { resolveDbPath } from './db-path.mts';
 import { formatBytes } from './format-bytes.mts';
+import { addUploadRefs, referencedInDb } from './upload-refs.mts';
 
-// Grace-period garbage collector for public/uploads. Uploads are written the
-// moment an image is pasted/dropped — before the post is saved — so a file can
-// be on disk while still unreferenced. We delete a file only when it is BOTH
-// unreferenced AND older than the grace window, so a just-uploaded-not-yet-saved
-// image is never removed. Dry-run by default; pass --delete to actually unlink.
+// Grace-period GC for data/uploads. Uploads land before the post is saved, so a file is deleted
+// only when unreferenced AND older than the grace window. Dry-run by default.
 //   node scripts/gc-uploads.mts                 # report only (dry-run)
 //   node scripts/gc-uploads.mts --delete        # remove orphans
 //   node scripts/gc-uploads.mts --grace-hours=48
 const ROOT = process.cwd();
-const UPLOAD_DIR = path.join(ROOT, 'public', 'uploads');
+const UPLOAD_DIR = path.join(ROOT, 'data', 'uploads');
 const POSTS_DIR = path.join(ROOT, 'content', 'posts');
-// Uploads live next to the app, but the DB may not — see scripts/db-path.mts.
-// Getting this wrong here means sweeping against an empty reference set.
+// The DB may live elsewhere (scripts/db-path.mts); the wrong one means an empty reference set.
 const DB_PATH = resolveDbPath();
-
-const UPLOAD_REF = /\/uploads\/([A-Za-z0-9._-]+)/g;
-
-type PostTextRow = {
-  body: string | null;
-  description: string | null;
-  title: string | null;
-  thumbnail: string | null;
-  draft_content: string | null;
-};
 
 function parseGraceHours(args: string[]): number {
   const flag = args.find((a) => a.startsWith('--grace-hours='));
@@ -36,49 +23,20 @@ function parseGraceHours(args: string[]): number {
   return Number.isFinite(n) && n >= 0 ? n : 24;
 }
 
-// Filenames anything could point at: the live DB post bodies (the editor's
-// source of truth) AND the version-controlled .mdx (the seed copy). Taking the
-// union errs on the side of keeping a file.
-//
-// Two of the five columns are here because a reference can hide outside the
-// published body. `thumbnail` holds a card image the body need not mention at
-// all — that is the whole point of choosing one — so a sweep blind to it deletes
-// exactly the image the author picked. `draft_content` is the private working
-// copy of a *published* post's pending edits: an image added in an edit that has
-// not been published yet is referenced nowhere else, and once the file ages past
-// the grace period the sweep would take it while the author is still writing.
-// Both are unreferenced-looking and both are in use, which is the failure this
-// function exists to prevent.
+// The live DB (every column, scripts/upload-refs.mts) and the tracked .mdx, unioned: err on
+// keeping.
 function collectReferenced(): { refs: Set<string>; dbPresent: boolean } {
-  const refs = new Set<string>();
-
-  function addFrom(text: string | null | undefined): void {
-    if (!text) return;
-    for (const match of text.matchAll(UPLOAD_REF)) refs.add(match[1]);
-  }
-
   const dbPresent = existsSync(DB_PATH);
+  let refs = new Set<string>();
   if (dbPresent) {
     const db = new Database(DB_PATH, { readonly: true });
-    const rows = db
-      .prepare('SELECT body, description, title, thumbnail, draft_content FROM posts')
-      .all() as PostTextRow[];
+    refs = referencedInDb(db);
     db.close();
-    for (const row of rows) {
-      addFrom(row.body);
-      addFrom(row.description);
-      addFrom(row.title);
-      addFrom(row.thumbnail);
-      // Scanned as raw JSON text rather than parsed: every field in it is a
-      // string, `UPLOAD_REF` is looking for a substring, and a shape change in
-      // DraftContent must not be able to quietly narrow what this sees.
-      addFrom(row.draft_content);
-    }
   }
 
   if (existsSync(POSTS_DIR)) {
     for (const file of readdirSync(POSTS_DIR).filter((f) => f.endsWith('.mdx'))) {
-      addFrom(readFileSync(path.join(POSTS_DIR, file), 'utf8'));
+      addUploadRefs(refs, readFileSync(path.join(POSTS_DIR, file), 'utf8'));
     }
   }
 

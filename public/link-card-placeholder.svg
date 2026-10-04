@@ -10,13 +10,13 @@
        can measure, and a mark that turns invisible when it is ignored is not a mark. Keep the two
        files in step: same geometry, only the two fills differ.
 
-       The colours are the site's own: the accent rule (#cf222e, the h3 rule and the 強調 mark) over
+       The colours are the site's own: the accent rule (#9f1239, the h3 rule and the 強調 mark) over
        the foreground (#171717). The lockup is the one public/og.png draws
        (scripts/make-og-image.mts).
 
        The font is the system stack, not the site's Geist: an SVG rendered as an image may not fetch
        anything, so a webfont cannot reach it. -->
-  <rect x="96" y="8" width="48" height="6" rx="3" fill="#cf222e" />
+  <rect x="96" y="8" width="48" height="6" rx="3" fill="#9f1239" />
   <text
     x="120"
     y="72"

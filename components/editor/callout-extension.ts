@@ -5,7 +5,8 @@ import { TextSelection } from '@tiptap/pm/state';
 import { CALLOUT_NAME, calloutSliceGuard } from './callout-slice-guard';
 import { findWrapping } from '@tiptap/pm/transform';
 import { stepIntoNextIsolating, stepIntoPreviousIsolating } from './isolating-boundary';
-import { selectionTouches } from './selection-scan';
+import { BLOCK_ATOMS, selectionTouches } from './selection-scan';
+import { BLOCK_REFUSING_BOXES } from './summary-rules';
 import type { MarkdownSerializerState } from './markdown-serializer-state';
 import {
   CALLOUT_CLASS,
@@ -120,35 +121,14 @@ declare module '@tiptap/core' {
   }
 }
 
-// Enter at the end of an *empty paragraph directly inside the callout* (not one nested deeper,
-// e.g. inside a blockquote typed within the callout — see below) exits into a paragraph right
-// after the callout, caret there. Mirrors @tiptap/extension-blockquote's default (unwritten)
-// behaviour, which this same case reaches via prosemirror-commands' liftEmptyBlock: lifting the
-// range out of the blockquote — if it's the blockquote's only child, `lift` has nothing left to
-// leave behind, so the whole blockquote is replaced by the lifted (empty) paragraph and
-// disappears; with earlier siblings still in it, only the trailing empty one moves out and the
-// blockquote survives non-empty. This does the same by hand for the callout — delete the whole
-// callout when this empty paragraph is its only child, or just the empty line when it isn't.
+// Enter on an empty paragraph that is a direct, trailing child of the callout exits into a
+// paragraph after it, as a blockquote does via liftEmptyBlock: the whole callout goes if the
+// paragraph was its only child. `isolating` stops liftEmptyBlock from crossing the edge, so without
+// this Enter would split inside the callout forever.
 //
-// `isolating` (below) is exactly why blockquote's own default can't be reused as-is: it blocks
-// liftEmptyBlock (and joinBackward's identical lift fallback, which is what already lets Backspace
-// remove an empty callout below — this Enter behaviour is that same restoration, applied to the
-// other key) from ever crossing the callout's boundary, so without this override Enter would just
-// keep splitting inside the callout forever instead of exiting like a blockquote does.
-//
-// Scoped to depth === 2 (paragraph is a *direct* child of the callout) rather than "any empty
-// trailing block regardless of depth": the callout's `block+` content permits nesting (e.g. typing
-// `> ` starts a blockquote inside it), and Callout's Enter binding wins the race over that inner
-// node's own (Blockquote defines no Enter shortcut at all — see blockquote-extension.ts). Without
-// this guard, an empty line at the tail of a *nested* structure would jump out of the whole
-// callout instead of that structure's own normal Enter behavior (e.g. lifting out of just the
-// blockquote, landing back in the callout body) — surprising, and not what was asked for here.
-//
-// A callout is never a textblock, so whenever it's the doc's last node, StarterKit's TrailingNode
-// already keeps an empty paragraph sitting right after it (see the fenceUndo comment in
-// code-block-extension.ts for the same mechanism). Inserting a fresh paragraph unconditionally
-// would stack a redundant blank line next to that one; reuse it instead when it's there, and only
-// insert a new paragraph when the callout is genuinely followed by something else (or nothing).
+// Only at depth 2: Callout's Enter wins over nested nodes' own, so a deeper empty line must keep
+// its structure's normal behaviour. The trailing paragraph TrailingNode keeps after a last-node
+// callout is reused rather than stacking a second blank line.
 function exitCalloutOnEmptyEnter(
   calloutType: NodeType,
   { state, tr, dispatch }: CommandProps,
@@ -158,11 +138,8 @@ function exitCalloutOnEmptyEnter(
   const { $from } = selection;
   if ($from.depth !== 2 || $from.node(1).type !== calloutType) return false;
   if ($from.parent.content.size > 0) return false;
-  // Only the callout's *last* child exits — mirroring liftEmptyBlock, which lifts an empty block
-  // out of its parent only when it's trailing and otherwise splits in place (its `$cursor.after()
-  // != $cursor.end(depth - 1)` branch). An empty line that isn't last (a blank typed or navigated
-  // into between two body blocks) must stay put and take the default in-callout split; without
-  // this guard it would be deleted and the caret would jump out of the callout entirely.
+  // Only the last child exits, as in liftEmptyBlock (`$cursor.after() != $cursor.end(depth - 1)`);
+  // a blank line between body blocks takes the default split.
   if ($from.index(1) !== $from.node(1).childCount - 1) return false;
   if (dispatch) {
     const afterCallout = $from.after(1);
@@ -182,9 +159,7 @@ function exitCalloutOnEmptyEnter(
   return true;
 }
 
-// The refusal reporter the slice guard needs, declared as a type (rather than left inferred) so
-// `Callout.configure({ onBlocked })` typechecks at the call site in PostEditor — the same shape
-// MarkdownTable takes, and the same single notice they both write to (useEditorNotice).
+// Declared so `Callout.configure({ onBlocked })` typechecks; the same shape MarkdownTable takes.
 export type CalloutOptions = {
   onBlocked: (message: string) => void;
 };
@@ -286,8 +261,7 @@ export const Callout = TiptapNode.create<CalloutOptions>({
   },
 
   addOptions(): CalloutOptions {
-    // Defaults to a no-op so the extension stays usable — and testable — without the host wiring
-    // one up; PostEditor supplies the real reporter.
+    // A no-op default, so the extension works (and tests) without the host's reporter.
     return { onBlocked: () => {} };
   },
 
@@ -302,57 +276,32 @@ export const Callout = TiptapNode.create<CalloutOptions>({
       setCallout:
         (type: CalloutType) =>
         ({ state, commands }) => {
-          // Callouts are top-level only — the input rules refuse to nest them, so keep this
-          // command consistent: on an existing callout, switch its type in place instead of
-          // inserting a nested one. Covers both the toolbar menu and the `/` slash command.
-          //
-          // selectionTouches rather than `editor.isActive(this.name)`, for the reason the guards
-          // below share (see selection-scan.ts): isActive only holds while the callout covers the
-          // whole selection, so a range overlapping a callout's edge fell through to the insert
-          // below — and insertContent *replaces* a range, which left the selected text swapped for
-          // a new empty callout beside the remains of the old one. Nothing outside the selection
-          // was lost and the markdown stayed valid, so this was untidiness rather than corruption,
-          // but it is the same defect as the four below and it now answers the same way.
-          //
-          // updateAttributes handles every selection shape this admits: measured, it retypes the
-          // one callout an overlapping range touches, and retypes *both* when a selection spans a
-          // pair — which is what "apply this type to what I selected" should mean. A selection
-          // touching a callout and a blockquote at once still lands here rather than in the
-          // blockquote refusal below, which is what keeps a loaded `> > [!NOTE]` retypable.
+          // On an existing callout, retype it in place rather than nesting. selectionTouches, not
+          // isActive, so a range overlapping the edge is caught too; updateAttributes retypes
+          // every callout the selection touches. Checked before the quote refusal below, which
+          // keeps a loaded `> > [!NOTE]` retypable.
           if (selectionTouches(state, this.name)) {
             return commands.updateAttributes(this.name, { type });
           }
-          // A table cell can't hold a callout (paragraph-only cells — markdown has no
-          // way to store one), and inserting from inside a table would split it in two
-          // around the callout. Refuse, mirroring the input rules' top-level-only checks.
-          //
-          // Same refusal inside a quote. This one is about meaning rather than storage —
-          // it round-trips fine (`> > [!NOTE]`, and lib/remark-github-alerts.ts transforms
-          // a nested alert correctly) — but a blockquote is someone else's words while a
-          // callout is the author's own aside, so nesting one in the other misattributes
-          // it. Nested *quotes* stay allowed: `> >` is native markdown that pasted or
-          // imported content can carry, so the editor has to represent it either way.
-          // Switching an existing nested callout's type still works — that's the
-          // isActive(callout) branch above, which runs first.
-          //
-          // Both ask selectionTouches rather than `editor.isActive(...)`, which only holds for a
-          // caret (see selection-scan.ts). A selection reaching from the paragraph above into
-          // either one used to pass, and insertContent then *replaced* the range: the table
-          // vanished outright, and the quote lost the text the selection had covered.
-          //
-          // `detailsSummary` is the third, and it is the one that breaks *structurally*. An
-          // accordion's title is `text*`, so it holds no block at all — and ProseMirror does not
-          // refuse, it makes room: the fitter splits the accordion in two around the callout and
-          // grows a second, untitled one from the title's remainder, which then saves as two
-          // `<details>`. Measured (docs/accordion-requirements.md §6.5 records the same tear for
-          // the footnote). Naming `detailsSummary` and never `details` is deliberate: §6.3 blesses
-          // a callout in the accordion's *body*, which is `block+` and takes one cleanly.
-          //
-          // `linkCard`/`embed` are the fourth: both are atoms, so clicking one gives a NodeSelection
-          // whose range is exactly that node — insertContent then replaces it wholesale rather than
-          // leaving it alone, and the card or embed the author had selected simply vanished
-          // (reported 2026-09-05).
-          if (selectionTouches(state, 'table', 'blockquote', 'detailsSummary', 'linkCard', 'embed'))
+          // Refused where a callout cannot go, asked with selectionTouches (a range reaching into
+          // the host would otherwise be replaced):
+          //  - a table cell (paragraph-only; the table would split around it);
+          //  - a quote: storage is fine, but a quote is someone else's words and a callout the
+          //    author's aside (docs/editor-pitfalls.md §6.1);
+          //  - an accordion title, which is `text*`, so the fitter would split the accordion
+          //    (docs/accordion-requirements.md §6.5). Never `details`: its body takes a callout;
+          //  - a まとめ or a TL;DR, which hold prose only (docs/summary-requirements.md §3.1);
+          //  - a selected block atom (BLOCK_ATOMS, selection-scan.ts).
+          if (
+            selectionTouches(
+              state,
+              'table',
+              'blockquote',
+              'detailsSummary',
+              ...BLOCK_REFUSING_BOXES,
+              ...BLOCK_ATOMS,
+            )
+          )
             return false;
           return commands.insertContent({
             type: this.name,
@@ -363,20 +312,12 @@ export const Callout = TiptapNode.create<CalloutOptions>({
     };
   },
 
-  // `isolating` (above) stops Backspace from crossing the callout's edges, reshaping two boundary
-  // presses — we tune both so they feel right:
-  //   • at the start of an *empty* callout → unwrap it to a plain paragraph (there's no toolbar
-  //     toggle to clear a callout, so this is how you remove one from inside);
-  //   • at the start of the block right *after* a callout → step the caret into the callout's end
-  //     (backspaceIntoPreviousIsolating), shared with the code block, not a bare node-selection.
-  // A non-empty callout's own start is left alone (clear it first).
-  //
-  // Delete gets the mirror treatment at the callout's *end*: stepIntoNextIsolating deletes a
-  // following empty block outright; a non-empty one is already a safe no-op via `isolating`.
-  //
-  // Enter at that same end (an empty trailing line) exits the callout instead of splitting
-  // forever inside it — see exitCalloutOnEmptyEnter's comment for why `isolating` needs a
-  // hand-built transaction here rather than the default liftEmptyBlock.
+  // `isolating` stops Backspace at the edges, so the boundary presses are defined here:
+  //   • Backspace at the start of an *empty* callout unwraps it (the only way to remove one from
+  //     inside); at a non-empty one's start it does nothing;
+  //   • Backspace at the start of the next block steps into the callout's end;
+  //   • Delete at the end removes a following empty block;
+  //   • Enter on an empty trailing line exits (exitCalloutOnEmptyEnter).
   addKeyboardShortcuts() {
     const calloutType = this.type;
     return {

@@ -2,11 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 
-// Reading drizzle/ — where the migrations are, what order they go in, and how a
-// file is split into statements. All of that is drizzle's format rather than
-// ours, so it is described once: a second copy is a second thing to fix when the
-// format moves, and the two copies that preceded this module had already drifted
-// (one ordered by journal entry, the other by filename).
+// drizzle/'s format (location, order, statement splitting) described once; the two copies before
+// this had drifted.
 export const MIGRATIONS_DIR = path.join(process.cwd(), 'drizzle');
 
 export type Migration = {
@@ -21,9 +18,7 @@ export type Migration = {
 
 type JournalEntry = { idx: number; when: number; tag: string };
 
-// Ordered by the journal rather than by filename. The journal is what drizzle
-// itself reads, so it is the authority: a .sql file it does not list has not
-// been generated as a migration and must not be applied as one.
+// By journal, not filename: drizzle reads the journal, so an unlisted .sql is not a migration.
 export function readMigrations(): Migration[] {
   const journalPath = path.join(MIGRATIONS_DIR, 'meta', '_journal.json');
   if (!existsSync(journalPath)) throw new Error(`No journal at ${journalPath}`);

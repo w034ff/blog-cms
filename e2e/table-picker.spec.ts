@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// Drives the toolbar's table size picker: open the dropdown, hover a cell to
-// confirm the size readout tracks it, then click to insert a table of exactly
-// that many rows/columns (first row a header). Guards the grid → insertTable wiring.
+// The size picker: hovering updates the readout, clicking inserts that size (header first row).
 test('table picker inserts a table of the hovered grid size', async ({ page }) => {
   await page.goto('/admin/posts/new');
 
@@ -27,9 +25,7 @@ test('table picker inserts a table of the hovered grid size', async ({ page }) =
   await expect(rows.nth(1).locator('td')).toHaveCount(3);
 });
 
-// The dropdown's numeric-input escape hatch: open the dialog, type a size past the
-// grid's 8×8 ceiling, and insert. Guards the dialog → insertTable wiring and the
-// grid ↔ dialog hand-off.
+// The numeric dialog, past the grid's 8×8, and the grid ↔ dialog hand-off.
 test('table picker dialog inserts a table from numeric input', async ({ page }) => {
   await page.goto('/admin/posts/new');
 

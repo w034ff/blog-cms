@@ -5,6 +5,8 @@ import type { Node as PMNode, ResolvedPos } from '@tiptap/pm/model';
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import type { EditorState, Transaction } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { escapeAttribute } from './html-escape';
+import { asPaste } from './isolating-boundary';
 import { hasUndoableInputRule } from './input-rule-undo';
 import { selectionTouches } from './selection-scan';
 import type MarkdownIt from 'markdown-it';
@@ -17,69 +19,31 @@ import type { MarkdownSerializerState } from './markdown-serializer-state';
 // reference that sits in the prose, the definition, the section holding every definition at the end
 // of the document, and the `doc` whose content expression pins that section last.
 //
-// Stages 1 and 2 of §11 — the markdown round trip, the section and its placement, both insertion
-// routes, numbering, reference/definition pairing, the placement guards of §6, and the clipboard
-// rules of §6.1–§6.4. Stage 3 (§5.4's notice for an orphan definition that arrived from outside)
-// is what is left.
+// Neither tiptap-markdown nor prosemirror-markdown handles footnotes, so both directions are here.
+// Parsing goes through HTML (§2.1), and markdown-it-footnote's renderer is replaced wholesale:
 //
-// Neither tiptap-markdown nor prosemirror-markdown carries any footnote handling, so both
-// directions are written here. Parsing goes through HTML (§2.1): tiptap-markdown renders markdown
-// to an HTML string and hands that to DOMParser.fromSchema, so what the nodes parse is whatever
-// markdown-it-footnote's renderer emits.
-//
-// That renderer is replaced wholesale rather than parsed as it comes, and the reason is not taste:
-//
-//  - **The label is absent from the default output.** `[^fn-a3f]` renders as `id="fn1"`, the
-//    sequential number, so §4.1's "a label is never rewritten" cannot be honoured — the label
-//    never reaches ProseMirror. It is on the token's `meta.label`, which only a renderer rule can
-//    read.
-//  - The default definition ends with a backref link holding `↩︎`, which would land in the
-//    document as editor content and round-trip into the author's markdown.
-//  - The wrapper (`<hr class="footnotes-sep">`, `<section>`, `<ol>`) has no counterpart in the
-//    schema, and an empty definition renders a differently shaped `<li>` (no `<p>`) than a filled
-//    one.
-//
-// Emitting the shape the schema wants is shorter than bending parseHTML around all three.
+//  - **the label is absent from its output** (`id="fn1"` is the sequence number), so §4.1's "a
+//    label is never rewritten" needs a renderer rule reading `meta.label`;
+//  - its backref `↩︎` would land in the document as content;
+//  - its wrapper has no schema counterpart, and an empty definition renders a differently shaped
+//    `<li>`.
 
 const FOOTNOTE_REF_TAG = 'sup[data-footnote-ref]';
 const FOOTNOTE_DEF_TAG = 'div[data-footnote-def]';
 const FOOTNOTE_SECTION_TAG = 'div[data-footnote-section]';
 
-// Labels reach the DOM through an attribute, so they need HTML attribute escaping — not the
-// markdown escaping `state.text()` would apply. A label carrying `"` or `&` would otherwise break
-// out of the attribute.
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-}
-
-// `^[inline note]` has no label of its own — markdown-it-footnote leaves `meta.label` undefined for
-// it (index.mjs, the tail's `list[i].label`). The syntax is a non-goal (§1), but it parses the
-// moment the plugin is installed, so it still needs a destination: it becomes an ordinary footnote
-// with a generated label rather than being dropped.
-//
-// The fallback is derived from `meta.id` — the footnote's index — and not from a counter. The
-// reference and the definition are rendered by two different rules, so a counter hands them two
-// different labels and the pair comes apart on the next load: measured, the reference saved as
-// `[^inline-1]` while its definition saved as `[^inline-2]`, and the note's text was orphaned.
+// `^[inline note]` has no `meta.label`. A non-goal (§1), but it parses, so it gets a label derived
+// from `meta.id`: a counter would give the reference and the definition (rendered by different
+// rules) different labels, orphaning the note.
 function labelOf(meta: { label?: string; id?: number } | null): string {
   return meta?.label ?? `inline-${meta?.id ?? 0}`;
 }
 
-// An orphan definition — one no reference points at — is *deleted* by the plugin, and this is the
-// one place where installing it is worse than the literal-text guard it replaces. `footnote_tail`
-// filters every definition out of the token stream into a private map, then returns early when no
-// reference claimed any of them (`if (!state.env.footnotes.list) { return }`); a definition that
-// simply went unreferenced is never re-emitted either, because the emission loop walks `list`.
-// Measured: `本文\n\n[^x]: 注釈\n` came back as `本文`. The note's words were gone.
-//
-// §5.4 asks for the opposite — keep it at the end and report it — so the definitions are captured
-// before the tail runs and the unclaimed ones are put back after it, as ordinary footnote tokens.
-// They become footnoteDefinition nodes with no reference, which is exactly the state §5.4
-// describes, and they serialize back to `[^x]: 注釈` unchanged.
-//
-// Two rules rather than one wrapped rule: `ruler.before`/`ruler.after` are public API, where
-// replacing `footnote_tail` would need the private `__rules__` the literal-text guard has to reach
-// into. The captured map lives on `state.env`, so it is per-parse and cannot leak between loads.
+// The plugin *deletes* an orphan definition: `footnote_tail` filters definitions out and returns
+// early when no reference claimed any (`if (!state.env.footnotes.list) { return }`). §5.4 (and §5.5)
+// wants it kept, so definitions are captured before the tail and the unclaimed ones put back after
+// it. Two public `ruler.before`/`ruler.after` rules rather than wrapping `footnote_tail` through the
+// private `__rules__`; the map lives on `state.env`, so it is per-parse.
 interface FootnoteEnv {
   footnotes?: { list?: { label?: string }[] };
   orphanCandidates?: Map<string, Token[]>;
@@ -132,15 +96,8 @@ function rescueOrphanDefinitions(markdownit: MarkdownIt): void {
     }
     if (rescued.length === 0) return false;
 
-    // Inside the section, not after it. The definitions' section is the only place a definition
-    // may live (§3.2: the doc is `block+ footnoteSection?`, and footnoteDefinition is not in the
-    // `block` group), and appending past `footnote_block_close` puts the rescued ones outside it —
-    // where ProseMirror cannot place them and drops them again.
-    //
-    // Measured, and only visible with company: with no referenced footnote the tail emits no
-    // wrapper at all, ProseMirror supplies the missing section itself, and the orphan survives. Add
-    // one ordinary footnote to the same document and the wrapper exists, the orphan lands after it,
-    // and the note's words are gone — the exact loss this rescue was written to stop.
+    // Inside the section, not after it: past `footnote_block_close` ProseMirror cannot place a
+    // definition (§3.2) and drops it. Only visible once another, referenced footnote exists.
     let closeIndex = -1;
     for (let index = state.tokens.length - 1; index >= 0; index -= 1) {
       if (state.tokens[index].type === 'footnote_block_close') {
@@ -154,9 +111,7 @@ function rescueOrphanDefinitions(markdownit: MarkdownIt): void {
   });
 }
 
-// tiptap-markdown runs every extension's parse.setup on each parse rather than once per editor
-// (the lesson the literal-text guard was built on), and `md.use()` would register the same four
-// rules again and throw. Remember which instances are already set up.
+// tiptap-markdown runs `parse.setup` on every parse, and a second `md.use()` would throw.
 const patched = new WeakSet<MarkdownIt>();
 
 export function installFootnotes(markdownit: MarkdownIt): void {
@@ -181,15 +136,9 @@ export function installFootnotes(markdownit: MarkdownIt): void {
   rules.footnote_anchor = () => '';
 }
 
-// A definition's content is block-tokenized by the plugin, so it arrives wrapped in `<p>`. The node
-// holds inline content (§1: no block elements inside a footnote), and ProseMirror does not flatten
-// the mismatch — measured, it closed the definition early and left the text in a sibling paragraph
-// (`doc(…, footnoteDefinition, paragraph("注釈テキスト"))`), which then serialized as an empty
-// definition followed by a stray line. Unwrapping here is the same move updateDetailsDOM makes for
-// the accordion's body.
-//
-// Idempotent by contract: tiptap-markdown re-runs parse.updateDOM on every parse. Unwrapping is
-// naturally so — once the `<p>` is gone there is nothing left to unwrap.
+// The plugin wraps a definition's content in `<p>`, but the node holds inline content (§1), and
+// ProseMirror closed the definition early and left the text in a sibling paragraph. Unwrapped here,
+// as updateDetailsDOM does; idempotent, since updateDOM re-runs on every parse.
 export function unwrapFootnoteParagraphs(element: HTMLElement): void {
   element.querySelectorAll(FOOTNOTE_DEF_TAG).forEach((definition) => {
     definition.querySelectorAll(':scope > p').forEach((paragraph) => {
@@ -198,8 +147,8 @@ export function unwrapFootnoteParagraphs(element: HTMLElement): void {
   });
 }
 
-// The body reference. `atom` is a requirement rather than a convenience (§2): with a caret inside
-// it, part of a number can be deleted and a broken reference made.
+// The body reference. `atom` is required (§2): with a caret inside it, part of a number could be
+// deleted.
 export const FootnoteReference = Node.create<{
   onBlocked: (message: string) => void;
   onNotice: (message: string) => void;
@@ -207,10 +156,8 @@ export const FootnoteReference = Node.create<{
   name: 'footnoteReference',
 
   addOptions() {
-    // The same reporter the table and callout guards write to (PostEditor owns the one toast).
-    // A refused gesture changes nothing, so the notice is the whole of the feedback. `onNotice`
-    // goes to the same place but is not a refusal — nothing was declined, the author is being told
-    // about something already in their document (§5.4).
+    // The shared notice. `onNotice` is not a refusal: it reports something already in the document
+    // (§5.4).
     return { onBlocked: () => {}, onNotice: () => {} };
   },
   group: 'inline',
@@ -225,13 +172,8 @@ export const FootnoteReference = Node.create<{
         parseHTML: (element) => element.getAttribute('data-label') ?? '',
         renderHTML: (attributes) => ({ 'data-label': attributes.label as string }),
       },
-      // The note this reference is carrying through the clipboard (§6.1). Set on the way out by
-      // transformCopied and consumed the moment the paste lands; it is never in a settled document,
-      // and the serializer never looks at it — a reference writes `[^label]` and nothing else.
-      //
-      // It has to reach the DOM, because that is what the clipboard actually carries: a slice is
-      // serialized to HTML and parsed back, so an attribute that does not render is an attribute
-      // that does not survive a copy.
+      // The note carried through the clipboard (§6.1): set by transformCopied, consumed when the paste
+      // lands, never serialized. Rendered, because the clipboard carries HTML.
       pendingNote: {
         default: null,
         parseHTML: (element) => element.getAttribute('data-note'),
@@ -267,8 +209,7 @@ export const FootnoteReference = Node.create<{
         ({ state, dispatch }) => {
           const refusal = placementRefusal(state);
           if (refusal) {
-            // Only report when the command is actually being run — `can()` asks with no dispatch,
-            // and a menu measuring itself must not raise a toast.
+            // Not under `can()`, which must not raise a toast.
             if (dispatch) this.options.onBlocked(refusal);
             return false;
           }
@@ -282,21 +223,18 @@ export const FootnoteReference = Node.create<{
   },
 
   addKeyboardShortcuts() {
-    // Mod-Shift-F is free: Mod-Shift-X is strike, Mod-Shift-B is the quote, Mod-Alt-C the code
-    // block. The precedent for a shortcut of our own is accent-emphasis-extension.ts's Mod-Shift-E.
+    // Mod-Shift-F is unused (Mod-Shift-X strike, Mod-Shift-B quote, Mod-Alt-C code block).
     return { 'Mod-Shift-f': () => this.editor.commands.setFootnote() };
   },
 
   addInputRules() {
-    // Two characters is the whole trigger (§9.1). `[^` appears in neither Japanese prose nor
-    // markdown, and waiting for a closing bracket would mean asking the author for a label — which
-    // §4 has already decided they do not get to choose.
+    // `[^` alone triggers (§9.1): it appears in neither prose nor markdown, and the author never
+    // chooses a label (§4).
     return [
       new InputRule({
         find: /\[\^$/,
         handler: ({ state, range }) => {
-          // Criterion 7 counts two refusal paths on purpose: a guard on the shortcut says nothing
-          // about the input rule, and the author reaches the same wall by either route.
+          // The input rule refuses as the command does (criterion 7).
           const refusal = placementRefusal(state);
           if (refusal) {
             this.options.onBlocked(refusal);
@@ -325,24 +263,14 @@ function inDefinition($pos: ResolvedPos): boolean {
   return false;
 }
 
-// The definition. Inline content only (§1's non-goal list), and deliberately **not** in the
-// `block` group: the document's content expression is `block+ footnoteSection?` (§3.2), and a
-// definition that stayed in the group would still be admitted anywhere at the top level, leaving
-// that expression decorative. Its only home is the section below.
+// The definition: inline content only (§1), and **not** in the `block` group, or `block+
+// footnoteSection?` (§3.2) would admit it anywhere at the top level.
 export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => void }>({
   name: 'footnoteDefinition',
   content: 'inline*',
-  // What stops a *ranged* deletion spanning two definitions from merging them. The keymap below
-  // answers a caret at an edge, which is a different gesture and cannot reach this one: a selection
-  // drawn from one note into the next and then deleted (or typed over, cut, pasted over, or
-  // committed over by an IME) closed the frontier between the two definitions and left one node
-  // carrying both labels' worth of text. This is the same defect §6 documents for the callout and
-  // the code block, and isolating-boundary.ts already answers it at all seven entry points off the
-  // node's own `isolating` flag — so the fix is to be one of the nodes it protects, not to grow a
-  // sixth rule here.
-  //
-  // The section is isolating too, which makes this the table's two-level shape. That is already the
-  // case the clamp handles: `isolatingCutDepth` takes the *innermost* box, which is the definition.
+  // A ranged deletion across two definitions merged them. Being `isolating` makes isolating-boundary.ts
+  // clamp it at all its entry points; with the section also isolating, the clamp takes the
+  // innermost box, as for a table cell.
   isolating: true,
   defining: true,
 
@@ -368,38 +296,15 @@ export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => 
     return ['div', mergeAttributes({ 'data-footnote-def': '' }, HTMLAttributes), 0];
   },
 
-  // Enter must not split this node, and the reason is data loss rather than tidiness. A split copies
-  // the attributes, so both halves keep the same label: the section grows a second definition
-  // carrying the same number, and the markdown grows a second `[^a]:` line. markdown-it's
-  // `footnote_def` keeps the *last* definition it sees for a label, so reopening the post throws the
-  // first half away — measured, `[^a]: 注釈` + `[^a]: テキスト` came back as one definition reading
-  // "テキスト", and the words before the caret were gone.
+  // **Enter must not split a definition:** both halves keep the label, and markdown-it keeps only
+  // the last definition per label, so reopening lost the first half. A hard break instead, as in a
+  // table cell (the line form can't hold blocks); Shift+Enter always made one and it round-trips.
+  // Declines outside a definition.
   //
-  // A hard break instead, which is the answer a table cell already gives (issue #8): both are
-  // inline-only for the same reason, that the markdown line form they serialize to cannot hold block
-  // structure. Nothing new can be authored by it either — Shift+Enter has always made one here, and
-  // `[^a]: 注A\` + a continuation line round-trips as the same hardBreak node (measured), so this
-  // only routes a third key to the shape the other two already produce.
-  //
-  // Declines outside a definition so the key falls through to baseKeymap, and `setHardBreak` reports
-  // its own failure, which keeps this from swallowing an Enter it did not act on.
-  // Backspace at the start must not join, and Delete at the end must not pull the next one in — the
-  // same defect as the Enter split, arrived at from the other side. A join keeps one label and drops
-  // the other, so the second note's words end up filed under the first note's label: measured,
-  // `[^a]: 注A` and `[^b]: 注B` became `[^a]: 注A注B`, and `[^b]` was left empty and unpublishable.
-  // §5.1 already says a definition is never deleted on its own and goes only with its reference; a
-  // join is that rule broken from inside the section.
-  //
-  // Refused with the notice rather than silently, which is also what retires a dead key. Erasing a
-  // note's text leaves the definition empty and its reference marked (§5.2), and Backspace there did
-  // nothing at all and said nothing — indistinguishable from a broken key. It now says where the
-  // author has to go, the way the placement guards do.
-  //
-  // Deliberately *not* "delete the footnote once the definition is empty". The reference is
-  // somewhere else in the prose, possibly off screen, and Backspace repeats: an author clearing a
-  // note by holding the key would run past the empty state and take the reference with it. An empty
-  // definition is also a state every retyped note passes through, which is the same reason autosave
-  // refuses to overwrite a title that is briefly blank (lib/posts-write.ts).
+  // **Backspace at the start and Delete at the end must not join** two definitions: one label's
+  // words would end up under the other and the second left empty (§5.1). Refused with a notice,
+  // which also explains the formerly silent Backspace in an emptied note. Deliberately not "delete
+  // the footnote once empty": Backspace repeats, and the reference may be off screen.
   addKeyboardShortcuts() {
     const refuseJoin = (atEdge: (offset: number, size: number) => boolean) => () => {
       const { selection } = this.editor.state;
@@ -410,16 +315,9 @@ export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => 
       return true;
     };
 
-    // Not `setHardBreak`. @tiptap/extension-hard-break refuses outright when the caret's parent node
-    // is isolating (dist/index.js:39), and the definition is *both* the isolating node and the
-    // textblock the caret sits in — measured, adding `isolating` above turned Enter into a silent
-    // no-op and the next characters simply ran on. A table cell escapes that only because its
-    // textblock is an ordinary paragraph nested inside the isolating cell.
-    //
-    // All three keys go through here for the reason the table states: HardBreak binds Shift+Enter
-    // and Mod+Enter straight to `setHardBreak`, so leaving them alone would leave two dead keys
-    // where the canonical line break used to be. Each declines outside a definition, so HardBreak's
-    // own bindings answer them everywhere else.
+    // Not `setHardBreak`: @tiptap/extension-hard-break refuses when the caret's parent is isolating
+    // (`if (selection.$from.parent.type.spec.isolating) return false`), which the definition is. All
+    // three keys come here, since HardBreak binds Shift/Mod+Enter to `setHardBreak`.
     const breakLine = () => {
       if (!inDefinition(this.editor.state.selection.$from)) return false;
       return this.editor.commands.insertContent({ type: 'hardBreak' });
@@ -448,13 +346,8 @@ export const FootnoteDefinition = Node.create<{ onBlocked: (message: string) => 
   },
 });
 
-// The definitions' home at the end of the document (§3). Not in the `block` group either — the
-// document's content expression names it directly, and putting it in the group would let it be
-// created anywhere `block+` matches.
-//
-// It is not a draggable type (`block-drag-handle.ts` works from an explicit allowlist, so nothing
-// is needed there), and it takes no part in the table of contents on the public side (§8, enforced
-// in lib/rehype-collect-toc.ts).
+// The definitions' home at the end of the document (§3). Not in the `block` group; the doc's
+// content expression names it. Not draggable, and outside the public table of contents (§8).
 export const FootnoteSection = Node.create({
   name: 'footnoteSection',
   content: 'footnoteDefinition+',
@@ -472,8 +365,7 @@ export const FootnoteSection = Node.create({
   addStorage() {
     return {
       markdown: {
-        // The definitions write their own `[^label]: ` lines; the section is only their container,
-        // and GFM has no syntax for it.
+        // The definitions write their own lines; GFM has no syntax for the section.
         serialize: (state: MarkdownSerializerState, node: PMNode) => state.renderContent(node),
         parse: { setup: installFootnotes, updateDOM: unwrapFootnoteParagraphs },
       },
@@ -481,16 +373,9 @@ export const FootnoteSection = Node.create({
   },
 });
 
-// Replaces StarterKit's `doc` (disabled in PostEditor) for one reason: the content expression.
-// `block+ footnoteSection?` states in the schema what §3 asks for and §6.2's reconciliation would
-// otherwise be the only thing enforcing — the section can exist at most once, and only last.
-//
-// Nothing else is lost by declaring it here. @tiptap/extension-document is this node plus a
-// `renderMarkdown`, and that belongs to TipTap 3's own markdown module, which tiptap-markdown 0.9.0
-// never reads (the same reason details-extension.ts writes its own serializer).
-//
-// This alone does not put the trailing paragraph in the right place — see §3.2 and the
-// footnoteSection branch in trailing-node-extension.ts, which is the half that moves it.
+// Replaces StarterKit's `doc` for its content expression, `block+ footnoteSection?` (§3.2).
+// @tiptap/extension-document adds only a `renderMarkdown` tiptap-markdown never reads. The trailing
+// paragraph's placement is trailing-node-extension.ts's half.
 export const Document = Node.create({
   name: 'doc',
   topNode: true,
@@ -506,8 +391,7 @@ const footnotePairingKey = new PluginKey('footnotePairing');
 const footnoteClipboardKey = new PluginKey('footnoteClipboard');
 const footnoteOrphanNoticeKey = new PluginKey('footnoteOrphanNotice');
 
-// A label is an opaque, stable id (§4). It is never shown — the number the reader sees is derived
-// from document order — so it only has to be unique within the document and survive reordering.
+// A label is an opaque, stable id (§4), never shown; unique within the document.
 function mintLabelAvoiding(taken: Set<string>): string {
   for (;;) {
     const label = `fn-${Math.random().toString(36).slice(2, 5)}`;
@@ -534,8 +418,7 @@ interface FootnoteScan {
   definitions: Map<string, { empty: boolean }>;
 }
 
-// One walk answering both questions the rest of this file asks: what number does each label carry
-// (document order of the *references*, §4), and which definitions exist and are still empty.
+// Each label's number (reference order, §4), and which definitions exist and are empty.
 function scanFootnotes(doc: PMNode): FootnoteScan {
   const definitions = new Map<string, { empty: boolean }>();
   doc.descendants((node) => {
@@ -553,16 +436,14 @@ function scanFootnotes(doc: PMNode): FootnoteScan {
   return { order, definitions };
 }
 
-// A definition no reference points at has no number to sort by. §5.4 keeps it regardless, so it
-// sinks to the end of the section and holds its place among the other unreferenced ones.
+// Unreferenced definitions (§5.4) sink to the end in their existing order.
 const UNREFERENCED = Number.MAX_SAFE_INTEGER;
 
 function rankOf(definition: PMNode, order: Map<string, number>): number {
   return order.get(definition.attrs.label as string) ?? UNREFERENCED;
 }
 
-// Where a new definition goes for the section to stay in reference order (§3): in front of the first
-// one the reader would meet later than this.
+// Where a new definition goes to keep the section in reference order (§3).
 function orderedInsertPoint(doc: PMNode, section: PMNode, label: string): number {
   const { order } = scanFootnotes(doc);
   const rank = order.get(label) ?? UNREFERENCED;
@@ -575,31 +456,14 @@ function orderedInsertPoint(doc: PMNode, section: PMNode, label: string): number
   return at;
 }
 
-// §3's other half, and the one that was never built: the definitions' order follows the references'.
-// The number is a decoration recomputed from document order on every state, so without this the
-// section carries the right numbers in the wrong sequence — measured, adding a footnote between two
-// others left the column reading [1], [3], [2]. The published page never showed it, since remark-gfm
-// rebuilds the section from reference order at render time; the editor and the saved markdown were
-// the two that disagreed with it.
+// §3: the definitions follow the references' order, which the decoration numbers alone did not
+// guarantee (a middle insertion read [1], [3], [2]). Not while the caret is in the section, where
+// a rebuild would move the selection and no edit can change the order anyway. Load needs nothing:
+// the parser emits in reference order.
 //
-// Not while the caret is inside the section. The rebuild is one replacement over all of its content,
-// and an author typing a note would have the selection mapped out from under them. Nothing reachable
-// is given up by that: a reference cannot live inside a definition (§6.2's placement guard), so no
-// edit made in there can change the order. It is cover for a route that does not exist yet rather
-// than a case deferred.
-//
-// Nothing is needed on load either. markdown-it-footnote's tail walks `env.footnotes.list`, which is
-// indexed by reference, so the parser hands definitions over in reference order whatever the file
-// said — measured, and just as well: the editor takes its content through `useEditor({ content })`,
-// not a transaction, so no appended transaction runs there to sort them.
-// Sorts in place, on a transaction already under construction rather than as one of its own, and
-// that is not tidiness. prosemirror-state gives a plugin exactly one appendTransaction per apply
-// cycle: once it appends, its `seen[i].n` is the transaction list's new length, and the next pass
-// finds nothing after it to answer. Returning a sort *after* the paste's materialize step therefore
-// never ran — measured, the pasted definition stayed at the end of the section. So each step folds
-// the sort into whatever it is already returning.
-//
-// Returns whether it changed anything, so a caller with nothing else to say can return null.
+// Sorts in place on a transaction under construction: a plugin gets one appendTransaction per
+// cycle, so a separate sort after the paste's materialize step never ran. Returns whether it
+// changed anything.
 function sortDefinitions(tr: Transaction): boolean {
   const section = tr.doc.lastChild;
   if (section?.type !== tr.doc.type.schema.nodes.footnoteSection) return false;
@@ -621,9 +485,7 @@ function sortDefinitions(tr: Transaction): boolean {
   return true;
 }
 
-// The label of the reference the selection is *on*, or null. A NodeSelection and nothing else: a
-// caret merely sitting next to a reference is where an author writing prose spends most of its
-// time, and lighting the section up as the caret drifts past would be noise rather than an answer.
+// The label of the reference under a NodeSelection only; a caret beside one is ordinary writing.
 function pairedLabel(state: EditorState): string | null {
   const { selection } = state;
   if (!(selection instanceof NodeSelection)) return null;
@@ -631,14 +493,9 @@ function pairedLabel(state: EditorState): string | null {
   return selection.node.attrs.label as string;
 }
 
-// The number is a decoration, never an attribute, and that is the load-bearing choice here. Written
-// into the document it would make every reordering edit — and every load that renumbers — a change
-// the autosave has to save, which is the shape the accordion rejected when it took `persist: false`
-// so that a fold could not write to the database. A decoration keeps the number out of the document
-// and out of the markdown.
-//
-// `data-incomplete` is §5.2's first layer: the author is looking at the prose, not at the
-// definitions, so an unfinished footnote has to be visible from the reference.
+// **The number is a decoration, never an attribute**, so renumbering never writes to the document
+// or autosaves (like the accordion's `persist: false`). `data-incomplete` is §5.2's reference-side
+// marking.
 function footnoteNumbering(): Plugin {
   return new Plugin({
     key: footnoteNumberingKey,
@@ -647,18 +504,8 @@ function footnoteNumbering(): Plugin {
         const { order, definitions } = scanFootnotes(state.doc);
         if (order.size === 0 && definitions.size === 0) return null;
 
-        // Which definition is the one the author is pointing at. Clicking a reference already makes
-        // a NodeSelection — it is how a footnote is picked to be deleted (§5.1) — so the gesture is
-        // there and says nothing back. Marking its definition is the whole of the answer: the pair
-        // is otherwise only findable by matching a number by eye.
-        //
-        // Deliberately the *shown* pair and not a jump. Moving the caret to the definition would
-        // strand the author mid-sentence with nothing to bring them back, which is the same reason
-        // §5.1 keeps the caret in the prose when a footnote is inserted; the public page can jump
-        // because it has a backref and no caret to lose (§8). Scrolling the definition into view was
-        // considered alongside this and left out: click is also the delete gesture, and moving the
-        // page under someone who meant to press Backspace is a worse trade than a highlight they
-        // may not need.
+        // Selecting a reference highlights its definition. Not a jump, which would strand the caret
+        // mid-sentence (§5.1, §8), and not a scroll: the click is also the delete gesture.
         const paired = pairedLabel(state);
 
         const decorations: Decoration[] = [];
@@ -679,15 +526,10 @@ function footnoteNumbering(): Plugin {
             decorations.push(
               Decoration.node(pos, pos + node.nodeSize, {
                 'data-number': String(number ?? ''),
-                // No reference points at this one (§5.4). It is kept rather than deleted — the
-                // author's words are not the editor's to throw away — but it is marked.
+                // Unreferenced (§5.4): kept, and marked.
                 ...(number === undefined ? { 'data-orphan': '' } : {}),
-                // §5.2's first layer assumed a placeholder on this side and argued it was not
-                // enough on its own, which is how the reference-side marking came to exist — but
-                // the placeholder it was arguing against was never built. CSS cannot find this
-                // state by itself: an empty ProseMirror textblock still holds a trailing `<br>`, so
-                // `:empty` never matches. The emptiness has to arrive as an attribute, and this is
-                // the pass that already computes it.
+                // For the placeholder CSS: an empty textblock holds a `<br>`, so `:empty` never
+                // matches.
                 ...(node.content.size === 0 ? { 'data-empty': '' } : {}),
                 ...(paired === label ? { 'data-paired': '' } : {}),
               }),
@@ -700,14 +542,9 @@ function footnoteNumbering(): Plugin {
   });
 }
 
-// Deleting a reference deletes its definition (§5.1). This runs as an appended transaction rather
-// than inside the deleting command because a reference can go in many ways — Backspace, a ranged
-// replacement, a paste over it, select-all — and answering each one separately is how the guards in
-// this editor have grown their bugs before.
-//
-// Undo and input rules are skipped for the reasons trailing-node-extension.ts documents at length:
-// an append riding an undo cannot be taken back by the next Ctrl+Z, and any appended transaction
-// clears the record undoInputRule needs.
+// Deleting a reference deletes its definition (§5.1), as an appended transaction so every way a
+// reference can go is covered. Skips undo and input-rule rounds for trailing-node-extension.ts's
+// reasons.
 function footnotePairing(onBlocked: (message: string) => void): Plugin {
   return new Plugin({
     key: footnotePairingKey,
@@ -717,11 +554,8 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
       if (hasUndoableInputRule(state)) return null;
       if (oldState.doc.eq(state.doc)) return null;
 
-      // §6.2 — the label is settled here and not at paste time. transformPasted sees only the
-      // slice, so deciding there would mean minting a new label every time and a cut-and-paste
-      // would change the label of a footnote that merely moved. Here the destination document is
-      // in hand: the carried label is reused when it is free (a move) and replaced when it is
-      // already spoken for (a duplicate), which is what keeps §4's one reference = one definition.
+      // §6.2: the label is settled here, where the destination is known: a carried label is reused
+      // when free (a move) and replaced when taken (a duplicate).
       const materialized = materializePendingNotes(state, onBlocked);
       if (materialized) {
         // Materializing appends, so this is where a pasted note is put in its reference's place.
@@ -755,15 +589,12 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
       }
 
       const tr = state.tr;
-      // Losing every definition means losing the section: its content is `footnoteDefinition+`, so
-      // an empty one is not a document ProseMirror will build. Deleting the definitions one by one
-      // in that case simply does nothing — measured, the reference went and the definition stayed.
+      // The section's content is `footnoteDefinition+`, so the last definition takes it along.
       if (survivors === 0) {
         tr.delete(sectionStart, state.doc.content.size);
       } else {
         for (const { from, to } of doomed.reverse()) tr.delete(from, to);
-        // Deleting cannot disorder what is left, but this is the plugin's one turn — if the same
-        // edit both took a footnote away and moved another, there is no second pass to sort in.
+        // This is the plugin's one turn, so sort here too.
         sortDefinitions(tr);
       }
       return tr;
@@ -771,14 +602,9 @@ function footnotePairing(onBlocked: (message: string) => void): Plugin {
   });
 }
 
-// Give every reference that arrived carrying a note (§6.1) its definition back — or take the
-// reference away, when it landed somewhere §6 does not allow one.
-//
-// Both answers live here rather than in `transformPasted` because only here is the destination
-// known. A paste puts it in `view.state.selection`, but a drop does not: while transformPasted
-// runs, the selection is still the range being dragged. Answering there sent a footnote into a
-// table cell (measured), and answering in both places would be the two-rules-for-one-event shape
-// §6 opens by warning about.
+// Give every reference that arrived carrying a note (§6.1) its definition back, or degrade it where
+// §6 forbids one. Here, not in `transformPasted`, because during a drop the selection is still the
+// dragged range.
 function materializePendingNotes(
   state: EditorState,
   onBlocked: (message: string) => void,
@@ -794,38 +620,16 @@ function materializePendingNotes(
   });
   if (pending.length === 0) return null;
 
-  // What a carried label may claim in the destination document, asked of the *definitions* — the
-  // references are no longer consulted, and that inversion is the whole of the sharing rule (§6.2).
-  //
-  // A definition already under that name holding the *same* note is the same footnote, so the
-  // reference joins it rather than forking. That is what makes copy-and-paste the gesture for a
-  // second reference to one note, and it is why a drag-move still works: the move is one
-  // transaction, so the dragged footnote lands while its own definition is still in the section,
-  // and matching it there is now the answer rather than the trap it used to be.
-  //
-  // A definition under that name holding a *different* note is an accidental collision, and it
-  // mints. Labels are opaque but not all of them are generated — §4.1 keeps the ones external
-  // markdown brings — so two posts each holding a `[^1]` is the ordinary case rather than a
-  // coincidence, and reusing the label there would put the destination's words under the pasted
-  // reference and drop the ones it carried. Losing the author's words is the line this is drawn at.
-  //
-  // A name with no definition is a move whose definition was deleted with its reference (§5.1), or
-  // a paste into a document that has never seen it. Both keep the carried label and rebuild the
-  // note from what the reference brought.
-  //
-  // Comparing the note's text rather than tracking where the slice came from is deliberate. An
-  // editor-session id carried beside `pendingNote` would be exact, and §6.2's objection to
-  // provenance would not even apply (a slice without the attribute already falls to plain text),
-  // but it buys precision in a case the text comparison only gets wrong when the two notes read
-  // identically — where sharing and forking are indistinguishable to a reader anyway.
+  // The sharing rule (§6.2), asked of the definitions: the same label with the *same* note joins it
+  // (copy-and-paste as a second reference, and drag-moves); with a *different* note it mints, since
+  // external labels like `[^1]` collide routinely; with none, the carried note is rebuilt. Comparing
+  // text, not provenance, errs only when two notes read identically.
   const definitions = scanFootnoteText(state.doc).definitions;
   const taken = labelsInUse(state.doc);
 
   type Plan = { pos: number; node: PMNode; label: string; refused: boolean };
   const plans: Plan[] = [];
-  // Minted once per carried label, never once per reference. Two references to one note inside a
-  // single slice have to come out of a collision the way they went in; minting inside the loop gave
-  // them a label each and split one shared note into two independent ones with identical text.
+  // Minted once per carried label, so two references to one note stay one note.
   const minted = new Map<string, string>();
   let refusal: string | null = null;
   for (const { pos, node } of pending) {
@@ -850,8 +654,7 @@ function materializePendingNotes(
   const created: PMNode[] = [];
   for (const plan of plans) {
     if (plan.refused) continue;
-    // Nothing to build when the name already has its note: a move brought its own definition along,
-    // and a shared reference is pointing at one that was already there.
+    // Nothing to build when the note is already there.
     if (definitions.has(plan.label)) continue;
     const note = plan.node.attrs.pendingNote as string;
     definitions.set(plan.label, note);
@@ -860,8 +663,7 @@ function materializePendingNotes(
     );
   }
 
-  // Backwards, because a refusal replaces a one-wide atom with several characters and every
-  // position after it would move.
+  // Backwards, since a refusal widens a one-wide atom.
   for (const plan of [...plans].reverse()) {
     if (plan.refused) {
       tr.replaceWith(
@@ -884,14 +686,8 @@ function materializePendingNotes(
   return tr;
 }
 
-// §5.4 — an orphan definition is kept, and the author is told. Keeping it silently is the half that
-// would be indistinguishable from a bug: the note is in the document and in the saved markdown, it
-// carries `[?]` instead of a number, and nothing says why.
-//
-// Reported per label and only once. The document holding an orphan is a state, not an event, so
-// firing on every transaction would put a toast over the text on every keystroke. A label that
-// stops being an orphan is forgotten again, so writing the missing reference and then deleting it
-// reports afresh — which is right, because it is news again.
+// §5.4: an orphan definition is kept and the author told, once per label (a state, not an event);
+// a label that stops being an orphan is forgotten.
 function footnoteOrphanNotice(onNotice: (message: string) => void): Plugin {
   return new Plugin({
     key: footnoteOrphanNoticeKey,
@@ -922,17 +718,9 @@ function footnoteOrphanNotice(onNotice: (message: string) => void): Plugin {
   });
 }
 
-// §6.1 — a reference carries its note through the clipboard.
-//
-// The naive rule (drop a reference to plain text unless the slice carries its definition) is right
-// for a paste from outside and wrong inside the document. Definitions live in a section at the end
-// (§3), so a copied paragraph never carries one, and duplicating a paragraph that has a footnote
-// would silently degrade it; cutting is worse, since removing the reference takes the definition
-// with it (§5.1) and the note's words go with it.
-//
-// So the note travels on the reference itself. Everything else falls out of that: a duplicate has a
-// note and keeps its footnote, a cut-and-paste has one and keeps its words, and only a reference
-// from somewhere else arrives with nothing and falls back to plain text.
+// §6.1: a reference carries its note through the clipboard, since a copied paragraph never includes
+// the section, and a cut would otherwise lose the words. Only a reference from elsewhere arrives
+// without one and falls to plain text.
 function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
   return new Plugin({
     key: footnoteClipboardKey,
@@ -946,17 +734,9 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         });
       },
 
-      // A drop is refused outright rather than repaired after the fact. A drop *moves*: the source
-      // is deleted by the same transaction that inserts, so letting a refused reference fall to
-      // plain text at the destination takes its definition's reference away and leaves the note an
-      // orphan — the document ends up worse than if nothing had happened (measured). Refusing the
-      // whole gesture is also what the table drop guard does, and it loses nothing: a refused drop
-      // deletes no source.
-      //
-      // `posAtCoords` reads the document as it stands, before anything is inserted, so the accordion
-      // title of §6.5 is still there to be found — which is what makes this the one route where that
-      // refusal works after the fact. handlePaste below is the other half, and exists because on the
-      // paste path it does not.
+      // A drop is refused outright: it deletes its source, so degrading at the destination would
+      // orphan the note. `posAtCoords` reads the pre-insertion document, so the accordion title
+      // (§6.5) is still findable here; handlePaste covers the paste path, where it is not.
       handleDrop: (view, event, slice) => {
         if (!carriesReference(view.state, slice)) return false;
 
@@ -969,28 +749,10 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         return true;
       },
 
-      // The accordion title (§6.5), and only it. Every other refused destination is repaired after
-      // the slice has landed (materializePendingNotes), because the reference *does* land there: a
-      // table cell and a code block both hold it, and the repair finds it inside them. A title does
-      // not — `detailsSummary` is `text*`, so the reference never comes to rest in it and the
-      // ancestor walk `hostRefusalAt` performs can never see a summary above it.
-      //
-      // Measured, all three slice shapes: the fitter splits the accordion apart to place the
-      // reference, the reference ends up in a *paragraph* of the torn body, and asking about that
-      // position answers `null`. The after-the-fact repair is not merely late here, it is blind, and
-      // by the time it runs the tear is already in the document.
-      //
-      // So the refusal has to come before the slice is placed, and this is the only hook where the
-      // destination is known that early: `view.state.selection` is where a paste lands, whereas
-      // `transformPasted` runs on the drop path too, where the selection is still the dragged range
-      // (§6.3's correction). The drop path keeps its own answer above.
-      //
-      // Falling to plain text rather than refusing the gesture is §6.3's rule unchanged — a paste
-      // deletes no source, so the words still land and only the reference degrades. `text*` takes
-      // `[^label]` happily, so the degraded slice goes into the title without tearing anything
-      // (measured). Reproducing prosemirror-view's paste metas is what keeps the table's paste
-      // repair and the autosave seeing this as the paste it is, the same as the three other guards
-      // that take a paste over.
+      // The accordion title (§6.5) only. Other refusals are repaired after landing, but a reference
+      // never lands in a `text*` title: the fitter tears the accordion and `hostRefusalAt` sees only a
+      // paragraph. So it is refused before placement, degrading to `[^label]` text as §6.3 does for
+      // a paste, with prosemirror-view's paste metas.
       handlePaste: (view, _event, slice) => {
         if (!selectionTouches(view.state, 'detailsSummary')) return false;
         if (!carriesReference(view.state, slice)) return false;
@@ -998,24 +760,14 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
         const flattened = mapReferences(slice, view.state, (node) =>
           view.state.schema.text(`[^${node.attrs.label as string}]`),
         );
-        view.dispatch(
-          view.state.tr
-            .replaceSelection(flattened)
-            .scrollIntoView()
-            .setMeta('paste', true)
-            .setMeta('uiEvent', 'paste'),
-        );
+        view.dispatch(asPaste(view.state.tr.replaceSelection(flattened)));
         onBlocked(ACCORDION_TITLE_REFUSAL);
         return true;
       },
 
-      // transformPasted is not paste-only — prosemirror-view runs it over `view.dragging.slice` on
-      // a drop too, which is exactly what §6.4 wants: one rule answering both gestures, rather than
-      // a second one in isolating-boundary.ts giving a drop its own answer.
+      // Runs on drops too (§6.4), so one rule answers both gestures.
       transformPasted: (slice, view) => {
-        // Only the "did it bring a note" half is decided here. Where it landed is not knowable yet
-        // for a drop, so §6.3's placement question is asked once the slice is in the document —
-        // see materializePendingNotes.
+        // Only whether a note came along; placement is asked after landing (materializePendingNotes).
         return mapReferences(slice, view.state, (node) => {
           const note = node.attrs.pendingNote as string | null;
           // Plain text, the shape it had before this editor understood footnotes.
@@ -1027,8 +779,7 @@ function footnoteClipboard(onBlocked: (message: string) => void): Plugin {
   });
 }
 
-// Does this slice bring a reference with it? Both gesture handlers open with the same question, and
-// neither has anything to say about a slice carrying none.
+// Does this slice bring a reference with it?
 function carriesReference(state: EditorState, slice: Slice): boolean {
   const referenceType = state.schema.nodes.footnoteReference;
   if (!referenceType) return false;
@@ -1039,9 +790,7 @@ function carriesReference(state: EditorState, slice: Slice): boolean {
   return found;
 }
 
-// Walk a slice and replace every footnoteReference with whatever `swap` returns. Written over
-// Fragment rather than a transaction because a slice is not in the document yet — there are no
-// positions to address and nothing to dispatch.
+// Replace every footnoteReference in a slice (not yet in the document, so no positions).
 function mapReferences(slice: Slice, state: EditorState, swap: (node: PMNode) => PMNode): Slice {
   const referenceType = state.schema.nodes.footnoteReference;
   if (!referenceType) return slice;
@@ -1069,53 +818,14 @@ function scanFootnoteText(doc: PMNode): { definitions: Map<string, string> } {
   return { definitions };
 }
 
-// Both routes do the same thing (§9): put a reference where the caret is, create its empty
-// definition, and **leave the caret in the prose**. Sending it to the definition would break the
-// flow footnotes exist to protect — thinking of an aside while writing a sentence.
-//
-// One transaction, not two. Beyond the undo atomicity §5.1 asks for, it is what keeps the `[^`
-// rule's undo record alive: any second transaction in the same round clears the record
-// undoInputRule needs, which is the trap trailing-node-extension.ts was written to answer.
-// §6's placement rules. A cell is the one place markdown's pipe form breaks easily — this editor
-// has lost a table's pipe form twice already to content it could not put on one line — and a code
-// block holds text and nothing else.
-//
-// `selectionTouches` rather than `editor.isActive`: isActive requires the node to *cover* the whole
-// range, so it answers false for a selection reaching one character past a table's edge, and every
-// guard written that way waved a mixed selection through. It also answers for a caret, since
-// nodesBetween(pos, pos) still visits the nodes containing pos.
-// The accordion's *title* is the third refusal, and unlike the other two it is the schema that
-// insists rather than the markdown. `detailsSummary` is `text*` (@tiptap/extension-details), the one
-// other textblock in this editor besides `codeBlock` that will not hold an inline atom — measured by
-// enumerating every textblock's `contentMatch.matchType(footnoteReference)`, and those two are the
-// whole list. Without a guard the insertion does not fail cleanly: ProseMirror's fitting algorithm
-// takes the reference at a position it cannot occupy and *splits the accordion in two* to place it.
-// Measured, from a caret mid-title, `details(summary("タイトル"), content(p("本文")))` became
-//
-//   details(summary("タイ"), content(p([^1], "トル"))) + details(summary(""), content(p("本文")))
-//
-// — half the title torn off into the body, and a second empty accordion holding the original body.
-// That is the reported breakage, and it is worse than the table cell's, which merely refuses.
-//
-// The stored form agrees. The title round-trips as one raw HTML line (`<summary>…</summary>`,
-// accordion-requirements §2.1), so a `[^label]` written there is inside an HTML block and reaches
-// neither markdown-it-footnote on load nor remark-gfm on the public page; `serializeDetails` reads
-// the title through `textContent`, which a reference has none of, so it would be dropped on save
-// even if the schema let it in. Refusing is the only answer that is not a silent loss — supporting
-// it would mean `inline*`, a summary serializer, and a public renderer that can hold a marker there.
-//
-// The *body* is unaffected and must stay so: it is `block+` → paragraph → `inline*`, and a footnote
-// in an accordion's body works today (measured alongside the tear). So the name here is
-// `detailsSummary`, never `details`.
+// The accordion title refuses on schema grounds: `detailsSummary` is `text*` (with `codeBlock`, the
+// only textblocks refusing an inline atom; footnote-placement.test.ts), and the fitter would tear
+// the accordion (§6.5). The stored title is raw HTML, so a reference there would be lost anyway. The
+// body takes footnotes, hence `detailsSummary`, never `details`.
 const ACCORDION_TITLE_REFUSAL = '脚注はアコーディオンのタイトル内には置けません。';
 
-// The same rules asked of one position rather than of the selection. A drop needs this: at the
-// moment `transformPasted` runs, `view.state.selection` is still the *dragged* range, not where it
-// is about to land, so a selection-based check answers about the wrong place entirely — measured,
-// a footnote dragged into a table cell went straight in.
-// Exported for footnote-placement.test.ts. Both refusals are reachable only through an Editor, which
-// needs a DOM the vitest suite does not have, so the guards themselves are the testable seam — the
-// same trade installFootnotes above already makes.
+// The placement rules asked of a position, for drops, where the selection is still the dragged
+// range. Exported for footnote-placement.test.ts.
 export function hostRefusalAt($pos: ResolvedPos): string | null {
   for (let depth = $pos.depth; depth > 0; depth -= 1) {
     const name = $pos.node(depth).type.name;
@@ -1129,6 +839,8 @@ export function hostRefusalAt($pos: ResolvedPos): string | null {
   return null;
 }
 
+// §6's placement rules, via selectionTouches so a range reaching into a host counts: a cell (the
+// pipe form breaks), a code block (text only), an accordion title, and the section itself.
 export function placementRefusal(state: EditorState): string | null {
   if (selectionTouches(state, 'tableCell', 'tableHeader')) {
     return '脚注は表のセル内には置けません。';
@@ -1137,19 +849,16 @@ export function placementRefusal(state: EditorState): string | null {
     return '脚注はコードブロック内には置けません。';
   }
   if (selectionTouches(state, 'detailsSummary')) return ACCORDION_TITLE_REFUSAL;
-  // A definition holds inline content, so a reference *fits* inside one — the schema will not stop
-  // it. Nested footnotes are a non-goal (§1), and a reference living in the section would also make
-  // the materialization below insert into what it is walking.
+  // A definition would fit a reference, but nested footnotes are a non-goal (§1).
   if (selectionTouches(state, 'footnoteSection', 'footnoteDefinition')) {
     return '脚注の中に脚注は置けません。';
   }
   return null;
 }
 
-// Takes the transaction rather than making one. Both callers already have the transaction their
-// caller will dispatch — the command has `state.tr`, and an input rule is handed one that already
-// carries the typed characters — and building a second against the same document produced steps
-// whose positions no longer described it once replayed (`Invalid content for node doc`, measured).
+// Both routes (§9) insert the reference at the caret with an empty definition and **leave the caret
+// in the prose**, in one transaction: a second would clear the `[^` rule's undo record. Takes the
+// caller's transaction, since a second one against the same document replayed invalid positions.
 function applyFootnoteInsertion(
   tr: Transaction,
   state: EditorState,
@@ -1163,8 +872,7 @@ function applyFootnoteInsertion(
 
   const $from = tr.doc.resolve(from);
   if (!$from.parent.inlineContent) return false;
-  // No footnote inside a footnote (§1's non-goal list). The section is the only place definitions
-  // live, so one ancestor test covers it.
+  // No footnote inside a footnote (§1).
   for (let depth = $from.depth; depth > 0; depth -= 1) {
     if ($from.node(depth).type === sectionType) return false;
   }
@@ -1175,12 +883,8 @@ function applyFootnoteInsertion(
   const definition = definitionType.create({ label });
   const last = tr.doc.lastChild;
   if (last?.type === sectionType) {
-    // In reference order (§3), not at the end. This has to happen inside *this* transaction rather
-    // than being left to the reconciliation below, and the input rule is why: typing `[^` records an
-    // undoable input rule, and footnotePairing steps aside while that record is alive because any
-    // appended transaction clears what undoInputRule needs (§9.1, criterion 8). An appended reorder
-    // would therefore not run until the author's next keystroke — the definition would sit in the
-    // wrong place, in plain sight, until something unrelated moved it.
+    // In reference order (§3), inside this transaction: the pairing plugin steps aside while the
+    // input rule's undo record is alive (§9.1), so an appended reorder would wait for a keystroke.
     tr.insert(orderedInsertPoint(tr.doc, last, label), definition);
   } else {
     tr.insert(tr.doc.content.size, sectionType.create(null, definition));
