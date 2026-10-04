@@ -60,3 +60,41 @@ export function formatRevisionTime(epochMs: number, now: number = Date.now()): s
     date.toLocaleString('ja-JP', YEAR_ONLY) === new Date(now).toLocaleString('ja-JP', YEAR_ONLY);
   return date.toLocaleString('ja-JP', sameYear ? DATE_TIME_WITHOUT_YEAR : DATE_TIME_OPTIONS);
 }
+
+// How long ago, for 記事一覧's last edit: what the list is read for is "how recently did I touch
+// this", not the minute. Coarser with age, and past RELATIVE_DAYS_MAX a date (the year only when it
+// is not this one, as formatRevisionTime does). `now` is a parameter so the boundaries can be tested.
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const RELATIVE_DAYS_MAX = 30;
+const DATE_WITHOUT_YEAR: Intl.DateTimeFormatOptions = {
+  month: DATE_OPTIONS.month,
+  day: DATE_OPTIONS.day,
+  timeZone: DATE_OPTIONS.timeZone,
+};
+
+export function formatRelativeTime(epochMs: number, now: number = Date.now()): string {
+  const elapsed = Math.max(0, now - epochMs);
+  if (elapsed < MINUTE_MS) return 'たった今';
+  if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)} 分前`;
+  if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)} 時間前`;
+  if (elapsed < RELATIVE_DAYS_MAX * DAY_MS) return `${Math.floor(elapsed / DAY_MS)} 日前`;
+  const date = new Date(epochMs);
+  const sameYear =
+    date.toLocaleString('ja-JP', YEAR_ONLY) === new Date(now).toLocaleString('ja-JP', YEAR_ONLY);
+  return date.toLocaleString('ja-JP', sameYear ? DATE_WITHOUT_YEAR : DATE_OPTIONS);
+}
+
+// The editor's 文字数 (docs/editor-requirements.md §12.38): characters of the body's text without
+// whitespace, so a blank line or an indent counts nothing. Code points, not UTF-16 units, so an
+// emoji outside the BMP is one.
+export function countChars(text: string): number {
+  let n = 0;
+  for (const ch of text) if (!/\s/u.test(ch)) n += 1;
+  return n;
+}
+
+export function formatCharCount(n: number): string {
+  return `${n.toLocaleString('en-US')} 字`;
+}

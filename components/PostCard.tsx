@@ -71,7 +71,7 @@ export function PostCard({ post }: Props) {
           <img
             src={thumbnail}
             alt=''
-            className='h-20 w-32 rounded border border-zinc-200 object-cover sm:h-24 sm:w-40 dark:border-zinc-800'
+            className='h-20 w-32 rounded-chip border border-zinc-200 object-cover sm:h-24 sm:w-40 dark:border-zinc-800'
           />
         </Link>
       )}

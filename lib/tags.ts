@@ -153,8 +153,8 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 // Replace a slug in every place a post holds it: the live column, the working copy and the
 // revisions. All three, or a restore would bring the old slug back, and a working copy left
-// carrying it would differ from the live column and raise a false 未公開の変更あり. No `updatedAt`,
-// no revision: the author did not edit these posts.
+// carrying it would differ from the live column and raise a false 未公開の変更あり. No `updatedAt`, no
+// `editedAt`, no revision: the author did not edit these posts.
 function replaceTagInPosts(tx: Transaction, from: string, to: string | null): void {
   for (const row of tx
     .select({ id: posts.id, tags: posts.tags, draftContent: posts.draftContent })
@@ -288,7 +288,7 @@ export function addAlias(slug: string, raw: string): AliasResult {
   const problem = tagSlugProblem(raw);
   if (problem !== null) return { ok: false, error: problem };
   const alias = tagSlug(raw);
-  if (alias === '') return { ok: false, error: '別名を入力してください。' };
+  if (alias === '') return { ok: false, error: 'エイリアスを入力してください。' };
   const tag = db.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
   if (!tag) return { ok: false, error: 'タグが見つかりません。' };
   if (resolveTagSlug(alias) !== null)

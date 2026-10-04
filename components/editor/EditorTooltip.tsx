@@ -20,7 +20,7 @@ export function EditorTooltip({ label, shortcut }: { label?: string; shortcut?: 
     // narrow host every label wrapped into a two-word column.
     <span
       aria-hidden='true'
-      className='editor-tooltip pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-max max-w-xs -translate-x-1/2 break-all rounded bg-zinc-900 px-1.5 py-1 text-[10px] leading-tight text-white opacity-0 shadow-sm transition-opacity duration-100 group-hover/tt:opacity-100 group-hover/tt:delay-300 dark:bg-zinc-700'>
+      className='editor-tooltip pointer-events-none absolute left-1/2 top-full z-50 mt-1.5 w-max max-w-xs -translate-x-1/2 break-all rounded-chip bg-zinc-900 px-1.5 py-1 text-[10px] leading-tight text-white opacity-0 shadow-sm transition-opacity duration-100 group-hover/tt:opacity-100 group-hover/tt:delay-300 dark:bg-zinc-700'>
       {label}
       {shortcut && <span className={label ? 'ml-1.5 text-white/60' : undefined}>{shortcut}</span>}
     </span>

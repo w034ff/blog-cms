@@ -36,15 +36,22 @@ export function createPost(input: PostInput): number {
   const now = new Date().toISOString();
   const row = db
     .insert(posts)
-    .values({ ...input, body: normalizeNewlines(input.body), createdAt: now, updatedAt: now })
+    .values({
+      ...input,
+      body: normalizeNewlines(input.body),
+      createdAt: now,
+      updatedAt: now,
+      editedAt: now,
+    })
     .returning({ id: posts.id })
     .get();
   return row.id;
 }
 
 export function updatePost(id: number, input: PostInput): void {
+  const now = new Date().toISOString();
   db.update(posts)
-    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: new Date().toISOString() })
+    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: now, editedAt: now })
     .where(eq(posts.id, id))
     .run();
 }
@@ -90,13 +97,15 @@ export function autosavePost(id: number, content: DraftContent): void {
   const pendingTitle = row.draft ? '' : (row.draftContent?.title ?? '');
   const keptTitle = pendingTitle.trim() === '' ? row.title : pendingTitle;
   const safe = normalized.title.trim() === '' ? { ...normalized, title: keptTitle } : normalized;
+  const now = new Date().toISOString();
   if (row.draft) {
     db.update(posts)
-      .set({ ...safe, updatedAt: new Date().toISOString() })
+      .set({ ...safe, updatedAt: now, editedAt: now })
       .where(eq(posts.id, id))
       .run();
   } else {
-    db.update(posts).set({ draftContent: safe }).where(eq(posts.id, id)).run();
+    // `updatedAt` stays: it is the public 更新日, and nothing public changed.
+    db.update(posts).set({ draftContent: safe, editedAt: now }).where(eq(posts.id, id)).run();
   }
 }
 
@@ -134,6 +143,7 @@ export function commitPost(
 }
 
 function writeCommit(id: number, content: DraftContent, draft: boolean, date: string): boolean {
+  const now = new Date().toISOString();
   const result = db
     .update(posts)
     .set({
@@ -142,7 +152,8 @@ function writeCommit(id: number, content: DraftContent, draft: boolean, date: st
       date,
       draft,
       draftContent: null,
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
+      editedAt: now,
     })
     .where(eq(posts.id, id))
     .run();

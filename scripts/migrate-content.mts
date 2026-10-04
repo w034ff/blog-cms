@@ -26,12 +26,12 @@ function main(): void {
 
   const db = openDb(DB_PATH);
   const insert = db.prepare(
-    `INSERT INTO posts (slug, title, date, description, category, tags, draft, body, created_at, updated_at)
-     VALUES (@slug, @title, @date, @description, @category, @tags, @draft, @body, @now, @now)
+    `INSERT INTO posts (slug, title, date, description, category, tags, draft, body, created_at, updated_at, edited_at)
+     VALUES (@slug, @title, @date, @description, @category, @tags, @draft, @body, @now, @now, @now)
      ON CONFLICT(slug) DO UPDATE SET
        title=excluded.title, date=excluded.date, description=excluded.description,
        category=excluded.category, tags=excluded.tags, draft=excluded.draft,
-       body=excluded.body, updated_at=excluded.updated_at`,
+       body=excluded.body, updated_at=excluded.updated_at, edited_at=excluded.edited_at`,
   );
 
   // Tags are dictionary slugs (docs/editor-requirements.md §12.33), and unknown ones are dropped on

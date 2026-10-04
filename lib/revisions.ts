@@ -131,8 +131,9 @@ export function restoreRevision(postId: number, target: RestoreTarget): boolean 
       const revision = getRevision(postId, target);
       if (!revision) return false;
       recordRevision(postId, 'restore', live);
+      const now = new Date().toISOString();
       db.update(posts)
-        .set({ ...revision.content, updatedAt: new Date().toISOString() })
+        .set({ ...revision.content, updatedAt: now, editedAt: now })
         .where(eq(posts.id, postId))
         .run();
       return true;
@@ -154,7 +155,10 @@ export function restoreRevision(postId: number, target: RestoreTarget): boolean 
     // A working copy identical to the live columns is no pending edit (lib/posts.ts
     // hasUnpublishedEdits), so it is stored as none — which is also exactly what discarding is.
     const draftContent = sameDraftContent(restored, live) ? null : restored;
-    db.update(posts).set({ draftContent }).where(eq(posts.id, postId)).run();
+    db.update(posts)
+      .set({ draftContent, editedAt: new Date().toISOString() })
+      .where(eq(posts.id, postId))
+      .run();
     return true;
   });
 }

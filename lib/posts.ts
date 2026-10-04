@@ -22,9 +22,9 @@ export type PostForEdit = Post & {
 };
 
 // What the admin list needs beyond a Post: whether a published post is carrying edits readers
-// cannot see yet. Narrowed the same way PostForEdit is, and for the same reason — the public
+// cannot see yet, and when the author last touched it (lib/db/schema.ts `editedAt`). Narrowed the same way PostForEdit is, and for the same reason — the public
 // surfaces have no use for it, and Post reaches every one of them.
-export type AdminPost = Post & { hasPendingEdits: boolean };
+export type AdminPost = Post & { hasPendingEdits: boolean; editedAt: string };
 
 // `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
 // the dictionary does not have is dropped here, so no surface draws a tag whose page is a 404.
@@ -96,6 +96,7 @@ export async function listAllPosts(): Promise<AdminPost[]> {
     const post = toPost(row, names);
     return {
       ...post,
+      editedAt: row.editedAt,
       hasPendingEdits: hasUnpublishedEdits(
         post,
         row.draftContent ? normalizeDraftContent(row.draftContent) : null,

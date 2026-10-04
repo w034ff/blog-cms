@@ -72,10 +72,10 @@ export function ThumbnailField({ value, onChange, body }: Props) {
           <img
             src={shown}
             alt=''
-            className='h-16 w-28 shrink-0 rounded border border-zinc-300 object-cover dark:border-zinc-700'
+            className='h-16 w-28 shrink-0 rounded-chip border border-zinc-300 object-cover dark:border-zinc-700'
           />
         ) : (
-          <div className='flex h-16 w-28 shrink-0 items-center justify-center rounded border border-dashed border-zinc-300 text-xs text-zinc-400 dark:border-zinc-700'>
+          <div className='flex h-16 w-28 shrink-0 items-center justify-center rounded-chip border border-dashed border-zinc-300 text-xs text-zinc-400 dark:border-zinc-700'>
             なし
           </div>
         )}
@@ -95,14 +95,14 @@ export function ThumbnailField({ value, onChange, body }: Props) {
               type='button'
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className='thumbnail-field-button rounded border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+              className='thumbnail-field-button rounded-box border border-zinc-300 px-3 text-sm hover:bg-zinc-100 disabled:pointer-events-none disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'>
               {uploading ? 'アップロード中…' : value ? '変更' : '画像を選ぶ'}
             </button>
             {value !== '' && (
               <button
                 type='button'
                 onClick={() => onChange('')}
-                className='thumbnail-field-button rounded border border-zinc-300 px-3 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
+                className='thumbnail-field-button rounded-box border border-zinc-300 px-3 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800'>
                 解除
               </button>
             )}

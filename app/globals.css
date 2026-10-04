@@ -107,6 +107,19 @@ html {
   --breakpoint-toc: 60rem;
 }
 
+/* The UI's corner radii, by size rather than by role (docs/project-status.md): `rounded-panel` for
+   a top-level surface (page cards, dialogs, popup menus), `rounded-box` for a control or a box
+   nested in one (fields, buttons, bars, inner lists), `rounded-chip` for small things (badges,
+   thumbnails, icon buttons, menu rows) — the same radius on a 16px badge reads as a pill. The
+   editor's two popup menus (SlashList, ToolbarDropdown) are box, not panel, chosen by eye: small
+   menus of `text-xs` rows that run edge to edge. Not the post body's components, which keep
+   the radii their requirements documents chose. */
+@theme {
+  --radius-panel: 8px;
+  --radius-box: 6px;
+  --radius-chip: 4px;
+}
+
 /* The desktop ToC's grid track: the nav's `ml-6` + `w-60` (components/TocNav.tsx). A plain custom
    property, read only through `var()`, never as a utility. */
 :root {
@@ -142,12 +155,12 @@ html {
    `(hover: hover)` as Tailwind's `hover:` does, so a tap does not leave it lit. */
 @layer components {
   .button-primary {
-    border-radius: 0.125rem;
+    border-radius: var(--radius-box);
     background: var(--button-primary-bg);
     color: var(--button-primary-fg);
   }
   .button-secondary {
-    border-radius: 0.125rem;
+    border-radius: var(--radius-box);
     border: 1px solid var(--button-secondary-border);
   }
   .tag-chip {
@@ -534,17 +547,21 @@ body {
 }
 
 /* ToolbarDropdown's floating panel drops in from its trigger, as the toast does
-   (docs/editor-requirements.md §12.37). `translate`, not `transform`: the inline `transform` centres
-   and clamps the panel, and the two compose where a `transform` here would override it. No exit
-   half: the panel unmounts on close. */
+   (docs/editor-requirements.md §12.37), and the admin screens' popups (`admin-popup`: 記事一覧's ⋯
+   menu, its OptionMenu, ScreenHeading's phone menu) the same way, so a menu opens alike on both
+   sides of the editor. `translate`, not `transform`: the inline `transform` centres and clamps the
+   toolbar's panel, and the two compose where a `transform` here would override it. No exit half:
+   each panel unmounts on close. */
 @media (prefers-reduced-motion: no-preference) {
-  .toolbar-dropdown-panel {
+  .toolbar-dropdown-panel,
+  .admin-popup {
     transition:
       opacity 150ms ease,
       translate 150ms ease-out;
   }
   @starting-style {
-    .toolbar-dropdown-panel {
+    .toolbar-dropdown-panel,
+    .admin-popup {
       opacity: 0;
       translate: 0 -4px;
     }
@@ -632,6 +649,20 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+}
+
+/* The header's 文字数 (CharCount.tsx) gives way below the widths where it would wrap the bar to
+   two rows and push the page down. The widths, and the one state that still wraps above them, are
+   in docs/editor-requirements.md §12.38. */
+@media (hover: hover) and (max-width: 29.99rem) {
+  .editor-char-count {
+    display: none;
+  }
+}
+@media (hover: none) and (max-width: 22.49rem) {
+  .editor-char-count {
+    display: none;
   }
 }
 
@@ -869,14 +900,14 @@ body {
 
 /* The editor page's side padding, wider than PageMain's `px-4` on a pointer so a window just wider
    than `--container-editor` does not put the frame against its edge. The header bar cancels it to
-   span the window, so it follows it here. Keyed to PostEditor's own <form>, not to the shell's
-   layout: the revision pages share that layout but keep the published page's padding and column,
-   since one of them is a preview of the post. Touch keeps `px-4`. */
+   span the window, so it follows it here. Keyed to PostEditor's own <form> and the revision pages'
+   wrapper, which share the editor's column (docs/editor-requirements.md §12.35). Touch keeps
+   `px-4`. */
 @media (hover: hover) {
-  main:has(.post-editor) {
+  main:has(.post-editor, .revision-page) {
     padding-inline: 2.5rem;
   }
-  .post-editor .editor-header-bar {
+  :is(.post-editor, .revision-page) .editor-header-bar {
     margin-inline: -2.5rem;
     padding-inline: 2.5rem;
   }

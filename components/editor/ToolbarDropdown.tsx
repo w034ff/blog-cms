@@ -20,7 +20,7 @@ export function ToolbarDropdown({
   title,
   active,
   disabled,
-  panelClass = 'min-w-max flex-col overflow-hidden px-1 py-0.5',
+  panelClass = 'min-w-max flex-col overflow-hidden py-0.5',
   children,
 }: {
   // Trigger content (icon and/or text label); the chevron is appended after it.
@@ -106,7 +106,7 @@ export function ToolbarDropdown({
           style={{ transform: `translateX(calc(-50% + ${shiftX}px))` }}
           // `toolbar-dropdown-panel` carries the entrance fade (app/globals.css,
           // docs/editor-requirements.md §12.37).
-          className={`toolbar-dropdown-panel absolute left-1/2 top-full z-50 mt-1 flex rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
+          className={`toolbar-dropdown-panel absolute left-1/2 top-full z-50 mt-1 flex rounded-box border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 ${panelClass}`}>
           {children(() => setOpen(false))}
         </div>
       )}

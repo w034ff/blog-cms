@@ -121,7 +121,7 @@ export function ToolbarButton({
       }${wide ? 'toolbar-button-wide ' : ''}${
         round
           ? 'toolbar-button-round rounded-full p-1.5'
-          : `rounded ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
+          : `rounded-chip ${compact ? 'px-1 py-1' : 'px-2 py-1'}`
       } ${tone} ${
         active ? 'bg-zinc-200 dark:bg-zinc-700' : ''
       } ${disabled ? 'pointer-events-none opacity-40' : ''}`}>

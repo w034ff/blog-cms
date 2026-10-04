@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { SiteColumn } from '@/components/PageShell';
+import { EditorColumn } from '@/components/PageShell';
 import { HEADER_ICON_LINK, RevisionHeaderBar } from '@/components/RevisionHeaderBar';
 import { ArrowLeftIcon } from '@/components/editor/svg/ArrowLeftIcon';
 import { formatRevisionTime } from '@/lib/format';
@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = { title: 'リビジョン履歴' };
 
-const BADGE_CLASS = 'shrink-0 rounded px-1.5 py-0.5 text-xs';
+const BADGE_CLASS = 'shrink-0 rounded-chip px-1.5 py-0.5 text-xs';
 
 // One row: the live post or a revision. The padding is the row's, so the dividers and hover run
 // to the box's edges; the box rounds its end rows instead of `overflow-hidden`, which would clip
@@ -42,7 +42,7 @@ function Row({
   return (
     <Link
       href={href}
-      className='flex min-w-0 items-center gap-2 px-3 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900'>
+      className='flex min-w-0 items-center gap-2 px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-800'>
       <span className='shrink-0 font-medium'>{heading}</span>
       {badge && <span className={`${BADGE_CLASS} ${badge.badge}`}>{badge.label}</span>}
       {title !== null && (
@@ -81,7 +81,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
     content.title !== current.title ? content.title : null;
 
   return (
-    <>
+    <div className='revision-page'>
       {/* The editor's header; ← goes back to the editor, the only place this page opens from. */}
       <RevisionHeaderBar>
         <Link
@@ -92,7 +92,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
           <EditorTooltip label='編集に戻る' />
         </Link>
       </RevisionHeaderBar>
-      <SiteColumn>
+      <EditorColumn>
         <h1 className='min-w-0 truncate text-2xl font-bold tracking-tight'>リビジョン履歴</h1>
         {/* Which post, since nothing else on the page says it once titles stop differing. */}
         <p className='mt-1 truncate text-sm text-zinc-600 dark:text-zinc-400'>
@@ -103,7 +103,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
             are discarded. A draft has none. */}
         {!post.draft && (
           <section className='mt-6' aria-label='公開中の記事'>
-            <div className='rounded border border-zinc-200 dark:border-zinc-800 [&>a]:rounded'>
+            <div className='rounded-panel border border-zinc-200 bg-surface dark:border-zinc-800 [&>a]:rounded-panel'>
               <Row
                 href={previewHref('live')}
                 heading='公開中の記事'
@@ -124,7 +124,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
             </p>
           ) : (
             <ul
-              className='mt-2 divide-y divide-zinc-200 rounded border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 [&>li:first-child>a]:rounded-t [&>li:last-child>a]:rounded-b'
+              className='mt-2 divide-y divide-zinc-200 rounded-panel border border-zinc-200 bg-surface dark:divide-zinc-800 dark:border-zinc-800 [&>li:first-child>a]:rounded-t-panel [&>li:last-child>a]:rounded-b-panel'
               aria-label='リビジョンの一覧'>
               {revisions.map((revision) => (
                 <li key={revision.id}>
@@ -140,7 +140,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
             </ul>
           )}
         </section>
-      </SiteColumn>
-    </>
+      </EditorColumn>
+    </div>
   );
 }

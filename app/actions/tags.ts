@@ -72,7 +72,7 @@ export async function removeAliasAction(
   formData: FormData,
 ): Promise<TagFormState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  if (!removeAlias(field(formData, 'alias'))) return { error: '別名が見つかりません。' };
+  if (!removeAlias(field(formData, 'alias'))) return { error: 'エイリアスが見つかりません。' };
   revalidateTags();
   return { at: Date.now() };
 }

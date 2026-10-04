@@ -46,6 +46,12 @@ export const posts = sqliteTable('posts', {
   // above) is what makes that safe — there is no separate access check.
   // Appended at the tail for the same reason as `draftContent`/`thumbnail`.
   unlisted: integer('unlisted', { mode: 'boolean' }).notNull().default(false),
+  // When the author last changed the post, wherever the change went: the live columns, or the
+  // working copy a published post's autosave writes. 記事一覧 sorts by it. Not `updatedAt`, which
+  // is the public 更新日 and so moves only on publish/update/unpublish. The default is '' because
+  // SQLite's ADD COLUMN refuses a CURRENT_TIMESTAMP default; the migration fills existing rows from
+  // `updated_at`, and every insert writes it. Appended at the tail, as above.
+  editedAt: text('edited_at').notNull().default(''),
 });
 
 // Failed-login bookkeeping, so a public `/login` can't be tried at the speed the

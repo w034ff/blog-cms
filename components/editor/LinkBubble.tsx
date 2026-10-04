@@ -53,7 +53,7 @@ const SUPPRESS_TABLE_MENU = 'link-menu-open';
 // Shared by both fields, which must line up. **The field fills its grid column and does not set
 // the card's width** (§5.5.19): a definite width here overflowed the capped card on a phone.
 const FIELD_CLASS =
-  'w-full min-w-0 rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-link focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100';
+  'w-full min-w-0 rounded-box border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-link focus:outline-none dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100';
 
 // Each field's name, as a label rather than a placeholder (a filled field shows none). To the left,
 // because height is the card's expensive axis: every added line covers another paragraph.
@@ -100,7 +100,7 @@ function LinkFavicon({ href }: { href: string }) {
       referrerPolicy='no-referrer'
       onLoad={() => setLoaded(true)}
       onError={() => setLoaded(false)}
-      className={`${loaded ? 'block' : 'hidden'} ml-1 h-4 w-4 shrink-0 rounded-sm`}
+      className={`${loaded ? 'block' : 'hidden'} ml-1 h-4 w-4 shrink-0 rounded-chip`}
     />
   );
 }
@@ -739,7 +739,7 @@ export function LinkBubble({
       // Docs' card shape; the border stays for dark mode. `max-w` (§5.5.19) lets the fields shrink,
       // since `shift` can only move a card that fits; `2rem` leaves 8px each side, where `1rem` put
       // the right edge exactly at `100vw`.
-      className='link-bubble z-20 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
+      className='link-bubble z-20 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 rounded-box border border-zinc-200 bg-white px-2 py-1.5 shadow-[0_2px_10px_rgba(0,0,0,0.18)] dark:border-zinc-700 dark:bg-zinc-800'>
       {editing ? (
         // Not a <form> (docs/editor-pitfalls.md §15.1); Enter and 適用 call the same function. The text
         // field comes first, as in Docs, and is absent when not offered (§5.5.13).
@@ -815,7 +815,7 @@ export function LinkBubble({
                   aria-label='見出しの候補'
                   // Styled like the `/` menu. Position and max height come from the layout effect
                   // above, before paint; `max-w` caps the width on a phone (§5.5.19).
-                  className='absolute z-10 flex w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
+                  className='absolute z-10 flex w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded-panel border border-zinc-300 bg-white py-0.5 shadow-lg dark:border-zinc-700 dark:bg-zinc-900'>
                   {suggestions.matches.length === 0 ? (
                     // No headings, or none matching: the author acts differently on each.
                     <p className='px-2 py-1.5 text-xs text-zinc-500 dark:text-zinc-400'>
@@ -883,7 +883,7 @@ export function LinkBubble({
                 onClick={
                   isFragment ? jump : () => window.open(href, '_blank', 'noopener,noreferrer')
                 }
-                className='link-bubble-open block w-full truncate rounded px-1.5 py-0.5 text-left text-xs text-link hover:underline'>
+                className='link-bubble-open block w-full truncate rounded-chip px-1.5 py-0.5 text-left text-xs text-link hover:underline'>
                 {title ?? displayHref(href)}
               </button>
               <EditorTooltip label={title ?? href} />
