@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState, useId, useState } from 'react';
 import {
   addAliasAction,
@@ -17,17 +18,40 @@ import {
   tagSlugProblem,
 } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
-import { EditorTooltip } from '@/components/editor/EditorTooltip';
+import {
+  countByUse,
+  matchesUse,
+  sortTags,
+  tagListHref,
+  type TagListParams,
+  type TagSort,
+  type TagUse,
+} from '@/lib/admin-tag-list';
+import { OptionMenu } from '../OptionMenu';
 
 const inputClass =
   'w-full min-w-0 rounded-box border border-zinc-300 bg-surface px-3 py-1.5 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700';
 const secondaryButtonClass = 'button-secondary shrink-0 px-3 py-1.5 text-sm disabled:opacity-50';
 const primaryButtonClass = 'button-primary shrink-0 px-3 py-1.5 text-sm disabled:opacity-40';
-// One grey (`zinc-600`, `zinc-400` in dark) for the chrome — headings, each row's 編集 — and the
-// body colour for the data, so the data reads first. One grid for the header and every row, so the
-// columns line up.
-const columnsClass =
-  'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_3.5rem_3.5rem] items-center gap-x-4';
+// One grey (`zinc-600`, `zinc-400` in dark) for the chrome — each row's 編集, a count of 0 — and the
+// body colour for the data, so the data reads first. One grid for the whole list, which each row
+// and its cells take as a subgrid: the count and 編集 columns are as wide as their widest cell, so
+// 1,000 記事 widens its column instead of running into 編集, and the columns line up with no
+// heading row over them.
+const listClass = 'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] gap-x-4';
+const rowClass = 'col-span-full grid grid-cols-subgrid';
+
+const USE_TABS: { use: TagUse; label: string }[] = [
+  { use: 'all', label: 'すべて' },
+  { use: 'used', label: '使用中' },
+  { use: 'unused', label: '未使用' },
+];
+
+const SORT_OPTIONS: { sort: TagSort; label: string }[] = [
+  { sort: 'slug', label: '識別子順' },
+  { sort: 'most', label: '記事の多い順' },
+  { sort: 'least', label: '記事の少ない順' },
+];
 
 const initialState: TagFormState = {};
 
@@ -41,23 +65,29 @@ function ErrorLine({ message }: { message: string | undefined | null }) {
 }
 
 // One field both searches and adds. It narrows the table the way the editor's field finds tags
-// (`tagSearchKey`: identifier, display name or alias). 追加 opens only when no tag is that word, so a
-// new tag is made with its likely duplicates in view; the text stays, leaving the new row on screen.
+// (`tagSearchKey`: identifier, display name or alias). Adding is a row at the head of the sheet,
+// 「…」を新しいタグとして追加 as the editor's tag field offers it, there only when no tag is that word:
+// a 追加 button beside the field sat disabled nearly all the time. So a new tag is made with its
+// likely duplicates in view below it; the text stays, leaving the new row on screen.
 //
-// Read-only rows, one open for editing at a time. Sorted by identifier, or by 記事 count: most first,
-// then least first, which brings up the tags no post uses.
+// 記事一覧's frame (ListControls.tsx): the field and the tabs over the sheet, the rows alone on it.
+// The tabs split the dictionary by use and count what the search leaves, so a tab's number is what
+// clicking it shows. Tab and sort are links (lib/admin-tag-list.ts); the field's text is this
+// component's state, which a same-page navigation keeps. Read-only rows, one open for editing at a
+// time.
 export function TagDirectory({
   tags,
   usage,
+  params,
 }: {
   tags: DictionaryTag[];
   // Posts per identifier, drafts and pending edits included (lib/tags.ts `tagUsage`).
   usage: Record<string, number>;
+  params: TagListParams;
 }) {
   const [state, create, creating] = useActionState(createTagAction, initialState);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const [sort, setSort] = useState<'slug' | 'countDesc' | 'countAsc'>('slug');
 
   // Every word that names a tag — identifiers and aliases — to that tag's identifier, so an open row
   // can tell a change from a merge before anything is sent, and 追加 can tell a new word from a known one.
@@ -65,46 +95,46 @@ export function TagDirectory({
     tags.flatMap((tag) => [tag.slug, ...tag.aliases].map((word) => [word, tag.slug])),
   );
   const needle = tagSearchKey(query);
-  const shown = tags
-    .filter(
-      (tag) =>
-        needle === '' ||
-        tag.slug.includes(needle) ||
-        tagSearchKey(tag.name).includes(needle) ||
-        tag.aliases.some((alias) => alias.includes(needle)),
-    )
-    .sort((a, b) => {
-      const byCount = (usage[b.slug] ?? 0) - (usage[a.slug] ?? 0);
-      const bySlug = a.slug.localeCompare(b.slug);
-      if (sort === 'countDesc') return byCount || bySlug;
-      if (sort === 'countAsc') return -byCount || bySlug;
-      return bySlug;
-    });
-  const byCount = sort !== 'slug';
+  const found = tags.filter(
+    (tag) =>
+      needle === '' ||
+      tag.slug.includes(needle) ||
+      tagSearchKey(tag.name).includes(needle) ||
+      tag.aliases.some((alias) => alias.includes(needle)),
+  );
+  const counts = countByUse(found, usage);
+  const shown = sortTags(
+    found.filter((tag) => matchesUse(usage[tag.slug] ?? 0, params.use)),
+    usage,
+    params.sort,
+  );
   const problem = tagSlugProblem(query);
   const word = tagSlug(query);
   const known =
     word !== '' &&
     (owners[word] !== undefined ||
       tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(query)));
-  const headingButton = (active: boolean) =>
-    `hover:underline ${active ? 'font-bold text-zinc-900 dark:text-zinc-100' : ''}`;
-  // A faint ↕ on each inactive heading: bold alone left a heading that sorts looking like one that
-  // does not. The active one shows a direction only where a press reverses it — 識別子 is A→Z
-  // alone, so it gets none. Out of the name — aria-pressed and 記事's label say the order.
-  const sortArrow = (arrow: string | null) => (
-    <span
-      aria-hidden
-      className={arrow === null ? 'font-normal text-zinc-300 dark:text-zinc-600' : undefined}>
-      {' '}
-      {arrow ?? '↕'}
-    </span>
-  );
+  const addable = word !== '' && !known && problem === null;
+  const formId = useId();
 
   return (
     <div>
-      <form action={create} className='max-w-md'>
-        <div className='flex gap-2'>
+      {/* Enter in the field submits only what the add row would. */}
+      <form
+        id={formId}
+        action={create}
+        onSubmit={(event) => {
+          if (!addable || creating) event.preventDefault();
+        }}
+        className='mb-3'>
+        <div className='relative'>
+          <svg
+            aria-hidden='true'
+            viewBox='0 0 16 16'
+            className='pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-500'>
+            <circle cx='7' cy='7' r='4.5' fill='none' stroke='currentColor' strokeWidth='1.5' />
+            <path d='M10.5 10.5L14 14' stroke='currentColor' strokeWidth='1.5' />
+          </svg>
           <input
             name='name'
             aria-label='タグを検索・追加'
@@ -112,63 +142,79 @@ export function TagDirectory({
             maxLength={TAG_NAME_MAX_LENGTH}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className={inputClass}
+            className='w-full rounded-box border border-zinc-300 bg-surface py-2 pr-3 pl-9 text-base focus:ring-2 focus:ring-zinc-400 focus:outline-none dark:border-zinc-700'
           />
-          <button
-            type='submit'
-            disabled={creating || word === '' || known || problem !== null}
-            className={secondaryButtonClass}>
-            追加
-          </button>
         </div>
-        {/* Why 追加 is shut is said only when nothing matched — while the text finds tags it is a
+        {/* Why no add row is offered is said only when nothing matched — while the text finds tags it is a
             search, and `C#` typed to find `csharp` is not a mistake. */}
-        <ErrorLine message={(shown.length === 0 ? problem : null) ?? state.error} />
+        <ErrorLine message={(found.length === 0 ? problem : null) ?? state.error} />
       </form>
 
-      <div className='mt-8'>
-        <div
-          className={`${columnsClass} border-b border-zinc-200 pb-2 text-xs text-zinc-600 dark:border-zinc-800 dark:text-zinc-400`}>
-          {/* The tooltip says what a press does; the order now is the arrow's and aria-label's job.
-              A sibling of the button, not its child, so the button's text stays its name. */}
-          <span className='group/tt relative justify-self-start'>
-            <button
-              type='button'
-              aria-pressed={sort === 'slug'}
-              onClick={() => setSort('slug')}
-              className={headingButton(sort === 'slug')}>
-              識別子{sort !== 'slug' && sortArrow(null)}
-            </button>
-            {/* None when active: a press changes nothing. */}
-            {sort !== 'slug' && <EditorTooltip label='A→Z 順に並べる' />}
-          </span>
-          <span>表示名</span>
-          {/* First press: most first. Each press after: the other way. */}
-          <span className='group/tt relative justify-self-end'>
-            <button
-              type='button'
-              aria-pressed={byCount}
-              aria-label={
-                sort === 'countAsc'
-                  ? '記事（少ない順）'
-                  : sort === 'countDesc'
-                    ? '記事（多い順）'
-                    : '記事'
-              }
-              onClick={() => setSort(sort === 'countDesc' ? 'countAsc' : 'countDesc')}
-              className={headingButton(byCount)}>
-              記事{sortArrow(sort === 'countDesc' ? '↓' : sort === 'countAsc' ? '↑' : null)}
-            </button>
-            <EditorTooltip label={sort === 'countDesc' ? '少ない順に並べる' : '多い順に並べる'} />
-          </span>
-          <span />
+      <div className='mb-3 flex flex-wrap-reverse items-end justify-between gap-x-6 gap-y-2 border-b border-zinc-300 dark:border-zinc-700'>
+        {/* Scrolls sideways rather than run off a narrow phone when the counts grow; no scrollbar,
+            which would sit on the underline. */}
+        <nav
+          aria-label='使われ方'
+          className='-mb-px flex max-w-full gap-6 overflow-x-auto [scrollbar-width:none]'>
+          {USE_TABS.map(({ use, label }) => {
+            const current = params.use === use;
+            return (
+              <Link
+                key={use}
+                href={tagListHref(params, { use })}
+                aria-current={current ? 'page' : undefined}
+                className={`border-b-3 py-2 text-base whitespace-nowrap ${
+                  current
+                    ? 'border-(--accent) font-semibold text-zinc-900 dark:text-zinc-50'
+                    : 'border-transparent text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50'
+                }`}>
+                {label}
+                <span className='ml-1.5 text-xs font-normal text-zinc-500'>
+                  {counts[use].toLocaleString('en-US')}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
+        <div className='pb-2'>
+          <OptionMenu
+            label='並び替え'
+            options={SORT_OPTIONS.map(({ sort, label }) => ({
+              label,
+              href: tagListHref(params, { sort }),
+              current: params.sort === sort,
+            }))}
+          />
         </div>
+      </div>
+
+      {/* On a white sheet, as 記事一覧's rows are. */}
+      <div className='rounded-panel border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
+        {addable && (
+          // In the list's place, not the form's: `form` ties it to the field's form.
+          <button
+            type='submit'
+            form={formId}
+            disabled={creating}
+            className={`flex w-full items-center gap-2 py-3 text-left text-sm text-zinc-700 hover:text-zinc-950 disabled:opacity-50 dark:text-zinc-300 dark:hover:text-zinc-50 ${shown.length > 0 ? 'border-b border-zinc-200 dark:border-zinc-800' : ''}`}>
+            <span
+              aria-hidden='true'
+              className='inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-chip bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'>
+              ＋
+            </span>
+            <span className='min-w-0 truncate'>
+              「<b className='font-semibold'>{query.trim()}</b>」を新しいタグとして追加
+            </span>
+          </button>
+        )}
         {shown.length === 0 ? (
-          <p className='py-3 text-sm text-zinc-600 dark:text-zinc-400'>
-            {tags.length === 0 ? 'タグはまだありません。' : '当てはまるタグはありません。'}
-          </p>
+          addable ? null : (
+            <p className='py-3 text-sm text-zinc-600 dark:text-zinc-400'>
+              {tags.length === 0 ? 'タグはまだありません。' : '当てはまるタグはありません。'}
+            </p>
+          )
         ) : (
-          <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
+          <ul className={`${listClass} divide-y divide-zinc-200 dark:divide-zinc-800`}>
             {shown.map((tag) => (
               <TagRow
                 // Keyed by both, so a saved change remounts the row with the server's values.
@@ -204,21 +250,24 @@ function TagRow({
   onClose: () => void;
 }) {
   return (
-    <li className='py-3'>
-      <div className={columnsClass}>
+    <li className={`${rowClass} py-3`}>
+      <div className={`${rowClass} items-center`}>
         <span className='truncate text-sm'>
           <span className='font-medium'>{tag.slug}</span>
+          {/* The エイリアス, in brackets with no word for them: the open row's field and the help
+              dialog name them, and the word would take its width from the identifier. */}
           {tag.aliases.length > 0 && (
-            <span className='text-zinc-600 dark:text-zinc-400'>
-              {' '}
-              （別名 {tag.aliases.join('、')}）
-            </span>
+            <span className='text-zinc-600 dark:text-zinc-400'>（{tag.aliases.join('、')}）</span>
           )}
         </span>
         {/* Only a display name that differs is shown: the same word twice is the noise this
             table is meant to be without. */}
         <span className='truncate text-sm'>{tag.name !== tag.slug ? tag.name : ''}</span>
-        <span className='text-right text-sm tabular-nums'>{usage}</span>
+        {/* With its unit: no heading row says what the number counts. */}
+        <span
+          className={`text-right text-sm whitespace-nowrap tabular-nums ${usage === 0 ? 'text-zinc-500' : ''}`}>
+          {usage.toLocaleString('en-US')} 記事
+        </span>
         <div className='text-right'>
           {!open && (
             <button
@@ -274,7 +323,7 @@ function TagEditor({
   const posts = `${usage} 件の記事`;
 
   return (
-    <div className='mt-3 rounded-box border border-zinc-200 p-4 dark:border-zinc-800'>
+    <div className='col-span-full mt-3 rounded-box border border-zinc-200 p-4 dark:border-zinc-800'>
       {/* The delete form below cannot sit inside this one — a form nested in a form is dropped
           by the parser — so 保存, placed beside キャンセル down there, names this form by id. */}
       <form id={formId} action={update} className='grid gap-4 sm:grid-cols-2'>
@@ -384,7 +433,7 @@ function AliasEditor({ tag }: { tag: DictionaryTag }) {
   return (
     <div className='mt-4'>
       <label htmlFor={fieldId} className='mb-1 block text-xs font-bold'>
-        別名
+        エイリアス
       </label>
       {tag.aliases.length > 0 && (
         <ul className='mb-2 flex flex-wrap gap-x-4 gap-y-1 text-sm'>
@@ -396,7 +445,7 @@ function AliasEditor({ tag }: { tag: DictionaryTag }) {
                 <button
                   type='submit'
                   disabled={removing}
-                  aria-label={`別名「${word}」を外す`}
+                  aria-label={`エイリアス「${word}」を外す`}
                   className='text-xs text-zinc-600 hover:underline disabled:opacity-50 dark:text-zinc-400'>
                   外す
                 </button>

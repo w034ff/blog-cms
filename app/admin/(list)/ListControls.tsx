@@ -50,7 +50,11 @@ export function ListControls({
         />
       </form>
       <div className='mb-3 flex flex-wrap-reverse items-end justify-between gap-x-6 gap-y-2 border-b border-zinc-300 dark:border-zinc-700'>
-        <nav aria-label='状態' className='-mb-px flex gap-6'>
+        {/* Scrolls sideways rather than run off a narrow phone when the counts grow; no scrollbar,
+            which would sit on the underline. */}
+        <nav
+          aria-label='状態'
+          className='-mb-px flex max-w-full gap-6 overflow-x-auto [scrollbar-width:none]'>
           {TABS.map(({ status, label }) => {
             const current = params.status === status;
             return (
@@ -64,7 +68,9 @@ export function ListControls({
                     : 'border-transparent text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50'
                 }`}>
                 {label}
-                <span className='ml-1.5 text-xs font-normal text-zinc-500'>{counts[status]}</span>
+                <span className='ml-1.5 text-xs font-normal text-zinc-500'>
+                  {counts[status].toLocaleString('en-US')}
+                </span>
               </Link>
             );
           })}

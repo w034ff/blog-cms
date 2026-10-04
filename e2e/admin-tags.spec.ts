@@ -41,9 +41,11 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   // A display name may carry what an identifier may not — spaces here, as `Next.js` would a dot.
   const shown = `E2E 管理 ${stamp}`;
   const editButton = (slug: string) => page.getByRole('button', { name: `「${slug}」を編集` });
+  // The add row at the head of the list, offered only for a word no tag is.
+  const addRow = page.getByRole('button', { name: /を新しいタグとして追加$/ });
   const add = async (slug: string) => {
     await page.getByLabel('タグを検索・追加').fill(slug);
-    await page.getByRole('button', { name: '追加', exact: true }).click();
+    await page.getByRole('button', { name: `「${slug}」を新しいタグとして追加` }).click();
     await expect(editButton(slug)).toBeVisible();
   };
 
@@ -52,11 +54,14 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   // Symbols are refused as typed, said only when nothing matched. No real tag contains `qz`.
   await page.getByLabel('タグを検索・追加').fill('qz#');
   await expect(page.getByRole('alert').filter({ hasText: '記号やスペース' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '追加', exact: true })).toBeDisabled();
-  // A tag that already is the word shows as the search result, and 追加 stays shut.
+  await expect(addRow).toHaveCount(0);
+  // Enter adds nothing either: it submits only what the row would.
+  await page.getByLabel('タグを検索・追加').press('Enter');
+  await expect(page.getByText('当てはまるタグはありません。')).toBeVisible();
+  // A tag that already is the word shows as the search result, and no add row is offered.
   await page.getByLabel('タグを検索・追加').fill(first.toUpperCase());
   await expect(editButton(first)).toBeVisible();
-  await expect(page.getByRole('button', { name: '追加', exact: true })).toBeDisabled();
+  await expect(addRow).toHaveCount(0);
 
   // A published post carrying it.
   await page.goto('/admin/posts/new');
@@ -95,9 +100,7 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(editButton(moved)).toBeVisible();
   await expect(page.locator('li').filter({ has: editButton(moved) })).toContainText(shown);
-  await expect(page.locator('li').filter({ has: editButton(moved) })).toContainText(
-    `別名 ${first}`,
-  );
+  await expect(page.locator('li').filter({ has: editButton(moved) })).toContainText(`（${first}）`);
   await page.goto(`/tags/${first}`);
   await expect(page).toHaveURL(new RegExp(`/tags/${moved}$`));
   await expect(page.getByRole('heading', { level: 1 })).toContainText(`#${shown}`);
@@ -129,15 +132,15 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   const extra = `x${stamp}`;
   await page.goto('/admin/tags');
   await edit(page, other);
-  await page.getByLabel('別名', { exact: true }).fill(extra);
+  await page.getByLabel('エイリアス', { exact: true }).fill(extra);
   await page.getByRole('button', { name: '追加', exact: true }).last().click();
-  await expect(page.getByRole('button', { name: `別名「${extra}」を外す` })).toBeVisible();
+  await expect(page.getByRole('button', { name: `エイリアス「${extra}」を外す` })).toBeVisible();
   await page.goto(`/tags/${extra}`);
   await expect(page).toHaveURL(new RegExp(`/tags/${other}$`));
   await page.goto('/admin/tags');
   await edit(page, other);
-  await page.getByRole('button', { name: `別名「${extra}」を外す` }).click();
-  await expect(page.getByRole('button', { name: `別名「${extra}」を外す` })).toHaveCount(0);
+  await page.getByRole('button', { name: `エイリアス「${extra}」を外す` }).click();
+  await expect(page.getByRole('button', { name: `エイリアス「${extra}」を外す` })).toHaveCount(0);
   expect((await page.goto(`/tags/${extra}`))?.status()).toBe(404);
 
   // Deleted: a tag in use asks once more, naming the count, and then leaves the post.
@@ -171,26 +174,72 @@ test('the field narrows the table by identifier, display name or alias, and 記�
   await search.fill('');
   await expect(editOf('python')).toBeVisible();
 
-  // An inactive heading shows ↕, so it reads as a control; the active 識別子, which has one
-  // direction, shows none. The arrow stays out of the name.
-  const bySlug = page.getByRole('button', { name: '識別子', exact: true });
-  await expect(bySlug).toHaveText('識別子');
-  await expect(page.getByRole('button', { name: '記事', exact: true })).toHaveText('記事 ↕');
-
-  // By count: most-used first, then pressed again, least-used first.
+  // By count, from the sort menu: each order is its own URL.
   const counts = async () =>
-    (await page.locator('ul > li > div > span.tabular-nums').allInnerTexts()).map(Number);
-  await page.getByRole('button', { name: '記事', exact: true }).click();
-  await expect(bySlug).toHaveText('識別子 ↕');
-  await expect(page.getByRole('button', { name: '記事（多い順）' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+    (await page.locator('ul > li > div > span.tabular-nums').allInnerTexts()).map((text) =>
+      parseInt(text, 10),
+    );
+  const sortBy = async (label: string) => {
+    await page.getByRole('button', { name: /並び替え/ }).click();
+    await page.getByRole('link', { name: label, exact: true }).click();
+  };
+  await sortBy('記事の多い順');
+  await expect(page).toHaveURL(/\/admin\/tags\?sort=most$/);
   const descending = await counts();
   expect(descending.length).toBeGreaterThan(1);
   expect(descending).toEqual([...descending].sort((a, b) => b - a));
-  await page.getByRole('button', { name: '記事（多い順）' }).click();
-  await expect(page.getByRole('button', { name: '記事（少ない順）' })).toBeVisible();
+  await sortBy('記事の少ない順');
+  await expect(page).toHaveURL(/\/admin\/tags\?sort=least$/);
   const ascending = await counts();
   expect(ascending).toEqual([...ascending].sort((a, b) => a - b));
+});
+
+// 未使用 is what the screen is opened for: the tags no post carries. Its number is what it shows, and
+// the search text survives the move, since the field is also where a tag is added.
+test('the tabs split the dictionary by use, and keep the search', async ({ page }) => {
+  await page.goto('/admin/tags');
+  const counts = async () =>
+    (await page.locator('ul > li > div > span.tabular-nums').allInnerTexts()).map((text) =>
+      parseInt(text, 10),
+    );
+  const tab = (label: string) =>
+    page
+      .getByRole('navigation', { name: '使われ方' })
+      .getByRole('link', { name: new RegExp(`^${label}`) });
+
+  await tab('未使用').click();
+  await expect(page).toHaveURL(/\/admin\/tags\?use=unused$/);
+  await expect(tab('未使用')).toHaveAttribute('aria-current', 'page');
+  const unused = await counts();
+  expect(unused.length).toBeGreaterThan(0);
+  expect(unused.every((n) => n === 0)).toBe(true);
+  await expect(tab('未使用')).toContainText(String(unused.length));
+
+  await tab('使用中').click();
+  await expect(page).toHaveURL(/\/admin\/tags\?use=used$/);
+  const used = await counts();
+  expect(used.every((n) => n > 0)).toBe(true);
+
+  const search = page.getByLabel('タグを検索・追加');
+  await search.fill('zzz-nothing-like-this');
+  await expect(page.getByText('当てはまるタグはありません。')).toBeVisible();
+  await tab('すべて').click();
+  await expect(page).toHaveURL(/\/admin\/tags$/);
+  await expect(search).toHaveValue('zzz-nothing-like-this');
+});
+
+// The 使い方 sheet beside the heading: its three sections, closed by Escape with focus back on the
+// button that opened it.
+test('the help sheet opens beside the heading and closes with Escape', async ({ page }) => {
+  await page.goto('/admin/tags');
+  const opener = page.getByRole('button', { name: 'タグの管理の使い方' });
+  await opener.click();
+  const sheet = page.getByRole('dialog', { name: 'タグの管理の使い方' });
+  await expect(sheet).toBeVisible();
+  for (const title of ['識別子と表示名', 'エイリアス', '統合']) {
+    await expect(sheet.getByRole('heading', { name: title, exact: true })).toBeVisible();
+  }
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(opener).toBeFocused();
 });

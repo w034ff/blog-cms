@@ -288,7 +288,7 @@ export function addAlias(slug: string, raw: string): AliasResult {
   const problem = tagSlugProblem(raw);
   if (problem !== null) return { ok: false, error: problem };
   const alias = tagSlug(raw);
-  if (alias === '') return { ok: false, error: '別名を入力してください。' };
+  if (alias === '') return { ok: false, error: 'エイリアスを入力してください。' };
   const tag = db.select({ id: tags.id }).from(tags).where(eq(tags.slug, slug)).get();
   if (!tag) return { ok: false, error: 'タグが見つかりません。' };
   if (resolveTagSlug(alias) !== null)
