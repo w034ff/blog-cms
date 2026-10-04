@@ -27,6 +27,7 @@ import { useDragContainment } from './editor/useDragContainment';
 import { useMeasuredHeight } from './editor/useMeasuredHeight';
 import { useKeyboardInset } from './editor/useKeyboardInset';
 import { InsertMenu } from './editor/InsertMenu';
+import { CharCount } from './editor/CharCount';
 import { EditorTooltip } from './editor/EditorTooltip';
 import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
@@ -518,6 +519,10 @@ export function PostEditor({
               </>
             ))}
           <span className='ml-auto flex flex-wrap items-center gap-2'>
+            {/* 文字数 (docs/editor-requirements.md §12.38): here rather than beside the autosave
+                state, where 「3,214 字 保存済み ✓」 would read as one run of status. Hidden where it
+                would wrap the bar (app/globals.css). */}
+            {editor && <CharCount editor={editor} />}
             {/* 囲み枠・表・リンク・画像 on a phone, the toolbar on a pointer (docs/editor-requirements.md
                 §12.5). `editor &&` is this bar's one gate: publish must survive an editor that
                 fails to mount, but these are editor commands. */}

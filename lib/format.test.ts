@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatRelativeTime, formatRevisionTime, hasVisibleUpdate } from '@/lib/format';
+import {
+  countChars,
+  formatCharCount,
+  formatRelativeTime,
+  formatRevisionTime,
+  hasVisibleUpdate,
+} from '@/lib/format';
 
 describe('hasVisibleUpdate', () => {
   it('is false when the two timestamps land on the same JST calendar day', () => {
@@ -53,5 +59,23 @@ describe('formatRelativeTime', () => {
 
   it('reads a moment ahead of now (a skewed clock) as just now', () => {
     expect(formatRelativeTime(now + 5_000, now)).toBe('たった今');
+  });
+});
+
+describe('countChars', () => {
+  it('counts characters without whitespace', () => {
+    expect(countChars('日本語 の\n本文\t です')).toBe(8);
+    expect(countChars('   \n\n')).toBe(0);
+    expect(countChars('')).toBe(0);
+  });
+  it('counts an emoji outside the BMP as one', () => {
+    expect(countChars('a😀b')).toBe(3);
+  });
+});
+
+describe('formatCharCount', () => {
+  it('groups thousands', () => {
+    expect(formatCharCount(0)).toBe('0 字');
+    expect(formatCharCount(12345)).toBe('12,345 字');
   });
 });

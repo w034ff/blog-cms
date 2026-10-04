@@ -32,7 +32,7 @@ export function OptionMenu({ label, options }: { label: string; options: MenuOpt
       {open && (
         <ul
           id={panelId}
-          className='absolute top-full right-0 z-20 mt-1 min-w-full rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
+          className='admin-popup absolute top-full right-0 z-20 mt-1 min-w-full rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
           {options.map((option) => (
             <li key={option.href}>
               <Link

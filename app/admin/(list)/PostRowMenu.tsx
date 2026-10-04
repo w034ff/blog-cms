@@ -1,12 +1,14 @@
 'use client';
 
+import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { deletePostAction } from '@/app/actions/posts';
 import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 
 // A row's less frequent actions — the Markdown download and 削除 — behind ⋯, so the list's loudest
-// word is not a destructive one.
+// word is not a destructive one. 編集 leads it although the title already opens the editor: nothing
+// on the row says the title does, and a touch screen shows no hover underline.
 // A disclosure, not `role="menu"`: the panel holds a confirmation step, not a list of commands
 // walked with arrow keys. Deleting takes a second click because nothing brings a post back —
 // deletePost removes its revisions in the same transaction (docs/revision-requirements.md).
@@ -43,7 +45,7 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
       {open && (
         <div
           id={panelId}
-          className='absolute top-full right-0 z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
+          className='admin-popup absolute top-full right-0 z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
           {confirming ? (
             <form action={deletePostAction} className='w-56 p-2'>
               <input type='hidden' name='id' value={id} />
@@ -62,6 +64,11 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
             </form>
           ) : (
             <>
+              <Link
+                href={`/admin/posts/${id}/edit`}
+                className='block rounded-chip px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
+                編集
+              </Link>
               {/* The row's 表示, here only on a phone, where the row hides it to give the title
                   the width (app/admin/(list)/page.tsx). */}
               {slug && (
@@ -79,6 +86,9 @@ export function PostRowMenu({ id, slug }: { id: number; slug: string | null }) {
                 className='block rounded-chip px-3 py-1.5 text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
                 Markdown をダウンロード
               </a>
+              {/* 削除 stands apart from the commands that open or export. `-mx-1` cancels the
+                  panel's `p-1`, so the rule meets its border. */}
+              <hr className='-mx-1 my-1 border-zinc-200 dark:border-zinc-800' />
               <button
                 type='button'
                 onClick={() => setConfirming(true)}

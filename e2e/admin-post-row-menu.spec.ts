@@ -69,3 +69,17 @@ test('Markdown をダウンロード saves the post as a .md named after its tit
   // The list is still there: the link downloads rather than navigating.
   await expect(page).toHaveURL(/\/admin$/);
 });
+
+// 編集 leads the menu as a second way into the editor: nothing on the row says the title is one.
+test('編集 in the menu opens that post in the editor', async ({ page }) => {
+  const title = `E2E 編集 ${Date.now()}`;
+  await draftTitled(page, title);
+  const editPath = new URL(page.url()).pathname;
+
+  await page.goto('/admin');
+  const row = rowFor(page, title);
+  await row.getByRole('button', { name: 'その他の操作' }).click();
+  await row.getByRole('link', { name: '編集', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${editPath}$`));
+  await expect(page.getByLabel('タイトル')).toHaveValue(title);
+});

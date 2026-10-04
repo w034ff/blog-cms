@@ -85,3 +85,16 @@ export function formatRelativeTime(epochMs: number, now: number = Date.now()): s
     date.toLocaleString('ja-JP', YEAR_ONLY) === new Date(now).toLocaleString('ja-JP', YEAR_ONLY);
   return date.toLocaleString('ja-JP', sameYear ? DATE_WITHOUT_YEAR : DATE_OPTIONS);
 }
+
+// The editor's 文字数 (docs/editor-requirements.md §12.38): characters of the body's text without
+// whitespace, so a blank line or an indent counts nothing. Code points, not UTF-16 units, so an
+// emoji outside the BMP is one.
+export function countChars(text: string): number {
+  let n = 0;
+  for (const ch of text) if (!/\s/u.test(ch)) n += 1;
+  return n;
+}
+
+export function formatCharCount(n: number): string {
+  return `${n.toLocaleString('en-US')} 字`;
+}
