@@ -111,8 +111,8 @@ systemctl --user list-timers uploads-gc.timer
 ### 6.2 node のパスと環境
 
 - `ExecStart` は `npm` を経由せず、`node scripts/gc-uploads.mts --delete` を直接呼ぶ（`npm run gc:uploads` と同じ）。systemd の PATH に nvm は入らないので、`%h/.nvm/versions/node/v24.14.1/bin/node` に固定している。nvm で版を上げたら unit の 2 か所を直す。直し忘れると `203/EXEC` で失敗し、別の版で黙って動くことはない。
-- `WorkingDirectory=%h/test`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
-- アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/test/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
+- `WorkingDirectory=%h/blog-cms/task`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
+- アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/blog-cms/task/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
 
 ### 6.3 サンドボックスは採らない
 
