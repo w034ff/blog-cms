@@ -81,6 +81,19 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 `@vitest/mocker` 経由の moderate（Vitest: Path Traversal / Arbitrary File Read）を、`vitest` を 4.1.9 から 4.1.11 に上げて塞いだ。`npm audit` は drizzle-kit 経由の 4 件（§5.1）だけに戻った。vitest の範囲に従って、推移的依存の `vite` が 8.0.16 から 8.3.0 に、`rolldown` が 1.0.3 から 1.2.9 に上がり、`lightningcss` 1.33.0 が加わった。どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
 
+### 5.4 eslint-config-next 経由の braces（high 5 件、受け入れ）
+
+経路は `eslint-config-next`（devDependency）→ `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`（GHSA-vfj7-8cjw-p6xm。深く入れ子にしたパターンでスタックを使い切る DoS）。2026-10-05 決定。
+
+**受け入れる理由**: lint のときだけ動き、本番のバンドルに入らない。glob パターンはプラグインと設定が決めるもので、外部の入力は届かない。前向きの修正も無い（braces の最新版が 3.0.3）。`npm audit fix --force` の「修正」は `eslint-config-next@14` への格下げなので、しない。braces か fast-glob が修正版を出したら上げる。それまでは、§5.1 の moderate 4 件とこの high 5 件、計 9 件が `npm audit` の正常な状態である。
+
+### 5.5 next の RCE と markdown-it（2026-10-05 に対応）
+
+- `next` の critical（GHSA-vcvr-r3jv-pc5j。`next/og` の `ImageResponse` で RCE、16.2.0〜16.3.5）を、`next` と `eslint-config-next` を 16.3.5 から 16.3.6 に上げて塞いだ。このリポジトリは `next/og` を import していないが、本番の依存なので上げた。`npm audit` が勧めた 16.3.8 は公開から 7 日未満だったので、待機期間を過ぎていた 16.3.6 を選んだ。16.3.6 も sharp に `^0.35.4` を宣言するので、§5.2 の sharp の固定は変えていない。
+- `markdown-it` の moderate（GHSA-253c-mchw-3w2r。`linkify: true` のときに 2 次の処理時間がかかる）を、14.2.0 から 14.3.2 に上げて塞いだ。エディタは `linkify: false` で設定しているので届かない経路だったが、修正版が待機期間を過ぎていたので上げた。
+- `brace-expansion` の high（1.1.18 → 1.1.21、5.0.9 → 5.0.12）は lockfile の更新だけで塞いだ。override は使っていない（§5.2 の最後の項目）。
+- どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
+
 ## 6. アップロードの掃除の定期実行（systemd user timer）
 
 `npm run gc:uploads -- --delete` を、この WSL2 ホストで毎日 04:00（±10 分）に回す。unit は `deploy/systemd/uploads-gc.service` と `uploads-gc.timer`。スクリプトの挙動（猶予 24 時間、参照は DB の本文と `.mdx` の和）は `docs/project-status.md` の「アップロードは参照で消す」に従い、timer はそれを変えない。2026-09-30 決定。
@@ -98,8 +111,8 @@ systemctl --user list-timers uploads-gc.timer
 ### 6.2 node のパスと環境
 
 - `ExecStart` は `npm` を経由せず、`node scripts/gc-uploads.mts --delete` を直接呼ぶ（`npm run gc:uploads` と同じ）。systemd の PATH に nvm は入らないので、`%h/.nvm/versions/node/v24.14.1/bin/node` に固定している。nvm で版を上げたら unit の 2 か所を直す。直し忘れると `203/EXEC` で失敗し、別の版で黙って動くことはない。
-- `WorkingDirectory=%h/test`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
-- アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/test/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
+- `WorkingDirectory=%h/blog-cms/task`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
+- アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/blog-cms/task/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
 
 ### 6.3 サンドボックスは採らない
 
