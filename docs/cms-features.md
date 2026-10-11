@@ -235,7 +235,7 @@ AGENTS.md「Requirements documents」の方針（表とコードを照合する�
 
 ## 12. 実測で発覚した不具合（2026-09-06）
 
-実装直後、ユーザーが実際に稼働中のdev serverで `/rss.xml` を開いて出力を貼ってくれたところ、`<link>`/`<guid>` が `https://blog.example.ts.net//posts/f377f7a9a768a5b4d6f2` のように二重スラッシュになっていた。
+実装直後、ユーザーが実際に稼働中のdev serverで `/rss.xml` を開いて出力を貼ってくれたところ、`<link>`/`<guid>` が `https://<公開ホスト>//posts/f377f7a9a768a5b4d6f2` のように二重スラッシュになっていた。
 
 **原因**: `siteOrigin`（`lib/site.ts`）は文字列ではなく `URL` オブジェクト。テンプレートリテラルに直接埋め込む（`` `${siteOrigin}/posts/...` ``）と `.toString()` が呼ばれ、`new URL('https://host').toString()` は末尾スラッシュ付きの `'https://host/'` を返す——そこに `/posts/...` を足すので二重になる。`tsc`・`lib/rss.test.ts`（当時は `siteOrigin` の値を厳密にアサートしていなかった）のどちらも検出できず、サンドボックス環境で `curl` が権限上使えなかったため自動検証もできなかった——**実際にブラウザ/実環境で見るまで気づけなかった不具合**。
 
