@@ -139,7 +139,7 @@ after   table(row(th, th), row(td("セル"), td)), callout(…), table(row(td("�
 - **セルの中**: セルは段落しか持てないので、中から挿入すれば受け手の表がその表を囲んで 2 つに割れる（§2.1）。ピッカーは表の中では無反応になる
 - **アコーディオンのタイトル**: `detailsSummary` は `text*` なので表は入らず、fitter がアコーディオンを表の周りで割り、`<details>` 2 つとして保存される。本文はこの名前に触られず、`docs/accordion-requirements.md` §6.3 が明示的に求めているとおり表を受け付ける
 
-**述語は `isInTable` ではなく `selectionTouches` を使う。** `isInTable` は `$head` だけを読むので、表から上へ引きずり出した選択は head が外にあって検査を通り、`insertTable` が範囲を置換して**既存の表が空の新しい表に差し替わり中身が消えた**（`d6ccaf8`、2026-07-27）。`selectionTouches` は `selection.from`/`to` が正規化済みなので向きに依存せず、素のキャレットの場合も従来どおり覆う。
+**述語は `isInTable` ではなく `selectionTouches` を使う。** `isInTable` は `$head` だけを読むので、表から上へ引きずり出した選択は head が外にあって検査を通り、`insertTable` が範囲を置換して**既存の表が空の新しい表に差し替わり中身が消えた**（`62f0890`、2026-07-27）。`selectionTouches` は `selection.from`/`to` が正規化済みなので向きに依存せず、素のキャレットの場合も従来どおり覆う。
 
 **この述語は 3 つで共有されている** — `table-extensions.ts` の `insertTable`、`callout-extension.ts` の `setCallout`、`useImageUpload.ts`（と対になる `Toolbar.tsx` の `imageBlocked`）。**ブロックを置く導線を新しく足すときは、この 3 つ目として登録すること。**
 
@@ -147,7 +147,7 @@ after   table(row(th, th), row(td("セル"), td)), callout(…), table(row(td("�
 
 **クロスセルのドラッグ選択のハイライトは自前で描く。** prosemirror-tables の `tableEditing` は CellSelection を作り各セルに `.selectedCell` を付けるが、ハイライト自体はこのリポジトリが取り込んでいない prosemirror-tables のスタイルシートにある。無いとドラッグは効いているのに何も見えず、「セルをまたいでドラッグできない」と読める。
 
-同時に、ブラウザ標準の選択ハイライトを覆い隠す必要がある（`12752c1`）。それを消すはずの prosemirror-view の `.ProseMirror-hideselection` も取り込んでおらず、そもそも `selectionToDOM` がドラッグ中は focus 判定で降りるので mouseup 後にしか付かない。**機構は `.selectedCell` を鍵にした `::selection` マスク**（`app/globals.css`）— `.selectedCell` はドラッグ中ずっと存在する。**`::selection` と `::-moz-selection` は別の規則に分けること**（未知の擬似要素が 1 つあるとセレクタリスト全体が落ちる）。
+同時に、ブラウザ標準の選択ハイライトを覆い隠す必要がある（`d8f5816`）。それを消すはずの prosemirror-view の `.ProseMirror-hideselection` も取り込んでおらず、そもそも `selectionToDOM` がドラッグ中は focus 判定で降りるので mouseup 後にしか付かない。**機構は `.selectedCell` を鍵にした `::selection` マスク**（`app/globals.css`）— `.selectedCell` はドラッグ中ずっと存在する。**`::selection` と `::-moz-selection` は別の規則に分けること**（未知の擬似要素が 1 つあるとセレクタリスト全体が落ちる）。
 
 **どちらもエディタ限定である** — `.selectedCell` は公開側の GFM テーブルには現れない。
 
@@ -172,7 +172,7 @@ after   table(row(th, th), row(td("セル"), td)), callout(…), table(row(td("�
 | 2   | 素のテキスト・段落 1 つ・セル間コピペは従来どおり通る                                                                                                                       | 同 spec                                                                         |
 | 3   | 表全体を貼る／段落 2 つを貼るのはこのガードでは拒否されない（§3 の担当）                                                                                                    | 同 spec                                                                         |
 | 4   | 引用・コードブロック・箇条書き・表全体・囲み枠全体のドロップが拒否され、囲み枠から取り出したテキストは着地する                                                              | `table-drop-guard.spec.ts`                                                      |
-| 5   | セル境界・行境界へのネイティブドロップが列を生やさない                                                                                                                      | 同 spec（CDP で `DragData` を合成、`07763bb`）                                  |
+| 5   | セル境界・行境界へのネイティブドロップが列を生やさない                                                                                                                      | 同 spec（CDP で `DragData` を合成、`d3601b1`）                                  |
 | 6   | 貼り付け／ドロップ後もパイプ形式が保たれ、undo 1 回で元に戻る                                                                                                               | `table-pipe-form.spec.ts`                                                       |
 | 7   | raw HTML で保存済みの記事を開いても何も変わらない                                                                                                                           | 同 spec                                                                         |
 | 8   | 見出しの無い表・結合セルのある表は著者が置いたまま                                                                                                                          | 同 spec                                                                         |

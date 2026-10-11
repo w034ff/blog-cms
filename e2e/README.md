@@ -57,7 +57,7 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
 
 ### Why four workers and not shards
 
-`workers: 4` with `fullyParallel: false` (`b91e0c9`, 2026-09-13): 769 cases in 12.1 minutes on one
+`workers: 4` with `fullyParallel: false` (`16a44bf`, 2026-09-13): 769 cases in 12.1 minutes on one
 server, against ~31 minutes at `workers: 1` and 925s on three shards. The timing-sensitive gestures
 live inside a page, and each worker has its own browser; what they need is a file's tests in order
 on one worker, which `fullyParallel: false` gives. A server is the expensive part — `next dev` is
@@ -139,7 +139,7 @@ back the load. Break the group with `closeHistory` instead of sleeping: prosemir
   evidence of a refusal only when a control drag in the same spec moves something.
 - Aim drag endpoints with `caretPoint`, never a pixel offset. Chrome's drag-select does not snap to
   the nearest character boundary (53% through a 16px CJK glyph still ends before it, 78% ends after),
-  so `x + 40` took 13 specs red at once (`b5b59b8`), and Chrome 151 moved a `height / 2` endpoint
+  so `x + 40` took 13 specs red at once (`71be317`), and Chrome 151 moved a `height / 2` endpoint
   onto a code block's empty trailing line. `dragSelect` returns an origin taken from the realized
   selection, because a mousedown exactly on the boundary can land outside it and `dragstart` then
   never fires. Endpoints that only feed counts or `not.toBe` can stay loose.

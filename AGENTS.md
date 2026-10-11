@@ -15,7 +15,7 @@ This repo uses **Conventional Commits** (adopted 2026-06-23). Subject: `type(sco
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
 - Scope is optional. Breaking changes use `!` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer.
 - Subject language: English (matches existing history).
-- Commits before this date (e.g. `eadb191` and the initial commits) predate the convention and are intentionally left unprefixed — do not retro-rewrite them.
+- Commits before this date (e.g. `a259cae` and the initial commits) predate the convention and are intentionally left unprefixed — do not retro-rewrite them.
 
 # Requirements documents (`docs/*-requirements.md`)
 

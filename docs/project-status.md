@@ -4,17 +4,17 @@
 
 ## 1. 概要
 
-- 静的な MDX のサイトを、DB を持つ CMS とブラウザのエディタに作り替えた（2026-06-23、`eadb191`）。ブランチは `main`（安定）と `develop`（統合）の 2 本。
+- 静的な MDX のサイトを、DB を持つ CMS とブラウザのエディタに作り替えた（2026-06-23、`a259cae`）。ブランチは `main`（安定）と `develop`（統合）の 2 本。
 - SQLite（`better-sqlite3` + `drizzle-orm`、`data/blog.db`）。公開ページは `lib/render.ts` の unified のパイプラインで markdown を HTML にし、生の HTML は `rehype-sanitize` で消毒する。
 - 認証は JWT の cookie で、14 日のスライディング（`proxy.ts` が再発行、`SESSION_MAX_AGE_SECONDS`）。ログインには回数の制限がある（`lib/login-throttle.ts`）。
-- エディタは `/admin/posts/new` と `/admin/posts/[id]/edit` の TipTap（2026-06-29、`f39c2d7`）。**保存形式は markdown のまま**で、エディタを替えても `lib/render.ts` と保存の経路は変わらなかった。
+- エディタは `/admin/posts/new` と `/admin/posts/[id]/edit` の TipTap（2026-06-29、`b62fef0`）。**保存形式は markdown のまま**で、エディタを替えても `lib/render.ts` と保存の経路は変わらなかった。
 
 ## 2. 守る制約
 
 - **`content/posts/*.mdx` を消さない。** `data/` は gitignore されているので、`.mdx` は記事の内容の唯一のバージョン管理された写しで、`scripts/migrate-content.mts` の種でもある。消すと内容が追跡されない DB に取り残され、新しいクローンで種を入れ直せなくなる。
 - **スキーマの変更はマイグレーションだけで行う。** 経路は `db:generate` → `db:migrate` だけで、`db:push` は 2026-08-02 に package.json から消した。再び足さない。drizzle-kit 0.31.10 の push は `posts` をその場で変えられず、テーブルを作り直す経路で `CREATE UNIQUE INDEX posts_slug_unique` を 2 回出して途中で止まった。スキーマと DDL が一致していても起きる。`posts` に列を足すときは最後に置く。手順は `npm run db:backup && npm run db:migrate`。
-- **マイグレーションの基点は、その時点のスキーマである**（2026-08-02、`cd9b5b3`）。過去に手で当てた `ALTER` は `.sql` として残っていないので、歴史を再構成しなかった。`scripts/baseline-db.mts` は台帳を書く前に、ジャーナルをメモリ上の DB に再生して `sqlite_master` を正規化して比べ、食い違えば拒む。drizzle-orm の適用済み判定は `created_at` の比較だけで、ハッシュを見ない。CLI の `drizzle-kit migrate` が同じ判定かは確かめていない。
-- DB のパスは `scripts/db-path.mts` が一か所で決める。`BLOG_DB_PATH` を設定したホストで、スクリプトが別の DB に書いて成功と報告するのを防ぐため（`f2aa2ee`）。
+- **マイグレーションの基点は、その時点のスキーマである**（2026-08-02、`b0ac84b`）。過去に手で当てた `ALTER` は `.sql` として残っていないので、歴史を再構成しなかった。`scripts/baseline-db.mts` は台帳を書く前に、ジャーナルをメモリ上の DB に再生して `sqlite_master` を正規化して比べ、食い違えば拒む。drizzle-orm の適用済み判定は `created_at` の比較だけで、ハッシュを見ない。CLI の `drizzle-kit migrate` が同じ判定かは確かめていない。
+- DB のパスは `scripts/db-path.mts` が一か所で決める。`BLOG_DB_PATH` を設定したホストで、スクリプトが別の DB に書いて成功と報告するのを防ぐため（`6901b90`）。
 - **アップロードは参照で消す。** `data/uploads` のファイル名はバイト列の SHA-256 で、同じ画像は 1 つのファイルを共有する。1 つのファイルが複数の記事を支えうるので、削除は参照の走査で決める。記事を消してもファイルは消えない。掃除は猶予付きの手動のスイープ `npm run gc:uploads`（既定は dry-run、`--delete`、`--grace-hours=N`、既定 24 時間。参照は DB の本文と `.mdx` の和）。
 - `npm ci` の後は `npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts` が要る（`docs/dev-environment.md` §4）。
 
@@ -48,14 +48,14 @@
 - アプリは WSL2（NAT）で動く。Tailscale を Windows 側に入れると、Funnel はアプリに届かなかった（502）。WSL の中に Tailscale を入れ、`tailscale up --hostname=blog --operator=$USER` で同じネットワーク名前空間に置く。`tailscale funnel 3001` は前景で動き、端末を閉じると消える。常時は `tailscale funnel --bg 3001`。
 - 公開できたかは tailnet の外から確かめる。作者のブラウザは tailnet 上にあるので区別できない。
 - 本番ビルド（`npm run build` + `npm start`）で動かす。`.env` に `SITE_ORIGIN` と `SESSION_COOKIE_SECURE=true` が要る。`SESSION_COOKIE_SECURE` はホストではなく経路に従う（平の HTTP で試すなら `false` にしないとログインが黙って失敗する）。`.env` は Claude からは読めない。
-- **noindex は有効**（`de269fc`）。`SITE_INDEXABLE` は明示的に入れる設定で、robots.txt は `Disallow: /`。恒久のドメインに移ったときだけ外す。
+- **noindex は有効**（`65cf13c`）。`SITE_INDEXABLE` は明示的に入れる設定で、robots.txt は `Disallow: /`。恒久のドメインに移ったときだけ外す。
 - Cloudflare に移るときにすること: `/admin` の前に Cloudflare Access（Google を IdP にでき、リダイレクト先が `<team>.cloudflareaccess.com` なのでサイトのホスト名が変わっても動かない）。リバースプロキシが別のホスト名で前に立つと、Server Actions のオリジン検査が POST を拒むことがあるので、`node_modules/next/dist/docs/` で許可するオリジンの設定を確かめる。
 - CSP の `frame-src` は、Cloudflare に移るとき（埋め込みのラッパー方式と一緒）に決める（2026-08-31、作者の決定）。今は生の `<iframe>` を `rehype-sanitize` が消すので、ページ上の iframe は `rehypeEmbed` が消毒の後で組んだものだけで、`frame-src` が守るのは解決段の将来のバグである。罠が 2 つある。① 許可リストをプロバイダの `hosts` から作らない（ページのホストで、`src` のホストではない。導出元は `lib/embed-provider.ts` の `src`）。② gist は `srcdoc` で、親の CSP を継承する。後から `script-src` を足すと gist が壊れる（`docs/embed-requirements.md` §18）。
 
 ## 6. 先送りの一覧
 
 - **アップロードの掃除の定期実行**: WSL2 の systemd user timer で設定済み。置き場所と入れ方は `docs/dev-environment.md` §6（`deploy/systemd/`）。Cloud Run などへ移るときは再検討する（systemd の timer は使えず、Cloud Scheduler + Cloud Run Job 等になり、`data/uploads` の置き場所も再設計になる）。
-- **`npm run fix:glued-images` を本番の DB に走らせていない**（2026-07-27 時点）。直列化のバグは源で直っている（`d6ccaf8`）が、それ以前に保存した記事には、画像の行に引用やフェンスがくっついて文字として描かれるものが残りうる。先に `-- --dry-run`、サーバを止めてから。正規表現はフェンスの中を飛ばさないので、dry-run の出力を確かめる。
+- **`npm run fix:glued-images` を本番の DB に走らせていない**（2026-07-27 時点）。直列化のバグは源で直っている（`62f0890`）が、それ以前に保存した記事には、画像の行に引用やフェンスがくっついて文字として描かれるものが残りうる。先に `-- --dry-run`、サーバを止めてから。正規表現はフェンスの中を飛ばさないので、dry-run の出力を確かめる。
 - **自動保存の手元のバッファ**: 自動保存はサーバ側だけで、次の保存が成功するまで編集は React のメモリにしかない。回線断やセッション切れで差分を失いうる（`sessionExpired` の案内と `beforeunload` で和らげている）。作者が先送りにした。サーバ側の自動保存が主であることは正しい。
 - **「変更を破棄」と、より豊かな「下書き保存」**: 作者が先送りにした。
 - **レスポンシブの見直し**（2026-06-28 に提起）: サイトの見出し（ブランドと 3 つのリンクが 1 行）は 360px 前後で窮屈になりうる。手を付けていない。

@@ -39,7 +39,7 @@ shards").
 **A change with no files of its own gets a new spec, not the suite.** The rule
 above assumes the change belongs to a spec: an extension, a NodeView, one screen.
 Shared chrome — `components/PostEditor.tsx`, a layout under `app/`,
-`app/globals.css` — has no "its files", and its blast radius is real: `20a3f24`
+`app/globals.css` — has no "its files", and its blast radius is real: `5b9d342`
 (記事の設定 moved onto the top line) landed in 17 specs at once, through geometry
 and a locator that no longer matched. That hazard is why the claim needs a spec —
 it is not a licence to run the suite. **Write the spec that covers the new claim,

@@ -57,11 +57,11 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 
 `@tiptap/core` の inputRulesPlugin は、`tr.selectionSet || tr.docChanged ? null : prev` で取り消し記録を捨てる。文書末でブロックを作る入力ルールが発火すると、同じ dispatch 内の TrailingNode の追加トランザクション（docChanged）が記録を消し、Backspace で打った記法に戻れなくなる。対象はすべてのブロック記法（`:::info `、`:::details `、`> `、`## `、`- `、` ``` `）。
 
-**機構**: StarterKit の TrailingNode を切り（`trailingNode: false`）、`components/editor/trailing-node-extension.ts` に置き換えている。取り消し記録が生きている間（1 トランザクション。次の打鍵・クリック・矢印で解ける）は追加を待つ。判定は `components/editor/input-rule-undo.ts` の共有関数 `hasUndoableInputRule`。2026-08-04（`efeebc5`）。
+**機構**: StarterKit の TrailingNode を切り（`trailingNode: false`）、`components/editor/trailing-node-extension.ts` に置き換えている。取り消し記録が生きている間（1 トランザクション。次の打鍵・クリック・矢印で解ける）は追加を待つ。判定は `components/editor/input-rule-undo.ts` の共有関数 `hasUndoableInputRule`。2026-08-04（`f0b4c9b`）。
 
 - 待たずに通すべき場合が 2 つある。アコーディオンの `persist: false` のトグルが 1 フレーム後に空のフォーカストランザクションを返すこと、そして Backspace が先に来た場合（`undoInputRule` が段落を戻すので、追加するものが無い）。
 - 履歴トランザクションは飛ばす。undo に乗った追加は次の Ctrl+Z を生き延び、空行を残す。
-- TipTap は入力ルールのプラグインを拡張ごとに 1 つ作る（2026-08 時点で 13 個）。逆操作を持つのは発火したものだけで、最初の 1 つだけを見ても何も見つからない（`78a2222`）。
+- TipTap は入力ルールのプラグインを拡張ごとに 1 つ作る（2026-08 時点で 13 個）。逆操作を持つのは発火したものだけで、最初の 1 つだけを見ても何も見つからない（`57e97e3`）。
 - コードブロックの古い回避策（`code-block-extension.ts` の `fenceUndoKey` + `undoFenceTyping`）は残っており、意図して触っていない。
 
 ### 2.2 拡張の keymap はコアの Keymap より先に走る
@@ -88,7 +88,7 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 
 - 起きたこと（2026-07-14 診断、07-15 修正）: `@tiptap/extension-blockquote@3.27.1` の dist が prosemirror-model / -transform / -state を内包していた。その `handleBackspace` が最後に作る `TextSelection` は、リネームされた 2 つ目のクラス `_TextSelection` のインスタンスだった。prosemirror-view の `captureKeyDown` → `stopNativeHorizontalDelete` は `selection instanceof TextSelection` で守っており、自分の正規コピーと比べて失敗し、編集なしで `preventDefault()` した。引用の中へ段落を Backspace で結合した直後の、次の Backspace が効かなくなった。
 - 見分け方: `selection.constructor.name` が `_TextSelection` なら壊れている。回帰テストは `e2e/editor-quote-backspace.spec.ts`。
-- 源流の修正: 3.28.0 の `@tiptap/extension-blockquote` は `@tiptap/pm/state` を import するようになった（`3796059`、2026-07-21）。ビルド時のカナリア `test/no-inlined-prosemirror.test.ts` は内包しているパッケージを 0 件と見て `HANDLED = []` のまま、再導入の見張りとして残っている。
+- 源流の修正: 3.28.0 の `@tiptap/extension-blockquote` は `@tiptap/pm/state` を import するようになった（`21c19de`、2026-07-21）。ビルド時のカナリア `test/no-inlined-prosemirror.test.ts` は内包しているパッケージを 0 件と見て `HANDLED = []` のまま、再導入の見張りとして残っている。
 - 行き止まり（再試行しない）: `next.config` の `turbopack.resolveAlias` で prosemirror-state などを固定しても効かない。重複は dist に内包されていて、別名にする import 指定子が無い。絶対パスへの別名はそもそも失敗する（Turbopack が `.` を前置する）。
 
 ### 4.1 `blockquote-extension.ts` を残している理由
@@ -142,7 +142,7 @@ ProseMirror は DOM の選択を 20ms のデバウンスで state に取り込�
 
 2026-08-22 に「エディタがフリーズ」と報告された。凍結時に作者のブラウザで測ると、`body.block-dragging` は無く（こちらのセッションではない）、`selection` は NodeSelection、`view.dragging` が true だった。`drop` も `dragend` も `view.dom` に届いていない（prosemirror-view は `view.dragging` を `drop` の `finally` か `dragend` の 50ms 後でしか消さず、独立した回復タイマーを持たない）。Escape でも戻らなかった。
 
-**決定**: 修復せずにジェスチャを閉じる（`994c1b0`、作者が確認済み）。`handleDOMEvents.dragstart` がネイティブドラッグをキャンセルし、`handleDOMEvents.mousedown` が同じ押下で DragController のドラッグを始めるので、失うものは無い。Chrome の中で何が止まるのかはこのハーネスでは測れない。
+**決定**: 修復せずにジェスチャを閉じる（`49180e9`、作者が確認済み）。`handleDOMEvents.dragstart` がネイティブドラッグをキャンセルし、`handleDOMEvents.mousedown` が同じ押下で DragController のドラッグを始めるので、失うものは無い。Chrome の中で何が止まるのかはこのハーネスでは測れない。
 
 - ガードの範囲は `view.state.selection instanceof NodeSelection`（型も深さも問わない）。prosemirror-view の武装の仕組みには型の確認が無く、Ctrl/Cmd+クリック（`selectNodeModifier` → `selectClickedNode`）はどの選択可能ノードも NodeSelection にし、ただのクリックもインラインのアトムに同じことをする（`selectClickedLeaf`）。2026-08-23。
 - さらに、押下点が `view.dom` の中で `[draggable="true"]` の祖先を持つ場合も拒む（`pressedNativeDragSource`、2026-09-08）。`embed` / `linkCard` / `image` は、選択が無くても `draggable="true"` を恒久的に持つ（prosemirror-view の `if (node.type.spec.draggable) dom.draggable = true`）。`LeftMouseDown` は `targetNode.type.spec.draggable` の最初の分岐で `mightDrag` を武装するので、NodeSelection のガードでは未選択の最初の押下を覆えなかった。範囲は属性で決める。「`DRAGGABLE_TYPES` のブロックの中」で決めると、引用やコードブロックからのテキスト選択ドラッグ（すべての drop ガードの前提）を殺す。
@@ -233,7 +233,7 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 - prosemirror-tables は `handlePaste` を持つが `handleDrop` は持たない。「表の内容は除外」がペースト専用なのはこの非対称のためである。CellSelection のドラッグは今のところ完全な no-op である。
 - `IsolatingBoundary.handleDrop` は `tableDropGuard` より先に問われる（§2.2 の逆順）。自分で切り詰めた drop を行うので、isolating の縁をまたぐドラッグで表のガードを黙って迂回していた。今は表が拒む drop には false を返してガードに渡す。**プラグインがジェスチャを変換するのではなく実行するときは、それを誰から奪っているかを確かめる。**
 - 拒否には真偽値ではなく理由が要る。位置の拒否は黙る（drop インジケータがもう隠れている。`drop-cursor-guard.ts`）。内容の拒否は通知を出す（他に作者に伝えるものが無い）。`TableDropRefusal = 'structure' | 'content' | null`。
-- セル内の Enter は keymap で `setHardBreak` に結び付けている（スキーマは `paragraph+` のままなので、HTML フォールバックで保存された記事も読める）。セル内の TextSelection で絞らないと文書全体で発火する。Tab の `goToNextCell` は移動先のセルの中身を全選択するので、Tab→Enter がセルを空にしていた。Shift+Enter / Mod+Enter は `@tiptap/extension-hard-break` が直接 `setHardBreak` に結び付けていて、セルの結び付けに届いていなかった。3 つとも 1 つの門を通し、テキストブロック全体の選択は先に末尾へ畳む（`9c4f8e2`、2026-08-04）。
+- セル内の Enter は keymap で `setHardBreak` に結び付けている（スキーマは `paragraph+` のままなので、HTML フォールバックで保存された記事も読める）。セル内の TextSelection で絞らないと文書全体で発火する。Tab の `goToNextCell` は移動先のセルの中身を全選択するので、Tab→Enter がセルを空にしていた。Shift+Enter / Mod+Enter は `@tiptap/extension-hard-break` が直接 `setHardBreak` に結び付けていて、セルの結び付けに届いていなかった。3 つとも 1 つの門を通し、テキストブロック全体の選択は先に末尾へ畳む（`7764d7f`、2026-08-04）。
 
 ### 7.3 選択の遅れは、表の中では失われるのではなく誤配される
 
@@ -255,7 +255,7 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 
 ### 8.2 `clearNodes` はすべての呼び出し元について置き換えている
 
-**機構**: `components/editor/clear-nodes-extension.ts` は、コマンドだけの `Extension` として PostEditor の配列に入る（既定の優先度。コア拡張は前に置かれ、並べ替えは安定なので、同じ優先度のユーザー拡張が最後に集められ、コマンド名を取る）。上流の本体から式を 1 つだけ変えている。`match.matchType(paragraph)` が許すなら `paragraph` を優先し、許さなければ prosemirror-commands の `defaultBlockAt` の絞り（`isTextblock && !hasRequiredAttrs`）を使う（`5751dc9`、2026-08-10、`e2e/editor-clear-nodes.spec.ts`）。
+**機構**: `components/editor/clear-nodes-extension.ts` は、コマンドだけの `Extension` として PostEditor の配列に入る（既定の優先度。コア拡張は前に置かれ、並べ替えは安定なので、同じ優先度のユーザー拡張が最後に集められ、コマンド名を取る）。上流の本体から式を 1 つだけ変えている。`match.matchType(paragraph)` が許すなら `paragraph` を優先し、許さなければ prosemirror-commands の `defaultBlockAt` の絞り（`isTextblock && !hasRequiredAttrs`）を使う（`ebf1784`、2026-08-10、`e2e/editor-clear-nodes.spec.ts`）。
 
 - 上流の絞りだけでは足りない。マッチの辺を順に歩くと `heading` も通り（`level` に既定値がある）、辺の順序は添字で変わる。空行が見出しになりえた。
 - 逃げの分岐は防御ではなく荷重を負っている。`clearNodes` は `detailsSummary`（親が段落を許さないテキストブロック）も訪れる。そこでは辺の走査が summary 自身を返し、以前どおりの no-op になる。null のままでも `setNodeMarkup` に渡す。偽の型は「このノードの型を保つ」と読まれ、属性はこれまでどおり既定値に戻る。
@@ -285,7 +285,7 @@ prosemirror-transform の isolating の検査（`coveredDepths`、`deleteRange` 
 
 ### 9.1 区切りを持つコードブロックは保存のたびに空行が 1 つ増えていた
 
-リストの項目（区切り `"  "`）、引用や callout（`"> "`）の中で起きた。markdown-it はフェンスの中身を改行で終えるので、markdown から読んだブロックは末尾に改行を持つ。prosemirror-markdown の `text()` はそれを最後の空行にし、`write()` は出す行すべてに区切りを付ける。閉じるフェンスの前に区切りだけの行ができ、次の読み込みで中身の空行になる。トップレベルでは区切りが `""` なので何も見えない（2026-08-03、`d753790`）。
+リストの項目（区切り `"  "`）、引用や callout（`"> "`）の中で起きた。markdown-it はフェンスの中身を改行で終えるので、markdown から読んだブロックは末尾に改行を持つ。prosemirror-markdown の `text()` はそれを最後の空行にし、`write()` は出す行すべてに区切りを付ける。閉じるフェンスの前に区切りだけの行ができ、次の読み込みで中身の空行になる。トップレベルでは区切りが `""` なので何も見えない（2026-08-03、`3441d1d`）。
 
 **機構**: `code-block-extension.ts` が書く前に末尾の改行を落とす（`ensureNewLine()` がフェンス自身の改行を戻す）。
 
@@ -432,7 +432,7 @@ prosemirror-view の `scrollRectIntoView` は既定 5px の余白で最小限だ
 
 ## 14. 箱のスライス修復（callout / アコーディオン）
 
-`callout-slice-guard.ts` と `details-slice-guard.ts` は `box-slice-repair.ts` を共有し、それぞれ仕様を述べて自分の配置規則だけを持つ（`16cece4`、2026-08-18）。4 つの引数（`nodeName`、`unwrap`、`depthDrop`、`recurseIntoRemoved`）と合成順の議論は `docs/accordion-requirements.md` §6.1・§6.2 にある。ここには計測の罠だけを置く。
+`callout-slice-guard.ts` と `details-slice-guard.ts` は `box-slice-repair.ts` を共有し、それぞれ仕様を述べて自分の配置規則だけを持つ（`b6f2248`、2026-08-18）。4 つの引数（`nodeName`、`unwrap`、`depthDrop`、`recurseIntoRemoved`）と合成順の議論は `docs/accordion-requirements.md` §6.1・§6.2 にある。ここには計測の罠だけを置く。
 
 - `Selection.content()` は `doc.slice(from, to, true)` である。3 つ目の引数 `includeParents` を落とした 2 引数の fixture は、これらのガードが何も言うことのない最小のスライスを作る。最初のテストは `dropOpenWrappers` を完全に外しても全ケース通っていた（AGENTS.md の「Slices come from a real selection」の由来）。
 - `not.toContain('details(details')` は普通のアコーディオン（`details(detailsSummary(`）にも一致するので、正しい結果で落ちる。箱の数を数える。
@@ -508,5 +508,5 @@ CDP の `Input.imeSetComposition` + `Input.dispatchKeyEvent` の Enter は `isCo
 ## 18. NodeView の `stopEvent`
 
 - **`stopEvent` は操作部品（`input, button`）だけを主張する。** ラッパ全体を主張すると、NodeSelection を作る mousedown まで飲む（リンクカード、2026-08-12）。NodeView のボタンは選択を動かさないので、ボタンから呼ぶコマンドは `getPos()` の位置を明示的に受け取る（`unsetLinkCard` の `at`）。
-- **`stopEvent` の主張は drop の経路の穴にもなる。** prosemirror-view の `eventBelongsToView` は、`stopEvent` が `event.target` を主張した時点で手を引くので、そこへの drop は ProseMirror の処理を通らず、ブラウザの既定がすべてになる。本文の文字をカードの検索欄にドラッグすると、文字が欄に入り、文書からは消えた（2026-08-22、`a8854cc`）。**機構**: `useDragContainment.ts` の `refuseChromeDrops` が、各 NodeView の `stopEvent` が主張するものと同じ範囲で dragenter / dragover / drop を拒む。`dom` 全体を拒んではいけない。カードの本体は普通のブロック位置で、drop カーソルが動き続ける必要がある。
+- **`stopEvent` の主張は drop の経路の穴にもなる。** prosemirror-view の `eventBelongsToView` は、`stopEvent` が `event.target` を主張した時点で手を引くので、そこへの drop は ProseMirror の処理を通らず、ブラウザの既定がすべてになる。本文の文字をカードの検索欄にドラッグすると、文字が欄に入り、文書からは消えた（2026-08-22、`ae416bc`）。**機構**: `useDragContainment.ts` の `refuseChromeDrops` が、各 NodeView の `stopEvent` が主張するものと同じ範囲で dragenter / dragover / drop を拒む。`dom` 全体を拒んではいけない。カードの本体は普通のブロック位置で、drop カーソルが動き続ける必要がある。
 - ProseMirror は、触れていないノードの NodeView を作り直さない。別の場所の打鍵や、同じ内容の `setContent` は古い DOM を残す。「描き直しても残る」を確かめるには、別の文書を読み込んでカードが消えたことを確かめてから、元に戻す。NodeView の結果のキャッシュは答え全体を持つ（題名だけのキャッシュは、作り直すたびに下書きの注記と画像を落とした）。

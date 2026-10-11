@@ -1,6 +1,6 @@
 # 目次（table of contents）機能 要件定義
 
-- 状態: 実装済み（2026-08-01、`32c366a` / `9e264bb`。除外規則の追加は `13f6e83` / `c7757fc`）
+- 状態: 実装済み（2026-08-01、`ec7bbcc` / `9241dad`。除外規則の追加は `3493684` / `b1491ab`）
 - 作成: 2026-08-08（**実装後に、コード・コミットメッセージ・テストから起こした事後の記録**）
 - 実装: `lib/rehype-collect-toc.ts`、`components/TocNav.tsx`、`components/PostArticle.tsx`、`app/globals.css`、`lib/render.ts`（パイプラインへの組み込み）
 - 併せて変更されたもの: `app/layout.tsx`、`components/SiteHeader.tsx`、`components/SiteFooter.tsx`（§6.2）
@@ -82,7 +82,7 @@ sanitize のスキーマ（GitHub の `defaultSchema`）は DOM クロバリン�
 
 ### 4.2 脚注セクションの見出し
 
-判断の本体は `docs/footnote-requirements.md` §8 にある。 remark-gfm が脚注セクションに自前の `<h2 class="sr-only" id="footnote-label">Footnotes</h2>` を付けるため、これを外さないと日本語記事の目次に英語の "Footnotes" が 1 行増える（実測、`c7757fc`）。著者が書いた節ではなく、読み上げ専用のクロムである。
+判断の本体は `docs/footnote-requirements.md` §8 にある。 remark-gfm が脚注セクションに自前の `<h2 class="sr-only" id="footnote-label">Footnotes</h2>` を付けるため、これを外さないと日本語記事の目次に英語の "Footnotes" が 1 行増える（実測、`b1491ab`）。著者が書いた節ではなく、読み上げ専用のクロムである。
 
 ### 4.3 外さないもの
 
@@ -90,7 +90,7 @@ sanitize のスキーマ（GitHub の `defaultSchema`）は DOM クロバリン�
 
 ### 4.4 id は必ず残る
 
-**目次から外しても id は消えない。** `rehypeSlug` は場所を問わず h2/h3 に id を振り、sanitize が接頭辞を付ける。目次は id を読み取って一覧を作っているだけなので、本文中の `[…](#見出し)` も外部からの `#user-content-…` も従来どおり解決する（実測、`13f6e83`）。**これは §4.1 / §4.2 の判断が成立する前提である** — 「目次に載せない」は「到達できない」を意味しない。
+**目次から外しても id は消えない。** `rehypeSlug` は場所を問わず h2/h3 に id を振り、sanitize が接頭辞を付ける。目次は id を読み取って一覧を作っているだけなので、本文中の `[…](#見出し)` も外部からの `#user-content-…` も従来どおり解決する（実測、`3493684`）。**これは §4.1 / §4.2 の判断が成立する前提である** — 「目次に載せない」は「到達できない」を意味しない。
 
 ---
 
@@ -151,10 +151,10 @@ grid-cols-[minmax(0,var(--container-site))  var(--toc-rail)]
 
 ### 6.3 サイト全体への波及
 
-**幅を決める責任は `<main>` ではなく各ページにある**（`32c366a`）。
+**幅を決める責任は `<main>` ではなく各ページにある**（`ec7bbcc`）。
 
 - `app/layout.tsx` の `<main>` は幅を**キャップしない**（`flex-1 w-full px-4 py-8`）。各ページの根が自分で `max-w-page` を持つ
-- `SiteHeader` / `SiteFooter` は外側の要素に `px-4` を置き、中央寄せの箱には置かない。内側に置くと、その箱の幅が padding 込みになり、**サイト名が本文より 16px 右へずれる**（実測、`32c366a`）
+- `SiteHeader` / `SiteFooter` は外側の要素に `px-4` を置き、中央寄せの箱には置かない。内側に置くと、その箱の幅が padding 込みになり、**サイト名が本文より 16px 右へずれる**（実測、`ec7bbcc`）
 - 管理画面の記事一覧（`SiteColumn`）とリビジョンの 2 画面（`RevisionHeaderBar`、`SiteColumn`）も同じ箱を使う。記事一覧は SiteHeader を共有し、リビジョンの詳細は公開時と同じ位置に本文を描くためである
 
 ### 6.4 結び付いている値（**変更時は必ず一緒に見ること**）
@@ -216,7 +216,7 @@ const BAND_TOP_PX = 64; // components/TocNav.tsx
 
 ### 8.1 却下した案 — IntersectionObserver
 
-初版は IO が「帯の中にあると最後に報告した見出し」を保持し、その集合が空になったら前の値を維持していた。これは 2 つの意味で壊れていた（`32c366a` の実測）:
+初版は IO が「帯の中にあると最後に報告した見出し」を保持し、その集合が空になったら前の値を維持していた。これは 2 つの意味で壊れていた（`ec7bbcc` の実測）:
 
 - 答えがそこへどう来たかに依存する。スクロールで戻ると先頭が点いたままなのに、読み込み直後は何も点かない
 - 答えがウィンドウの高さに依存する。最初の見出しがたまたま帯に入るかどうかで変わり、約 1080px では入るが約 800px では入らなかった
@@ -274,7 +274,7 @@ const BAND_TOP_PX = 64; // components/TocNav.tsx
 
 ### 10.1 却下した案 — `truncate`
 
-**1 行省略では足りない**（`9e264bb` の実測）。h3 の項目の文字に使える幅は、nav の 240px から `p-1` の 8px と字下げの 28px を引いた約 200px で、日本語で約 14 文字である。見出しは容易にそれより長い。
+**1 行省略では足りない**（`9241dad` の実測）。h3 の項目の文字に使える幅は、nav の 240px から `p-1` の 8px と字下げの 28px を引いた約 200px で、日本語で約 14 文字である。見出しは容易にそれより長い。
 
 `line-clamp-2 break-words` に変えた。
 

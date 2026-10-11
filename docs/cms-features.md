@@ -685,7 +685,7 @@ note がキーボードショートカットのドロワーを持っている、
 
 ## 1. 決定
 
-- **投稿日は最初の公開で一度だけ打刻し、以後変えない。** 再公開・更新・下書きに戻す、のどれでも保つ。規則は `app/actions/posts.ts` の `existing.date || new Date().toISOString()` の一行で、意味は「最初に公開された時刻」であって最後の編集ではない（2026-06-28、`b316c88`）。
+- **投稿日は最初の公開で一度だけ打刻し、以後変えない。** 再公開・更新・下書きに戻す、のどれでも保つ。規則は `app/actions/posts.ts` の `existing.date || new Date().toISOString()` の一行で、意味は「最初に公開された時刻」であって最後の編集ではない（2026-06-28、`0c59048`）。
 - UTC の ISO 時刻で保存し、JST で表示する（`lib/format.ts` が `Asia/Tokyo` に固定。サーバのタイムゾーンに依存せず、深夜の日付ずれを防ぐ）。時刻まで持つので、同じ日の並び順も安定する。
 - エディタに日付の入力欄は無い。`''` は一度も公開していない下書きの印で、管理画面の一覧はその行に公開日を出さない。手で日付を前後させる手段は UI から外した。一括取り込みは `scripts/migrate-content.mts` が SQL で `date` を直接書く。
 - 公開側の表示は日付だけで、時刻は出さない（`formatPostDate`）。管理画面の一覧は `編集 {経過}` に最終編集を「3 時間前」「2 日前」のような経過で出し（`formatRelativeTime`。30 日を過ぎたら日付）、分までの時刻はカーソルを乗せたときのツールチップに置く。公開済みの行にだけ `公開 {日付}` を添える（2026-10-04）。一覧は作業中の記事を探すために読むので、知りたいのは時刻ではなく「どれくらい前に触ったか」である。「更新」と書かないのは、公開側の更新日とは別の時刻だからである。
@@ -707,7 +707,7 @@ note がキーボードショートカットのドロワーを持っている、
 
 Vite + React Router 7 への移行を検討し、Next 16 に留まると決めた。きっかけは「LLM は Next を推しすぎるが、(a) キャッシュの把握、(b) `use client` 境界の管理、(c) Vercel 依存のコストを数えない」という批判で、3 つの軸をこのリポジトリの証拠だけで検証した。
 
-- **(c) Vercel 依存は 0**（`vercel` の grep 0 件、Tailscale Funnel + `next start`、`next/image` 0 件、edge / ISR 不使用）。ただし「ビルドツールとしての Next への結合」と読み替えると成立し、これが最も強い軸である。`next.config.ts` の大半は Next 自身への回避策で、`next/image` を import していないのに `/_next/image` の DoS advisory を踏み、未使用の `sharp` に `overrides` を強いられた（`fc395f6`）。
+- **(c) Vercel 依存は 0**（`vercel` の grep 0 件、Tailscale Funnel + `next start`、`next/image` 0 件、edge / ISR 不使用）。ただし「ビルドツールとしての Next への結合」と読み替えると成立し、これが最も強い軸である。`next.config.ts` の大半は Next 自身への回避策で、`next/image` を import していないのに `/_next/image` の DoS advisory を踏み、未使用の `sharp` に `overrides` を強いられた（`7c7e554`）。
 - **(a) は一度だけ支払い、再発していない**（413 コミット中、件名に cache / revalidate / dynamic を含むもの 0 件）。記録は「RSS/Atom フィード」§7・§7.1。
 - **(b) は逆向きに不成立。** 境界が原因の不具合コミットは 0 件で、`use client` はすべて `components/` にある。`server-only` の 13 モジュールは、移行すると失う防御である。
 
@@ -715,7 +715,7 @@ Vite + React Router 7 への移行を検討し、Next 16 に留まると決め�
 
 **見直す条件**: ① Next の major 更新が強制され、その追随の見積もりが 15〜20 営業日に近づいたとき（再認定が同額になり差が消える）。② Next が原因のセキュリティ更新が年 3 回以上になったとき（判断時点で 4 か月に 1 回）。③ `app/` の SSR を捨てると決めたとき。
 
-**限界**: 開発ループの便益は測っていない。測ったのは `next start` と `next dev` の差（約 4%、`cad85d1`）だけで、Vite と Turbopack は比べていない。「便益 0」は正確には「本番の便益 0、開発の便益は未測定」である。
+**限界**: 開発ループの便益は測っていない。測ったのは `next start` と `next dev` の差（約 4%、`e55d407`）だけで、Vite と Turbopack は比べていない。「便益 0」は正確には「本番の便益 0、開発の便益は未測定」である。
 
 ## 2. `app/globals.css` は 1 ファイルのまま（2026-08-18）
 
@@ -726,7 +726,7 @@ Vite + React Router 7 への移行を検討し、Next 16 に留まると決め�
 
 分割に反対する理由は他にもある。CSS は分割しても依存グラフも未使用の検出も得られない一方、カスケードの順序は上から読めるものから `@import` の並びに隠れた性質に変わる。このファイルは順序の依存を明示的に書いている（`@layer base` のボタン規則、`docs/editor-pitfalls.md` §12 の「何に勝つようになるか」）。CSS はほとんど検証されないので、カスケードの退行は黙って起きる。
 
-**見直すとき**: 探しにくさが不満なら、答えは先頭の目次コメントと揃ったセクション見出しである（`link-requirements.md` が `0bffb7e` で同じ問題に出した答え）。それでも分けるなら、面ではなく機能で切る。`@import 'tailwindcss'`・`@plugin`・`@theme`・`:root`・`@layer base` は入口のファイルに残す。Tailwind v4 は `@import` を自分でまとめるので postcss-import は要らない。
+**見直すとき**: 探しにくさが不満なら、答えは先頭の目次コメントと揃ったセクション見出しである（`link-requirements.md` が `ce7e53b` で同じ問題に出した答え）。それでも分けるなら、面ではなく機能で切る。`@import 'tailwindcss'`・`@plugin`・`@theme`・`:root`・`@layer base` は入口のファイルに残す。Tailwind v4 は `@import` を自分でまとめるので postcss-import は要らない。
 
 ## 3. PostEditor の公開状態の機械はインラインのまま（2026-08-18）
 
@@ -735,7 +735,7 @@ Vite + React Router 7 への移行を検討し、Next 16 に留まると決め�
 - **`usePublishFlow`（作る前に却下）**: 公開状態と `useAutosave` は互いに依存している（フックは `committedIdRef` と公開状態を書く 3 つのコールバックを受け取り、描画中の `if (state !== handledState)` の突き合わせが `acceptSaved` を呼び返す）。循環を解くには `useAutosave` をその中に包むしかなく、そのフックは 15 個の値を返すことになる。このリポジトリのフックは 6 / 4 / 2 / 0 個である。約 117 行を動かして結合は少しも減らない。
 - **`publish-controls.ts`（作って、レビューして、戻した）**: `label` / `disabled` / `status` / `autosaveStatus` の純関数と 17 の vitest。PostEditor が 402 行から 388 行に減るだけで、ファイルを 1 つ増やす価値が無いと作者が判断した。
 
-このとき見つけた穴は塞いである。`publishDisabled` の 3 つ目の項（`!hasIdentity && autosaveState === 'saving'`）にはテストが無かったが、`e2e/publish-race-guard.spec.ts` が覆っている（`237ac98`）。危険は本物で、項を外したビルドで測ると、最初の自動保存が `id` なしで `{content}` を POST している間に公開が作成と公開の経路を取り、自動保存の応答が 2 つ目の行を作った。
+このとき見つけた穴は塞いである。`publishDisabled` の 3 つ目の項（`!hasIdentity && autosaveState === 'saving'`）にはテストが無かったが、`e2e/publish-race-guard.spec.ts` が覆っている（`c868b53`）。危険は本物で、項を外したビルドで測ると、最初の自動保存が `id` なしで `{content}` を POST している間に公開が作成と公開の経路を取り、自動保存の応答が 2 つ目の行を作った。
 
 **その窓の測り方**: 保存が保留中であることと、送信中であることは違う。800ms のデバウンスが明ける前にクリックすると、フォーム自身の `cancelPendingAutosave()` がタイマーを消し、自動保存は走らず、危険が無いことの証明に見える。最初の `/api/drafts` を `page.route` で止め、そのハンドラが発火してからクリックする。
 

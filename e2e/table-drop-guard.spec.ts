@@ -3,7 +3,7 @@ import { cdpNativeDrag, dragSelect, type Point } from './native-drag';
 import { docString, markdown } from './editor-probe';
 import { loadMarkdown } from './editor-authoring';
 
-// Drops into a table (tableDropGuard, components/editor/table-extensions.ts, from 43f9917):
+// Drops into a table (tableDropGuard, components/editor/table-extensions.ts, from 88f1686):
 //   1. in the table but not a cell: the slice fills a stray cell and fixTables adds a row/column;
 //   2. in a cell at block level: a second paragraph, forcing the table out of GFM pipe form.
 // handleDrop fires only on a native `drop`: CDP via e2e/native-drag.ts.
