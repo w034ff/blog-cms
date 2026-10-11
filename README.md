@@ -98,7 +98,7 @@ npm run db:migrate    # 適用
 ## リポジトリの約束
 
 - **`content/posts/*.mdx` を消さない。** `data/` は gitignore なので、この MDX がバージョン管理された唯一の本文であり、`db:migrate-content` の入力でもある。消すと DB の中だけに本文が取り残される。
-- **ブランチ**: `main` が安定版、`develop` が統合ブランチ。作業は `develop` に入れ、区切りで `main` へマージする。
+- **ブランチ**: `main` の 1 本。作業はブランチを切って PR で `main` に入れる。
 - **コミット**: Conventional Commits（`AGENTS.md` を参照）。
 - **依存追加**: `.npmrc` にサプライチェーン対策の設定（`min-release-age` / `save-exact` / `ignore-scripts`）が入っている。理由はファイル内のコメントを参照。
 

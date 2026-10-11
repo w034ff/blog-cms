@@ -4,7 +4,7 @@
 
 ## 1. 概要
 
-- 静的な MDX のサイトを、DB を持つ CMS とブラウザのエディタに作り替えた（2026-06-23、`a259cae`）。ブランチは `main`（安定）と `develop`（統合）の 2 本。
+- 静的な MDX のサイトを、DB を持つ CMS とブラウザのエディタに作り替えた（2026-06-23、`a259cae`）。ブランチは `main` の 1 本で、作業は PR で入れる（2026-10-12 に統合ブランチの `develop` をやめた。公開と同時に PR・CI・ルールセットで `main` を守るようにしたので、安定版を別に置く役目がなくなった）。
 - SQLite（`better-sqlite3` + `drizzle-orm`、`data/blog.db`）。公開ページは `lib/render.ts` の unified のパイプラインで markdown を HTML にし、生の HTML は `rehype-sanitize` で消毒する。
 - 認証は JWT の cookie で、14 日のスライディング（`proxy.ts` が再発行、`SESSION_MAX_AGE_SECONDS`）。ログインには回数の制限がある（`lib/login-throttle.ts`）。
 - エディタは `/admin/posts/new` と `/admin/posts/[id]/edit` の TipTap（2026-06-29、`b62fef0`）。**保存形式は markdown のまま**で、エディタを替えても `lib/render.ts` と保存の経路は変わらなかった。
@@ -44,7 +44,7 @@
 
 ## 5. 運用（Tailscale Funnel、2026-08-02 から公開中）
 
-- 公開 URL は `https://blog.example.ts.net`。今は Funnel、後で Cloudflare Tunnel + ドメインに移る（Tunnel は無料だがドメインの購入が要る）。
+- 公開 URL（Funnel の `*.ts.net` の名前）は `.env` の `SITE_ORIGIN` にだけ置き、リポジトリには書かない（2026-10-12、公開リポジトリで所有者とホストを結び付けないため）。今は Funnel、後で Cloudflare Tunnel + ドメインに移る（Tunnel は無料だがドメインの購入が要る）。
 - アプリは WSL2（NAT）で動く。Tailscale を Windows 側に入れると、Funnel はアプリに届かなかった（502）。WSL の中に Tailscale を入れ、`tailscale up --hostname=blog --operator=$USER` で同じネットワーク名前空間に置く。`tailscale funnel 3001` は前景で動き、端末を閉じると消える。常時は `tailscale funnel --bg 3001`。
 - 公開できたかは tailnet の外から確かめる。作者のブラウザは tailnet 上にあるので区別できない。
 - 本番ビルド（`npm run build` + `npm start`）で動かす。`.env` に `SITE_ORIGIN` と `SESSION_COOKIE_SECURE=true` が要る。`SESSION_COOKIE_SECURE` はホストではなく経路に従う（平の HTTP で試すなら `false` にしないとログインが黙って失敗する）。`.env` は Claude からは読めない。
