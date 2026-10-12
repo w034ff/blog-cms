@@ -30,13 +30,16 @@ async function pasteImage(page: Page): Promise<void> {
 }
 
 // The row's name in IMAGE_BLOCKED_HOSTS, quoted exactly so another refusal cannot pass.
-for (const { label, typeName, markdown, viewClass, blockedLabel } of [
+// `settled`: what the view draws last, when that is later than the view itself. A link card is drawn
+// without its picture until its lookup answers, so a baseline read before then misses the picture.
+for (const { label, typeName, markdown, viewClass, blockedLabel, settled } of [
   {
     label: 'a link card',
     typeName: 'linkCard',
     markdown: CARD_MD,
     viewClass: 'link-card-view',
     blockedLabel: 'リンクカード',
+    settled: '.link-card-image',
   },
   {
     label: 'an embed',
@@ -44,6 +47,7 @@ for (const { label, typeName, markdown, viewClass, blockedLabel } of [
     markdown: EMBED_MD,
     viewClass: 'embed-view',
     blockedLabel: '埋め込み',
+    settled: null,
   },
   // A body image is the same shape; its losses were visible rather than silent.
   {
@@ -52,6 +56,7 @@ for (const { label, typeName, markdown, viewClass, blockedLabel } of [
     markdown: IMAGE_MD,
     viewClass: 'image-box',
     blockedLabel: '画像ブロック',
+    settled: null,
   },
 ]) {
   test(`selecting ${label} disables 囲み枠/表/引用/画像 and none of them touch it`, async ({
@@ -66,6 +71,7 @@ for (const { label, typeName, markdown, viewClass, blockedLabel } of [
 
     const view = page.locator(`.ProseMirror .${viewClass}`);
     await expect(view).toBeVisible();
+    if (settled !== null) await expect(view.locator(settled)).toHaveCount(1);
     await selectNode(page, typeName);
 
     const calloutButton = page.getByRole('button', { name: '囲み枠' });
