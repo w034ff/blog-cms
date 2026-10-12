@@ -10,8 +10,7 @@ import { expect, type Page } from '@playwright/test';
 export function docString(page: Page): Promise<string> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { state: { doc: { toString(): string } } } })
-      | null;
+      (Element & { editor?: { state: { doc: { toString(): string } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     return el.editor.state.doc.toString();
   });
@@ -22,8 +21,7 @@ export function docString(page: Page): Promise<string> {
 export function markdown(page: Page): Promise<string> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { storage: { markdown: { getMarkdown(): string } } } })
-      | null;
+      (Element & { editor?: { storage: { markdown: { getMarkdown(): string } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     return el.editor.storage.markdown.getMarkdown();
   });
@@ -34,8 +32,7 @@ export function markdown(page: Page): Promise<string> {
 export function selectionClassName(page: Page): Promise<string> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { state: { selection: { constructor: { name: string } } } } })
-      | null;
+      (Element & { editor?: { state: { selection: { constructor: { name: string } } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     return el.editor.state.selection.constructor.name;
   });
@@ -65,8 +62,7 @@ export function caret(page: Page): Promise<string> {
 export function caretPos(page: Page): Promise<number> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { state: { selection: { from: number } } } })
-      | null;
+      (Element & { editor?: { state: { selection: { from: number } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     return el.editor.state.selection.from;
   });
@@ -78,8 +74,7 @@ export function caretPos(page: Page): Promise<number> {
 export function selectionSpan(page: Page): Promise<[number, number]> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { state: { selection: { from: number; to: number } } } })
-      | null;
+      (Element & { editor?: { state: { selection: { from: number; to: number } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     const { from, to } = el.editor.state.selection;
     return [from, to] as [number, number];
@@ -124,8 +119,7 @@ export function historyState(page: Page): Promise<{ undoDepth: number; prevTime:
     type HistoryPluginState = { done: { eventCount: number }; prevTime: number };
     type Plugin = { key: string; getState(state: object): HistoryPluginState | undefined };
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { state: { plugins: Plugin[] } } })
-      | null;
+      (Element & { editor?: { state: { plugins: Plugin[] } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     const { state } = el.editor;
     const plugin = state.plugins.find((p) => p.key === 'history$');

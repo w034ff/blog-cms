@@ -13,8 +13,7 @@ export async function postSlug(page: Page): Promise<string> {
   const db = new Database(TEST_DB_PATH, { readonly: true, fileMustExist: true });
   try {
     const row = db.prepare('SELECT slug FROM posts WHERE id = ?').get(Number(id)) as
-      | { slug: string | null }
-      | undefined;
+      { slug: string | null } | undefined;
     expect(row, `no post row with id ${id}`).toBeTruthy();
     // The slug's shape.
     expect(row?.slug, `post ${id} has no slug`).toMatch(/^[0-9a-f]+$/);

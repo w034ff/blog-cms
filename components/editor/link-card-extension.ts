@@ -391,9 +391,7 @@ const RETRY_NOTE = 'タイトルを取得できませんでした（リンクに
 // request (e.g. a lapsed session) is `unknown` too. `missing` carries its own words: the two kinds
 // are fixed differently (§14.7).
 type Lookup =
-  | { status: 'unknown' }
-  | { status: 'found'; card: CardFace }
-  | { status: 'missing'; note: string };
+  { status: 'unknown' } | { status: 'found'; card: CardFace } | { status: 'missing'; note: string };
 
 // The reference decides which table answers, as on the published side. The stored href gets the
 // §14.5.1 rewrite too, since `parseHTML` accepts any `data-href`: an absolute URL to one of this

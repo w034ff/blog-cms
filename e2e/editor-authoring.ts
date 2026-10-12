@@ -123,8 +123,7 @@ export async function caretAtStartOf(page: Page, typeName: string): Promise<void
 export function collapseToEnd(page: Page): Promise<void> {
   return page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (EditorProbe & { editor?: { state: { selection: { to: number } } } })
-      | null;
+      (EditorProbe & { editor?: { state: { selection: { to: number } } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     const { to } = el.editor.state.selection;
     el.editor.commands.setTextSelection({ from: to, to });

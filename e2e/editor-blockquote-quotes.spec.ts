@@ -33,8 +33,7 @@ test('a callout nested in a blockquote keeps its icon', async ({ page }) => {
   // so the document is built as a load does.
   await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { commands: { setContent(doc: unknown): boolean } } })
-      | null;
+      (Element & { editor?: { commands: { setContent(doc: unknown): boolean } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     el.editor.commands.setContent({
       type: 'doc',
