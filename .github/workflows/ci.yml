@@ -31,11 +31,6 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      # .npmrc sets ignore-scripts=true, so the one trusted native dependency is
-      # built explicitly (docs/dev-environment.md §4). The unit tests open SQLite.
-      - name: Build better-sqlite3
-        run: npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts
-
       - name: Format check
         run: npm run format:check
 

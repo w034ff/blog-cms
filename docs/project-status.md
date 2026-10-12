@@ -16,7 +16,6 @@
 - **マイグレーションの基点は、その時点のスキーマである**（2026-08-02、`b0ac84b`）。過去に手で当てた `ALTER` は `.sql` として残っていないので、歴史を再構成しなかった。`scripts/baseline-db.mts` は台帳を書く前に、ジャーナルをメモリ上の DB に再生して `sqlite_master` を正規化して比べ、食い違えば拒む。drizzle-orm の適用済み判定は `created_at` の比較だけで、ハッシュを見ない。CLI の `drizzle-kit migrate` が同じ判定かは確かめていない。
 - DB のパスは `scripts/db-path.mts` が一か所で決める。`BLOG_DB_PATH` を設定したホストで、スクリプトが別の DB に書いて成功と報告するのを防ぐため（`6901b90`）。
 - **アップロードは参照で消す。** `data/uploads` のファイル名はバイト列の SHA-256 で、同じ画像は 1 つのファイルを共有する。1 つのファイルが複数の記事を支えうるので、削除は参照の走査で決める。記事を消してもファイルは消えない。掃除は猶予付きの手動のスイープ `npm run gc:uploads`（既定は dry-run、`--delete`、`--grace-hours=N`、既定 24 時間。参照は DB の本文と `.mdx` の和）。
-- `npm ci` の後は `npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts` が要る（`docs/dev-environment.md` §4）。
 
 ## 3. 決定の理由（コミットの件名からは読めないもの）
 
