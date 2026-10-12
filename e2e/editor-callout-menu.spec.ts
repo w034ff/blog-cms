@@ -119,8 +119,7 @@ test('the callout menu is disabled inside a quote', async ({ page }) => {
   // The command itself refuses, not only the UI.
   const canSetCallout = await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { can(): { setCallout(type: string): boolean } } })
-      | null;
+      (Element & { editor?: { can(): { setCallout(type: string): boolean } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     return el.editor.can().setCallout('note');
   });
@@ -159,8 +158,7 @@ for (const { label, markdown, typeName, expected } of [
     // The command refuses and the document is untouched.
     const inserted = await page.evaluate(() => {
       const el = document.querySelector('.ProseMirror') as
-        | (Element & { editor?: { commands: { setCallout(type: string): boolean } } })
-        | null;
+        (Element & { editor?: { commands: { setCallout(type: string): boolean } } }) | null;
       if (!el?.editor) throw new Error('no live editor on .ProseMirror');
       return el.editor.commands.setCallout('note');
     });

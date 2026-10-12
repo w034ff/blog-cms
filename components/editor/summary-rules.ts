@@ -144,11 +144,7 @@ function countBoxes(doc: PMNode): BoxCounts {
 }
 
 export type SummaryRuleBreak =
-  | 'duplicate-summary'
-  | 'duplicate-tldr'
-  | 'nested'
-  | 'not-last'
-  | 'section-block';
+  'duplicate-summary' | 'duplicate-tldr' | 'nested' | 'not-last' | 'section-block';
 
 /**
  * The rule an edit from `before` to `after` breaks, or null. Only a rule the edit *newly* breaks

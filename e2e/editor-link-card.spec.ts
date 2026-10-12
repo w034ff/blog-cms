@@ -821,8 +821,7 @@ test('カードにする asks the page again; an ordinary render does not (14.3.
   const fetchedAt = (): number | null => {
     const db = new Database(TEST_DB_PATH, { readonly: true });
     const row = db.prepare('SELECT fetched_at AS at FROM link_previews WHERE url = ?').get(HREF) as
-      | { at: number }
-      | undefined;
+      { at: number } | undefined;
     db.close();
     return row?.at ?? null;
   };

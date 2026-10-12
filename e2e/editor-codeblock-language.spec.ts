@@ -367,8 +367,7 @@ test('pasted external HTML with class="language-diff" folds into the diff attr',
   // HTML insertContent takes the pasted-HTML path, which skips updateCodeBlockDOM.
   await page.evaluate(() => {
     const el = document.querySelector('.ProseMirror') as
-      | (Element & { editor?: { commands: { insertContent: (html: string) => boolean } } })
-      | null;
+      (Element & { editor?: { commands: { insertContent: (html: string) => boolean } } }) | null;
     if (!el?.editor) throw new Error('no live editor on .ProseMirror');
     el.editor.commands.insertContent('<pre><code class="language-diff">-old\n+new</code></pre>');
   });

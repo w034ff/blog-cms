@@ -198,8 +198,7 @@ export function deleteTag(slug: string): boolean {
 }
 
 export type SlugChangeResult =
-  | { ok: true; slug: string; merged: boolean }
-  | { ok: false; error: string };
+  { ok: true; slug: string; merged: boolean } | { ok: false; error: string };
 
 // Give a tag another identifier, under the same rules as a new one (`tagSlugProblem`). Every post
 // holding the old identifier is rewritten to the new one, and the old identifier stays behind as an
