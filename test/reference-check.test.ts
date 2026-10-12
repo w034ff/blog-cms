@@ -45,6 +45,8 @@ const ABSENT: string[] = [
   'docs/embed-requirements.md → e2e/editor-embed-insert.spec.ts',
   'docs/footnote-requirements.md → e2e/editor-footnote-literal.spec.ts',
   'docs/footnote-requirements.md → e2e/editor-footnote-spike.spec.ts',
+  // Gitignored, created when the E2E harness runs.
+  'GEMINI.md → e2e/.tmp',
 ];
 
 const LINE_CITE = /(?<![\w/.-])([\w./()[\]-]+\.(?:tsx?|mts|cts|mjs|cjs|js|css|md)):\d+\b/g;
