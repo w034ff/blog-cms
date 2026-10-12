@@ -50,7 +50,7 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 作者はサプライチェーン攻撃への備えを求めている（素の `npm install` を止めたことがきっかけ）。`.npmrc` が次を設定している。
 
 - `min-release-age=7`: 公開から 7 日未満の版は入れない。npm 11.11 は `.npmrc` のこの設定を守る（新しすぎる版は `ETARGET … with a date before <date>` で失敗する。2026-08-03 に確認）。それでも CLI で `--min-release-age 7` を明示する（害は無く、`.npmrc` が無くなっても残る）。7 日未満のセキュリティ修正は入れられないので、約束する前に `npm view <pkg> time --json` で公開日を確かめ、待つか作者の了承を得る。
-- `ignore-scripts=true`: インストール時のライフサイクルスクリプトを止める。信頼するネイティブ依存は明示的に作る（`npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts`）。`npm ci` のたびにこの手順が要る。
+- `ignore-scripts=true`: インストール時のライフサイクルスクリプトを止める。これを外す必要のある依存は無い。唯一のネイティブ依存の better-sqlite3 は 13 からビルド済みバイナリ（`prebuilds/<platform>-<arch>.node`）を同梱し、install スクリプトを持たない（`"gypfile": false`）ので、`npm ci` だけで動く。12 までは `npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts` が要った（2026-10-12 に 13.0.3 へ上げて不要になった）。同梱の無いプラットフォーム（linux・darwin・win32 の x64・arm64 以外）では自動ではビルドされず、`node_modules/better-sqlite3/lib/binding.js` の `getBinding` は `build/Release` を探しにいく。
 - `save-exact=true`: `^` を付けずに版を固定する。
 
 **規則**: 素の `npm install` をしない。承認された計画にある依存だけを入れ、それ以外（`tsx` など）は先に尋ねる。依存の無い代替を優先する（Node 24 は `.mts` をそのまま実行できるので、スクリプトに `tsx` は要らない）。入れた後は `npm audit signatures` と `npm audit` を走らせ、解決した各版の公開日が 7 日以上前であることを確かめる。
