@@ -21,8 +21,6 @@ updates:
     groups:
       # The family moves together (docs/editor-pitfalls.md §4.2), and an update
       # needs the checks listed there, so it never rides along with others.
-      # Listed before npm-minor-patch because a dependency joins the first
-      # group it matches.
       tiptap:
         patterns: ['@tiptap/*']
       # eslint-config-next tracks next's version, and sharp is pinned to the
@@ -30,8 +28,11 @@ updates:
       # (docs/dev-environment.md §5.2).
       next:
         patterns: ['next', 'eslint-config-next', 'sharp']
+      # Group order does not keep the families above out of this group, so
+      # they are excluded by name; keep this list in step with their patterns.
       npm-minor-patch:
         update-types: ['minor', 'patch']
+        exclude-patterns: ['@tiptap/*', 'next', 'eslint-config-next', 'sharp']
     ignore:
       # Must stay inside typescript-eslint's peer range, which a new TypeScript
       # minor usually breaks; bump it by hand once typescript-eslint allows it.
