@@ -83,7 +83,9 @@ const SUMMARY =
 
 describe('excerptFromBody — TL;DR and まとめ', () => {
   it('uses the TL;DR, wherever it is, over the opening', () => {
-    const body = ['書き出しの段落。', TLDR('要点の一文目。\n\n要点の二文目。'), '本文。'].join('\n\n');
+    const body = ['書き出しの段落。', TLDR('要点の一文目。\n\n要点の二文目。'), '本文。'].join(
+      '\n\n',
+    );
     expect(excerptFromBody(body)).toBe('要点の一文目。要点の二文目。');
   });
 

@@ -185,7 +185,11 @@ function summaryGuard(notify: (message: string) => void): Plugin {
       handleDrop(view, event, slice, moved) {
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
         if (!coords) return false;
-        const broken = dropRuleBreak(resolveDropTarget(view, coords.pos, slice, moved), slice, moved);
+        const broken = dropRuleBreak(
+          resolveDropTarget(view, coords.pos, slice, moved),
+          slice,
+          moved,
+        );
         if (!broken) return false;
         notify(RULE_MESSAGES[broken]);
         event.preventDefault();

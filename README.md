@@ -7,7 +7,7 @@ SQLite をバックエンドに持つ自作のブログ CMS。公開側は Markd
 
 ## 必要なもの
 
-- Node.js 24 系（動作確認は v24.14.1）
+- Node.js 24 系（`.nvmrc`。動作確認は v24.14.1）
 - Google Chrome — E2E テストがシステムの Chrome を使う（Playwright のブラウザは同梱しない設定）
 
 ## セットアップ
@@ -98,7 +98,7 @@ npm run db:migrate    # 適用
 ## リポジトリの約束
 
 - **`content/posts/*.mdx` を消さない。** `data/` は gitignore なので、この MDX がバージョン管理された唯一の本文であり、`db:migrate-content` の入力でもある。消すと DB の中だけに本文が取り残される。
-- **ブランチ**: `main` の 1 本。作業はブランチを切って PR で `main` に入れる。
+- **ブランチ**: `main` の 1 本。作業はブランチを切って PR で `main` に入れる。PR では CI（`.github/workflows/ci.yml`）が整形・lint・型・ユニットテストを検査する。E2E は CI に入れず、マージの前に手元で流す。
 - **コミット**: Conventional Commits（`AGENTS.md` を参照）。
 - **依存追加**: `.npmrc` にサプライチェーン対策の設定（`min-release-age` / `save-exact` / `ignore-scripts`）が入っている。理由はファイル内のコメントを参照。
 
