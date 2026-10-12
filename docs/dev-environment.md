@@ -59,6 +59,13 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 `docs/editor-pitfalls.md` §4.2。
 
+### 4.2 Dependabot の定期の更新
+
+`.github/dependabot.yml` が、npm と GitHub Actions の更新を月に 1 回 PR にする。公開から 7 日待ち（`cooldown`、§4 の待機と同じ日数）、minor と patch はまとめる。`@tiptap/*` と、`next`・`eslint-config-next`・`sharp` はそれぞれ別のグループにする（§4.1、§5.2）。2026-10-12 決定。
+
+- **セキュリティの自動の PR（Dependabot security updates）は使わない。** `cooldown` に関係なく、公開直後の版を勧めるため。脆弱性は Dependabot alerts で知り、待機期間を過ぎた版を手で選ぶ（§5.7 がその例）。
+- CI は E2E を流さないので、`next` か `@tiptap` を動かす PR は、手元で E2E 全体を通してからマージする。`@tiptap` の PR は §4.1 の確認も要る。
+
 ## 5. `npm audit` で受け入れた警告
 
 ### 5.1 drizzle-kit 経由の esbuild（moderate 4 件、受け入れ）

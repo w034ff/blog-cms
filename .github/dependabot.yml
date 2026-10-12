@@ -1,0 +1,53 @@
+# Monthly version-update PRs. Minor and patch updates are grouped to keep the
+# number of PRs small; major updates come one by one because they may need
+# code changes.
+#
+# Every update waits 7 days after the version is published, the same cooldown
+# as .npmrc's min-release-age (docs/dev-environment.md §4). Security updates
+# are left off in the repository settings because they ignore the cooldown;
+# Dependabot alerts report the advisory, and the fix is picked by hand once a
+# patched version is old enough.
+#
+# CI does not run the Playwright suite, so a PR that moves next or @tiptap is
+# merged only after the full suite passes locally.
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    cooldown:
+      default-days: 7
+    groups:
+      # The family moves together (docs/editor-pitfalls.md §4.2), and an update
+      # needs the checks listed there, so it never rides along with others.
+      # Listed before npm-minor-patch because a dependency joins the first
+      # group it matches.
+      tiptap:
+        patterns: ['@tiptap/*']
+      # eslint-config-next tracks next's version, and sharp is pinned to the
+      # version next declares so only one copy is installed
+      # (docs/dev-environment.md §5.2).
+      next:
+        patterns: ['next', 'eslint-config-next', 'sharp']
+      npm-minor-patch:
+        update-types: ['minor', 'patch']
+    ignore:
+      # Must stay inside typescript-eslint's peer range, which a new TypeScript
+      # minor usually breaks; bump it by hand once typescript-eslint allows it.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      # Follows the Node major in .nvmrc, so that types never offer APIs the
+      # runtime lacks; bump it by hand together with .nvmrc.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'monthly'
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
