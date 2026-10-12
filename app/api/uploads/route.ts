@@ -16,7 +16,12 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 401 });
   }
 
-  const formData = await req.formData();
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return NextResponse.json({ error: 'malformed form data' }, { status: 400 });
+  }
   const file = formData.get('file');
   if (!(file instanceof File)) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 });
