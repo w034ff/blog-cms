@@ -85,13 +85,29 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 経路は `eslint-config-next`（devDependency）→ `@next/eslint-plugin-next` → `fast-glob` → `micromatch` → `braces@3.0.3`（GHSA-vfj7-8cjw-p6xm。深く入れ子にしたパターンでスタックを使い切る DoS）。2026-10-05 決定。
 
-**受け入れる理由**: lint のときだけ動き、本番のバンドルに入らない。glob パターンはプラグインと設定が決めるもので、外部の入力は届かない。前向きの修正も無い（braces の最新版が 3.0.3）。`npm audit fix --force` の「修正」は `eslint-config-next@14` への格下げなので、しない。braces か fast-glob が修正版を出したら上げる。それまでは、§5.1 の moderate 4 件とこの high 5 件、計 9 件が `npm audit` の正常な状態である。
+**受け入れる理由**: lint のときだけ動き、本番のバンドルに入らない。glob パターンはプラグインと設定が決めるもので、外部の入力は届かない。前向きの修正も無い（braces の最新版が 3.0.3）。`npm audit fix --force` の「修正」は `eslint-config-next@14` への格下げなので、しない。braces か fast-glob が修正版を出したら上げる。それまでは、この経路の high 5 件が正常である。
 
 ### 5.5 next の RCE と markdown-it（2026-10-05 に対応）
 
 - `next` の critical（GHSA-vcvr-r3jv-pc5j。`next/og` の `ImageResponse` で RCE、16.2.0〜16.3.5）を、`next` と `eslint-config-next` を 16.3.5 から 16.3.6 に上げて塞いだ。このリポジトリは `next/og` を import していないが、本番の依存なので上げた。`npm audit` が勧めた 16.3.8 は公開から 7 日未満だったので、待機期間を過ぎていた 16.3.6 を選んだ。16.3.6 も sharp に `^0.35.4` を宣言するので、§5.2 の sharp の固定は変えていない。
 - `markdown-it` の moderate（GHSA-253c-mchw-3w2r。`linkify: true` のときに 2 次の処理時間がかかる）を、14.2.0 から 14.3.2 に上げて塞いだ。エディタは `linkify: false` で設定しているので届かない経路だったが、修正版が待機期間を過ぎていたので上げた。
 - `brace-expansion` の high（1.1.18 → 1.1.21、5.0.9 → 5.0.12）は lockfile の更新だけで塞いだ。override は使っていない（§5.2 の最後の項目）。
+- どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
+
+### 5.6 @tailwindcss/typography 経由の postcss-selector-parser と、gray-matter 経由の sprintf-js（moderate 6 件、受け入れ）
+
+2026-10-12 決定。どちらも修正版へ進む道が無く、外部の入力が届かない。
+
+- **postcss-selector-parser**（GHSA-rj75-hqrm-r3gf。平たいセレクタの解析に 2 次の時間がかかる。修正は 7.1.6）: `@tailwindcss/typography` が最新の 0.5.20 でも `6.0.10` に固定している。使うのは CSS のビルドの時で、typography が自分のスタイルのセレクタを `parseSelector.astSync` で組み替えるだけである。記事の本文や利用者の入力はここを通らない。`npm audit fix --force` の「修正」は `@tailwindcss/typography@0.5.4` への格下げなので、しない。7 系への override も、メジャーの違う API を typography に渡すことになるので、しない。typography が依存を上げたら追う。経路の 2 件（typography と postcss-selector-parser）。
+- **sprintf-js**（GHSA-hp3w-g68c-fv3c。精度の指定に上限が無く DoS。修正版が無い）: 経路は `gray-matter` → 入れ子の `js-yaml@3.15.2` → `argparse@1.0.10` → `sprintf-js@1.0.3`。js-yaml 3 で argparse を読み込むのはコマンドラインの `bin/js-yaml.js` だけで、gray-matter がライブラリとして使う部分（`lib/post-markdown.ts` と `scripts/migrate-content.mts` の frontmatter の解析）からは呼ばれない。`npm audit fix --force` の「修正」は `gray-matter@2.0.1` への格下げなので、しない。経路の 4 件（gray-matter、js-yaml、argparse、sprintf-js）。
+
+§5.1 の 4 件、§5.4 の 5 件、この節の 6 件、計 15 件が `npm audit` の正常な状態である。
+
+### 5.7 next・sharp・source-map-js（2026-10-12 に対応）
+
+- `next` と `eslint-config-next` を 16.3.6 から 16.3.8 に上げた。Image Optimization の SSRF（GHSA-cjq9-62q9-8jv4、high）、SSG / ISR のキャッシュ汚染（GHSA-mcj8-r9mp-w47p、GHSA-4jqv-mc3x-m676）、`use cache` からの Draft Mode の漏れ（GHSA-3w37-wq28-93x7）、メタデータ画像のルートの情報漏れ（GHSA-f87g-xv8r-7p7x）、開発サーバーの MCP の情報漏れ（GHSA-39w2-rjm5-chcv）を塞ぐ。最新の 16.4.0 は公開から 7 日未満だったので選ばなかった。
+- `sharp` を 0.35.4 から 0.35.5 に上げた（同梱の librsvg の CVE-2026-96889、GHSA-wq5f-xc86-pv6w）。next 16.3.8 も sharp に `^0.35.4` を宣言するので、§5.2 のとおり直接の固定を揃えて上げ、版は 1 つのままである。
+- `source-map-js` の high（GHSA-68fv-2mgg-jv7q）は、`@tailwindcss/node` と `postcss` の範囲 `^1.2.1` の中で 1.2.2 に上がるので、ロックファイルの更新だけで塞いだ。
 - どれも公開から 7 日以上経っていることと、`npm audit signatures` を確かめた。
 
 ## 6. アップロードの掃除の定期実行（systemd user timer）
