@@ -263,6 +263,8 @@ describe('dropRuleBreak', () => {
     expect(dropRuleBreak(gap, tldrSlice, false)).toBe('duplicate-tldr');
     // A move resolves in the document after its source is gone.
     const afterDeletion = docOf(para('本文'), para());
-    expect(dropRuleBreak(afterDeletion.resolve(afterDeletion.content.size), tldrSlice, true)).toBeNull();
+    expect(
+      dropRuleBreak(afterDeletion.resolve(afterDeletion.content.size), tldrSlice, true),
+    ).toBeNull();
   });
 });

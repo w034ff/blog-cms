@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Schema } from '@tiptap/pm/model';
 import { renderMdxToHtml } from '@/lib/render';
-import {
-  collectHeadings,
-  headingForFragment,
-  matchHeadings,
-  slugsFor,
-} from './document-headings';
+import { collectHeadings, headingForFragment, matchHeadings, slugsFor } from './document-headings';
 
 // The link card offers these slugs as fragments to write down (§5.5.17), so the only thing that
 // makes them worth anything is that they are the same strings the published page puts on its
