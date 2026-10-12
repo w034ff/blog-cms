@@ -16,10 +16,7 @@ SQLite をバックエンドに持つ自作のブログ CMS。公開側は Markd
 
 ```bash
 npm ci
-npm rebuild better-sqlite3 --ignore-scripts=false --foreground-scripts
 ```
-
-**2行目は必須。** `.npmrc` で `ignore-scripts=true` にしているため、`npm ci` だけではネイティブモジュールの better-sqlite3 がビルドされず、起動時に落ちる。
 
 ### 2. 環境変数
 
