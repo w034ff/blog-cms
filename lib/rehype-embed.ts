@@ -49,7 +49,7 @@ function embedElement(target: EmbedTarget, instanceId: string, href: string): El
               allow: target.allow,
               // §18.6: omitted unless the provider asks, since `sandbox=""` is the most
               // restrictive value and would stop players that run script.
-              ...(target.sandbox === null ? {} : { sandbox: target.sandbox }),
+              ...(target.sandbox === null ? {} : { sandbox: target.sandbox.split(' ') }),
               allowFullScreen: true,
             },
             children: [],
