@@ -1,3 +1,4 @@
+import { first, oneOf, type RawParams } from '@/lib/search-params';
 import type { DictionaryTag } from '@/lib/types';
 
 // タグの管理's tabs and sort, carried in the URL as 記事一覧's are (lib/admin-post-list.ts), so a view
@@ -16,16 +17,6 @@ export type TagSort = (typeof TAG_SORTS)[number];
 export type TagListParams = { use: TagUse; sort: TagSort };
 
 export const DEFAULT_TAG_PARAMS: TagListParams = { use: 'all', sort: 'slug' };
-
-type RawParams = Record<string, string | string[] | undefined>;
-
-function first(value: string | string[] | undefined): string {
-  return (Array.isArray(value) ? value[0] : value) ?? '';
-}
-
-function oneOf<T extends string>(options: readonly T[], value: string, fallback: T): T {
-  return options.find((option) => option === value) ?? fallback;
-}
 
 // Anything off the lists falls back to the default: a hand-edited or stale URL still shows the table.
 export function parseTagListParams(raw: RawParams): TagListParams {
