@@ -39,9 +39,13 @@ export const CALLOUT_MARKERS: Record<CalloutType, string> = {
   caution: '[!CAUTION]',
 };
 
+export function isCalloutType(value: unknown): value is CalloutType {
+  return CALLOUT_TYPES.some((type) => type === value);
+}
+
 // Narrow a raw attribute / capture group to a CalloutType, defaulting to note.
 export function toCalloutType(value: string | null | undefined): CalloutType {
-  return CALLOUT_TYPES.includes(value as CalloutType) ? (value as CalloutType) : 'note';
+  return isCalloutType(value) ? value : 'note';
 }
 
 const TYPE_ALTERNATION = CALLOUT_TYPES.join('|');

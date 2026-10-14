@@ -139,7 +139,7 @@ export function installFootnotes(markdownit: MarkdownIt): void {
 // The plugin wraps a definition's content in `<p>`, but the node holds inline content (§1), and
 // ProseMirror closed the definition early and left the text in a sibling paragraph. Unwrapped here,
 // as updateDetailsDOM does; idempotent, since updateDOM re-runs on every parse.
-export function unwrapFootnoteParagraphs(element: HTMLElement): void {
+function unwrapFootnoteParagraphs(element: HTMLElement): void {
   element.querySelectorAll(FOOTNOTE_DEF_TAG).forEach((definition) => {
     definition.querySelectorAll(':scope > p').forEach((paragraph) => {
       paragraph.replaceWith(...Array.from(paragraph.childNodes));

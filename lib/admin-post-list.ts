@@ -1,5 +1,6 @@
 import { isCategoryId, type CategoryId } from '@/lib/content';
 import type { AdminPost } from '@/lib/posts';
+import { first, oneOf, type RawParams } from '@/lib/search-params';
 
 // 記事一覧's tabs, category, sort and title search, carried in the URL so a view survives a reload
 // and the browser's back button. Pure, so the rules are tested without a page (lib/admin-post-list.test.ts).
@@ -21,16 +22,6 @@ export type ListParams = {
 };
 
 export const DEFAULT_PARAMS: ListParams = { status: 'all', sort: 'edited', category: null, q: '' };
-
-type RawParams = Record<string, string | string[] | undefined>;
-
-function first(value: string | string[] | undefined): string {
-  return (Array.isArray(value) ? value[0] : value) ?? '';
-}
-
-function oneOf<T extends string>(options: readonly T[], value: string, fallback: T): T {
-  return options.find((option) => option === value) ?? fallback;
-}
 
 // Anything off the lists falls back to the default rather than erroring: a hand-edited or stale URL
 // still shows a list.

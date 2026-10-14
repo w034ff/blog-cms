@@ -48,14 +48,6 @@ export function createPost(input: PostInput): number {
   return row.id;
 }
 
-export function updatePost(id: number, input: PostInput): void {
-  const now = new Date().toISOString();
-  db.update(posts)
-    .set({ ...input, body: normalizeNewlines(input.body), updatedAt: now, editedAt: now })
-    .where(eq(posts.id, id))
-    .run();
-}
-
 // Revisions go with the post, in the same transaction (docs/revision-requirements.md §4 says why
 // this is not a foreign-key cascade).
 export function deletePost(id: number): void {
