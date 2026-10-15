@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { DraftContent } from '@/lib/types';
 // Relative, not `@/`: drizzle-kit loads this file outside the app's path aliases.
 import { POST_KINDS } from '../content';
@@ -58,6 +58,12 @@ export const posts = sqliteTable('posts', {
   // /scribbles (docs/scribble-requirements.md §3.1). Set when the row is created and never changed.
   // Appended at the tail, as above.
   kind: text('kind', { enum: POST_KINDS }).notNull().default('post'),
+  // The account that wrote the row (docs/library-requirements.md §3.1): a like is refused on one's
+  // own post and a view of it is not kept. Every insert through `createPost` writes it. Nullable
+  // because ADD COLUMN cannot be NOT NULL without a constant default; the migration fills existing
+  // rows with the first admin, and a row with no author is nobody's own. No foreign key, for the
+  // reason `postRevisions` gives. Appended at the tail, as above.
+  authorId: integer('author_id'),
 });
 
 // Failed-login bookkeeping, so a public `/login` can't be tried at the speed the
@@ -153,3 +159,38 @@ export const tagAliases = sqliteTable('tag_aliases', {
     .notNull()
     .references(() => tags.id, { onDelete: 'cascade' }),
 });
+
+// What one account has marked or read (docs/library-requirements.md §3.2): one row per account and
+// post in each, so a second mark is the same row. No foreign keys: `deletePost` removes a post's
+// rows in its own transaction, for the reason `postRevisions` gives. Times are epoch milliseconds.
+export const bookmarks = sqliteTable(
+  'bookmarks',
+  {
+    userId: integer('user_id').notNull(),
+    postId: integer('post_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.postId] })],
+);
+
+export const likes = sqliteTable(
+  'likes',
+  {
+    userId: integer('user_id').notNull(),
+    postId: integer('post_id').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.postId] })],
+);
+
+// Rewritten on each visit rather than appended, and cut to the newest RECENT_VIEWS_LIMIT per
+// account on each write (lib/library.ts), so the table never grows past that per account.
+export const postViews = sqliteTable(
+  'post_views',
+  {
+    userId: integer('user_id').notNull(),
+    postId: integer('post_id').notNull(),
+    viewedAt: integer('viewed_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.postId] })],
+);

@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { normalizeNewlines } from '@/lib/draft-content';
+import { deleteLibraryRowsOf } from '@/lib/library';
 import { deleteRevisionsOf, liveContentOfRow, recordRevision } from '@/lib/revisions';
 import type { PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
@@ -19,6 +20,8 @@ export type PostInput = {
   thumbnail: string;
   // Required, not left to the column's default: every creation path says which list it feeds.
   kind: PostKind;
+  // The signed-in account creating the row (docs/library-requirements.md §3.1).
+  authorId: number;
 };
 
 // Whether a slug is already taken. Used at publish time to keep public URLs
@@ -58,11 +61,12 @@ export function createPost(input: PostInput): number {
   return row.id;
 }
 
-// Revisions go with the post, in the same transaction (docs/revision-requirements.md §4 says why
-// this is not a foreign-key cascade).
+// Revisions and library rows go with the post, in the same transaction (docs/revision-requirements.md
+// §4 says why this is not a foreign-key cascade).
 export function deletePost(id: number): void {
   db.transaction(() => {
     deleteRevisionsOf(id);
+    deleteLibraryRowsOf(id);
     db.delete(posts).where(eq(posts.id, id)).run();
   });
 }

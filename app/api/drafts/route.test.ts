@@ -8,8 +8,10 @@ vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
   return { db: createTestDb() };
 });
+// Not 1, so an author written from anywhere but the session cannot match it by accident.
+const SESSION_USER_ID = 7;
 vi.mock('@/lib/dal', () => ({
-  getOptionalSession: async () => ({ userId: 1, username: 'admin' }),
+  getOptionalSession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
 }));
 
 const { POST } = await import('./route');
@@ -50,6 +52,16 @@ async function create(body: unknown): Promise<number> {
 
 beforeEach(() => {
   db.delete(posts).run();
+});
+
+// docs/library-requirements.md §8 row 2.
+describe('POST /api/drafts and the author', () => {
+  it("writes the session's account as a new row's author, for either kind", async () => {
+    const post = await create({ content: filled });
+    const scribble = await create({ kind: 'scribble', content: filled });
+    expect(row(post).authorId).toBe(SESSION_USER_ID);
+    expect(row(scribble).authorId).toBe(SESSION_USER_ID);
+  });
 });
 
 describe('POST /api/drafts and kinds', () => {

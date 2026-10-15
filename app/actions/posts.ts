@@ -89,8 +89,8 @@ function revalidateBlog(): void {
 
 // The slug is fixed at row creation, so publish only flips visibility and commits the live content.
 // The date is stamped at first publish (`existing.date` is '' until then) and kept on every later
-// one. With no row yet (投稿 before autosave created one), create-and-publish.
-async function publish(formData: FormData): Promise<PostFormState> {
+// one. With no row yet (投稿 before autosave created one), create-and-publish, written by `userId`.
+async function publish(formData: FormData, userId: number): Promise<PostFormState> {
   const sent = parseContent(formData);
   if (!sent) {
     return { error: '入力が不正です。タイトルは必須です。' };
@@ -137,6 +137,7 @@ async function publish(formData: FormData): Promise<PostFormState> {
     kind,
     date: new Date().toISOString(),
     draft: false,
+    authorId: userId,
   });
   revalidateBlog();
   return { saved: { id: newId, slug, published: true, at: Date.now() } };
@@ -169,10 +170,13 @@ export async function submitPostAction(
   formData: FormData,
 ): Promise<PostFormState> {
   // No redirect on an expired session: it would discard the editor's content (`sessionExpired`).
-  if (!(await getOptionalSession())) {
+  const session = await getOptionalSession();
+  if (!session) {
     return { sessionExpired: true };
   }
-  return field(formData, 'intent') === 'unpublish' ? unpublish(formData) : publish(formData);
+  return field(formData, 'intent') === 'unpublish'
+    ? unpublish(formData)
+    : publish(formData, session.userId);
 }
 
 export async function deletePostAction(formData: FormData): Promise<void> {
