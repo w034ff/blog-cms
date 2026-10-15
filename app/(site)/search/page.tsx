@@ -6,17 +6,17 @@ import { getSearchablePosts } from '@/lib/posts';
 import { searchPosts, type MarkSegment } from '@/lib/search';
 
 // Named constants for UI labels, search messages, and metadata (docs/search-requirements.md §4).
-export const PAGE_HEADING = '検索';
-export const SEARCH_INPUT_LABEL = '検索キーワード';
-export const SEARCH_INPUT_PLACEHOLDER = 'キーワードを入力';
-export const SEARCH_BUTTON_LABEL = '検索';
-export const SEARCH_RESULTS_PREFIX = '「';
-export const SEARCH_RESULTS_SUFFIX_FOUND = '」を含む記事と走り書き';
-export const SEARCH_RESULTS_UNIT = '件';
-export const SEARCH_RESULTS_EMPTY_SUFFIX = '」を含む記事と走り書きはありません。';
-export const SEARCH_METADATA_TITLE_DEFAULT = '検索';
-export const SEARCH_METADATA_TITLE_PREFIX = '「';
-export const SEARCH_METADATA_TITLE_SUFFIX = '」の検索結果';
+const PAGE_HEADING = '検索';
+const SEARCH_INPUT_LABEL = '検索キーワード';
+const SEARCH_INPUT_PLACEHOLDER = 'キーワードを入力';
+const SEARCH_BUTTON_LABEL = '検索';
+const SEARCH_RESULTS_PREFIX = '「';
+const SEARCH_RESULTS_SUFFIX_FOUND = '」を含む記事と走り書き';
+const SEARCH_RESULTS_UNIT = '件';
+const SEARCH_RESULTS_EMPTY_SUFFIX = '」を含む記事と走り書きはありません。';
+const SEARCH_METADATA_TITLE_DEFAULT = '検索';
+const SEARCH_METADATA_TITLE_PREFIX = '「';
+const SEARCH_METADATA_TITLE_SUFFIX = '」の検索結果';
 
 type SearchPageParams = {
   q?: string | string[];
@@ -53,7 +53,7 @@ function MarkedText({ segments }: { segments: readonly MarkSegment[] }) {
     <>
       {segments.map((seg, i) =>
         seg.isMark ? (
-          <mark key={i} className='bg-(--search-mark-bg) text-inherit rounded-xs px-0.5'>
+          <mark key={i} className='bg-(--search-mark-bg) text-(--search-mark-fg) rounded-xs px-0.5'>
             {seg.text}
           </mark>
         ) : (

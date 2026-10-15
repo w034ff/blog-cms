@@ -81,8 +81,9 @@ html {
      step. Non-text, so 3:1 against the ground is the bar (WCAG 1.4.11). */
   --category-tech: #e8590c;
   --category-blog: #2b8a3e;
-  /* Search result highlight mark background (docs/search-requirements.md §4). */
+  /* Search result highlight mark background and foreground (docs/search-requirements.md §4). */
   --search-mark-bg: #fef08a;
+  --search-mark-fg: #171717;
 }
 
 @theme inline {
@@ -159,6 +160,7 @@ html {
     --category-tech: #ff8a4c;
     --category-blog: #51cf66;
     --search-mark-bg: #713f12;
+    --search-mark-fg: #fef08a;
   }
 }
 

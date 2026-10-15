@@ -72,7 +72,7 @@ function joinLine(left: string, right: string): string {
   return CJK_BEFORE.test(left) ? left + right : `${left} ${right}`;
 }
 
-function normalize(text: string): string {
+export function normalize(text: string): string {
   return text
     .split(/\s*\n\s*/)
     .map((line) => line.replace(/\s+/g, ' ').trim())

@@ -11,6 +11,7 @@ import {
   searchPosts,
   splitMarks,
   SEARCH_MAX_CHARS,
+  type CacheEntry,
 } from './search';
 import type { DraftContent, Post } from '@/lib/types';
 
@@ -339,6 +340,14 @@ describe('search - criteria 5: snippet extraction and exact mark placement (docs
       { text: ' and lowercase', isMark: false },
     ]);
   });
+
+  it('joins line breaks inside snippet according to joinLine rules without leaving stray spaces after Japanese', () => {
+    const body = 'これは一段落目です。\n二段落目にキーワードがあります。';
+    const snippet = buildSnippet(body, ['キーワード'], body);
+    expect(snippet).toBe('これは一段落目です。二段落目にキーワードがあります。');
+    expect(snippet).not.toContain('\n');
+    expect(snippet).not.toContain('。 ');
+  });
 });
 
 describe('search - criteria 6: safe text rendering without HTML interpretation (docs/search-requirements.md §6 id=6)', () => {
@@ -381,33 +390,38 @@ describe('search - criteria 7: empty queries and term/char limits (docs/search-r
 });
 
 describe('search - criteria 11: caching visible text by body equality (docs/search-requirements.md §6 id=11)', () => {
-  it('caches by body, re-extracts when body changes even if updatedAt is unchanged, and prunes deleted IDs', () => {
+  it('caches by body, re-extracts and re-normalizes when body changes, and does neither on cache hit', () => {
     const extractor = vi.fn((body: string) => `Extracted: ${body}`);
-    const cache = new Map<number, { body: string; visibleText: string }>();
+    const normalizer = vi.fn((text: string) => text.toLowerCase());
+    const cache = new Map<number, CacheEntry>();
 
     const post1 = { id: 10, body: 'Initial body 1' };
     const post2 = { id: 20, body: 'Initial body 2' };
 
-    // 1. First run: extracts both
-    getVisibleTexts([post1, post2], { extractor, cache });
+    // 1. First run: extracts and normalizes both
+    getVisibleTexts([post1, post2], { extractor, normalizer, cache });
     expect(extractor).toHaveBeenCalledTimes(2);
+    expect(normalizer).toHaveBeenCalledTimes(2);
 
-    // 2. Second run with same bodies: extractor not called (cache hit)
-    getVisibleTexts([post1, post2], { extractor, cache });
+    // 2. Second run with same bodies: neither extractor nor normalizer called (cache hit)
+    getVisibleTexts([post1, post2], { extractor, normalizer, cache });
     expect(extractor).toHaveBeenCalledTimes(2);
+    expect(normalizer).toHaveBeenCalledTimes(2);
 
-    // 3. Third run: post1 body changed -> extractor called for post1 only
+    // 3. Third run: post1 body changed -> extractor and normalizer called for post1 only
     const post1Modified = { id: 10, body: 'Updated body 1' };
-    getVisibleTexts([post1Modified, post2], { extractor, cache });
+    getVisibleTexts([post1Modified, post2], { extractor, normalizer, cache });
     expect(extractor).toHaveBeenCalledTimes(3);
+    expect(normalizer).toHaveBeenCalledTimes(3);
 
     // 4. Fourth run: post2 deleted from list -> cache entry for post2 is pruned
-    getVisibleTexts([post1Modified], { extractor, cache });
+    getVisibleTexts([post1Modified], { extractor, normalizer, cache });
     expect(cache.has(20)).toBe(false);
     expect(cache.has(10)).toBe(true);
 
-    // 5. Fifth run: post2 returns -> extractor must be called because it was pruned
-    getVisibleTexts([post1Modified, post2], { extractor, cache });
+    // 5. Fifth run: post2 returns -> extractor and normalizer must be called because it was pruned
+    getVisibleTexts([post1Modified, post2], { extractor, normalizer, cache });
     expect(extractor).toHaveBeenCalledTimes(4);
+    expect(normalizer).toHaveBeenCalledTimes(4);
   });
 });

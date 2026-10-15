@@ -1,5 +1,10 @@
 import type { Root, RootContent } from 'mdast';
-import { excerptFromBody, parser, phrasingText } from '@/lib/excerpt';
+import {
+  excerptFromBody,
+  normalize as normalizeExcerptText,
+  parser,
+  phrasingText,
+} from '@/lib/excerpt';
 import type { Post } from '@/lib/types';
 
 // Named constants for search constraints and snippet sizing (docs/search-requirements.md §3.3, §4).
@@ -24,6 +29,15 @@ export type SearchResult = {
   titleSegments: MarkSegment[];
   snippetSegments: MarkSegment[];
 };
+
+// Fast code-point by code-point NFKC and lowercase normalization without offset tracking.
+export function normalizeString(orig: string): string {
+  let norm = '';
+  for (const ch of orig) {
+    norm += ch.normalize('NFKC').toLowerCase();
+  }
+  return norm;
+}
 
 // Normalize a string code-point by code-point using Unicode NFKC and lowercase (docs/search-requirements.md §3.3).
 // Tracks character offsets so highlights (<mark>) map back to original character positions.
@@ -120,28 +134,36 @@ export function extractVisibleText(body: string): string {
   return blocks.join('\n');
 }
 
-type CacheEntry = {
-  body: string;
+export type VisibleTextEntry = {
   visibleText: string;
+  visibleTextNorm: string;
 };
 
-// Module-level in-memory cache for extracted visible texts (docs/search-requirements.md §3.1).
+export type CacheEntry = {
+  body: string;
+  visibleText: string;
+  visibleTextNorm: string;
+};
+
+// Module-level in-memory cache for extracted visible texts and normalized strings (docs/search-requirements.md §3.1).
 const visibleTextCache = new Map<number, CacheEntry>();
 
 export function clearVisibleTextCache(): void {
   visibleTextCache.clear();
 }
 
-// Retrieve or extract visible text for the given posts, caching by post ID and body equality.
+// Retrieve or extract visible text for the given posts, caching both plain and normalized text.
 export function getVisibleTexts(
   posts: readonly { id: number; body: string }[],
   options?: {
     extractor?: (body: string) => string;
+    normalizer?: (text: string) => string;
     cache?: Map<number, CacheEntry>;
   },
-): Map<number, string> {
+): Map<number, VisibleTextEntry> {
   const cache = options?.cache ?? visibleTextCache;
   const extractor = options?.extractor ?? extractVisibleText;
+  const normalizer = options?.normalizer ?? normalizeString;
 
   // Evict posts that no longer exist in the active set
   const currentIds = new Set(posts.map((p) => p.id));
@@ -151,15 +173,19 @@ export function getVisibleTexts(
     }
   }
 
-  const result = new Map<number, string>();
+  const result = new Map<number, VisibleTextEntry>();
   for (const post of posts) {
     const cached = cache.get(post.id);
     if (cached && cached.body === post.body) {
-      result.set(post.id, cached.visibleText);
+      result.set(post.id, {
+        visibleText: cached.visibleText,
+        visibleTextNorm: cached.visibleTextNorm,
+      });
     } else {
       const visibleText = extractor(post.body);
-      cache.set(post.id, { body: post.body, visibleText });
-      result.set(post.id, visibleText);
+      const visibleTextNorm = normalizer(visibleText);
+      cache.set(post.id, { body: post.body, visibleText, visibleTextNorm });
+      result.set(post.id, { visibleText, visibleTextNorm });
     }
   }
 
@@ -226,6 +252,7 @@ export function splitMarks(text: string, terms: readonly string[]): MarkSegment[
 }
 
 // Build a snippet around the first matching term, or fallback to excerptFromBody (docs/search-requirements.md §4).
+// Collapses line breaks inside snippet text according to joinLine rules (docs/cms-features.md「説明文の自動抽出」).
 export function buildSnippet(
   visibleBody: string,
   terms: readonly string[],
@@ -271,7 +298,8 @@ export function buildSnippet(
   const hasRightCut = endCp < chars.length;
 
   const snippetCore = chars.slice(startCp, endCp).join('');
-  return (hasLeftCut ? '…' : '') + snippetCore + (hasRightCut ? '…' : '');
+  const normalizedCore = normalizeExcerptText(snippetCore);
+  return (hasLeftCut ? '…' : '') + normalizedCore + (hasRightCut ? '…' : '');
 }
 
 // Filter, score, and format matching posts (docs/search-requirements.md §3.3, §3.4).
@@ -280,6 +308,7 @@ export function searchPosts(
   query: string,
   options?: {
     extractor?: (body: string) => string;
+    normalizer?: (text: string) => string;
     cache?: Map<number, CacheEntry>;
   },
 ): SearchResult[] {
@@ -299,9 +328,10 @@ export function searchPosts(
   const matches: MatchItem[] = [];
 
   for (const post of posts) {
-    const titleNorm = normalizeWithMap(post.title).norm;
-    const visibleBody = visibleTexts.get(post.id) ?? '';
-    const visibleBodyNorm = normalizeWithMap(visibleBody).norm;
+    const titleNorm = normalizeString(post.title);
+    const entry = visibleTexts.get(post.id);
+    const visibleBody = entry?.visibleText ?? '';
+    const visibleBodyNorm = entry?.visibleTextNorm ?? '';
 
     let allMatch = true;
     let titleMatchesAll = true;
