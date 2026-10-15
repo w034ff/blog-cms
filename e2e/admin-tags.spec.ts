@@ -149,9 +149,11 @@ test('a tag is added, given a display name, moved to another identifier, merged 
   await page.getByRole('button', { name: '削除', exact: true }).click();
   await page.getByRole('button', { name: '1 件の記事から外して削除' }).click();
   await expect(editButton(other)).toHaveCount(0);
-  // Its aliases go with it: none of the three words leads anywhere now.
+  // Its aliases go with it: none of the three words leads anywhere now. Polled: the row leaves the
+  // list before the delete's Server Action has written, and a navigation that wins that race still
+  // finds the tag (about one run in three with other files beside it).
   for (const word of [other, moved, first]) {
-    expect((await page.goto(`/tags/${word}`))?.status()).toBe(404);
+    await expect.poll(async () => (await page.goto(`/tags/${word}`))?.status()).toBe(404);
   }
   expect(await tagsOf(page, editPath)).toBe('');
 });

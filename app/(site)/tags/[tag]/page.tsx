@@ -4,6 +4,7 @@ import { getPostsByTag } from '@/lib/posts';
 import { aliasTargets, tagNames } from '@/lib/tags';
 import { PostCard } from '@/components/PostCard';
 import { sharedOpenGraph } from '@/app/shared-metadata';
+import { getSiteIdentity } from '@/lib/site-settings';
 
 type Params = { tag: string };
 
@@ -18,7 +19,10 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const title = `#${name}`;
   // `openGraph` left unset inherits the layout's whole object, so a shared tag page would announce
   // itself as the front page.
-  return { title, openGraph: { ...sharedOpenGraph, title, url: `/tags/${tag}` } };
+  return {
+    title,
+    openGraph: { ...sharedOpenGraph(await getSiteIdentity()), title, url: `/tags/${tag}` },
+  };
 }
 
 export default async function TagPage({ params }: { params: Promise<Params> }) {

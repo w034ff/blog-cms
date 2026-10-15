@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { chromium } from '@playwright/test';
-import { SITE_DESCRIPTION, SITE_NAME } from '../app/shared-metadata.ts';
+import { DEFAULT_SITE_DESCRIPTION, DEFAULT_SITE_NAME } from '../app/shared-metadata.ts';
 import { MARK_LIGHT, markSvg } from '../lib/site-mark.ts';
 
 // Regenerates public/og.png, the site's share card.
@@ -16,8 +16,8 @@ const OUT = path.join(process.cwd(), 'public', 'og.png');
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-const TITLE = SITE_NAME;
-const SUBTITLE = SITE_DESCRIPTION;
+const TITLE = DEFAULT_SITE_NAME;
+const SUBTITLE = DEFAULT_SITE_DESCRIPTION;
 // The mark above the name, at the size the name's cap height reads against.
 const MARK_PX = 112;
 

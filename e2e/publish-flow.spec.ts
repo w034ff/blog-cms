@@ -7,11 +7,16 @@ import {
   ensureCategory,
 } from './editor-authoring';
 import { publishedPath } from './published-post';
-import { EDIT_POST_TITLE, tabTitle } from '../app/shared-metadata';
+import { EDIT_POST_TITLE } from '../app/shared-metadata';
 
 // The publish lifecycle: autosave creates the row (URL sync) → 投稿 → edit → 更新. The action result
 // is adopted during render (useAutosave's acceptSaved), so a regression shows as a render-phase
 // error or a stuck status.
+
+// The page's own part of the title. The site's name after it is an admin's setting, which
+// e2e/site-settings.spec.ts changes while this file may be running.
+const editorTitle = new RegExp(`^${EDIT_POST_TITLE} \\| `);
+
 test('a new post autosaves, publishes, and takes further edits', async ({ page }) => {
   // Render-phase violations arrive in dev as console errors, not page errors: watch both.
   const pageErrors: string[] = [];
@@ -34,7 +39,7 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await expectAutosaved(page);
   await expect(page).toHaveURL(/\/admin\/posts\/\d+\/edit$/);
   // The tab title follows the address, as a reload of it would give.
-  await expect(page).toHaveTitle(tabTitle(EDIT_POST_TITLE));
+  await expect(page).toHaveTitle(editorTitle);
   await expectDraft(page);
 
   // Published in place: published-current, and the button reads 更新.
@@ -43,7 +48,7 @@ test('a new post autosaves, publishes, and takes further edits', async ({ page }
   await expectPublished(page);
   await expect(page.getByRole('button', { name: '更新' })).toBeVisible();
   // The publish revalidates the page (docs/editor-pitfalls.md §15.5); the title survives it.
-  await expect(page).toHaveTitle(tabTitle(EDIT_POST_TITLE));
+  await expect(page).toHaveTitle(editorTitle);
 
   // The public address from the row: the editor never shows the slug, assigned by the first autosave
   // (app/api/drafts/route.ts). Publishing makes it serve.

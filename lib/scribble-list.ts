@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { sharedOpenGraph } from '@/app/shared-metadata';
+import { sharedOpenGraph, type SiteIdentity } from '@/app/shared-metadata';
 import { excerptFromBody } from '@/lib/excerpt';
 import type { Post } from '@/lib/types';
 
@@ -38,12 +38,12 @@ export function calculateTotalPages(
 
 // Metadata for the scribble list (/scribbles). Always includes `robots: { index: false }`
 // regardless of siteIndexable (docs/scribble-requirements.md §2, §5).
-export function scribbleListMetadata(page = 1): Metadata {
+export function scribbleListMetadata(site: SiteIdentity, page = 1): Metadata {
   return {
     title: page > 1 ? `走り書き (${page} ページ目)` : '走り書き',
     robots: { index: false },
     openGraph: {
-      ...sharedOpenGraph,
+      ...sharedOpenGraph(site),
       title: '走り書き',
       url: page > 1 ? `/scribbles?page=${page}` : '/scribbles',
     },
@@ -52,7 +52,7 @@ export function scribbleListMetadata(page = 1): Metadata {
 
 // Metadata for each scribble page (/scribbles/<slug>). Always includes `robots: { index: false }`
 // regardless of siteIndexable (docs/scribble-requirements.md §2, §5).
-export function scribbleDetailMetadata(post: Post, preview: boolean): Metadata {
+export function scribbleDetailMetadata(site: SiteIdentity, post: Post, preview: boolean): Metadata {
   if (preview) {
     return {
       title: `[下書き] ${post.title}`,
@@ -65,7 +65,7 @@ export function scribbleDetailMetadata(post: Post, preview: boolean): Metadata {
     description,
     robots: { index: false },
     openGraph: {
-      ...sharedOpenGraph,
+      ...sharedOpenGraph(site),
       type: 'article',
       title: post.title,
       description,

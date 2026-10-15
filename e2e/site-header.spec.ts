@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { TEST_ADMIN } from './constants';
-import { SITE_NAME } from '../app/shared-metadata';
+import { DEFAULT_SITE_NAME as SITE_NAME } from '../app/shared-metadata';
 
 test('an unauthenticated visitor sees no "投稿する", account button, or "管理" link (docs/site-header-requirements.md §7 id=1)', async ({
   browser,

@@ -194,3 +194,11 @@ export const postViews = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.postId] })],
 );
+
+// Site-wide settings an admin changes from /admin/settings, one row per key
+// (docs/site-settings-requirements.md §3). A key with no row reads as its default in code, so the
+// table starts empty and an environment that never saved shows what it showed before.
+export const appSettings = sqliteTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});

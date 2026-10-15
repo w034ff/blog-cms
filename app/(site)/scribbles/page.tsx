@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { getSiteIdentity } from '@/lib/site-settings';
 import { notFound } from 'next/navigation';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
 import { ImageZoom } from '@/components/ImageZoom';
@@ -28,7 +29,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const resolved = await searchParams;
   const page = parsePageNumber(resolved.page);
-  return scribbleListMetadata(page);
+  return scribbleListMetadata(await getSiteIdentity(), page);
 }
 
 export default async function ScribblesPage({

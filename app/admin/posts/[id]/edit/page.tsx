@@ -1,3 +1,4 @@
+import { getSiteIdentity } from '@/lib/site-settings';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
@@ -25,6 +26,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   return (
     <section>
       <PostEditor
+        siteName={(await getSiteIdentity()).name}
         action={submitPostAction}
         initial={initial}
         mode='edit'

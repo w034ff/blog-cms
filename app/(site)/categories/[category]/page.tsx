@@ -4,6 +4,7 @@ import { categoryLabel, isCategoryId } from '@/lib/content';
 import { getPostsByCategory } from '@/lib/posts';
 import { PostCard } from '@/components/PostCard';
 import { sharedOpenGraph } from '@/app/shared-metadata';
+import { getSiteIdentity } from '@/lib/site-settings';
 
 type Params = { category: string };
 
@@ -17,7 +18,14 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   if (!isCategoryId(id)) return {};
   const title = categoryLabel(id);
   // As in app/(site)/tags/[tag]/page.tsx: an unset openGraph would carry the site's own title.
-  return { title, openGraph: { ...sharedOpenGraph, title, url: `/categories/${category}` } };
+  return {
+    title,
+    openGraph: {
+      ...sharedOpenGraph(await getSiteIdentity()),
+      title,
+      url: `/categories/${category}`,
+    },
+  };
 }
 
 export default async function CategoryPage({ params }: { params: Promise<Params> }) {

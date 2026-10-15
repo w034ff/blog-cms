@@ -1,6 +1,6 @@
 import 'server-only';
 import { siteOrigin } from '@/lib/site';
-import { SITE_DESCRIPTION, SITE_NAME } from '@/app/shared-metadata';
+import type { SiteIdentity } from '@/app/shared-metadata';
 import { excerptFromBody } from '@/lib/excerpt';
 import type { Post } from '@/lib/types';
 
@@ -40,7 +40,11 @@ function buildItem(post: FeedPost): string {
 
 // `limit`: number of items to include, or `null` for every eligible post (`?all=1`).
 // Omitted entirely, it defaults to `DEFAULT_ITEM_LIMIT`.
-export function buildRssFeed(posts: Post[], options: { limit?: number | null } = {}): string {
+export function buildRssFeed(
+  site: SiteIdentity,
+  posts: Post[],
+  options: { limit?: number | null } = {},
+): string {
   const limit = options.limit === undefined ? DEFAULT_ITEM_LIMIT : options.limit;
   const eligible = posts.filter(isFeedEligible);
   const items = limit === null ? eligible : eligible.slice(0, limit);
@@ -49,9 +53,9 @@ export function buildRssFeed(posts: Post[], options: { limit?: number | null } =
     '<?xml version="1.0" encoding="UTF-8"?>' +
     '<rss version="2.0">' +
     '<channel>' +
-    `<title>${wrapCdata(SITE_NAME)}</title>` +
+    `<title>${wrapCdata(site.name)}</title>` +
     `<link>${siteOrigin.origin}</link>` +
-    `<description>${wrapCdata(SITE_DESCRIPTION)}</description>` +
+    `<description>${wrapCdata(site.description)}</description>` +
     '<language>ja</language>' +
     // Request-time "now", not derived from the items — docs/cms-features.md §9: no
     // reader actually consults this field, and this feed has no per-item update

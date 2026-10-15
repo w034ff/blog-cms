@@ -12,6 +12,7 @@ import type { Post } from '@/lib/types';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
 import { sharedOpenGraph } from '@/app/shared-metadata';
+import { getSiteIdentity } from '@/lib/site-settings';
 
 type Params = { slug: string };
 
@@ -50,7 +51,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
     openGraph: {
       // Spread, not replaced: `openGraph` here replaces the layout's wholesale
       // (app/shared-metadata.ts).
-      ...sharedOpenGraph,
+      ...sharedOpenGraph(await getSiteIdentity()),
       // Without width/height, unlike /og.png: uploads are of unknown size, and a wrong one distorts
       // the card. Relative; metadataBase (SITE_ORIGIN) makes it absolute.
       ...(thumbnail ? { images: [{ url: thumbnail, alt: post.title }] } : {}),

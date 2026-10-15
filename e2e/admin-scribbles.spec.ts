@@ -7,7 +7,6 @@ import {
   openPostSettings,
 } from './editor-authoring';
 import { TEST_DB_PATH } from './constants';
-import { tabTitle } from '../app/shared-metadata';
 
 // Reads a post row directly from the harness's SQLite DB copy (e2e/published-post.ts).
 function readDbPost(id: number): { kind: string; draft: number; slug: string } {
@@ -46,7 +45,8 @@ test('scribble authoring, listing, settings, and publish flow', async ({ page })
     .getByRole('link', { name: '走り書き' })
     .click();
   await expect(page).toHaveURL(/\/admin\/posts\/new\?kind=scribble$/);
-  await expect(page).toHaveTitle(tabTitle('新しい走り書き'));
+  // The name after the bar is an admin's setting, which e2e/site-settings.spec.ts may be changing.
+  await expect(page).toHaveTitle(/^新しい走り書き \| /);
 
   const backLink = page.locator('.editor-back-link');
   await expect(backLink).toHaveAttribute('href', '/admin/scribbles');
