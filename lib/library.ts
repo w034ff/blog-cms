@@ -110,8 +110,14 @@ export function listLibrary(userId: number, tab: LibraryTab): LibraryEntry[] {
     .all();
 }
 
-// Whether the account has bookmarked and liked a post, for the buttons on its page.
-export function marksOn(userId: number, postId: number): { bookmarked: boolean; liked: boolean } {
+// What the buttons on a published post's page show to a signed-in account (§5): whether it has
+// bookmarked and liked the post, and whether it may like it at all — not on its own post. Null when
+// the post is not published, where the page draws no buttons.
+export type MarkState = { bookmarked: boolean; liked: boolean; canLike: boolean };
+
+export function markState(userId: number, postId: number): MarkState | null {
+  const post = publishedAuthor(postId);
+  if (!post) return null;
   const bookmarked = db
     .select({ postId: bookmarks.postId })
     .from(bookmarks)
@@ -122,7 +128,11 @@ export function marksOn(userId: number, postId: number): { bookmarked: boolean; 
     .from(likes)
     .where(and(eq(likes.userId, userId), eq(likes.postId, postId)))
     .get();
-  return { bookmarked: bookmarked !== undefined, liked: liked !== undefined };
+  return {
+    bookmarked: bookmarked !== undefined,
+    liked: liked !== undefined,
+    canLike: post.authorId !== userId,
+  };
 }
 
 // Likes per post, for the admin lists (§6.3). A post with none is absent.

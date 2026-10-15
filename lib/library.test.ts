@@ -8,7 +8,7 @@ import {
   RECENT_VIEWS_LIMIT,
   likeCounts,
   listLibrary,
-  marksOn,
+  markState,
   recordView,
   setBookmark,
   setLike,
@@ -69,7 +69,7 @@ describe('what a mark is refused on', () => {
   it('accepts a bookmark on your own post', () => {
     const own = seed({ authorId: ME });
     expect(setBookmark(ME, own, true)).toBe(true);
-    expect(marksOn(ME, own)).toEqual({ bookmarked: true, liked: false });
+    expect(markState(ME, own)).toEqual({ bookmarked: true, liked: false, canLike: false });
   });
 
   it('refuses a bookmark and a like on a draft, as on an id that does not exist', () => {
@@ -94,6 +94,20 @@ describe('what a mark is refused on', () => {
     expect(likeCounts().get(id)).toBe(1);
     setLike(ME, id, false);
     expect(likeCounts().has(id)).toBe(false);
+  });
+});
+
+describe('markState', () => {
+  it("shows someone else's post as likeable, with the account's own marks", () => {
+    const id = seed();
+    setLike(ME, id, true);
+    expect(markState(ME, id)).toEqual({ bookmarked: false, liked: true, canLike: true });
+    expect(markState(OTHER + 1, id)).toEqual({ bookmarked: false, liked: false, canLike: true });
+  });
+
+  it('has nothing for a draft or a missing id', () => {
+    const draft = seed({ draft: true });
+    expect([markState(ME, draft), markState(ME, draft + 1000)]).toEqual([null, null]);
   });
 });
 
