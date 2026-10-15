@@ -6,7 +6,9 @@ import { DraftPreviewBanner } from '@/components/DraftPreviewBanner';
 import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { ImageZoom } from '@/components/ImageZoom';
+import { LibraryButtons } from '@/components/LibraryButtons';
 import { getOptionalSession } from '@/lib/dal';
+import { markState } from '@/lib/library';
 import { formatScribbleDayIso } from '@/lib/format';
 import { getScribbleBySlug, getScribbleDraftBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
@@ -38,6 +40,9 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
   const readable = await readableScribble(slug);
   if (!readable) notFound();
   const { post, preview } = readable;
+
+  const session = !preview ? await getOptionalSession() : null;
+  const mark = session ? markState(session.userId, post.id) : null;
 
   const { html } = await renderMdxToHtml(post.body, { resolveCard });
 
@@ -78,6 +83,14 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
             </ul>
           )}
         </div>
+        {mark && (
+          <LibraryButtons
+            postId={post.id}
+            initialBookmarked={mark.bookmarked}
+            initialLiked={mark.liked}
+            canLike={mark.canLike}
+          />
+        )}
         <CodeCopyButtons targetId='scribble-body' />
         <FootnotePopover targetId='scribble-body' />
         <EmbedFrames targetId='scribble-body' />

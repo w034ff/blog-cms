@@ -63,6 +63,11 @@ html {
   --button-primary-fg: var(--color-white);
   --button-secondary-border: var(--color-zinc-300);
   --button-secondary-bg-hover: var(--color-zinc-100);
+  /* Library button's active / marked tint and hover states (docs/library-requirements.md §5). */
+  --button-library-active-bg: #fdf2f5;
+  --button-library-active-bg-hover: #fae1e8;
+  --button-library-active-bg-press: #f8cfd9;
+  --button-library-fg: var(--color-zinc-600);
   /* Tag chips: a step darker than the ground, in the same purple. */
   --chip-bg: #e8e0f1;
   --chip-bg-hover: #ddd2ea;
@@ -140,6 +145,10 @@ html {
     --button-primary-fg: var(--color-zinc-900);
     --button-secondary-border: var(--color-zinc-700);
     --button-secondary-bg-hover: var(--color-zinc-800);
+    --button-library-active-bg: #2a1820;
+    --button-library-active-bg-hover: #38202b;
+    --button-library-active-bg-press: #482837;
+    --button-library-fg: var(--color-zinc-400);
     --chip-bg: #2a2235;
     --chip-bg-hover: #352b43;
     --chip-fg: #d9c8ee;
@@ -162,6 +171,35 @@ html {
   .button-secondary {
     border-radius: var(--radius-box);
     border: 1px solid var(--button-secondary-border);
+  }
+  .button-library {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    height: 2.25rem;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    border-radius: 9999px;
+    border: 1px solid var(--button-secondary-border);
+    background-color: var(--surface);
+    color: var(--button-library-fg);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      color 150ms;
+  }
+  .button-library:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .button-library[aria-pressed='true'] {
+    border-color: var(--accent);
+    background-color: var(--button-library-active-bg);
+    color: var(--accent);
   }
   .tag-chip {
     display: inline-block;
@@ -215,6 +253,12 @@ html {
     }
     .button-secondary:hover {
       background: var(--button-secondary-bg-hover);
+    }
+    .button-library:not([aria-pressed='true']):hover {
+      background-color: var(--button-secondary-bg-hover);
+    }
+    .button-library[aria-pressed='true']:hover {
+      background-color: var(--button-library-active-bg-hover);
     }
     .tag-chip:hover {
       background: var(--chip-bg-hover);
@@ -592,8 +636,12 @@ body {
   .dropdown-item:active,
   .link-bubble-open:active,
   .prose .link-card-head button:active,
-  .prose .embed-head button:active {
+  .prose .embed-head button:active,
+  .button-library:not([aria-pressed='true']):active {
     background-color: #d4d4d8; /* zinc-300 */
+  }
+  .button-library[aria-pressed='true']:active {
+    background-color: var(--button-library-active-bg-press);
   }
 }
 
@@ -602,7 +650,8 @@ body {
   .dropdown-item:active,
   .link-bubble-open:active,
   .prose .link-card-head button:active,
-  .prose .embed-head button:active {
+  .prose .embed-head button:active,
+  .button-library:not([aria-pressed='true']):active {
     background-color: #52525b; /* zinc-600 */
   }
 }

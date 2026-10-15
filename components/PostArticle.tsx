@@ -27,6 +27,7 @@ export function PostArticle({
   showDates = true,
   body,
   column = 'page',
+  afterBody,
 }: {
   post: Post;
   html: string;
@@ -34,6 +35,7 @@ export function PostArticle({
   showDates?: boolean;
   body?: ReactNode;
   column?: 'page' | 'editor';
+  afterBody?: ReactNode;
 }) {
   const inEditor = column === 'editor';
   const showToc = !inEditor && body === undefined && toc.length >= MIN_HEADINGS_FOR_TOC;
@@ -96,6 +98,7 @@ export function PostArticle({
             </>
           )}
         </div>
+        {afterBody}
         {/* Client enhancers, attaching behaviour to the server-rendered body and rendering
             nothing: code copy buttons, footnote previews (the references stay anchors), X embed
             height and missing-post fallback (docs/embed-requirements.md §10.5, §10.6), and
