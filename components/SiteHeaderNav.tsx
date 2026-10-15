@@ -18,6 +18,8 @@ const ARTICLES_MENU_CATEGORIES_LABEL = 'カテゴリ';
 const ARTICLES_MENU_CATEGORIES_HREF = '/categories';
 const ARTICLES_MENU_TAGS_LABEL = 'タグ';
 const ARTICLES_MENU_TAGS_HREF = '/tags';
+const ARTICLES_MENU_SEARCH_LABEL = '検索';
+const ARTICLES_MENU_SEARCH_HREF = '/search';
 
 const POST_BUTTON_LABEL = '投稿する';
 const POST_MENU_ARTICLE_LABEL = '記事';
@@ -178,15 +180,39 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
                 </svg>
               </button>
             )}>
-            {({ close }) => (
-              <ul className='min-w-36'>
-                {ARTICLES_MENU_ITEMS.map((item) => (
-                  <li key={item.href}>
-                    <MenuItemLink item={item} pathname={pathname} onClick={close} />
-                  </li>
-                ))}
-              </ul>
-            )}
+            {({ close }) => {
+              const isSearchCurrent = pathname === ARTICLES_MENU_SEARCH_HREF;
+              return (
+                <div className='min-w-36'>
+                  <ul>
+                    {ARTICLES_MENU_ITEMS.map((item) => (
+                      <li key={item.href}>
+                        <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                      </li>
+                    ))}
+                  </ul>
+                  <div className='my-1 border-t border-zinc-200 dark:border-zinc-800' />
+                  <Link
+                    href={ARTICLES_MENU_SEARCH_HREF}
+                    aria-current={isSearchCurrent ? 'page' : undefined}
+                    onClick={close}
+                    className={`flex items-center gap-2 rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                      isSearchCurrent ? 'font-semibold' : ''
+                    }`}>
+                    <svg aria-hidden='true' viewBox='0 0 16 16' className='h-3.5 w-3.5 shrink-0'>
+                      <path
+                        d='M11 6.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0zm-1.3 3.2 3.8 3.8'
+                        fill='none'
+                        stroke='currentColor'
+                        strokeWidth='1.8'
+                        strokeLinecap='round'
+                      />
+                    </svg>
+                    <span>{ARTICLES_MENU_SEARCH_LABEL}</span>
+                  </Link>
+                </div>
+              );
+            }}
           </HeaderDropdown>
 
           <Link

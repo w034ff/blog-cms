@@ -17,7 +17,9 @@ export function getSiteSection(pathname: string): SiteSection | null {
     pathname === '/tags' ||
     pathname.startsWith('/tags/') ||
     pathname === '/categories' ||
-    pathname.startsWith('/categories/')
+    pathname.startsWith('/categories/') ||
+    pathname === '/search' ||
+    pathname.startsWith('/search/')
   ) {
     return 'articles';
   }
