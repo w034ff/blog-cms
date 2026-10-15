@@ -12,13 +12,7 @@ import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 // A disclosure, not `role="menu"`: the panel holds a confirmation step, not a list of commands
 // walked with arrow keys. Deleting takes a second click because nothing brings a post back —
 // deletePost removes its revisions in the same transaction (docs/revision-requirements.md).
-export function PostRowMenu({
-  id,
-  viewHref,
-}: {
-  id: number;
-  viewHref: string | null;
-}) {
+export function PostRowMenu({ id, viewHref }: { id: number; viewHref: string | null }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const panelId = useId();
@@ -76,7 +70,7 @@ export function PostRowMenu({
                 編集
               </Link>
               {/* The row's 表示, here only on a phone, where the row hides it to give the title
-                  the width (app/admin/(list)/page.tsx). */}
+                  the width (app/admin/(list)/PostListRows.tsx). */}
               {viewHref && (
                 <a
                   href={viewHref}
