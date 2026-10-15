@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 // One place, since it is both the title suffix and og:site_name.
-export const SITE_NAME = 'Tech Blog';
+export const SITE_NAME = 'Small Diffs';
 export const SITE_DESCRIPTION = '個人技術ブログ';
 
 // The layout's title template. `tabTitle` applies it for a title set from the client, where no

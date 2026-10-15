@@ -36,7 +36,7 @@ export default async function AdminHome({
     <section>
       {/* No 新規作成 here: writing starts from SiteHeader's 「投稿する」, which every list screen
           wears (docs/site-header-requirements.md §5). With no posts the empty state carries one
-          (EmptyPostList). No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
+          (EmptyPostList). No サイトを見る: SiteHeader's brand goes there. */}
       <div className='mb-6'>
         <ScreenHeading title='記事一覧' showTags={await isAdmin()} />
       </div>

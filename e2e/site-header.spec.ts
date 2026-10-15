@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { TEST_ADMIN } from './constants';
+import { SITE_NAME } from '../app/shared-metadata';
 
 test('an unauthenticated visitor sees no "投稿する", account button, or "管理" link (docs/site-header-requirements.md §7 id=1)', async ({
   browser,
@@ -15,7 +16,7 @@ test('an unauthenticated visitor sees no "投稿する", account button, or "管
     await expect(header.getByRole('link', { name: '管理' })).toHaveCount(0);
 
     // Visible public elements
-    await expect(header.getByRole('link', { name: 'Tech Blog' })).toBeVisible();
+    await expect(header.getByRole('link', { name: SITE_NAME })).toBeVisible();
     await expect(header.getByRole('button', { name: '記事' })).toBeVisible();
     await expect(header.getByRole('link', { name: '走り書き' })).toBeVisible();
   } finally {
@@ -252,4 +253,23 @@ test('at 360px viewport signed-in, "投稿する" and account dropdown panels do
   expect(accountBox).not.toBeNull();
   expect(accountBox!.x).toBeGreaterThanOrEqual(0);
   expect(accountBox!.x + accountBox!.width).toBeLessThanOrEqual(360);
+});
+
+test('at 360px signed in, the brand shows the mark alone and the row stays inside the column (docs/site-header-requirements.md §3.4)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto('/');
+
+  const header = page.locator('header');
+  // The name is hidden beside the mark, yet still names the link.
+  const brand = header.getByRole('link', { name: SITE_NAME });
+  await expect(brand).toBeVisible();
+  const brandBox = await brand.boundingBox();
+  expect(brandBox!.width).toBeLessThan(40);
+
+  // Nothing is squeezed past the 16px gutter: the account button ends inside the column.
+  const account = header.getByRole('button', { name: 'アカウントのメニュー' });
+  const accountBox = await account.boundingBox();
+  expect(accountBox!.x + accountBox!.width).toBeLessThanOrEqual(360 - 16);
 });

@@ -145,7 +145,7 @@ Markdown 記法そのもの（見出しの `#`、強調の `*`、リンクの `[
 
 - 投稿一覧: `getAllPosts()`（`lib/posts.ts`）をそのまま使う。すでに `draft=false` かつ `unlisted=false` でフィルタ済み（非公開限定URL投稿 §4 で追加）、`date` 降順。`Post` 型（`lib/types.ts`）に `title`・`slug`・`date`・`description`・`category`・`tags`・`body` に加えて `unlisted`・`updatedAt`（いずれも2026-09-06追加）も載っているが、このフィードが使うのは前者のみ——`unlisted` は `getAllPosts` のフィルタで既に処理済み、`updatedAt` は§4の決定によりフィードに出さない。追加クエリは不要。
 - サイト起点 URL: `siteOrigin`（`lib/site.ts`、`SITE_ORIGIN` 環境変数、既定 `http://localhost:3001`）。`app/layout.tsx` の `metadataBase: siteOrigin` と同じ値を使う。
-- サイト名/概要: `SITE_NAME = 'Tech Blog'`・`SITE_DESCRIPTION = '個人技術ブログ'`（`app/shared-metadata.ts`）。
+- サイト名/概要: `SITE_NAME = 'Small Diffs'`・`SITE_DESCRIPTION = '個人技術ブログ'`（`app/shared-metadata.ts`）。
 
 ## 4. 各アイテムの内容
 
