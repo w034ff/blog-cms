@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { normalizeCategory, parseTags } from '@/lib/content';
+import { normalizeCategory, parseTags, type PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 const AUTOSAVE_DELAY_MS = 800;
@@ -40,6 +40,7 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
 export function useAutosave({
   formRef,
   committedIdRef,
+  kind = 'post',
   onCreated,
   onDirty,
   onSessionExpired,
@@ -48,6 +49,7 @@ export function useAutosave({
   formRef: RefObject<HTMLFormElement | null>;
   // The post's row id; null for a brand-new post until its row materializes.
   committedIdRef: RefObject<number | null>;
+  kind?: PostKind;
   // The first save of a new post materialized its row: adopt the new id.
   // The row the first save materialized, and the slug it was given (§18 — the editor needs its
   // own address before it can refuse to link to it).
@@ -89,7 +91,9 @@ export function useAutosave({
     try {
       const content = readDraftContent(form);
       const payload =
-        committedIdRef.current === null ? { content } : { id: committedIdRef.current, content };
+        committedIdRef.current === null
+          ? { content, kind }
+          : { id: committedIdRef.current, content };
       const res = await fetch('/api/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -139,7 +143,7 @@ export function useAutosave({
         setUnsaved(false);
       }
     }
-  }, [formRef, committedIdRef, onCreated, onSessionExpired]);
+  }, [formRef, committedIdRef, kind, onCreated, onSessionExpired]);
 
   // Publish the stable autosave routine to the ref the timer/flush/retry call,
   // so they never capture a stale closure (and we don't write the ref in render).
