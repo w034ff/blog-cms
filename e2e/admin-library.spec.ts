@@ -14,13 +14,30 @@ function getDb(): Database.Database {
 function getUserIds(): { adminId: number; authorId: number } {
   const db = getDb();
   try {
-    const admin = db
-      .prepare('SELECT id FROM users WHERE username = ?')
-      .get(TEST_ADMIN.username) as { id: number };
-    const author = db
-      .prepare('SELECT id FROM users WHERE username = ?')
-      .get(TEST_AUTHOR.username) as { id: number };
-    return { adminId: admin.id, authorId: author.id };
+    const idOf = (username: string): number => {
+      const row = db
+        .prepare<[string], { id: number }>('SELECT id FROM users WHERE username = ?')
+        .get(username);
+      if (!row) throw new Error(`no user ${username} in the test database`);
+      return row.id;
+    };
+    return { adminId: idOf(TEST_ADMIN.username), authorId: idOf(TEST_AUTHOR.username) };
+  } finally {
+    db.close();
+  }
+}
+
+// The account's bookmark rows for one post. Polled by callers: the icon flips before the Action's
+// write lands (docs/library-requirements.md §6.2), so one read right after the click can race it.
+function bookmarkCount(userId: number, postId: number): number {
+  const db = getDb();
+  try {
+    const row = db
+      .prepare<[number, number], { count: number }>(
+        'SELECT COUNT(*) AS count FROM bookmarks WHERE user_id = ? AND post_id = ?',
+      )
+      .get(userId, postId);
+    return row?.count ?? 0;
   } finally {
     db.close();
   }
@@ -296,32 +313,14 @@ test.describe.serial('Admin Library', () => {
     // Row remains in DOM
     await expect(row).toBeVisible();
 
-    // Verify removed from DB
-    const checkDb1 = getDb();
-    try {
-      const rowCount = checkDb1
-        .prepare('SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ? AND post_id = ?')
-        .get(adminId, post.id) as { count: number };
-      expect(rowCount.count).toBe(0);
-    } finally {
-      checkDb1.close();
-    }
+    await expect.poll(() => bookmarkCount(adminId, post.id)).toBe(0);
 
     // Click again to restore
     await button.click();
     await expect(button).toHaveAttribute('aria-label', 'ブックマークを外す');
     await expect(button).toHaveAttribute('aria-pressed', 'true');
 
-    // Verify restored in DB
-    const checkDb2 = getDb();
-    try {
-      const rowCount = checkDb2
-        .prepare('SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ? AND post_id = ?')
-        .get(adminId, post.id) as { count: number };
-      expect(rowCount.count).toBe(1);
-    } finally {
-      checkDb2.close();
-    }
+    await expect.poll(() => bookmarkCount(adminId, post.id)).toBe(1);
   });
 
   test('post list shows like count only on posts with at least one like', async ({ page }) => {
