@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { listAllScribbles } from '@/lib/posts';
 import { isAdmin } from '@/lib/dal';
+import { likeCounts } from '@/lib/library';
 import {
   countByStatus,
   matchesStatus,
@@ -23,6 +24,7 @@ export default async function AdminScribblesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const all = await listAllScribbles();
+  const likes = likeCounts();
   // Scribbles omit category filtering (docs/scribble-requirements.md §6):
   // even if ?category= is present in the URL, ignore it so scribbles are not filtered out.
   const params = { ...parseListParams(await searchParams), category: null };
@@ -63,7 +65,7 @@ export default async function AdminScribblesPage({
             </Link>
           </p>
         ) : (
-          <PostListRows posts={posts} kind='scribble' />
+          <PostListRows posts={posts} kind='scribble' likesCount={likes} />
         )}
       </div>
     </section>
