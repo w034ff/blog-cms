@@ -124,11 +124,7 @@ export function PostListRows({
                 表示
               </a>
             )}
-            <PostRowMenu
-              id={post.id}
-              slug={post.slug}
-              viewHref={post.slug ? viewHref(post.slug) : null}
-            />
+            <PostRowMenu id={post.id} viewHref={post.slug ? viewHref(post.slug) : null} />
           </div>
         </li>
       ))}

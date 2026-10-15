@@ -62,8 +62,8 @@ type Props = {
   hasPendingEdits: boolean;
   // The tag dictionary (lib/tags.ts), for 記事の設定's タグ field to pick from.
   tagDictionary: DictionaryTag[];
-  // Post kind: 'post' (default) or 'scribble' (docs/scribble-requirements.md §6).
-  kind?: PostKind;
+  // Post kind: 'post' or 'scribble' (docs/scribble-requirements.md §6).
+  kind: PostKind;
 };
 
 const emptyState: PostFormState = {};
@@ -95,7 +95,7 @@ export function PostEditor({
   everPublished: initialEverPublished,
   hasPendingEdits,
   tagDictionary,
-  kind = 'post',
+  kind,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // The body's markdown, mirrored into a hidden input that autosave and publish read.

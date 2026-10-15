@@ -40,7 +40,7 @@ function readDraftContent(form: HTMLFormElement): DraftContent {
 export function useAutosave({
   formRef,
   committedIdRef,
-  kind = 'post',
+  kind,
   onCreated,
   onDirty,
   onSessionExpired,
@@ -49,7 +49,7 @@ export function useAutosave({
   formRef: RefObject<HTMLFormElement | null>;
   // The post's row id; null for a brand-new post until its row materializes.
   committedIdRef: RefObject<number | null>;
-  kind?: PostKind;
+  kind: PostKind;
   // The first save of a new post materialized its row: adopt the new id.
   // The row the first save materialized, and the slug it was given (§18 — the editor needs its
   // own address before it can refuse to link to it).

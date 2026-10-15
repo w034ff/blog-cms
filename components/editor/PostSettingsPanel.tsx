@@ -126,7 +126,7 @@ type Props = {
   // in flight could land on top of a restore made from the history.
   historyDisabled: boolean;
   // Post kind: scribbles omit category and thumbnail fields (docs/scribble-requirements.md §3.2).
-  kind?: PostKind;
+  kind: PostKind;
 };
 
 export function PostSettingsPanel({
@@ -148,7 +148,7 @@ export function PostSettingsPanel({
   returnFocusRef,
   historyHref,
   historyDisabled,
-  kind = 'post',
+  kind,
 }: Props) {
   const router = useRouter();
   // Past `min-width: 106rem` (§12.25) the backdrop is `pointer-events: none`, but useDismiss listens

@@ -14,12 +14,10 @@ import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 // deletePost removes its revisions in the same transaction (docs/revision-requirements.md).
 export function PostRowMenu({
   id,
-  slug,
-  viewHref = slug ? `/posts/${slug}` : null,
+  viewHref,
 }: {
   id: number;
-  slug: string | null;
-  viewHref?: string | null;
+  viewHref: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
