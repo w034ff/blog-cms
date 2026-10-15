@@ -128,10 +128,10 @@
 | 2   | 記事と走り書きを作ると、`authorId` にセッションの利用者が入る                        | `app/api/drafts/route.test.ts`、`app/actions/posts.test.ts` |
 | 3   | 自分の記事へのいいねと、非公開の記事へのブックマーク・いいねは、書き込まずに拒まれる | `lib/library.test.ts`                                       |
 | 4   | 拒まれたときの答えは、存在しない id のときと同じである                               | `app/actions/library.test.ts`                               |
-| 5   | 自分の記事、プレビュー、非公開の記事を開いても、閲覧履歴に残らない                   | `lib/library.test.ts`（ページ側は未定）                     |
+| 5   | 自分の記事、プレビュー、非公開の記事を開いても、閲覧履歴に残らない                   | `lib/library.test.ts`、`e2e/library-buttons.spec.ts`        |
 | 6   | 閲覧履歴は 1 人につき 100 件を超えず、同じ記事は 1 行である                          | `lib/library.test.ts`                                       |
 | 7   | 記事を消すと、その記事のブックマーク・いいね・閲覧の行も消える                       | `lib/library.test.ts`                                       |
-| 8   | ログインしていない人には、記事と走り書きのページにボタンが出ない                     | 未定                                                        |
+| 8   | ログインしていない人には、記事と走り書きのページにボタンが出ない                     | `e2e/library-buttons.spec.ts`                               |
 | 9   | ライブラリの一覧に、非公開に戻された記事は出ない                                     | `lib/library.test.ts`（画面は未定）                         |
 | 10  | 記事一覧と走り書きの一覧の行に、いいねの数が出る                                     | 未定                                                        |
 
