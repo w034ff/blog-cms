@@ -8,31 +8,75 @@ import { useDismiss } from '@/components/editor/useDismiss';
 import { getSiteSection, getInitialLetter } from '@/lib/site-section';
 
 // Named constants for UI strings and route paths (docs/site-header-requirements.md §3).
-export const NAV_ARTICLES_LABEL = '記事';
-export const NAV_SCRIBBLINGS_LABEL = '走り書き';
-export const NAV_SCRIBBLINGS_HREF = '/scribbles';
+const NAV_ARTICLES_LABEL = '記事';
+const NAV_SCRIBBLES_LABEL = '走り書き';
+const NAV_SCRIBBLES_HREF = '/scribbles';
 
-export const ARTICLES_MENU_LATEST_LABEL = '最新の記事';
-export const ARTICLES_MENU_LATEST_HREF = '/';
-export const ARTICLES_MENU_CATEGORIES_LABEL = 'カテゴリ';
-export const ARTICLES_MENU_CATEGORIES_HREF = '/categories';
-export const ARTICLES_MENU_TAGS_LABEL = 'タグ';
-export const ARTICLES_MENU_TAGS_HREF = '/tags';
+const ARTICLES_MENU_LATEST_LABEL = '最新の記事';
+const ARTICLES_MENU_LATEST_HREF = '/';
+const ARTICLES_MENU_CATEGORIES_LABEL = 'カテゴリ';
+const ARTICLES_MENU_CATEGORIES_HREF = '/categories';
+const ARTICLES_MENU_TAGS_LABEL = 'タグ';
+const ARTICLES_MENU_TAGS_HREF = '/tags';
 
-export const POST_BUTTON_LABEL = '投稿する';
-export const POST_MENU_HEADING = '新しく書く';
-export const POST_MENU_ARTICLE_LABEL = '記事';
-export const POST_MENU_ARTICLE_HREF = '/admin/posts/new';
-export const POST_MENU_SCRIBBLE_LABEL = '走り書き';
-export const POST_MENU_SCRIBBLE_HREF = '/admin/posts/new?kind=scribble';
+const POST_BUTTON_LABEL = '投稿する';
+const POST_MENU_HEADING = '新しく書く';
+const POST_MENU_ARTICLE_LABEL = '記事';
+const POST_MENU_ARTICLE_HREF = '/admin/posts/new';
+const POST_MENU_SCRIBBLE_LABEL = '走り書き';
+const POST_MENU_SCRIBBLE_HREF = '/admin/posts/new?kind=scribble';
 
-export const ACCOUNT_MENU_BUTTON_LABEL = 'アカウントのメニュー';
-export const ACCOUNT_MENU_LOGGED_IN_SUFFIX = 'でログイン中';
-export const ACCOUNT_MENU_LIBRARY_LABEL = 'ライブラリ';
-export const ACCOUNT_MENU_LIBRARY_HREF = '/admin/library';
-export const ACCOUNT_MENU_ADMIN_LABEL = '管理画面';
-export const ACCOUNT_MENU_ADMIN_HREF = '/admin';
-export const ACCOUNT_MENU_LOGOUT_LABEL = 'ログアウト';
+const ACCOUNT_MENU_BUTTON_LABEL = 'アカウントのメニュー';
+const ACCOUNT_MENU_LOGGED_IN_SUFFIX = 'でログイン中';
+const ACCOUNT_MENU_LIBRARY_LABEL = 'ライブラリ';
+const ACCOUNT_MENU_LIBRARY_HREF = '/admin/library';
+const ACCOUNT_MENU_ADMIN_LABEL = '管理画面';
+const ACCOUNT_MENU_ADMIN_HREF = '/admin';
+const ACCOUNT_MENU_LOGOUT_LABEL = 'ログアウト';
+
+type MenuItem = {
+  readonly label: string;
+  readonly href: string;
+};
+
+const ARTICLES_MENU_ITEMS: readonly MenuItem[] = [
+  { label: ARTICLES_MENU_LATEST_LABEL, href: ARTICLES_MENU_LATEST_HREF },
+  { label: ARTICLES_MENU_CATEGORIES_LABEL, href: ARTICLES_MENU_CATEGORIES_HREF },
+  { label: ARTICLES_MENU_TAGS_LABEL, href: ARTICLES_MENU_TAGS_HREF },
+];
+
+const POST_MENU_ITEMS: readonly MenuItem[] = [
+  { label: POST_MENU_ARTICLE_LABEL, href: POST_MENU_ARTICLE_HREF },
+  { label: POST_MENU_SCRIBBLE_LABEL, href: POST_MENU_SCRIBBLE_HREF },
+];
+
+const ACCOUNT_MENU_ITEMS: readonly MenuItem[] = [
+  { label: ACCOUNT_MENU_LIBRARY_LABEL, href: ACCOUNT_MENU_LIBRARY_HREF },
+  { label: ACCOUNT_MENU_ADMIN_LABEL, href: ACCOUNT_MENU_ADMIN_HREF },
+];
+
+function MenuItemLink({
+  item,
+  pathname,
+  onClick,
+}: {
+  item: MenuItem;
+  pathname: string;
+  onClick: () => void;
+}) {
+  const isCurrent = pathname === item.href;
+  return (
+    <Link
+      href={item.href}
+      aria-current={isCurrent ? 'page' : undefined}
+      onClick={onClick}
+      className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+        isCurrent ? 'font-semibold' : ''
+      }`}>
+      {item.label}
+    </Link>
+  );
+}
 
 type MenuKind = 'articles' | 'post' | 'account';
 
@@ -48,7 +92,6 @@ type HeaderDropdownProps = {
   }) => ReactNode;
   align?: 'left' | 'right';
   panelClassName?: string;
-  ariaLabel: string;
   children: (props: { close: () => void }) => ReactNode;
 };
 
@@ -61,7 +104,6 @@ function HeaderDropdown({
   trigger,
   align = 'left',
   panelClassName = '',
-  ariaLabel,
   children,
 }: HeaderDropdownProps) {
   const panelId = useId();
@@ -84,7 +126,6 @@ function HeaderDropdown({
       {isOpen && (
         <div
           id={panelId}
-          aria-label={ariaLabel}
           className={`absolute top-full z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800 ${
             align === 'right' ? 'right-0' : 'left-0'
           } ${panelClassName}`}>
@@ -119,7 +160,6 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
             isOpen={openMenu === 'articles'}
             onToggle={() => toggleMenu('articles')}
             onClose={closeMenu}
-            ariaLabel={NAV_ARTICLES_LABEL}
             panelClassName='min-w-36'
             trigger={({ ref, isOpen, panelId, onClick }) => (
               <button
@@ -141,52 +181,24 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
             )}>
             {({ close }) => (
               <ul className='min-w-36'>
-                <li>
-                  <Link
-                    href={ARTICLES_MENU_LATEST_HREF}
-                    aria-current={pathname === '/' ? 'page' : undefined}
-                    onClick={close}
-                    className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                      pathname === '/' ? 'font-semibold' : ''
-                    }`}>
-                    {ARTICLES_MENU_LATEST_LABEL}
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href={ARTICLES_MENU_CATEGORIES_HREF}
-                    aria-current={pathname === '/categories' ? 'page' : undefined}
-                    onClick={close}
-                    className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                      pathname === '/categories' ? 'font-semibold' : ''
-                    }`}>
-                    {ARTICLES_MENU_CATEGORIES_LABEL}
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href={ARTICLES_MENU_TAGS_HREF}
-                    aria-current={pathname === '/tags' ? 'page' : undefined}
-                    onClick={close}
-                    className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                      pathname === '/tags' ? 'font-semibold' : ''
-                    }`}>
-                    {ARTICLES_MENU_TAGS_LABEL}
-                  </Link>
-                </li>
+                {ARTICLES_MENU_ITEMS.map((item) => (
+                  <li key={item.href}>
+                    <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                  </li>
+                ))}
               </ul>
             )}
           </HeaderDropdown>
 
           <Link
-            href={NAV_SCRIBBLINGS_HREF}
-            aria-current={pathname === '/scribbles' ? 'page' : undefined}
+            href={NAV_SCRIBBLES_HREF}
+            aria-current={pathname === NAV_SCRIBBLES_HREF ? 'page' : undefined}
             className={`text-sm font-semibold whitespace-nowrap ${
               isScribblesSection
                 ? 'text-zinc-900 dark:text-zinc-50'
                 : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-50'
             }`}>
-            {NAV_SCRIBBLINGS_LABEL}
+            {NAV_SCRIBBLES_LABEL}
           </Link>
         </nav>
       </div>
@@ -198,7 +210,6 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
             onToggle={() => toggleMenu('post')}
             onClose={closeMenu}
             align='right'
-            ariaLabel={POST_BUTTON_LABEL}
             panelClassName='min-w-36'
             trigger={({ ref, isOpen, panelId, onClick }) => (
               <button
@@ -227,22 +238,11 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
                   {POST_MENU_HEADING}
                 </div>
                 <ul>
-                  <li>
-                    <Link
-                      href={POST_MENU_ARTICLE_HREF}
-                      onClick={close}
-                      className='block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-                      {POST_MENU_ARTICLE_LABEL}
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href={POST_MENU_SCRIBBLE_HREF}
-                      onClick={close}
-                      className='block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-                      {POST_MENU_SCRIBBLE_LABEL}
-                    </Link>
-                  </li>
+                  {POST_MENU_ITEMS.map((item) => (
+                    <li key={item.href}>
+                      <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
@@ -253,7 +253,6 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
             onToggle={() => toggleMenu('account')}
             onClose={closeMenu}
             align='right'
-            ariaLabel={ACCOUNT_MENU_BUTTON_LABEL}
             panelClassName='min-w-44'
             trigger={({ ref, isOpen, panelId, onClick }) => (
               <button
@@ -263,7 +262,7 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
                 aria-expanded={isOpen}
                 aria-controls={panelId}
                 onClick={onClick}
-                className='flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold bg-[var(--chip-bg)] text-[var(--chip-fg)]'>
+                className='flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold bg-(--chip-bg) text-(--chip-fg)'>
                 {getInitialLetter(username)}
               </button>
             )}>
@@ -273,22 +272,11 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
                   {username} {ACCOUNT_MENU_LOGGED_IN_SUFFIX}
                 </div>
                 <ul>
-                  <li>
-                    <Link
-                      href={ACCOUNT_MENU_LIBRARY_HREF}
-                      onClick={close}
-                      className='block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-                      {ACCOUNT_MENU_LIBRARY_LABEL}
-                    </Link>
-                  </li>
-                  <li>
-                    <Link
-                      href={ACCOUNT_MENU_ADMIN_HREF}
-                      onClick={close}
-                      className='block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-                      {ACCOUNT_MENU_ADMIN_LABEL}
-                    </Link>
-                  </li>
+                  {ACCOUNT_MENU_ITEMS.map((item) => (
+                    <li key={item.href}>
+                      <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                    </li>
+                  ))}
                 </ul>
                 <div className='my-1 border-t border-zinc-200 dark:border-zinc-800' />
                 <form action={logout}>

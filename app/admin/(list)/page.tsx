@@ -34,8 +34,8 @@ export default async function AdminHome({
 
   return (
     <section>
-      {/* 新規作成 moves to SiteHeader's 「投稿する」 (docs/site-header-requirements.md §5).
-          With no posts the empty state carries it instead (EmptyPostList).
+      {/* 新しく書くのはヘッダーの「投稿する」から（docs/site-header-requirements.md §5）。
+          一覧が空のときは空の表示（EmptyPostList）が新規作成を出す。
           No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
       <div className='mb-6'>
         <ScreenHeading title='記事一覧' showTags={await isAdmin()} />

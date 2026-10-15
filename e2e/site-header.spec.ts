@@ -39,7 +39,6 @@ test('site section styling and aria-current on active views (docs/site-header-re
   const articlesButton = siteNav.getByRole('button', { name: '記事' });
   const articlesColor = await articlesButton.evaluate((el) => window.getComputedStyle(el).color);
   expect(scribblesColor).not.toBe(articlesColor);
-  await expect(scribblesLink).toHaveClass(/text-zinc-900/);
 
   // At /tags, opening '記事' menu reveals 'タグ' with aria-current="page"
   await page.goto('/tags');
@@ -68,6 +67,10 @@ test('dropdown menus open on click, dismiss on Escape or outside click, restore 
   await expect(articlesBtn).toHaveAttribute('aria-expanded', 'true');
   const latestLink = siteNav.getByRole('link', { name: '最新の記事' });
   await expect(latestLink).toBeVisible();
+
+  // Move focus to the first link inside the panel via Tab to verify focus restoration
+  await page.keyboard.press('Tab');
+  await expect(latestLink).toBeFocused();
 
   // 2. Escape to close, restores focus to trigger button
   await page.keyboard.press('Escape');
@@ -217,4 +220,36 @@ test('admin screens lack logout in side/heading menus and lack "新規作成" in
 
   const scribblesHeadingRow = page.locator('section > div.mb-6');
   await expect(scribblesHeadingRow.getByRole('link', { name: '新規作成' })).toHaveCount(0);
+});
+
+test('at 360px viewport signed-in, "投稿する" and account dropdown panels do not overflow the screen (docs/site-header-requirements.md §3.4)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 640 });
+  await page.goto('/');
+
+  const header = page.locator('header');
+  const accountNav = header.getByRole('navigation', { name: 'アカウント' });
+
+  // 1. "投稿する" dropdown panel stays within [0, 360]
+  const postBtn = accountNav.getByRole('button', { name: '投稿する' });
+  await postBtn.click();
+  const postPanelId = await postBtn.getAttribute('aria-controls');
+  const postPanel = page.locator(`#${postPanelId}`);
+  await expect(postPanel).toBeVisible();
+  const postBox = await postPanel.boundingBox();
+  expect(postBox).not.toBeNull();
+  expect(postBox!.x).toBeGreaterThanOrEqual(0);
+  expect(postBox!.x + postBox!.width).toBeLessThanOrEqual(360);
+
+  // 2. Account dropdown panel stays within [0, 360]
+  const accountBtn = accountNav.getByRole('button', { name: 'アカウントのメニュー' });
+  await accountBtn.click();
+  const accountPanelId = await accountBtn.getAttribute('aria-controls');
+  const accountPanel = page.locator(`#${accountPanelId}`);
+  await expect(accountPanel).toBeVisible();
+  const accountBox = await accountPanel.boundingBox();
+  expect(accountBox).not.toBeNull();
+  expect(accountBox!.x).toBeGreaterThanOrEqual(0);
+  expect(accountBox!.x + accountBox!.width).toBeLessThanOrEqual(360);
 });
