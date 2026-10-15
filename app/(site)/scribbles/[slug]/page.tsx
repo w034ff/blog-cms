@@ -14,6 +14,7 @@ import { getScribbleBySlug, getScribbleDraftBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
 import { scribbleDetailMetadata } from '@/lib/scribble-list';
+import { getSiteIdentity } from '@/lib/site-settings';
 import type { Post } from '@/lib/types';
 
 type Params = { slug: string };
@@ -32,7 +33,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const { slug } = await params;
   const readable = await readableScribble(slug);
   if (!readable) return {};
-  return scribbleDetailMetadata(readable.post, readable.preview);
+  return scribbleDetailMetadata(await getSiteIdentity(), readable.post, readable.preview);
 }
 
 export default async function ScribblePage({ params }: { params: Promise<Params> }) {

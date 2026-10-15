@@ -213,7 +213,8 @@ const FIGMA_PATH = /^\/(?:design|file)\/([^/]+)(?:\/|$)/;
 const FIGMA_NODE = /^(\d{1,9})[-:](\d{1,9})$/;
 
 // Figma refuses to render without it. It identifies this site to a third party, so it is not
-// `SITE_NAME`: renaming the header must not retarget Figma.
+// the site's name, which an admin can change (docs/site-settings-requirements.md): renaming the
+// site must not retarget Figma.
 const FIGMA_EMBED_HOST = 'tech-blog';
 
 // Nothing is asked for; full screen is `allowFullScreen`'s.

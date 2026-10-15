@@ -1,3 +1,4 @@
+import { getSiteIdentity } from '@/lib/site-settings';
 import type { Metadata } from 'next';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
@@ -38,6 +39,7 @@ export default async function NewPostPage({
   return (
     <section>
       <PostEditor
+        siteName={(await getSiteIdentity()).name}
         action={submitPostAction}
         initial={emptyInitial}
         mode='create'

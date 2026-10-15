@@ -26,10 +26,16 @@ export const TAGS: Item = {
   current: (pathname) => pathname.startsWith('/admin/tags'),
 };
 
+export const SETTINGS: Item = {
+  label: 'サイトの設定',
+  href: '/admin/settings',
+  current: (pathname) => pathname.startsWith('/admin/settings'),
+};
+
 // The menu's items in order, shared with ScreenHeading so the rail and the narrow screen's menu
-// cannot disagree. タグの管理 only for an admin (see AdminSideNav).
+// cannot disagree. タグの管理 and サイトの設定 only for an admin (see AdminSideNav).
 export function adminNavItems(showTags: boolean): Item[] {
-  return showTags ? [ARTICLES, SCRIBBLES, LIBRARY, TAGS] : [ARTICLES, SCRIBBLES, LIBRARY];
+  return showTags ? [ARTICLES, SCRIBBLES, LIBRARY, TAGS, SETTINGS] : [ARTICLES, SCRIBBLES, LIBRARY];
 }
 
 // 16px, the size of the list's titles, so the menu reads at the content's weight.

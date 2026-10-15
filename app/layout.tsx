@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { IBM_Plex_Mono, IBM_Plex_Sans_JP } from 'next/font/google';
 import { siteIndexable, siteOrigin } from '@/lib/site';
-import { SITE_DESCRIPTION, SITE_NAME, TITLE_TEMPLATE, sharedOpenGraph } from './shared-metadata';
+import { getSiteIdentity } from '@/lib/site-settings';
+import { sharedOpenGraph, titleTemplate } from './shared-metadata';
 import './globals.css';
 
 // One family for Japanese and Latin, so a heading like 「Next.js のキャッシュ」 is one weight and
@@ -25,29 +26,33 @@ const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
 });
 
-export const metadata: Metadata = {
-  // og:url and og:image are written as paths and made absolute here, so moving the site is a
-  // change of SITE_ORIGIN (lib/site.ts) and nothing else.
-  metadataBase: siteOrigin,
-  // Off unless this is the published address (lib/site.ts). app/robots.ts refuses crawlers on the
-  // same signal; this covers one that found the URL elsewhere.
-  ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
-  title: {
-    default: SITE_NAME,
-    template: TITLE_TEMPLATE,
-  },
-  description: SITE_DESCRIPTION,
-  // Emits <link rel="alternate" type="application/rss+xml">; app/rss.xml/route.ts serves it.
-  alternates: { types: { 'application/rss+xml': '/rss.xml' } },
-  openGraph: {
-    ...sharedOpenGraph,
-    title: SITE_NAME,
-    description: SITE_DESCRIPTION,
-    url: '/',
-  },
-  // Inherited by every page that doesn't set `twitter`; X falls back to the og: tags for the rest.
-  twitter: { card: 'summary_large_image' },
-};
+// A function, since the name and description are an admin's setting (lib/site-settings.ts).
+export async function generateMetadata(): Promise<Metadata> {
+  const site = await getSiteIdentity();
+  return {
+    // og:url and og:image are written as paths and made absolute here, so moving the site is a
+    // change of SITE_ORIGIN (lib/site.ts) and nothing else.
+    metadataBase: siteOrigin,
+    // Off unless this is the published address (lib/site.ts). app/robots.ts refuses crawlers on the
+    // same signal; this covers one that found the URL elsewhere.
+    ...(siteIndexable ? {} : { robots: { index: false, follow: false } }),
+    title: {
+      default: site.name,
+      template: titleTemplate(site.name),
+    },
+    description: site.description,
+    // Emits <link rel="alternate" type="application/rss+xml">; app/rss.xml/route.ts serves it.
+    alternates: { types: { 'application/rss+xml': '/rss.xml' } },
+    openGraph: {
+      ...sharedOpenGraph(site),
+      title: site.name,
+      description: site.description,
+      url: '/',
+    },
+    // Inherited by every page that doesn't set `twitter`; X falls back to the og: tags for the rest.
+    twitter: { card: 'summary_large_image' },
+  };
+}
 
 export default function RootLayout({
   children,

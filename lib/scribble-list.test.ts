@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { sharedOpenGraph } from '@/app/shared-metadata';
+import {
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_NAME,
+  sharedOpenGraph,
+} from '@/app/shared-metadata';
+
+const SITE = { name: DEFAULT_SITE_NAME, description: DEFAULT_SITE_DESCRIPTION };
 import {
   calculateTotalPages,
   parsePageNumber,
@@ -82,16 +88,16 @@ describe('calculateTotalPages', () => {
 
 describe('metadata robots noindex', () => {
   it('scribbleListMetadata always includes robots: { index: false }', () => {
-    const meta = scribbleListMetadata();
+    const meta = scribbleListMetadata(SITE);
     expect(meta.robots).toEqual({ index: false });
     expect(meta.title).toBe('走り書き');
 
-    const page2Meta = scribbleListMetadata(2);
+    const page2Meta = scribbleListMetadata(SITE, 2);
     expect(page2Meta.robots).toEqual({ index: false });
   });
 
   it('scribbleDetailMetadata for published post includes robots: { index: false } without images', () => {
-    const meta = scribbleDetailMetadata(TEST_POST, false);
+    const meta = scribbleDetailMetadata(SITE, TEST_POST, false);
     expect(meta.robots).toEqual({ index: false });
     expect(meta.title).toBe(TEST_POST.title);
     expect(meta.openGraph).toMatchObject({
@@ -100,11 +106,11 @@ describe('metadata robots noindex', () => {
       url: `/scribbles/${TEST_POST.slug}`,
     });
     // Scribble og:image does not add post images so site default /og.png stands in
-    expect(meta.openGraph?.images).toEqual(sharedOpenGraph.images);
+    expect(meta.openGraph?.images).toEqual(sharedOpenGraph(SITE).images);
   });
 
   it('scribbleDetailMetadata for preview includes robots: { index: false, follow: false } and [下書き] title', () => {
-    const meta = scribbleDetailMetadata(TEST_POST, true);
+    const meta = scribbleDetailMetadata(SITE, TEST_POST, true);
     expect(meta.robots).toEqual({ index: false, follow: false });
     expect(meta.title).toBe(`[下書き] ${TEST_POST.title}`);
   });

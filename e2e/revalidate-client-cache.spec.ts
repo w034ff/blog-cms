@@ -3,7 +3,7 @@ import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from '
 import { postSlug } from './published-post';
 import Database from 'better-sqlite3';
 import { TEST_DB_PATH } from './constants';
-import { SITE_NAME } from '../app/shared-metadata';
+import { DEFAULT_SITE_NAME as SITE_NAME } from '../app/shared-metadata';
 
 // What does `revalidateBlog()` (`revalidatePath('/', 'layout')`, app/actions/posts.ts) invalidate?
 // Not the Data Cache, which only `fetch()` uses (docs/cms-features.md「RSS/Atom フィード」§7.1), nor

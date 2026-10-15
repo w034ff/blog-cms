@@ -40,7 +40,7 @@
 - `--breakpoint-toc` と `toc:` の変種は、グリッド・モバイルで隠す・デスクトップで出すの 3 か所の唯一の源である。1 か所だけ動かすと、目次が二重になるか、どこにも出なくなる。サイトの箱 `--container-page` は本文と目次を合わせた幅で、境目では切り替えない（`docs/toc-requirements.md` §6.1）。レイアウトは `docs/editor-pitfalls.md` §17.2 のグリッドで、`position: fixed` のレールは作者が退けた。
 - `html` に `scrollbar-gutter: stable` を付けている。付けないと、スクロールバーの要る長いページは幅が狭くなり、中央寄せのレイアウト全体が動く。スクロールを止めるモーダル（エディタのドロワーやダイアログ、画像の拡大）を開いたときも、スクロールバーが消えた分だけ画面が横にずれる。代わりに、スクロールの要らない短いページでは確保した幅が空白として残り、ヘッダの下線がその手前（約 15px）で途切れるのを受け入れる。2026-09-29 に一度外したが、モーダルを開くだけでずれるようになったので 2026-09-30 に戻した。
 - 本文の幅は `max-w-3xl` のままにし、`#post-body` に背景と枠を付けた（参考サイトは 760〜781px で、この サイトは 768px だった）。
-- **OGP**: Next はページが `openGraph` を設定するとレイアウトのものを丸ごと置き換える（マージしない）ので、どのページも `app/shared-metadata.ts` の `sharedOpenGraph` を展開する。`og:title` は `title` に従わない。サイト全体で 1 枚の `public/og.png` を `scripts/make-og-image.mts` が本物の Chrome で撮って commit している。記事ごとの `ImageResponse` は、CJK のフォントを渡す必要があり（手元の唯一のフォントは 9.6MB で、サブセット化の道具が無い）見送った。Slack のプレビューは robots.txt を守らない（X と Facebook のデバッガは守る）。
+- **OGP**: Next はページが `openGraph` を設定するとレイアウトのものを丸ごと置き換える（マージしない）ので、どのページも `app/shared-metadata.ts` の `sharedOpenGraph(site)` を展開する（`site` は管理者が設定した名前と説明文、`lib/site-settings.ts`）。`og:title` は `title` に従わない。サイト全体で 1 枚の `public/og.png` を `scripts/make-og-image.mts` が本物の Chrome で撮って commit している。記事ごとの `ImageResponse` は、CJK のフォントを渡す必要があり（手元の唯一のフォントは 9.6MB で、サブセット化の道具が無い）見送った。Slack のプレビューは robots.txt を守らない（X と Facebook のデバッガは守る）。
 
 ## 5. 運用（Tailscale Funnel、2026-08-02 から公開中）
 
@@ -88,7 +88,7 @@
 
 ### 7.3 設計の骨組み（作るとき）
 
-- **スキーマ**（`db:generate` → `db:migrate`）: `users` に `email`（unique、null 可）、`googleSub`（unique、null 可）、`passwordHash` を null 可に。`posts` に `authorId`（users.id への FK、既存の行は管理者で埋める）。`appSettings(key, value)` に `authorAccessMode`（既定 `allowlist`）。`authorAllowlist(email)`。
+- **スキーマ**（`db:generate` → `db:migrate`）: `users` に `email`（unique、null 可）、`googleSub`（unique、null 可）、`passwordHash` を null 可に。`posts` に `authorId`（users.id への FK、既存の行は管理者で埋める）。`appSettings(key, value)`（サイトの設定のために `drizzle/0016_app_settings.sql` で作った。`docs/site-settings-requirements.md` §3）に `authorAccessMode`（既定 `allowlist`）。`authorAllowlist(email)`。
 - **OAuth の流れ**: `app/auth/google/route.ts`（認可、state と PKCE の cookie）と `app/auth/google/callback/route.ts`（state の検証、コードの交換、`id_token` の検証、`email_verified` の要求、方針での絞り込み、利用者の upsert、既存の `createSession`）。Route Handler・cookie・リダイレクトの API は `node_modules/next/dist/docs/` で確かめる。
 - **強制**: `app/actions/posts.ts` で所有を確かめる（作成で `authorId` を入れ、更新と削除は所有者でも管理者でもなければ拒む。既存の `sessionExpired` の形の隣に `forbidden` の結果を足す）。管理画面の一覧を著者ごとに絞る。`/admin/users` は管理者だけ。
 - **管理画面**: `app/admin/users/page.tsx` と `app/actions/users.ts`（利用者の一覧、役割の昇降、参加方針の切り替え、許可リストの編集。どれもサーバ側で管理者を確かめ直す）。

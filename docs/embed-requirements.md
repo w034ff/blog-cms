@@ -895,7 +895,7 @@ markdown 往復（E1）はここから外れた — `e2e/editor-embed.spec.ts` �
 
 `https://embed.figma.com/design/<key>?embed-host=tech-blog` を組む。これは 302 で `www.figma.com/design/<key>?…&viewer=1` に転送され、**転送を追うのは読者のブラウザなので、こちらに取得の段は要らない**（§3.2）。
 
-`embed-host` は省けない。付けずに読み込むと、ファイルの代わりに `Not a valid embed context` という Figma のエラー画面が出る。値は「サイトを一意に、明確に識別するもの」を求められているので、`app/shared-metadata.ts` の `SITE_NAME` は取り込まず `FIGMA_EMBED_HOST` を別に置く — ヘッダの表示名を変えたときに第三者へ送る識別子まで変わるのは、別の話である。
+`embed-host` は省けない。付けずに読み込むと、ファイルの代わりに `Not a valid embed context` という Figma のエラー画面が出る。値は「サイトを一意に、明確に識別するもの」を求められているので、管理者が変えられるサイトの名前（`docs/site-settings-requirements.md`）は取り込まず `FIGMA_EMBED_HOST` を別に置く — ヘッダの表示名を変えたときに第三者へ送る識別子まで変わるのは、別の話である。
 
 **旧来の `www.figma.com/embed?embed_host=…&url=<ページ URL>` 形は採らない。** 今も描画されるが、著者の文字列がそのまま `src` に入る形であり、それを防ぐのが §4.2 でこのファイルに与えた仕事である。
 

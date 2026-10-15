@@ -64,6 +64,9 @@ type Props = {
   tagDictionary: DictionaryTag[];
   // Post kind: 'post' or 'scribble' (docs/scribble-requirements.md §6).
   kind: PostKind;
+  // The site's name as an admin saved it (lib/site-settings.ts), for the tab title this sets
+  // without a navigation.
+  siteName: string;
 };
 
 const emptyState: PostFormState = {};
@@ -96,6 +99,7 @@ export function PostEditor({
   hasPendingEdits,
   tagDictionary,
   kind,
+  siteName,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // The body's markdown, mirrored into a hidden input that autosave and publish read.
@@ -392,8 +396,8 @@ export function PostEditor({
     if (committedId === null || urlSyncedRef.current) return;
     urlSyncedRef.current = true;
     window.history.replaceState(null, '', `/admin/posts/${committedId}/edit`);
-    document.title = tabTitle(EDIT_POST_TITLE);
-  }, [committedId]);
+    document.title = tabTitle(EDIT_POST_TITLE, siteName);
+  }, [committedId, siteName]);
 
   const publishLabel = pending
     ? isPublished
