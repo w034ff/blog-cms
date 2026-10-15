@@ -12,7 +12,6 @@ import {
   calculateTotalPages,
   parsePageNumber,
   scribbleListMetadata,
-  SCRIBBLE_LIST_DESCRIPTION,
   SCRIBBLES_PER_PAGE,
 } from '@/lib/scribble-list';
 
@@ -62,10 +61,7 @@ export default async function ScribblesPage({
 
   return (
     <section className='mx-auto w-full max-w-page'>
-      <header className='mb-8'>
-        <h1 className='text-3xl font-bold tracking-tight'>走り書き</h1>
-        <p className='mt-2 text-zinc-600 dark:text-zinc-400'>{SCRIBBLE_LIST_DESCRIPTION}</p>
-      </header>
+      <h1 className='mb-8 text-3xl font-bold tracking-tight'>走り書き</h1>
 
       {renderedScribbles.length === 0 ? (
         <p className='text-zinc-600 dark:text-zinc-400'>まだ走り書きがありません。</p>
