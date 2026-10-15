@@ -4,6 +4,7 @@ import { categoryLabel, type PostKind } from '@/lib/content';
 import { formatPostDate, formatRelativeTime, formatRevisionTime } from '@/lib/format';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { PostRowMenu } from './PostRowMenu';
+import { HeartIcon } from '@/components/LibraryIcons';
 
 // Two text lines tall, so it keeps the list's rhythm. `object-cover` and a bare `<img>` like every
 // other surface (components/PostCard.tsx, globals.css `.link-card-image`,
@@ -115,12 +116,7 @@ export function PostListRows({
                       <>
                         {' · '}
                         <span className='inline-flex items-center gap-1 whitespace-nowrap text-(--accent)'>
-                          <svg
-                            aria-hidden='true'
-                            viewBox='0 0 24 24'
-                            className='h-3.5 w-3.5 fill-current'>
-                            <path d='M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z' />
-                          </svg>
+                          <HeartIcon filled className='h-3.5 w-3.5' />
                           {likes}
                         </span>
                       </>

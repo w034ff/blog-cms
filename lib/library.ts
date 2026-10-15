@@ -1,13 +1,12 @@
 import 'server-only';
 import { and, count, desc, eq, notInArray } from 'drizzle-orm';
+import type { LibraryTab } from '@/lib/admin-post-list';
 import type { PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
 import { bookmarks, likes, postViews, posts } from '@/lib/db/schema';
 
 // How many posts an account's 閲覧履歴 keeps (docs/library-requirements.md §3.3).
 export const RECENT_VIEWS_LIMIT = 100;
-
-export type LibraryTab = 'bookmarks' | 'likes' | 'history';
 
 // One row of a library tab: what the row links to and when the account marked or last read it.
 export type LibraryEntry = {
