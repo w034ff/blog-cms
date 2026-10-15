@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { isAdmin } from '@/lib/dal';
+import { likeCounts } from '@/lib/library';
 import {
   countByStatus,
   matchesStatus,
@@ -21,6 +22,7 @@ export default async function AdminHome({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const all = await listAllPosts();
+  const likes = likeCounts();
   const params = parseListParams(await searchParams);
   // Category and search first, so the tabs count what each would show; then the tab and the order.
   // Last edited first by default, so the post being worked on is at the top (lib/admin-post-list.ts).
@@ -57,7 +59,7 @@ export default async function AdminHome({
             </Link>
           </p>
         ) : (
-          <PostListRows posts={posts} />
+          <PostListRows posts={posts} likesCount={likes} />
         )}
       </div>
     </section>
