@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { setBookmarkAction, setLikeAction } from '@/app/actions/library';
+import { recordViewAction, setBookmarkAction, setLikeAction } from '@/app/actions/library';
 
 const LABEL_LIKE = 'いいね';
 const LABEL_BOOKMARK = 'ブックマーク';
@@ -60,6 +60,12 @@ export function LibraryButtons({
   const likeSeqRef = useRef(0);
   const targetBookmarkedRef = useRef(initialBookmarked);
   const targetLikedRef = useRef(initialLiked);
+
+  useEffect(() => {
+    if (canLike) {
+      void recordViewAction(postId);
+    }
+  }, [canLike, postId]);
 
   const handleBookmark = () => {
     const next = !targetBookmarkedRef.current;
