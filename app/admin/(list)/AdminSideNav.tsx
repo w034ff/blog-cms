@@ -16,6 +16,11 @@ export const SCRIBBLES: Item = {
   href: '/admin/scribbles',
   current: (pathname) => pathname.startsWith('/admin/scribbles'),
 };
+export const LIBRARY: Item = {
+  label: 'ライブラリ',
+  href: '/admin/library',
+  current: (pathname) => pathname.startsWith('/admin/library'),
+};
 export const TAGS: Item = {
   label: 'タグの管理',
   href: '/admin/tags',
@@ -25,7 +30,7 @@ export const TAGS: Item = {
 // The menu's items in order, shared with ScreenHeading so the rail and the narrow screen's menu
 // cannot disagree. タグの管理 only for an admin (see AdminSideNav).
 export function adminNavItems(showTags: boolean): Item[] {
-  return showTags ? [ARTICLES, SCRIBBLES, TAGS] : [ARTICLES, SCRIBBLES];
+  return showTags ? [ARTICLES, SCRIBBLES, LIBRARY, TAGS] : [ARTICLES, SCRIBBLES, LIBRARY];
 }
 
 // 16px, the size of the list's titles, so the menu reads at the content's weight.
