@@ -7,17 +7,20 @@ export function SiteHeader() {
     // text.
     <header className='border-b border-zinc-200 dark:border-zinc-800 px-4'>
       <div className='mx-auto max-w-page py-4 flex items-center justify-between'>
-        <Link href='/' className='text-lg font-bold tracking-tight'>
+        <Link href='/' className='text-lg font-bold tracking-tight whitespace-nowrap'>
           Tech Blog
         </Link>
         <nav className='flex gap-4 text-sm'>
-          <Link href='/tags' className='hover:underline'>
-            Tags
+          <Link href='/tags' className='whitespace-nowrap hover:underline'>
+            タグ
           </Link>
-          <Link href='/categories' className='hover:underline'>
-            Categories
+          <Link href='/categories' className='whitespace-nowrap hover:underline'>
+            カテゴリ
           </Link>
-          <Link href='/admin' className='hover:underline'>
+          <Link href='/scribbles' className='whitespace-nowrap hover:underline'>
+            走り書き
+          </Link>
+          <Link href='/admin' className='whitespace-nowrap hover:underline'>
             管理
           </Link>
         </nav>
