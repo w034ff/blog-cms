@@ -41,7 +41,7 @@ export function ScribbleCardBody({
   }, []);
 
   return (
-    <div className='mt-3'>
+    <div>
       <div
         ref={containerRef}
         id={targetId}
@@ -50,21 +50,21 @@ export function ScribbleCardBody({
         style={{ maxHeight: `${SCRIBBLE_CARD_MAX_HEIGHT_PX}px` }}>
         <div
           ref={contentRef}
-          className='flow-root prose prose-zinc dark:prose-invert max-w-none'
+          className='flow-root prose prose-zinc dark:prose-invert max-w-none text-[15px] leading-[1.8]'
           dangerouslySetInnerHTML={{ __html: html }}
         />
         {isClamped && (
           <div
             aria-hidden='true'
-            className='scribble-fade-bottom pointer-events-none absolute inset-x-0 bottom-0 h-16'
+            className='scribble-fade-bottom pointer-events-none absolute inset-x-0 bottom-0 h-18'
           />
         )}
       </div>
       {isClamped && (
-        <div className='mt-3'>
+        <div className='mt-1.5'>
           <Link
             href={`/scribbles/${slug ?? ''}`}
-            className='inline-flex items-center text-sm font-medium hover:underline'>
+            className='inline-flex items-center text-sm font-semibold text-(--chip-fg) hover:underline'>
             続きを読む →
           </Link>
         </div>

@@ -73,37 +73,32 @@ export default async function ScribblesPage({
               const { year, monthDay } = formatScribbleDate(post.date);
               const targetId = `scribble-body-${post.slug}`;
               return (
-                <li
-                  key={post.slug}
-                  className={`relative flex gap-3 sm:gap-6 ${isLast ? '' : 'pb-8'}`}>
-                  <div className='w-12 shrink-0 pt-5 text-right sm:w-16 sm:pt-6'>
+                <li key={post.slug} className='flex gap-4'>
+                  {/* The date over a line that runs on to the next entry. The year stays, unlike the
+                      mock-up's month/day alone, so a timeline that crosses a year still reads. */}
+                  <div className='flex w-14 shrink-0 flex-col items-center'>
                     <time
                       dateTime={post.date}
-                      className='flex flex-col text-zinc-500 dark:text-zinc-400'>
-                      <span className='font-mono text-xs'>{year}</span>
-                      <span className='font-mono text-sm font-semibold text-zinc-700 dark:text-zinc-300'>
-                        {monthDay}
-                      </span>
+                      className='flex flex-col items-center font-mono leading-tight text-(--chip-fg)'>
+                      <span className='text-[11px]'>{year}</span>
+                      <span className='text-[13px] font-medium'>{monthDay}</span>
                     </time>
+                    {!isLast && (
+                      <div aria-hidden='true' className='mt-2 w-0.5 flex-1 bg-(--chip-bg-hover)' />
+                    )}
                   </div>
 
-                  <div className='relative flex justify-center'>
-                    <div
-                      className={`w-px bg-zinc-200 dark:bg-zinc-800 ${isLast ? 'h-full' : 'absolute inset-y-0'}`}
-                    />
-                  </div>
-
-                  <article className='min-w-0 flex-1 rounded-panel border border-zinc-200 bg-surface p-5 sm:p-6 dark:border-zinc-800'>
+                  <article className='mb-4 min-w-0 flex-1 rounded-panel border border-zinc-200 bg-surface px-5 py-4 dark:border-zinc-800'>
                     <header>
                       <Link href={`/scribbles/${post.slug}`} className='group'>
-                        <h2 className='text-xl font-semibold tracking-tight group-hover:underline sm:text-2xl'>
+                        <h2 className='mb-2 text-[17px] leading-snug font-bold group-hover:underline'>
                           {post.title}
                         </h2>
                       </Link>
                     </header>
                     <ScribbleCardBody html={html} slug={post.slug} targetId={targetId} />
                     {post.tagList.length > 0 && (
-                      <ul className='mt-4 flex flex-wrap gap-2'>
+                      <ul className='mt-3 flex flex-wrap gap-2'>
                         {post.tagList.map(({ slug: tagSlug, name }) => (
                           <li key={tagSlug}>
                             <Link

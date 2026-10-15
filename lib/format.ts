@@ -44,6 +44,12 @@ export function formatScribbleDate(value: string): { year: string; monthDay: str
   return { year, monthDay: `${month}/${day}` };
 }
 
+// A scribble page's date, `2026-10-14`: the same JST day as the timeline's, written whole.
+export function formatScribbleDayIso(value: string): string {
+  const { year, monthDay } = formatScribbleDate(value);
+  return year ? `${year}-${monthDay.replace('/', '-')}` : '';
+}
+
 // Whether a post's update date is worth showing next to its publish date — only
 // when they name a different calendar day (JST). Comparing the formatted strings
 // rather than the raw timestamps reuses the same day boundary `formatPostDate`

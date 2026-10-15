@@ -7,7 +7,7 @@ import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { ImageZoom } from '@/components/ImageZoom';
 import { getOptionalSession } from '@/lib/dal';
-import { formatPostDate } from '@/lib/format';
+import { formatScribbleDayIso } from '@/lib/format';
 import { getScribbleBySlug, getScribbleDraftBySlug } from '@/lib/posts';
 import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
@@ -45,27 +45,27 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
     <>
       {preview && <DraftPreviewBanner postId={post.id} />}
       <article className='mx-auto w-full max-w-page'>
-        <div className='mb-6'>
+        <div className='mb-4'>
           <Link
             href='/scribbles'
-            className='inline-flex items-center text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+            className='inline-flex items-center text-sm text-(--chip-fg) hover:underline'>
             ← 走り書きの一覧
           </Link>
         </div>
-        <div className='rounded-panel border border-zinc-200 bg-surface px-4 py-6 sm:px-6 sm:py-8 dark:border-zinc-800'>
-          <header className='mb-6'>
-            <time dateTime={post.date} className='text-sm text-zinc-600 dark:text-zinc-400'>
-              {formatPostDate(post.date)}
+        <div className='rounded-panel border border-zinc-200 bg-surface px-5 py-6 sm:px-7 dark:border-zinc-800'>
+          <header className='mb-4'>
+            <time dateTime={post.date} className='font-mono text-[13px] text-(--chip-fg)'>
+              {formatScribbleDayIso(post.date)}
             </time>
-            <h1 className='mt-2 text-3xl font-bold tracking-tight sm:text-4xl'>{post.title}</h1>
+            <h1 className='mt-2 text-2xl leading-snug font-bold'>{post.title}</h1>
           </header>
           <div
             id='scribble-body'
-            className='prose prose-zinc dark:prose-invert max-w-none'
+            className='prose prose-zinc dark:prose-invert max-w-none leading-[1.85]'
             dangerouslySetInnerHTML={{ __html: html }}
           />
           {post.tagList.length > 0 && (
-            <ul className='mt-6 flex flex-wrap gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-800'>
+            <ul className='mt-4.5 flex flex-wrap gap-2'>
               {post.tagList.map(({ slug: tagSlug, name }) => (
                 <li key={tagSlug}>
                   <Link

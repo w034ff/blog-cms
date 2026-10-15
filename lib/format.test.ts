@@ -5,6 +5,7 @@ import {
   formatRelativeTime,
   formatRevisionTime,
   formatScribbleDate,
+  formatScribbleDayIso,
   hasVisibleUpdate,
 } from '@/lib/format';
 
@@ -78,6 +79,14 @@ describe('formatCharCount', () => {
   it('groups thousands', () => {
     expect(formatCharCount(0)).toBe('0 字');
     expect(formatCharCount(12345)).toBe('12,345 字');
+  });
+});
+
+describe('formatScribbleDayIso', () => {
+  it('writes the JST day whole, rolling over at 15:00 UTC', () => {
+    expect(formatScribbleDayIso('2026-09-05T14:59:00.000Z')).toBe('2026-09-05');
+    expect(formatScribbleDayIso('2026-09-05T15:01:00.000Z')).toBe('2026-09-06');
+    expect(formatScribbleDayIso('')).toBe('');
   });
 });
 
