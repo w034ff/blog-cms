@@ -214,139 +214,76 @@ function BookAndBookmark() {
   );
 }
 
-// A post paper sheet with a heart (docs/library-requirements.md §6.2).
-function PaperAndHeart() {
+// The sheet the いいね and 閲覧履歴 drawings share, centred in the frame, with a disc at its lower
+// right for the mark. One sheet, so switching between the two tabs does not move or resize it.
+function SheetWithBadge({ children }: { children: ReactNode }) {
   return (
     <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
-      {/* Post paper sheet */}
       <rect
-        x='52'
+        x='54'
         y='16'
-        width='116'
+        width='112'
         height='128'
         rx='4'
         fill='var(--ill-paper)'
         stroke='var(--ill-body)'
         strokeWidth='2'
       />
-      {/* Paper title */}
       <rect x='68' y='32' width='56' height='6' rx='2' fill='var(--ill-body)' />
-      {/* Paper text lines */}
       <rect x='68' y='48' width='84' height='4' rx='2' fill='var(--ill-tint)' />
       <rect x='68' y='60' width='76' height='4' rx='2' fill='var(--ill-tint)' />
       <rect x='68' y='72' width='80' height='4' rx='2' fill='var(--ill-tint)' />
       <rect x='68' y='84' width='48' height='4' rx='2' fill='var(--ill-tint)' />
-      <rect x='68' y='96' width='40' height='4' rx='2' fill='var(--ill-tint)' />
-      {/* Heart badge layered at lower right */}
-      <g transform='translate(132, 98)'>
-        <circle
-          cx='0'
-          cy='0'
-          r='24'
-          fill='var(--ill-ground)'
-          stroke='var(--ill-body)'
-          strokeWidth='1.5'
-        />
-        <path
-          d='M0 12 C-1.5 10.5, -12 1.5, -12 -5.5 A6.5 6.5 0 0 1 -1 -10.5 L0 -9.5 L1 -10.5 A6.5 6.5 0 0 1 12 -5.5 C12 1.5, 1.5 10.5, 0 12 Z'
-          fill='var(--ill-accent)'
-        />
+      <g transform='translate(152, 110)'>
+        <circle r='25' fill='var(--ill-paper)' stroke='var(--ill-body)' strokeWidth='2' />
+        {children}
       </g>
     </svg>
   );
 }
 
-// A post paper sheet with a clock (docs/library-requirements.md §6.2).
+// いいね: a heart on the disc (docs/library-requirements.md §6.2).
+function PaperAndHeart() {
+  return (
+    <SheetWithBadge>
+      <path
+        d='M0 12 C-1.5 10.5, -12 1.5, -12 -5.5 A6.5 6.5 0 0 1 -1 -10.5 L0 -9.5 L1 -10.5 A6.5 6.5 0 0 1 12 -5.5 C12 1.5, 1.5 10.5, 0 12 Z'
+        fill='var(--ill-accent)'
+      />
+    </SheetWithBadge>
+  );
+}
+
+// 閲覧履歴: a clock face on the disc, ticks at the quarters.
 function PaperAndClock() {
   return (
-    <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
-      {/* Post paper sheet */}
-      <rect
-        x='44'
-        y='18'
-        width='108'
-        height='124'
-        rx='4'
-        fill='var(--ill-paper)'
-        stroke='var(--ill-body)'
-        strokeWidth='2'
-      />
-      {/* Paper title */}
-      <rect x='58' y='34' width='50' height='6' rx='2' fill='var(--ill-body)' />
-      {/* Paper text lines */}
-      <rect x='58' y='48' width='78' height='4' rx='2' fill='var(--ill-tint)' />
-      <rect x='58' y='60' width='70' height='4' rx='2' fill='var(--ill-tint)' />
-      <rect x='58' y='72' width='54' height='4' rx='2' fill='var(--ill-tint)' />
-      <rect x='58' y='84' width='44' height='4' rx='2' fill='var(--ill-tint)' />
-      {/* Clock motif layered at lower right */}
-      <g transform='translate(142, 100)'>
-        <circle
-          cx='0'
-          cy='0'
-          r='26'
-          fill='var(--ill-paper)'
-          stroke='var(--ill-body)'
-          strokeWidth='2'
-        />
-        {/* Ticks at 12, 3, 6, 9 */}
-        <line
-          x1='0'
-          y1='-22'
-          x2='0'
-          y2='-18'
-          stroke='var(--ill-tint)'
-          strokeWidth='2'
-          strokeLinecap='round'
-        />
-        <line
-          x1='22'
-          y1='0'
-          x2='18'
-          y2='0'
-          stroke='var(--ill-tint)'
-          strokeWidth='2'
-          strokeLinecap='round'
-        />
-        <line
-          x1='0'
-          y1='22'
-          x2='0'
-          y2='18'
-          stroke='var(--ill-tint)'
-          strokeWidth='2'
-          strokeLinecap='round'
-        />
-        <line
-          x1='-22'
-          y1='0'
-          x2='-18'
-          y2='0'
-          stroke='var(--ill-tint)'
-          strokeWidth='2'
-          strokeLinecap='round'
-        />
-        {/* Hands */}
-        <line
-          x1='0'
-          y1='0'
-          x2='0'
-          y2='-14'
-          stroke='var(--ill-ink)'
-          strokeWidth='2.5'
-          strokeLinecap='round'
-        />
-        <line
-          x1='0'
-          y1='0'
-          x2='10'
-          y2='4'
-          stroke='var(--ill-accent)'
-          strokeWidth='2'
-          strokeLinecap='round'
-        />
-        <circle cx='0' cy='0' r='2.5' fill='var(--ill-ink)' />
+    <SheetWithBadge>
+      <g stroke='var(--ill-tint)' strokeWidth='2' strokeLinecap='round'>
+        <line x1='0' y1='-21' x2='0' y2='-17' />
+        <line x1='21' y1='0' x2='17' y2='0' />
+        <line x1='0' y1='21' x2='0' y2='17' />
+        <line x1='-21' y1='0' x2='-17' y2='0' />
       </g>
-    </svg>
+      <line
+        x1='0'
+        y1='0'
+        x2='0'
+        y2='-13'
+        stroke='var(--ill-ink)'
+        strokeWidth='2.5'
+        strokeLinecap='round'
+      />
+      <line
+        x1='0'
+        y1='0'
+        x2='10'
+        y2='4'
+        stroke='var(--ill-accent)'
+        strokeWidth='2'
+        strokeLinecap='round'
+      />
+      <circle r='2.5' fill='var(--ill-ink)' />
+    </SheetWithBadge>
   );
 }
 
