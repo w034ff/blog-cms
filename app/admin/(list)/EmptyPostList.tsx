@@ -1,10 +1,13 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import type { LibraryTab } from '@/lib/admin-post-list';
+import { RECENT_VIEWS_LIMIT } from '@/lib/library';
 
 // A list with no rows: the drawing on its disc, a heading, a line of supplement and the screen's
 // only 新規作成 — the heading row drops its own (app/admin/(list)/page.tsx and scribbles/page.tsx) —
 // so there is one way forward. Each phrase is an inline-block, so a narrow screen wraps between
 // phrases (「ここか／ら」 otherwise); `word-break: auto-phrase` would do it in Chromium only.
+// `newHref` is omitted on library tabs (docs/library-requirements.md §6.2), which have no creation flow.
 function EmptyList({
   drawing,
   heading,
@@ -14,7 +17,7 @@ function EmptyList({
   drawing: ReactNode;
   heading: readonly string[];
   supplement: readonly string[];
-  newHref: string;
+  newHref?: string;
 }) {
   return (
     <div className='flex flex-col items-center px-4 py-14 text-center'>
@@ -33,9 +36,11 @@ function EmptyList({
           </span>
         ))}
       </p>
-      <Link href={newHref} className='button-primary mt-6 px-5 py-2.5 font-medium'>
-        新規作成
-      </Link>
+      {newHref && (
+        <Link href={newHref} className='button-primary mt-6 px-5 py-2.5 font-medium'>
+          新規作成
+        </Link>
+      )}
     </div>
   );
 }
@@ -166,4 +171,224 @@ function NotePad() {
       </g>
     </svg>
   );
+}
+
+// An open book with a bookmark ribbon (docs/library-requirements.md §6.2).
+function BookAndBookmark() {
+  return (
+    <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
+      {/* Book cover base */}
+      <path
+        d='M30 126 C55 120, 95 119, 110 125 C125 119, 165 120, 190 126 L190 131 C165 125, 125 124, 110 130 C95 124, 55 125, 30 131 Z'
+        fill='var(--ill-body)'
+      />
+      {/* Pages block */}
+      <path
+        d='M33 46 C55 40, 95 40, 110 46 C125 40, 165 40, 187 46 L187 122 C165 116, 125 116, 110 122 C95 116, 55 116, 33 122 Z'
+        fill='var(--ill-paper)'
+        stroke='var(--ill-body)'
+        strokeWidth='2'
+        strokeLinejoin='round'
+      />
+      {/* Spine / center divide */}
+      <line x1='110' y1='46' x2='110' y2='122' stroke='var(--ill-ink)' strokeWidth='1.5' />
+      {/* Left page text lines */}
+      <rect x='45' y='58' width='48' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='45' y='70' width='52' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='45' y='82' width='44' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='45' y='94' width='36' height='4' rx='2' fill='var(--ill-tint)' />
+      {/* Right page text lines */}
+      <rect x='123' y='58' width='52' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='123' y='70' width='44' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='123' y='82' width='48' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='123' y='94' width='32' height='4' rx='2' fill='var(--ill-tint)' />
+      {/* Bookmark ribbon (しおり) hanging down the right page past the bottom edge */}
+      <path d='M140 38 L154 38 L154 136 L147 129 L140 136 Z' fill='var(--ill-accent)' />
+      {/* Bookmark top fold over the head of the book */}
+      <path
+        d='M140 38 C140 32, 144 28, 147 28 C150 28, 154 32, 154 38 Z'
+        fill='var(--ill-accent)'
+        opacity='0.85'
+      />
+    </svg>
+  );
+}
+
+// A post paper sheet with a heart (docs/library-requirements.md §6.2).
+function PaperAndHeart() {
+  return (
+    <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
+      {/* Post paper sheet */}
+      <rect
+        x='52'
+        y='16'
+        width='116'
+        height='128'
+        rx='4'
+        fill='var(--ill-paper)'
+        stroke='var(--ill-body)'
+        strokeWidth='2'
+      />
+      {/* Paper title */}
+      <rect x='68' y='32' width='56' height='6' rx='2' fill='var(--ill-body)' />
+      {/* Paper text lines */}
+      <rect x='68' y='48' width='84' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='68' y='60' width='76' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='68' y='72' width='80' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='68' y='84' width='48' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='68' y='96' width='40' height='4' rx='2' fill='var(--ill-tint)' />
+      {/* Heart badge layered at lower right */}
+      <g transform='translate(132, 98)'>
+        <circle
+          cx='0'
+          cy='0'
+          r='24'
+          fill='var(--ill-ground)'
+          stroke='var(--ill-body)'
+          strokeWidth='1.5'
+        />
+        <path
+          d='M0 12 C-1.5 10.5, -12 1.5, -12 -5.5 A6.5 6.5 0 0 1 -1 -10.5 L0 -9.5 L1 -10.5 A6.5 6.5 0 0 1 12 -5.5 C12 1.5, 1.5 10.5, 0 12 Z'
+          fill='var(--ill-accent)'
+        />
+      </g>
+    </svg>
+  );
+}
+
+// A post paper sheet with a clock (docs/library-requirements.md §6.2).
+function PaperAndClock() {
+  return (
+    <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
+      {/* Post paper sheet */}
+      <rect
+        x='44'
+        y='18'
+        width='108'
+        height='124'
+        rx='4'
+        fill='var(--ill-paper)'
+        stroke='var(--ill-body)'
+        strokeWidth='2'
+      />
+      {/* Paper title */}
+      <rect x='58' y='34' width='50' height='6' rx='2' fill='var(--ill-body)' />
+      {/* Paper text lines */}
+      <rect x='58' y='48' width='78' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='58' y='60' width='70' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='58' y='72' width='54' height='4' rx='2' fill='var(--ill-tint)' />
+      <rect x='58' y='84' width='44' height='4' rx='2' fill='var(--ill-tint)' />
+      {/* Clock motif layered at lower right */}
+      <g transform='translate(142, 100)'>
+        <circle
+          cx='0'
+          cy='0'
+          r='26'
+          fill='var(--ill-paper)'
+          stroke='var(--ill-body)'
+          strokeWidth='2'
+        />
+        {/* Ticks at 12, 3, 6, 9 */}
+        <line
+          x1='0'
+          y1='-22'
+          x2='0'
+          y2='-18'
+          stroke='var(--ill-tint)'
+          strokeWidth='2'
+          strokeLinecap='round'
+        />
+        <line
+          x1='22'
+          y1='0'
+          x2='18'
+          y2='0'
+          stroke='var(--ill-tint)'
+          strokeWidth='2'
+          strokeLinecap='round'
+        />
+        <line
+          x1='0'
+          y1='22'
+          x2='0'
+          y2='18'
+          stroke='var(--ill-tint)'
+          strokeWidth='2'
+          strokeLinecap='round'
+        />
+        <line
+          x1='-22'
+          y1='0'
+          x2='-18'
+          y2='0'
+          stroke='var(--ill-tint)'
+          strokeWidth='2'
+          strokeLinecap='round'
+        />
+        {/* Hands */}
+        <line
+          x1='0'
+          y1='0'
+          x2='0'
+          y2='-14'
+          stroke='var(--ill-ink)'
+          strokeWidth='2.5'
+          strokeLinecap='round'
+        />
+        <line
+          x1='0'
+          y1='0'
+          x2='10'
+          y2='4'
+          stroke='var(--ill-accent)'
+          strokeWidth='2'
+          strokeLinecap='round'
+        />
+        <circle cx='0' cy='0' r='2.5' fill='var(--ill-ink)' />
+      </g>
+    </svg>
+  );
+}
+
+// Empty state for /admin/library bookmarks tab.
+export function EmptyLibraryBookmarks() {
+  return (
+    <EmptyList
+      drawing={<BookAndBookmark />}
+      heading={['読み返したい記事を、', 'ここに']}
+      supplement={['記事や走り書きのページでブックマークすると、', 'ここに集まります。']}
+    />
+  );
+}
+
+// Empty state for /admin/library likes tab.
+export function EmptyLibraryLikes() {
+  return (
+    <EmptyList
+      drawing={<PaperAndHeart />}
+      heading={['心に残った記事を、', 'ここに']}
+      supplement={['ほかの人の記事や走り書きにいいねすると、', 'あとからここで振り返れます。']}
+    />
+  );
+}
+
+// Empty state for /admin/library history tab.
+export function EmptyLibraryHistory() {
+  return (
+    <EmptyList
+      drawing={<PaperAndClock />}
+      heading={['読んだ記事を、', 'もう一度']}
+      supplement={[
+        'ほかの人の記事や走り書きを開くと、',
+        `新しい順に ${RECENT_VIEWS_LIMIT} 件まで残ります。`,
+      ]}
+    />
+  );
+}
+
+// Empty states for /admin/library tabs (docs/library-requirements.md §6.2).
+export function EmptyLibraryList({ tab }: { tab: LibraryTab }) {
+  if (tab === 'likes') return <EmptyLibraryLikes />;
+  if (tab === 'history') return <EmptyLibraryHistory />;
+  return <EmptyLibraryBookmarks />;
 }

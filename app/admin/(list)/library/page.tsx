@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { isAdmin, verifySession } from '@/lib/dal';
 import { listLibrary } from '@/lib/library';
 import { parseLibraryTab } from '@/lib/admin-post-list';
+import { EmptyLibraryList } from '../EmptyPostList';
 import { ScreenHeading } from '../ScreenHeading';
 import { LibraryTabs } from './LibraryTabs';
 import { LibraryRows } from './LibraryRows';
@@ -37,9 +38,7 @@ export default async function AdminLibraryPage({
       <LibraryTabs currentTab={currentTab} counts={counts} />
       <div className='rounded-panel border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
         {entries.length === 0 ? (
-          <p className='py-10 text-center text-sm text-zinc-600 dark:text-zinc-400'>
-            表示する記事はありません。
-          </p>
+          <EmptyLibraryList tab={currentTab} />
         ) : (
           <LibraryRows entries={entries} tab={currentTab} />
         )}
