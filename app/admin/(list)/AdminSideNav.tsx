@@ -11,6 +11,11 @@ export const ARTICLES: Item = {
   href: '/admin',
   current: (pathname) => pathname === '/admin',
 };
+export const SCRIBBLES: Item = {
+  label: '走り書き',
+  href: '/admin/scribbles',
+  current: (pathname) => pathname.startsWith('/admin/scribbles'),
+};
 export const TAGS: Item = {
   label: 'タグの管理',
   href: '/admin/tags',
@@ -34,7 +39,7 @@ const otherClass =
 // answer (lib/dal.ts isAdmin), and the page behind it 404s for an author anyway.
 export function AdminSideNav({ showTags }: { showTags: boolean }) {
   const pathname = usePathname();
-  const items = showTags ? [ARTICLES, TAGS] : [ARTICLES];
+  const items = showTags ? [ARTICLES, SCRIBBLES, TAGS] : [ARTICLES, SCRIBBLES];
 
   return (
     <nav aria-label='管理' className='hidden w-44 shrink-0 flex-col md:flex'>
