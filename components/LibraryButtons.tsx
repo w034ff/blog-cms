@@ -2,7 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { recordViewAction, setBookmarkAction, setLikeAction } from '@/app/actions/library';
+import {
+  type MarkResult,
+  recordViewAction,
+  setBookmarkAction,
+  setLikeAction,
+} from '@/app/actions/library';
 
 const LABEL_LIKE = 'いいね';
 const LABEL_BOOKMARK = 'ブックマーク';
@@ -40,6 +45,47 @@ function BookmarkIcon({ filled }: { filled: boolean }) {
   );
 }
 
+function useMark(
+  postId: number,
+  initial: boolean,
+  action: (postId: unknown, on: unknown) => Promise<MarkResult>,
+  setSessionExpired: (expired: boolean) => void,
+): [marked: boolean, toggle: () => void] {
+  const [marked, setMarked] = useState(initial);
+  const targetRef = useRef(initial);
+  const seqRef = useRef(0);
+
+  const toggle = () => {
+    const next = !targetRef.current;
+    targetRef.current = next;
+    setMarked(next);
+    setSessionExpired(false);
+    const seq = ++seqRef.current;
+    void action(postId, next)
+      .then((result) => {
+        if (seq !== seqRef.current) return;
+        if ('sessionExpired' in result) {
+          targetRef.current = !next;
+          setMarked(!next);
+          setSessionExpired(true);
+        } else if ('notFound' in result) {
+          targetRef.current = !next;
+          setMarked(!next);
+        } else if ('on' in result) {
+          targetRef.current = result.on;
+          setMarked(result.on);
+        }
+      })
+      .catch(() => {
+        if (seq !== seqRef.current) return;
+        targetRef.current = !next;
+        setMarked(!next);
+      });
+  };
+
+  return [marked, toggle];
+}
+
 // Like and bookmark buttons on a published post or scribble (docs/library-requirements.md §5).
 export function LibraryButtons({
   postId,
@@ -52,77 +98,20 @@ export function LibraryButtons({
   initialLiked: boolean;
   canLike: boolean;
 }) {
-  const [bookmarked, setBookmarked] = useState(initialBookmarked);
-  const [liked, setLiked] = useState(initialLiked);
   const [sessionExpired, setSessionExpired] = useState(false);
-
-  const bookmarkSeqRef = useRef(0);
-  const likeSeqRef = useRef(0);
-  const targetBookmarkedRef = useRef(initialBookmarked);
-  const targetLikedRef = useRef(initialLiked);
+  const [bookmarked, toggleBookmark] = useMark(
+    postId,
+    initialBookmarked,
+    setBookmarkAction,
+    setSessionExpired,
+  );
+  const [liked, toggleLike] = useMark(postId, initialLiked, setLikeAction, setSessionExpired);
 
   useEffect(() => {
     if (canLike) {
       void recordViewAction(postId);
     }
   }, [canLike, postId]);
-
-  const handleBookmark = () => {
-    const next = !targetBookmarkedRef.current;
-    targetBookmarkedRef.current = next;
-    setBookmarked(next);
-    setSessionExpired(false);
-    const seq = ++bookmarkSeqRef.current;
-    void setBookmarkAction(postId, next)
-      .then((result) => {
-        if (seq !== bookmarkSeqRef.current) return;
-        if ('sessionExpired' in result) {
-          targetBookmarkedRef.current = !next;
-          setBookmarked(!next);
-          setSessionExpired(true);
-        } else if ('notFound' in result) {
-          targetBookmarkedRef.current = !next;
-          setBookmarked(!next);
-        } else if ('on' in result) {
-          targetBookmarkedRef.current = result.on;
-          setBookmarked(result.on);
-        }
-      })
-      .catch(() => {
-        if (seq !== bookmarkSeqRef.current) return;
-        targetBookmarkedRef.current = !next;
-        setBookmarked(!next);
-      });
-  };
-
-  const handleLike = () => {
-    if (!canLike) return;
-    const next = !targetLikedRef.current;
-    targetLikedRef.current = next;
-    setLiked(next);
-    setSessionExpired(false);
-    const seq = ++likeSeqRef.current;
-    void setLikeAction(postId, next)
-      .then((result) => {
-        if (seq !== likeSeqRef.current) return;
-        if ('sessionExpired' in result) {
-          targetLikedRef.current = !next;
-          setLiked(!next);
-          setSessionExpired(true);
-        } else if ('notFound' in result) {
-          targetLikedRef.current = !next;
-          setLiked(!next);
-        } else if ('on' in result) {
-          targetLikedRef.current = result.on;
-          setLiked(result.on);
-        }
-      })
-      .catch(() => {
-        if (seq !== likeSeqRef.current) return;
-        targetLikedRef.current = !next;
-        setLiked(!next);
-      });
-  };
 
   return (
     <div className='mt-8 flex flex-col items-center gap-2'>
@@ -132,7 +121,7 @@ export function LibraryButtons({
             type='button'
             className='button-library'
             aria-pressed={liked}
-            onClick={handleLike}>
+            onClick={toggleLike}>
             <HeartIcon filled={liked} />
             <span>{LABEL_LIKE}</span>
           </button>
@@ -141,7 +130,7 @@ export function LibraryButtons({
           type='button'
           className='button-library'
           aria-pressed={bookmarked}
-          onClick={handleBookmark}>
+          onClick={toggleBookmark}>
           <BookmarkIcon filled={bookmarked} />
           <span>{LABEL_BOOKMARK}</span>
         </button>
