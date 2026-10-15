@@ -3414,3 +3414,8 @@ dialog.image-zoom img {
     border-top-color: #30363d;
   }
 }
+
+/* Fade the bottom of long scribble cards into the card's surface (docs/scribble-requirements.md §5). */
+.scribble-fade-bottom {
+  background: linear-gradient(to bottom, transparent, var(--surface));
+}

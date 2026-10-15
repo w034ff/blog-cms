@@ -114,15 +114,15 @@
 | --- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | 1   | 既存の行は移行の後もすべて `kind = post` である                                            | `test/post-kind-migration.test.ts`                          |
 | 2   | §4 の表で「記事だけ」の関数は、公開中の走り書きがあっても走り書きを返さない                | `lib/posts.test.ts`「kinds」                                |
-| 3   | 走り書きは `/scribbles` に出て、ホーム、カテゴリとタグのページ、RSS に出ない               | 未定                                                        |
-| 4   | `/posts/<走り書きの slug>` と `/scribbles/<記事の slug>` はどちらも 404                    | 未定                                                        |
-| 5   | 走り書きのページと一覧は noindex を出す。`SITE_INDEXABLE` が真でも同じ                     | 未定                                                        |
-| 6   | 非公開の走り書きは、ログインしていなければ 404、ログイン中ならプレビューできる             | 未定                                                        |
+| 3   | 走り書きは `/scribbles` に出て、ホーム、カテゴリとタグのページ、RSS に出ない               | `e2e/public-scribbles.spec.ts`                              |
+| 4   | `/posts/<走り書きの slug>` と `/scribbles/<記事の slug>` はどちらも 404                    | `e2e/public-scribbles.spec.ts`                              |
+| 5   | 走り書きのページと一覧は noindex を出す。`SITE_INDEXABLE` が真でも同じ                     | `lib/scribble-list.test.ts`、`e2e/public-scribbles.spec.ts` |
+| 6   | 非公開の走り書きは、ログインしていなければ 404、ログイン中ならプレビューできる             | `e2e/public-scribbles.spec.ts`                              |
 | 7   | 走り書きにだけ参照されている画像は、アップロードの掃除で消されない                         | `scripts/upload-refs.test.ts`                               |
 | 8   | 管理画面の記事一覧に走り書きは出ず、走り書きの一覧に記事は出ない                           | 未定                                                        |
 | 9   | 走り書きのエディタの設定にカテゴリとサムネイルの欄が出ない                                 | 未定                                                        |
 | 10  | 内部リンクカードが走り書きの slug を指すと、存在しない slug と同じ普通のリンクになる       | `lib/posts.test.ts`「kinds」（`getPostBySlug` が答えない）  |
-| 11  | 一覧のカードは高さを超えると切れて「続きを読む」が出て、超えなければ全文が出る             | 未定                                                        |
+| 11  | 一覧のカードは高さを超えると切れて「続きを読む」が出て、超えなければ全文が出る             | `e2e/public-scribbles.spec.ts`                              |
 | 12  | 一覧のカードに埋め込みの iframe は出ず、リンクになる                                       | `lib/render.test.ts`（`embedsAsLinks`）                     |
 | 13  | 走り書きはどの書き込みの経路でもカテゴリとサムネイルを持たず、種類は作られた後に変わらない | `app/api/drafts/route.test.ts`、`app/actions/posts.test.ts` |
 | 14  | 一覧のカードの中の `#…` へのリンクは、その走り書きのページの同じ位置を指す                 | `lib/render.test.ts`（`fragmentBase`）                      |
