@@ -15,16 +15,17 @@ export function ScribbleCardBody({
   slug: string | null;
   targetId: string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [isClamped, setIsClamped] = useState(false);
 
   useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content) return;
 
     const measure = () => {
-      const height = Math.max(el.offsetHeight, el.scrollHeight);
-      setIsClamped(height > SCRIBBLE_CARD_MAX_HEIGHT_PX);
+      setIsClamped(content.scrollHeight > container.clientHeight);
     };
 
     measure();
@@ -32,7 +33,7 @@ export function ScribbleCardBody({
     const observer = new ResizeObserver(() => {
       measure();
     });
-    observer.observe(el);
+    observer.observe(content);
 
     return () => {
       observer.disconnect();
@@ -42,10 +43,11 @@ export function ScribbleCardBody({
   return (
     <div className='mt-3'>
       <div
+        ref={containerRef}
         id={targetId}
         data-scribble-body-box
-        className={isClamped ? 'relative overflow-hidden' : ''}
-        style={isClamped ? { maxHeight: `${SCRIBBLE_CARD_MAX_HEIGHT_PX}px` } : undefined}>
+        className='relative overflow-hidden'
+        style={{ maxHeight: `${SCRIBBLE_CARD_MAX_HEIGHT_PX}px` }}>
         <div
           ref={contentRef}
           className='flow-root prose prose-zinc dark:prose-invert max-w-none'
