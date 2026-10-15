@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { resolveCard } from '@/lib/resolve-card';
 import { DraftPreviewBanner } from '@/components/DraftPreviewBanner';
+import { LibraryButtons } from '@/components/LibraryButtons';
 import { PostArticle } from '@/components/PostArticle';
+import { markState } from '@/lib/library';
 import type { Metadata } from 'next';
 import { getDraftBySlug, getPostBySlug } from '@/lib/posts';
 import { getOptionalSession } from '@/lib/dal';
@@ -69,6 +71,9 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   if (!readable) notFound();
   const { post, preview } = readable;
 
+  const session = !preview ? await getOptionalSession() : null;
+  const mark = session ? markState(session.userId, post.id) : null;
+
   // resolveCard is handed over unchanged, so a link card inside a draft still resolves through
   // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
   // would for a reader. The preview shows what will ship, and that includes what will not resolve.
@@ -77,7 +82,21 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   return (
     <>
       {preview && <DraftPreviewBanner postId={post.id} />}
-      <PostArticle post={post} html={html} toc={toc} />
+      <PostArticle
+        post={post}
+        html={html}
+        toc={toc}
+        afterBody={
+          mark ? (
+            <LibraryButtons
+              postId={post.id}
+              initialBookmarked={mark.bookmarked}
+              initialLiked={mark.liked}
+              canLike={mark.canLike}
+            />
+          ) : undefined
+        }
+      />
     </>
   );
 }

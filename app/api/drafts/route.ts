@@ -37,7 +37,8 @@ const autosaveSchema = z.object({
 export async function POST(req: NextRequest) {
   // A lapsed session returns 401 (no redirect) so the editor keeps the unsaved
   // draft mounted and prompts a re-login.
-  if (!(await getOptionalSession())) {
+  const session = await getOptionalSession();
+  if (!session) {
     return new NextResponse(null, { status: 401 });
   }
 
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,
+    authorId: session.userId,
   });
   return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true });
 }

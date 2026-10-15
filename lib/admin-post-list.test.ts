@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PARAMS,
   countByStatus,
+  libraryHref,
   listHref,
   narrow,
+  parseLibraryTab,
   parseListParams,
   sortPosts,
 } from './admin-post-list';
@@ -101,5 +103,32 @@ describe('listHref', () => {
 
   it('formats scribble list destinations', () => {
     expect(listHref('/admin/scribbles', DEFAULT_PARAMS, {})).toBe('/admin/scribbles');
+  });
+});
+
+describe('parseLibraryTab', () => {
+  it('reads each tab parameter', () => {
+    expect(parseLibraryTab({ tab: 'bookmarks' })).toBe('bookmarks');
+    expect(parseLibraryTab({ tab: 'likes' })).toBe('likes');
+    expect(parseLibraryTab({ tab: 'history' })).toBe('history');
+  });
+
+  it('falls back to bookmarks for missing or invalid values', () => {
+    expect(parseLibraryTab({})).toBe('bookmarks');
+    expect(parseLibraryTab({ tab: undefined })).toBe('bookmarks');
+    expect(parseLibraryTab({ tab: 'unknown' })).toBe('bookmarks');
+    expect(parseLibraryTab({ tab: ['unknown'] })).toBe('bookmarks');
+    expect(parseLibraryTab({ tab: ['likes', 'history'] })).toBe('likes');
+  });
+});
+
+describe('libraryHref', () => {
+  it('keeps /admin/library for the default bookmarks tab', () => {
+    expect(libraryHref('bookmarks')).toBe('/admin/library');
+  });
+
+  it('adds ?tab= for likes and history', () => {
+    expect(libraryHref('likes')).toBe('/admin/library?tab=likes');
+    expect(libraryHref('history')).toBe('/admin/library?tab=history');
   });
 });

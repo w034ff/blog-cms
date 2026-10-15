@@ -81,3 +81,17 @@ export function listHref(
   const search = query.toString();
   return search ? `${basePath}?${search}` : basePath;
 }
+
+// ライブラリ's tabs (docs/library-requirements.md §6.2), selected with ?tab=.
+// Any value off the list falls back to bookmarks so a stale or hand-edited URL still shows a tab.
+export const LIBRARY_TABS = ['bookmarks', 'likes', 'history'] as const;
+export type LibraryTab = (typeof LIBRARY_TABS)[number];
+export const DEFAULT_LIBRARY_TAB: LibraryTab = 'bookmarks';
+
+export function parseLibraryTab(raw: RawParams): LibraryTab {
+  return oneOf(LIBRARY_TABS, first(raw.tab), DEFAULT_LIBRARY_TAB);
+}
+
+export function libraryHref(tab: LibraryTab): string {
+  return tab === DEFAULT_LIBRARY_TAB ? '/admin/library' : `/admin/library?tab=${tab}`;
+}

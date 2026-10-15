@@ -35,6 +35,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     body: 'body',
     thumbnail: '',
     kind: 'post',
+    authorId: 1,
     ...overrides,
   });
 }

@@ -8,9 +8,11 @@ vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
   return { db: createTestDb() };
 });
+// Not 1, so an author written from anywhere but the session cannot match it by accident.
+const SESSION_USER_ID = 7;
 vi.mock('@/lib/dal', () => ({
-  getOptionalSession: async () => ({ userId: 1, username: 'admin' }),
-  verifySession: async () => ({ userId: 1, username: 'admin' }),
+  getOptionalSession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
+  verifySession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
 }));
 // Outside a request there is no cache to revalidate.
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
@@ -49,6 +51,7 @@ function seedDraft(kind: 'post' | 'scribble'): number {
     body: '本文',
     thumbnail: '',
     kind,
+    authorId: 1,
   });
 }
 
@@ -81,6 +84,14 @@ describe('submitPostAction and kinds', () => {
     const id = state.saved?.id;
     if (id === undefined) throw new Error(`not saved: ${JSON.stringify(state)}`);
     expect(row(id)).toMatchObject({ kind: 'scribble', draft: false });
+  });
+
+  // docs/library-requirements.md §8 row 2.
+  it("writes the session's account as the author when publish creates the row", async () => {
+    const state = await submitPostAction({}, form({ category: 'tech' }));
+    const id = state.saved?.id;
+    if (id === undefined) throw new Error(`not saved: ${JSON.stringify(state)}`);
+    expect(row(id)).toMatchObject({ kind: 'post', authorId: SESSION_USER_ID });
   });
 
   it("ignores a kind sent for an existing row, and unpublish keeps a scribble's fields empty", async () => {
