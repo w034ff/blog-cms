@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useId, useState } from 'react';
-import { logout } from '@/app/actions/auth';
 import { useDismiss } from '@/components/editor/useDismiss';
 import { adminNavItems } from './AdminSideNav';
 
@@ -59,13 +58,6 @@ export function ScreenHeading({ title, showTags }: { title: string; showTags: bo
               </span>
             </li>
           </ul>
-          <form action={logout} className='mt-1 border-t border-zinc-200 pt-1 dark:border-zinc-800'>
-            <button
-              type='submit'
-              className='block w-full rounded-chip px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-              ログアウト
-            </button>
-          </form>
         </nav>
       )}
     </div>

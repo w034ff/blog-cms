@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { logout } from '@/app/actions/auth';
 
 export type Item = { label: string; href: string; current: (pathname: string) => boolean };
 
@@ -78,11 +77,6 @@ export function AdminSideNav({ showTags }: { showTags: boolean }) {
           </span>
         </li>
       </ul>
-      <form action={logout} className='mt-6'>
-        <button type='submit' className={`${itemClass} ${otherClass}`}>
-          ログアウト
-        </button>
-      </form>
     </nav>
   );
 }

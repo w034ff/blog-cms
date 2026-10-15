@@ -36,15 +36,8 @@ export default async function AdminScribblesPage({
 
   return (
     <section>
-      <div className='mb-6 flex items-center justify-between gap-4'>
+      <div className='mb-6'>
         <ScreenHeading title='走り書き' showTags={await isAdmin()} />
-        {all.length > 0 && (
-          <Link
-            href='/admin/posts/new?kind=scribble'
-            className='button-primary px-3 py-1.5 text-sm font-medium'>
-            新規作成
-          </Link>
-        )}
       </div>
       {all.length > 0 && (
         <ListControls
