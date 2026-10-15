@@ -3,6 +3,7 @@ import { expectAutosaved, expectPublished, loadMarkdown, ensureCategory } from '
 import { postSlug } from './published-post';
 import Database from 'better-sqlite3';
 import { TEST_DB_PATH } from './constants';
+import { SITE_NAME } from '../app/shared-metadata';
 
 // What does `revalidateBlog()` (`revalidatePath('/', 'layout')`, app/actions/posts.ts) invalidate?
 // Not the Data Cache, which only `fetch()` uses (docs/cms-features.md「RSS/Atom フィード」§7.1), nor
@@ -35,7 +36,7 @@ test('a published edit is visible on every surface reached by <Link> alone', asy
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole('link', { name: before })).toBeVisible();
 
-  await page.getByRole('link', { name: 'Tech Blog' }).click();
+  await page.getByRole('link', { name: SITE_NAME }).click();
   await expect(page.getByRole('heading', { name: before })).toBeVisible();
 
   await page.getByRole('link', { name: before }).first().click();
@@ -60,7 +61,7 @@ test('a published edit is visible on every surface reached by <Link> alone', asy
   await page.getByRole('link', { name: '記事一覧' }).click();
   await expect(page.getByRole('link', { name: after }), '/admin is stale').toBeVisible();
 
-  await page.getByRole('link', { name: 'Tech Blog' }).click();
+  await page.getByRole('link', { name: SITE_NAME }).click();
   await expect(page.getByRole('heading', { name: after }), '/ is stale').toBeVisible();
 
   await page.getByRole('link', { name: after }).first().click();
@@ -94,7 +95,7 @@ test('what the client cache does with a change no Server Action announced', asyn
   // Warm all three surfaces by <Link>.
   await page.getByRole('link', { name: '記事一覧' }).click();
   await expect(page.getByRole('link', { name: before })).toBeVisible();
-  await page.getByRole('link', { name: 'Tech Blog' }).click();
+  await page.getByRole('link', { name: SITE_NAME }).click();
   await expect(page.getByRole('heading', { name: before })).toBeVisible();
   await page.getByRole('link', { name: before }).first().click();
   await expect(page).toHaveURL(new RegExp(`/posts/${slug}$`));

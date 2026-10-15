@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { chromium } from '@playwright/test';
+import { SITE_DESCRIPTION, SITE_NAME } from '../app/shared-metadata.ts';
+import { MARK_LIGHT, markSvg } from '../lib/site-mark.ts';
 
 // Regenerates public/og.png, the site's share card.
 //
@@ -14,8 +16,10 @@ const OUT = path.join(process.cwd(), 'public', 'og.png');
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-const TITLE = 'Tech Blog';
-const SUBTITLE = '個人技術ブログ';
+const TITLE = SITE_NAME;
+const SUBTITLE = SITE_DESCRIPTION;
+// The mark above the name, at the size the name's cap height reads against.
+const MARK_PX = 112;
 
 // The site's face (app/layout.tsx), fetched from Google Fonts for these characters only, so the
 // generator needs the network. Checked after load: a stylesheet that fails to arrive declares no
@@ -44,14 +48,12 @@ const html = `<!doctype html>
         color: #171717;
         font-family: "${FONT_FAMILY}", sans-serif;
       }
-      /* The rule stands in for the site's accent on h2/h3 and the 強調 mark. */
-      .rule { width: 96px; height: 10px; background: #9f1239; border-radius: 999px; }
       h1 { margin-top: 40px; font-size: 104px; font-weight: 700; letter-spacing: -0.02em; }
       p { margin-top: 24px; font-size: 40px; color: #52525b; }
     </style>
   </head>
   <body>
-    <div class="rule"></div>
+    ${markSvg(MARK_LIGHT, MARK_PX)}
     <h1>${TITLE}</h1>
     <p>${SUBTITLE}</p>
   </body>

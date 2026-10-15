@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { logout } from '@/app/actions/auth';
+import { SITE_NAME } from '@/app/shared-metadata';
+import { SiteMark } from '@/components/SiteMark';
 import { useDismiss } from '@/components/editor/useDismiss';
 import { getSiteSection, getInitialLetter } from '@/lib/site-section';
 
@@ -171,8 +173,14 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
   return (
     <>
       <div className='flex items-center gap-4 sm:gap-6'>
-        <Link href='/' className='text-lg font-bold tracking-tight whitespace-nowrap'>
-          Tech Blog
+        <Link
+          href='/'
+          className='flex items-center gap-2 text-lg font-bold tracking-tight whitespace-nowrap'>
+          <SiteMark className='h-6 w-6 shrink-0' />
+          {/* Signed in, a 360px row also holds 投稿する and the account button, and the name does
+              not fit beside them (docs/site-header-requirements.md §3.4); the mark stands for it
+              there, and the name stays the link's accessible name. */}
+          <span className={username ? 'sr-only sm:not-sr-only' : undefined}>{SITE_NAME}</span>
         </Link>
         <nav aria-label='サイト' className='flex items-center gap-4 sm:gap-6'>
           <HeaderDropdown

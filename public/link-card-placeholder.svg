@@ -8,22 +8,26 @@
        whose `media` attribute is evaluated by the page rather than by the image — an SVG's own
        `prefers-color-scheme` is honoured by Chrome (measured 2026-08-22) and by nothing this repo
        can measure, and a mark that turns invisible when it is ignored is not a mark. Keep the two
-       files in step: same geometry, only the two fills differ.
+       files in step: same geometry, only the colours differ.
 
-       The colours are the site's own: the accent rule (#9f1239, the h3 rule and the 強調 mark) over
-       the foreground (#171717). The lockup is the one public/og.png draws
-       (scripts/make-og-image.mts).
+       The lockup is the one public/og.png draws (scripts/make-og-image.mts): the site's mark
+       (lib/site-mark.ts, whose test holds this file to its geometry) over the name. The tile is the
+       foreground (#171717) and the glyph the card's light tint (#eaeef2), so it reads cut out of
+       the tile.
 
-       The font is the system stack, not the site's Geist: an SVG rendered as an image may not fetch
+       The font is the system stack, not the site's: an SVG rendered as an image may not fetch
        anything, so a webfont cannot reach it. -->
-  <rect x="96" y="8" width="48" height="6" rx="3" fill="#9f1239" />
+  <g transform="translate(100 2) scale(1.25)">
+    <rect width="32" height="32" rx="7" fill="#171717" />
+    <path d="M16 7v8M12 11h8M12 22h8" fill="none" stroke="#eaeef2" stroke-width="3" stroke-linecap="round" />
+  </g>
   <text
     x="120"
-    y="72"
+    y="86"
     text-anchor="middle"
     fill="#171717"
     font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-    font-size="40"
+    font-size="32"
     font-weight="800"
-    letter-spacing="-0.8">Tech Blog</text>
+    letter-spacing="-0.6">Small Diffs</text>
 </svg>
