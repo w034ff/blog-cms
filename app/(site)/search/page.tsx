@@ -10,13 +10,13 @@ const PAGE_HEADING = '検索';
 const SEARCH_INPUT_LABEL = '検索キーワード';
 const SEARCH_INPUT_PLACEHOLDER = 'キーワードを入力';
 const SEARCH_BUTTON_LABEL = '検索';
-const SEARCH_RESULTS_PREFIX = '「';
-const SEARCH_RESULTS_SUFFIX_FOUND = '」を含む記事と走り書き';
+// 「<言葉>」の検索結果 names both the tab and the count line, so the two read alike.
+const SEARCH_RESULTS_TITLE_PREFIX = '「';
+const SEARCH_RESULTS_TITLE_SUFFIX = '」の検索結果';
+const SEARCH_RESULTS_SEPARATOR = '：';
 const SEARCH_RESULTS_UNIT = '件';
-const SEARCH_RESULTS_EMPTY_SUFFIX = '」を含む記事と走り書きはありません。';
+const SEARCH_RESULTS_NONE = '見つかりませんでした';
 const SEARCH_METADATA_TITLE_DEFAULT = '検索';
-const SEARCH_METADATA_TITLE_PREFIX = '「';
-const SEARCH_METADATA_TITLE_SUFFIX = '」の検索結果';
 
 type SearchPageParams = {
   q?: string | string[];
@@ -38,7 +38,7 @@ export async function generateMetadata({
   const resolved = await searchParams;
   const q = extractQueryParam(resolved.q).trim();
   const title = q
-    ? `${SEARCH_METADATA_TITLE_PREFIX}${q}${SEARCH_METADATA_TITLE_SUFFIX}`
+    ? `${SEARCH_RESULTS_TITLE_PREFIX}${q}${SEARCH_RESULTS_TITLE_SUFFIX}`
     : SEARCH_METADATA_TITLE_DEFAULT;
 
   return {
@@ -99,9 +99,8 @@ export default async function SearchPage({
       {hasQuery && (
         <div className='mt-6'>
           <p className='text-sm text-zinc-600 dark:text-zinc-400'>
-            {results.length > 0
-              ? `${SEARCH_RESULTS_PREFIX}${trimmedQ}${SEARCH_RESULTS_SUFFIX_FOUND} ${results.length} ${SEARCH_RESULTS_UNIT}`
-              : `${SEARCH_RESULTS_PREFIX}${trimmedQ}${SEARCH_RESULTS_EMPTY_SUFFIX}`}
+            {`${SEARCH_RESULTS_TITLE_PREFIX}${trimmedQ}${SEARCH_RESULTS_TITLE_SUFFIX}${SEARCH_RESULTS_SEPARATOR}`}
+            {results.length > 0 ? `${results.length} ${SEARCH_RESULTS_UNIT}` : SEARCH_RESULTS_NONE}
           </p>
 
           {results.length > 0 && (
