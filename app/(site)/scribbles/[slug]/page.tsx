@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { CodeCopyButtons } from '@/components/CodeCopyButtons';
+import { DraftPreviewBanner } from '@/components/DraftPreviewBanner';
 import { EmbedFrames } from '@/components/EmbedFrames';
 import { FootnotePopover } from '@/components/FootnotePopover';
 import { ImageZoom } from '@/components/ImageZoom';
@@ -42,18 +43,7 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
 
   return (
     <>
-      {preview && (
-        <div
-          role='status'
-          className='mx-auto mb-6 flex max-w-page flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-box border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100'>
-          <b className='font-semibold'>下書きのプレビュー</b>
-          <Link
-            href={`/admin/posts/${post.id}/edit`}
-            className='shrink-0 font-medium underline underline-offset-2'>
-            編集に戻る
-          </Link>
-        </div>
-      )}
+      {preview && <DraftPreviewBanner postId={post.id} />}
       <article className='mx-auto w-full max-w-page'>
         <div className='mb-6'>
           <Link
