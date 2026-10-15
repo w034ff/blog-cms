@@ -129,14 +129,19 @@ const processor = unified()
 
 // `resolveCard` is injected so this module stays pure without the DB (docs/link-card-requirements.md
 // §6), travelling as VFile data because `processor` is built once. Omitted, every card renders as a
-// plain link. `embedsAsLinks` travels the same way (lib/rehype-embed.ts).
+// plain link. `embedsAsLinks` (lib/rehype-embed.ts) and `fragmentBase`
+// (lib/rehype-clobber-fragment-links.ts) travel the same way.
 export async function renderMdxToHtml(
   source: string,
-  options: { resolveCard?: ResolveCard; embedsAsLinks?: boolean } = {},
+  options: { resolveCard?: ResolveCard; embedsAsLinks?: boolean; fragmentBase?: string } = {},
 ): Promise<{ html: string; toc: TocEntry[] }> {
   const file = await processor.process({
     value: source,
-    data: { resolveCard: options.resolveCard, embedsAsLinks: options.embedsAsLinks },
+    data: {
+      resolveCard: options.resolveCard,
+      embedsAsLinks: options.embedsAsLinks,
+      fragmentBase: options.fragmentBase,
+    },
   });
   return { html: String(file), toc: file.data.toc ?? [] };
 }

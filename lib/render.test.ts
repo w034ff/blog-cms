@@ -167,6 +167,18 @@ describe('renderMdxToHtml — in-page links', () => {
     expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
   });
 
+  // docs/scribble-requirements.md §5: on the timeline a fragment goes to the body's own page.
+  it('sends a fragment and a footnote reference to fragmentBase, leaving other links alone', async () => {
+    const { html } = await renderMdxToHtml(
+      '## Intro\n\n[to intro](#intro) 注[^a] [top](#) [out](https://example.com/#x)\n\n[^a]: 中身\n',
+      { fragmentBase: '/scribbles/abc' },
+    );
+    expect(html).toContain('href="/scribbles/abc#user-content-intro"');
+    expect(html).toContain('href="/scribbles/abc#user-content-fn-a"');
+    expect(html).toContain('href="#"');
+    expect(html).toContain('href="https://example.com/#x"');
+  });
+
   it('leaves an external link and a bare `#` alone', async () => {
     const { html } = await renderMdxToHtml('[x](https://example.com/#frag) [y](#)\n');
     expect(html).toContain('href="https://example.com/#frag"');
