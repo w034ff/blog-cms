@@ -31,10 +31,10 @@
 - 左から順に、ブランド「Tech Blog」（`/` へのリンク。今と同じ太さと大きさ）、公開側のリンク「記事 ▾」「走り書き」。右端はログイン中だけ §3.3 のボタンを置く。
 - 公開側のリンクは 14px の `font-semibold`。今いる区画のものは濃い色（`text-zinc-900`、ダークは `text-zinc-50`）、ほかは灰色（`text-zinc-500`、ダークは `text-zinc-400`）。灰色のものは hover（`@media (hover: hover)`）で濃くする。下線は付けない。
 - 今いる区画は、パスから 1 つの関数で決める。
-  - 記事: `/`、`/posts/…`、`/tags` と `/tags/…`、`/categories` と `/categories/…`
+  - 記事: `/`、`/posts/…`、`/tags` と `/tags/…`、`/categories` と `/categories/…`、`/search` と `/search/…`（`docs/search-requirements.md` §5.2）
   - 走り書き: `/scribbles` と `/scribbles/…`
   - それ以外（管理画面、`/login`）はどちらでもない。
-- 「記事」のメニューの項目は、上から「最新の記事」（`/`）、「カテゴリ」（`/categories`）、「タグ」（`/tags`）。今開いているページがその一覧のときだけ、項目に `aria-current="page"` を付けて太字にする。「走り書き」のリンクにも、`/scribbles` にいるときだけ `aria-current="page"` を付ける。
+- 「記事」のメニューの項目は、上から「最新の記事」（`/`）、「カテゴリ」（`/categories`）、「タグ」（`/tags`）、区切り線の下に「検索」（`/search`、`docs/search-requirements.md` §5.1）。今開いているページがその一覧のときだけ、項目に `aria-current="page"` を付けて太字にする。「走り書き」のリンクにも、`/scribbles` にいるときだけ `aria-current="page"` を付ける。
 
 ### 3.2 ログインしていないとき
 
@@ -81,7 +81,7 @@
 
 - ログインしていない人への「ログイン」や「書いてみる」の入口。出すかどうかは、複数の著者の参加方針（`open` / `allowlist`、`docs/project-status.md` §7.1）と一緒に決める。`allowlist` では、押した人の大半が Google のログインの後で断られる。右側は空けてあるので、後で足してもほかの配置は変わらない。
 - アカウントのボタンに出す名前と画像。表示名は §7.1 で未設計なので、今は `username` の頭文字にしている。
-- テーマ（明るい・暗い）の切り替え、記事の検索（「記事」のメニューか検索のアイコンに置く）、サイトのロゴ。
+- テーマ（明るい・暗い）の切り替え、サイトのロゴ。ヘッダーの検索の入力欄は `docs/search-requirements.md` §7。
 
 ## 7. 受け入れ基準
 
