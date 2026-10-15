@@ -45,7 +45,7 @@ export function PostRowMenu({ id, viewHref }: { id: number; viewHref: string | n
       {open && (
         <div
           id={panelId}
-          className='admin-popup absolute top-full right-0 z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
+          className='popup-panel absolute top-full right-0 z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800'>
           {confirming ? (
             <form action={deletePostAction} className='w-56 p-2'>
               <input type='hidden' name='id' value={id} />

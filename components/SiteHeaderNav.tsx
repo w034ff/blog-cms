@@ -125,7 +125,7 @@ function HeaderDropdown({
       {isOpen && (
         <div
           id={panelId}
-          className={`absolute top-full z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800 ${
+          className={`popup-panel absolute top-full z-20 mt-1 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg dark:border-zinc-800 ${
             align === 'right' ? 'right-0' : 'left-0'
           } ${panelClassName}`}>
           {children({ close: onClose })}

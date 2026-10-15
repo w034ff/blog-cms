@@ -591,21 +591,21 @@ body {
 }
 
 /* ToolbarDropdown's floating panel drops in from its trigger, as the toast does
-   (docs/editor-requirements.md §12.37), and the admin screens' popups (`admin-popup`: 記事一覧's ⋯
-   menu, its OptionMenu, ScreenHeading's phone menu) the same way, so a menu opens alike on both
-   sides of the editor. `translate`, not `transform`: the inline `transform` centres and clamps the
+   (docs/editor-requirements.md §12.37), and every other popup (`popup-panel`: SiteHeader's three
+   menus, 記事一覧's ⋯ menu, its OptionMenu, ScreenHeading's phone menu) the same way, so a menu
+   opens alike everywhere on the site. `translate`, not `transform`: the inline `transform` centres and clamps the
    toolbar's panel, and the two compose where a `transform` here would override it. No exit half:
    each panel unmounts on close. */
 @media (prefers-reduced-motion: no-preference) {
   .toolbar-dropdown-panel,
-  .admin-popup {
+  .popup-panel {
     transition:
       opacity 150ms ease,
       translate 150ms ease-out;
   }
   @starting-style {
     .toolbar-dropdown-panel,
-    .admin-popup {
+    .popup-panel {
       opacity: 0;
       translate: 0 -4px;
     }

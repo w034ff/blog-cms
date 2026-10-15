@@ -128,7 +128,7 @@ test('scribble authoring, listing, settings, and publish flow', async ({ page })
   // PostRowMenu 表示 link (sm:hidden, shown on mobile) also points to /scribbles/<slug>
   await publishedListRow.getByRole('button', { name: 'その他の操作' }).click();
   const menuViewLink = publishedListRow
-    .locator('.admin-popup')
+    .locator('.popup-panel')
     .getByRole('link', { name: '表示', includeHidden: true });
   await expect(menuViewLink).toHaveAttribute('href', `/scribbles/${publishedRow.slug}`);
 

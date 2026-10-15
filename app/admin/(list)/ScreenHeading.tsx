@@ -37,7 +37,7 @@ export function ScreenHeading({ title, showTags }: { title: string; showTags: bo
         <nav
           id={panelId}
           aria-label='管理'
-          className='admin-popup absolute top-full left-0 z-20 mt-1 min-w-48 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg md:hidden dark:border-zinc-800'>
+          className='popup-panel absolute top-full left-0 z-20 mt-1 min-w-48 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg md:hidden dark:border-zinc-800'>
           <ul>
             {items.map((item) => (
               <li key={item.href}>

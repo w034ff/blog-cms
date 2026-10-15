@@ -209,7 +209,7 @@ test('admin screens lack logout in side/heading menus and lack "新規作成" in
   // Narrow viewport 360px: ScreenHeading popup has no logout
   await page.setViewportSize({ width: 360, height: 640 });
   await page.getByRole('button', { name: '記事一覧' }).click();
-  const popup = page.locator('.admin-popup');
+  const popup = page.locator('.popup-panel');
   await expect(popup).toBeVisible();
   await expect(popup.getByRole('button', { name: 'ログアウト' })).toHaveCount(0);
 
