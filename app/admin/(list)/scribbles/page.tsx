@@ -12,22 +12,10 @@ import {
 import { ListControls } from '../ListControls';
 import { ScreenHeading } from '../ScreenHeading';
 import { PostListRows } from '../PostListRows';
+import { EmptyScribbleList } from '../EmptyPostList';
 
 export const metadata: Metadata = { title: '走り書き' };
 export const dynamic = 'force-dynamic';
-
-function EmptyScribbleList() {
-  return (
-    <div className='flex flex-col items-center px-4 py-14 text-center'>
-      <p className='text-sm text-zinc-600 dark:text-zinc-400'>まだ走り書きがありません。</p>
-      <Link
-        href='/admin/posts/new?kind=scribble'
-        className='button-primary mt-6 px-5 py-2.5 font-medium'>
-        新規作成
-      </Link>
-    </div>
-  );
-}
 
 export default async function AdminScribblesPage({
   searchParams,
