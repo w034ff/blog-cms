@@ -127,4 +127,12 @@ test('scribble authoring, listing, settings, and publish flow', async ({ page })
     .locator('.admin-popup')
     .getByRole('link', { name: '表示', includeHidden: true });
   await expect(menuViewLink).toHaveAttribute('href', `/scribbles/${publishedRow.slug}`);
+
+  // 6. Category query param is ignored on scribble list (§6): ?category=tech still shows the scribble
+  await page.goto('/admin/scribbles?category=tech');
+  await expect(page.getByRole('heading', { name: '走り書き' })).toBeVisible();
+  const categorizedListRow = page.locator('li', {
+    has: page.getByRole('link', { name: title, exact: true }),
+  });
+  await expect(categorizedListRow).toBeVisible();
 });

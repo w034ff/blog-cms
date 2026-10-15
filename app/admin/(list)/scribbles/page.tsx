@@ -35,7 +35,9 @@ export default async function AdminScribblesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const all = await listAllScribbles();
-  const params = parseListParams(await searchParams);
+  // Scribbles omit category filtering (docs/scribble-requirements.md §6):
+  // even if ?category= is present in the URL, ignore it so scribbles are not filtered out.
+  const params = { ...parseListParams(await searchParams), category: null };
   const narrowed = narrow(all, params);
   const posts = sortPosts(
     narrowed.filter((post) => matchesStatus(post, params.status)),
