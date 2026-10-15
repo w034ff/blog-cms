@@ -3,7 +3,15 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { MAX_TAGS, isCategoryId, parseTags, type PostCategory } from '@/lib/content';
+import {
+  MAX_TAGS,
+  isCategoryId,
+  isPostKind,
+  parseTags,
+  type PostCategory,
+  type PostKind,
+} from '@/lib/content';
+import { contentForKind } from '@/lib/draft-content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
@@ -53,6 +61,13 @@ function parseId(formData: FormData): number | null {
   return Number.isInteger(id) ? id : null;
 }
 
+// Read only when publish creates the row (投稿 before autosave made one); an existing row keeps
+// its own. Anything else makes a post, as app/api/drafts does.
+function parseNewKind(formData: FormData): PostKind {
+  const value = field(formData, 'kind');
+  return isPostKind(value) ? value : 'post';
+}
+
 function parseContent(formData: FormData): DraftContent | null {
   const parsed = contentSchema.safeParse({
     title: field(formData, 'title'),
@@ -76,12 +91,20 @@ function revalidateBlog(): void {
 // The date is stamped at first publish (`existing.date` is '' until then) and kept on every later
 // one. With no row yet (投稿 before autosave created one), create-and-publish.
 async function publish(formData: FormData): Promise<PostFormState> {
-  const content = parseContent(formData);
-  if (!content) {
+  const sent = parseContent(formData);
+  if (!sent) {
     return { error: '入力が不正です。タイトルは必須です。' };
   }
+  const id = parseId(formData);
+  const existing = id === null ? null : await getPostForEdit(id);
+  if (id !== null && !existing) {
+    return { error: '記事が見つかりません。' };
+  }
+  const kind = existing ? existing.kind : parseNewKind(formData);
+  const content = contentForKind(sent, kind);
   // §12.32: a new post has no category until here. The editor opens 記事の設定 on `missingCategory`.
-  if (content.category === '') {
+  // A scribble has none to choose (docs/scribble-requirements.md §3.2).
+  if (kind === 'post' && content.category === '') {
     return { error: 'カテゴリを選んでください。', missingCategory: true };
   }
   // The editor's field stops at MAX_TAGS; this holds for a request that bypassed it. Publish only.
@@ -96,13 +119,7 @@ async function publish(formData: FormData): Promise<PostFormState> {
       error: `脚注が ${incomplete.length} 件、空のままです。内容を書いてから公開してください。`,
     };
   }
-  const id = parseId(formData);
-
-  if (id !== null) {
-    const existing = await getPostForEdit(id);
-    if (!existing) {
-      return { error: '記事が見つかりません。' };
-    }
+  if (id !== null && existing) {
     // First publish stamps the date; once set it never changes.
     const date = existing.date || new Date().toISOString();
     if (!commitPost(id, content, false, date)) {
@@ -114,15 +131,21 @@ async function publish(formData: FormData): Promise<PostFormState> {
 
   // Create-and-publish.
   const slug = generateUniqueSlug();
-  const newId = createPost({ slug, ...content, date: new Date().toISOString(), draft: false });
+  const newId = createPost({
+    slug,
+    ...content,
+    kind,
+    date: new Date().toISOString(),
+    draft: false,
+  });
   revalidateBlog();
   return { saved: { id: newId, slug, published: true, at: Date.now() } };
 }
 
 // Back to a draft, keeping the content and the slug, so re-publishing reuses the URL.
 async function unpublish(formData: FormData): Promise<PostFormState> {
-  const content = parseContent(formData);
-  if (!content) {
+  const sent = parseContent(formData);
+  if (!sent) {
     return { error: '入力が不正です。タイトルは必須です。' };
   }
   const id = parseId(formData);
@@ -134,7 +157,7 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
     return { error: '記事が見つかりません。' };
   }
   // Keep the first-publish date so re-publishing later reuses it.
-  if (!commitPost(id, content, true, existing.date)) {
+  if (!commitPost(id, contentForKind(sent, existing.kind), true, existing.date)) {
     return { error: '記事が見つかりません。' };
   }
   revalidateBlog();

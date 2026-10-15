@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
-import { and, desc, eq } from 'drizzle-orm';
-import { CATEGORIES, normalizeCategory, type CategoryId } from '@/lib/content';
+import { and, count, desc, eq } from 'drizzle-orm';
+import { CATEGORIES, normalizeCategory, type CategoryId, type PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
@@ -43,24 +43,52 @@ function toPost(row: PostRow, names: ReadonlyMap<string, string>): Post {
     thumbnail: row.thumbnail,
     unlisted: row.unlisted,
     updatedAt: row.updatedAt,
+    kind: row.kind,
   };
 }
 
-export async function getAllPosts(): Promise<Post[]> {
-  const rows = db
-    .select()
-    .from(posts)
-    .where(and(eq(posts.draft, false), eq(posts.unlisted, false)))
-    .orderBy(desc(posts.date))
-    .all();
-  const names = tagNames();
-  return rows.map((row) => toPost(row, names));
+// Every read below is scoped to one kind here, not by its callers: a page that forgot to filter
+// would leak scribbles into the home page or the RSS feed (docs/scribble-requirements.md §4).
+function listed(kind: PostKind) {
+  return and(eq(posts.kind, kind), eq(posts.draft, false), eq(posts.unlisted, false));
 }
 
-export async function getPostBySlug(slug: string): Promise<Post | null> {
+function listedRows(kind: PostKind, page: ListPage = {}): PostRow[] {
+  const query = db
+    .select()
+    .from(posts)
+    .where(listed(kind))
+    // `id` breaks a tie, so a page boundary cannot show one row twice or skip one.
+    .orderBy(desc(posts.date), desc(posts.id));
+  if (page.limit === undefined) return query.all();
+  return query
+    .limit(page.limit)
+    .offset(page.offset ?? 0)
+    .all();
+}
+
+function publishedBySlug(kind: PostKind, slug: string): Post | null {
   const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
-  if (!row || row.draft) return null;
+  if (!row || row.draft || row.kind !== kind) return null;
   return toPost(row, tagNames());
+}
+
+function draftBySlug(kind: PostKind, slug: string): Post | null {
+  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  if (!row || !row.draft || row.kind !== kind) return null;
+  return toPost(row, tagNames());
+}
+
+export async function getAllPosts(): Promise<Post[]> {
+  const names = tagNames();
+  return listedRows('post').map((row) => toPost(row, names));
+}
+
+// A scribble's slug answers exactly as an unknown one does, since a link card and /api/link-title
+// ask this (docs/link-card-requirements.md §6.1); scribbles are not cards in v1
+// (docs/scribble-requirements.md §7.2).
+export async function getPostBySlug(slug: string): Promise<Post | null> {
+  return publishedBySlug('post', slug);
 }
 
 // The complement of the above, and deliberately a second function rather than a flag on it.
@@ -77,9 +105,29 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 // A draft's current content is in the live columns — `draft_content` is written only for a
 // *published* post, so there is no working copy to prefer here.
 export async function getDraftBySlug(slug: string): Promise<Post | null> {
-  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
-  if (!row || !row.draft) return null;
-  return toPost(row, tagNames());
+  return draftBySlug('post', slug);
+}
+
+// The scribble counterparts of the three above, with the same contracts. `page` is an object so the
+// author filter multi-author needs can join it without a new signature (§9).
+export type ListPage = { limit?: number; offset?: number };
+
+export async function getScribbles(page: ListPage = {}): Promise<Post[]> {
+  const names = tagNames();
+  return listedRows('scribble', page).map((row) => toPost(row, names));
+}
+
+export async function countScribbles(): Promise<number> {
+  return db.select({ n: count() }).from(posts).where(listed('scribble')).get()?.n ?? 0;
+}
+
+export async function getScribbleBySlug(slug: string): Promise<Post | null> {
+  return publishedBySlug('scribble', slug);
+}
+
+// No authorization of its own, as getDraftBySlug.
+export async function getScribbleDraftBySlug(slug: string): Promise<Post | null> {
+  return draftBySlug('scribble', slug);
 }
 
 // `draft_content` is written only for a published post (a draft's edits go straight to the live
@@ -90,7 +138,16 @@ export async function getDraftBySlug(slug: string): Promise<Post | null> {
 // This list is the only place that state can be noticed after the fact. In the editor it is the
 // publish button's own enabled state, which you have to already be in the editor to read.
 export async function listAllPosts(): Promise<AdminPost[]> {
-  const rows = db.select().from(posts).orderBy(desc(posts.date)).all();
+  return listAll('post');
+}
+
+// The admin list of scribbles, separate from 記事一覧 (docs/scribble-requirements.md §6).
+export async function listAllScribbles(): Promise<AdminPost[]> {
+  return listAll('scribble');
+}
+
+function listAll(kind: PostKind): AdminPost[] {
+  const rows = db.select().from(posts).where(eq(posts.kind, kind)).orderBy(desc(posts.date)).all();
   const names = tagNames();
   return rows.map((row) => {
     const post = toPost(row, names);
@@ -142,7 +199,7 @@ export async function getPostsByCategory(category: CategoryId): Promise<Post[]> 
   const rows = db
     .select()
     .from(posts)
-    .where(and(eq(posts.draft, false), eq(posts.unlisted, false), eq(posts.category, category)))
+    .where(and(listed('post'), eq(posts.category, category)))
     .orderBy(desc(posts.date))
     .all();
   const names = tagNames();

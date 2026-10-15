@@ -1,0 +1,1 @@
+ALTER TABLE `posts` ADD `kind` text DEFAULT 'post' NOT NULL;

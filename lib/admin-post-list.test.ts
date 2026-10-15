@@ -23,6 +23,7 @@ function post(overrides: Partial<AdminPost>): AdminPost {
     thumbnail: '',
     unlisted: false,
     updatedAt: '2026-09-01T00:00:00.000Z',
+    kind: 'post',
     editedAt: '2026-09-01T00:00:00.000Z',
     hasPendingEdits: false,
     ...overrides,

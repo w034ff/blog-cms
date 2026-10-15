@@ -14,6 +14,8 @@ export function postToMarkdown(post: Post): string {
   if (post.category) data.category = post.category;
   if (post.thumbnail) data.thumbnail = post.thumbnail;
   if (post.draft) data.draft = true;
+  // Only when it is not the default, as `draft`: a file that says nothing is a post.
+  if (post.kind !== 'post') data.kind = post.kind;
   return matter.stringify(post.body, data);
 }
 

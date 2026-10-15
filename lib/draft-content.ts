@@ -1,4 +1,4 @@
-import { normalizeCategory } from '@/lib/content';
+import { normalizeCategory, type PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 // The pieces of DraftContent handling that more than one table needs: `posts.draft_content` and
@@ -35,4 +35,11 @@ export function sameDraftContent(a: DraftContent, b: DraftContent): boolean {
     a.tags.length === b.tags.length &&
     a.tags.every((tag, index) => tag === b.tags[index])
   );
+}
+
+// What a scribble cannot hold (docs/scribble-requirements.md §3.2): a category or a thumbnail. Applied
+// on every write path rather than left to the editor hiding the fields, so a crafted request
+// cannot give a scribble either.
+export function contentForKind(content: DraftContent, kind: PostKind): DraftContent {
+  return kind === 'scribble' ? { ...content, category: '', thumbnail: '' } : content;
 }

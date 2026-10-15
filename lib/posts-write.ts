@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
 import { normalizeNewlines } from '@/lib/draft-content';
 import { deleteRevisionsOf, liveContentOfRow, recordRevision } from '@/lib/revisions';
+import type { PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 export type PostInput = {
@@ -16,6 +17,8 @@ export type PostInput = {
   draft: boolean;
   body: string;
   thumbnail: string;
+  // Required, not left to the column's default: every creation path says which list it feeds.
+  kind: PostKind;
 };
 
 // Whether a slug is already taken. Used at publish time to keep public URLs
@@ -29,6 +32,13 @@ export function slugExists(slug: string): boolean {
 export function postExists(id: number): boolean {
   const row = db.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).get();
   return row !== undefined;
+}
+
+// A row's kind by its id, or null when there is no such row. The write paths read it to decide what
+// the row may hold (`contentForKind`); a kind is never written after creation.
+export function postKind(id: number): PostKind | null {
+  const row = db.select({ kind: posts.kind }).from(posts).where(eq(posts.id, id)).get();
+  return row?.kind ?? null;
 }
 
 // Insert a new post and return its generated id.

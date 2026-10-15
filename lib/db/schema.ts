@@ -1,6 +1,8 @@
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { DraftContent } from '@/lib/types';
+// Relative, not `@/`: drizzle-kit loads this file outside the app's path aliases.
+import { POST_KINDS } from '../content';
 
 export const posts = sqliteTable('posts', {
   // Stable internal identity, decoupled from the public slug. Autosave can
@@ -52,6 +54,10 @@ export const posts = sqliteTable('posts', {
   // SQLite's ADD COLUMN refuses a CURRENT_TIMESTAMP default; the migration fills existing rows from
   // `updated_at`, and every insert writes it. Appended at the tail, as above.
   editedAt: text('edited_at').notNull().default(''),
+  // Which surface a row belongs to: `post` is the blog, `scribble` a short note listed only at
+  // /scribbles (docs/scribble-requirements.md §3.1). Set when the row is created and never changed.
+  // Appended at the tail, as above.
+  kind: text('kind', { enum: POST_KINDS }).notNull().default('post'),
 });
 
 // Failed-login bookkeeping, so a public `/login` can't be tried at the speed the

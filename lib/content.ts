@@ -39,6 +39,16 @@ export function categoryLabel(id: PostCategory): string {
 // How many tags a post can carry. Enforced by the editor's field and refused at publish.
 export const MAX_TAGS = 5;
 
+// The surfaces a posts row can belong to (docs/scribble-requirements.md §3.1): the blog, and the
+// short notes listed only at /scribbles. The column's enum (lib/db/schema.ts) is this list.
+export const POST_KINDS = ['post', 'scribble'] as const;
+
+export type PostKind = (typeof POST_KINDS)[number];
+
+export function isPostKind(value: unknown): value is PostKind {
+  return POST_KINDS.some((kind) => kind === value);
+}
+
 // Longest display name /admin/tags accepts — what readers see, which may be a phrase.
 export const TAG_NAME_MAX_LENGTH = 40;
 

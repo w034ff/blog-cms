@@ -16,6 +16,7 @@ function post(overrides: Partial<Post> = {}): Post {
     thumbnail: '',
     unlisted: false,
     updatedAt: '2026-09-04T00:00:00.000Z',
+    kind: 'post',
     ...overrides,
   };
 }

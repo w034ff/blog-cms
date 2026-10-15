@@ -596,6 +596,21 @@ describe('renderMdxToHtml / embed', () => {
     }
   });
 
+  // docs/scribble-requirements.md §8 row 12: the scribble timeline draws every embed as its link.
+  it('draws a resolvable embed as its link under embedsAsLinks, and still refuses a bad one', async () => {
+    const href = `https://www.youtube.com/watch?v=${ID}`;
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`, {
+      embedsAsLinks: true,
+    });
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`href="${href}"`);
+    const refused = await renderMdxToHtml(
+      '<div class="embed" data-href="javascript:alert(1)"></div>',
+      { embedsAsLinks: true },
+    );
+    expect(refused.html).not.toContain('<a');
+  });
+
   it('falls back to a plain link for what names no single video (Y4)', async () => {
     for (const href of [
       'https://www.youtube.com/playlist?list=PLabc',

@@ -22,6 +22,16 @@ describe('referencedInDb', () => {
     ]);
   });
 
+  // docs/scribble-requirements.md §8 row 7: a scribble's images are not swept.
+  it('counts an image referenced only by a scribble', () => {
+    const db = createTestSqlite();
+    db.prepare(
+      `INSERT INTO posts (slug, title, date, body, kind)
+       VALUES ('s', 't', '', '![](/uploads/scribble.png)', 'scribble')`,
+    ).run();
+    expect([...referencedInDb(db)]).toEqual(['scribble.png']);
+  });
+
   it('reads a DB the revisions migration has not reached', () => {
     const db = createTestSqlite();
     db.exec('DROP TABLE post_revisions');
