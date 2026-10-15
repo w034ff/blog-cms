@@ -18,6 +18,8 @@ const ARTICLES_MENU_CATEGORIES_LABEL = 'カテゴリ';
 const ARTICLES_MENU_CATEGORIES_HREF = '/categories';
 const ARTICLES_MENU_TAGS_LABEL = 'タグ';
 const ARTICLES_MENU_TAGS_HREF = '/tags';
+const ARTICLES_MENU_SEARCH_LABEL = '検索';
+const ARTICLES_MENU_SEARCH_HREF = '/search';
 
 const POST_BUTTON_LABEL = '投稿する';
 const POST_MENU_ARTICLE_LABEL = '記事';
@@ -36,6 +38,7 @@ const ACCOUNT_MENU_LOGOUT_LABEL = 'ログアウト';
 type MenuItem = {
   readonly label: string;
   readonly href: string;
+  readonly icon?: ReactNode;
 };
 
 const ARTICLES_MENU_ITEMS: readonly MenuItem[] = [
@@ -43,6 +46,22 @@ const ARTICLES_MENU_ITEMS: readonly MenuItem[] = [
   { label: ARTICLES_MENU_CATEGORIES_LABEL, href: ARTICLES_MENU_CATEGORIES_HREF },
   { label: ARTICLES_MENU_TAGS_LABEL, href: ARTICLES_MENU_TAGS_HREF },
 ];
+
+const ARTICLES_SEARCH_MENU_ITEM: MenuItem = {
+  label: ARTICLES_MENU_SEARCH_LABEL,
+  href: ARTICLES_MENU_SEARCH_HREF,
+  icon: (
+    <svg aria-hidden='true' viewBox='0 0 16 16' className='h-3.5 w-3.5 shrink-0'>
+      <path
+        d='M11 6.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0zm-1.3 3.2 3.8 3.8'
+        fill='none'
+        stroke='currentColor'
+        strokeWidth='1.8'
+        strokeLinecap='round'
+      />
+    </svg>
+  ),
+};
 
 const POST_MENU_ITEMS: readonly MenuItem[] = [
   { label: POST_MENU_ARTICLE_LABEL, href: POST_MENU_ARTICLE_HREF },
@@ -69,10 +88,11 @@ function MenuItemLink({
       href={item.href}
       aria-current={isCurrent ? 'page' : undefined}
       onClick={onClick}
-      className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+      className={`${item.icon ? 'flex items-center gap-2' : 'block'} rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
         isCurrent ? 'font-semibold' : ''
       }`}>
-      {item.label}
+      {item.icon}
+      {item.icon ? <span>{item.label}</span> : item.label}
     </Link>
   );
 }
@@ -179,13 +199,21 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
               </button>
             )}>
             {({ close }) => (
-              <ul className='min-w-36'>
-                {ARTICLES_MENU_ITEMS.map((item) => (
-                  <li key={item.href}>
-                    <MenuItemLink item={item} pathname={pathname} onClick={close} />
-                  </li>
-                ))}
-              </ul>
+              <div className='min-w-36'>
+                <ul>
+                  {ARTICLES_MENU_ITEMS.map((item) => (
+                    <li key={item.href}>
+                      <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                    </li>
+                  ))}
+                </ul>
+                <div className='my-1 border-t border-zinc-200 dark:border-zinc-800' />
+                <MenuItemLink
+                  item={ARTICLES_SEARCH_MENU_ITEM}
+                  pathname={pathname}
+                  onClick={close}
+                />
+              </div>
             )}
           </HeaderDropdown>
 

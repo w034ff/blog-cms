@@ -1,5 +1,4 @@
 import type { LibraryTab } from '@/lib/admin-post-list';
-import type { PostKind } from '@/lib/content';
 
 // Tab labels in order (docs/library-requirements.md §6.2).
 export const TAB_LABEL_BOOKMARKS = 'ブックマーク';
@@ -10,15 +9,6 @@ export const TAB_LABELS: Record<LibraryTab, string> = {
   bookmarks: TAB_LABEL_BOOKMARKS,
   likes: TAB_LABEL_LIKES,
   history: TAB_LABEL_HISTORY,
-};
-
-// Kind badges (docs/library-requirements.md §6.2).
-export const KIND_LABEL_POST = '記事';
-export const KIND_LABEL_SCRIBBLE = '走り書き';
-
-export const KIND_LABELS: Record<PostKind, string> = {
-  post: KIND_LABEL_POST,
-  scribble: KIND_LABEL_SCRIBBLE,
 };
 
 // Toggle button aria-labels for unmarking and remarking.

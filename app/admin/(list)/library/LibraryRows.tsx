@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { LibraryTab } from '@/lib/admin-post-list';
 import { formatPostDate } from '@/lib/format';
 import type { LibraryEntry } from '@/lib/library';
-import { KIND_LABEL_POST, KIND_LABEL_SCRIBBLE } from './constants';
+import { KindBadge } from '@/components/KindBadge';
 import { LibraryMarkButton } from './LibraryMarkButton';
 
 // The rows of a library tab (docs/library-requirements.md §6.2), linking to public post pages. No
@@ -38,15 +38,7 @@ export function LibraryRows({
                   )}
                 </Link>
                 <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 sm:flex-nowrap dark:text-zinc-400'>
-                  {entry.kind === 'scribble' ? (
-                    <span className='shrink-0 rounded-chip bg-(--chip-bg) px-1.5 leading-4 text-(--chip-fg)'>
-                      {KIND_LABEL_SCRIBBLE}
-                    </span>
-                  ) : (
-                    <span className='shrink-0 rounded-chip bg-zinc-100 px-1.5 leading-4 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'>
-                      {KIND_LABEL_POST}
-                    </span>
-                  )}
+                  <KindBadge kind={entry.kind} />
                   {entry.date && (
                     <span className='whitespace-nowrap'>公開 {formatPostDate(entry.date)}</span>
                   )}

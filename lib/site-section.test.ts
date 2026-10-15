@@ -29,6 +29,13 @@ describe('getSiteSection (docs/site-header-requirements.md §3.1)', () => {
     expect(getSiteSection('/categoriesbar')).toBeNull();
   });
 
+  it('maps search paths to articles, but excludes boundaries without slash', () => {
+    expect(getSiteSection('/search')).toBe('articles');
+    expect(getSiteSection('/search/')).toBe('articles');
+    expect(getSiteSection('/search/query')).toBe('articles');
+    expect(getSiteSection('/searchx')).toBeNull();
+  });
+
   it('maps scribbles paths to scribbles, but excludes boundaries without slash', () => {
     expect(getSiteSection('/scribbles')).toBe('scribbles');
     expect(getSiteSection('/scribbles/')).toBe('scribbles');
