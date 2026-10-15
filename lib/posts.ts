@@ -1,6 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, or } from 'drizzle-orm';
 import { CATEGORIES, normalizeCategory, type CategoryId, type PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
 import { posts } from '@/lib/db/schema';
@@ -82,6 +82,19 @@ function draftBySlug(kind: PostKind, slug: string): Post | null {
 export async function getAllPosts(): Promise<Post[]> {
   const names = tagNames();
   return listedRows('post').map((row) => toPost(row, names));
+}
+
+// All published, listed posts and scribbles for public search (docs/search-requirements.md §3.1).
+// Excludes drafts, unlisted rows, and private draft_content edits.
+export async function getSearchablePosts(): Promise<Post[]> {
+  const rows = db
+    .select()
+    .from(posts)
+    .where(or(listed('post'), listed('scribble')))
+    .orderBy(desc(posts.date), desc(posts.id))
+    .all();
+  const names = tagNames();
+  return rows.map((row) => toPost(row, names));
 }
 
 // A scribble's slug answers exactly as an unknown one does, since a link card and /api/link-title

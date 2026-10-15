@@ -19,12 +19,12 @@ import { SUMMARY_CLASS, TLDR_CLASS } from './summary-types';
 // opening rather than a paragraph dump.
 export const EXCERPT_MAX_CHARS = 120;
 
-const parser = unified().use(remarkParse).use(remarkGfm);
+export const parser = unified().use(remarkParse).use(remarkGfm);
 
 // The visible words of an inline run. Raw HTML is dropped as markup (the text inside an
 // `<span class="accent-emphasis">` is a sibling `text` node and survives); images and footnote
 // references contribute nothing a reader would read as prose.
-function phrasingText(nodes: PhrasingContent[]): string {
+export function phrasingText(nodes: PhrasingContent[]): string {
   let out = '';
   for (const node of nodes) {
     if (node.type === 'text' || node.type === 'inlineCode') out += node.value;
