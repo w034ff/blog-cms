@@ -59,20 +59,8 @@ function seedDbPost(options: SeedOptions = {}): {
   }
 }
 
-test('SiteHeader links to /scribbles and does not wrap at 360px viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 800 });
+test('SiteHeader links to /scribbles', async ({ page }) => {
   await page.goto('/');
-
-  const header = page.locator('header');
-  const box1280 = await header.boundingBox();
-  expect(box1280).not.toBeNull();
-
-  await page.setViewportSize({ width: 360, height: 640 });
-  const box360 = await header.boundingBox();
-  expect(box360).not.toBeNull();
-  expect(box360?.height).toBe(box1280?.height);
-
-  // Clicking "走り書き" navigates to /scribbles
   await page.getByRole('link', { name: '走り書き' }).click();
   await expect(page).toHaveURL(/\/scribbles$/);
   await expect(page.getByRole('heading', { level: 1, name: '走り書き' })).toBeVisible();

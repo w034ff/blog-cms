@@ -15,7 +15,7 @@ test('an author sees no tag dictionary', async ({ page }) => {
 
   // The list rendered, so the link's absence is the gate and not a page that failed to load.
   await expect(page.getByRole('heading', { name: '記事一覧' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '新規作成' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '投稿する' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'タグの管理', exact: true })).toHaveCount(0);
 
   const response = await page.goto('/admin/tags');

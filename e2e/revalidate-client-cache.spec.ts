@@ -42,7 +42,8 @@ test('a published edit is visible on every surface reached by <Link> alone', asy
   await expect(page).toHaveURL(new RegExp(`/posts/${slug}$`));
   await expect(page.getByText('Body before.')).toBeVisible();
 
-  await page.getByRole('link', { name: '管理' }).click();
+  await page.getByRole('button', { name: 'アカウントのメニュー' }).click();
+  await page.getByRole('link', { name: '管理画面' }).click();
   await expect(page).toHaveURL(/\/admin$/);
 
   // ---- edit the live post and push it public ----
@@ -97,7 +98,8 @@ test('what the client cache does with a change no Server Action announced', asyn
   await expect(page.getByRole('heading', { name: before })).toBeVisible();
   await page.getByRole('link', { name: before }).first().click();
   await expect(page).toHaveURL(new RegExp(`/posts/${slug}$`));
-  await page.getByRole('link', { name: '管理' }).click();
+  await page.getByRole('button', { name: 'アカウントのメニュー' }).click();
+  await page.getByRole('link', { name: '管理画面' }).click();
   await expect(page).toHaveURL(/\/admin$/);
 
   // Change the row with no Server Action involved.
@@ -121,7 +123,8 @@ test('what the client cache does with a change no Server Action announced', asyn
   await expect(page).toHaveURL(new RegExp(`/posts/${slug}$`));
   await expect(page.getByRole('heading', { name: after }), `/posts ${stale}`).toBeVisible();
 
-  await page.locator('a[href="/admin"]').first().click();
+  await page.getByRole('button', { name: 'アカウントのメニュー' }).click();
+  await page.getByRole('link', { name: '管理画面' }).click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole('link', { name: after }), `/admin ${stale}`).toBeVisible();
 

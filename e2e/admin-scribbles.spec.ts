@@ -29,7 +29,7 @@ async function rowId(page: Page): Promise<number> {
 }
 
 test('scribble authoring, listing, settings, and publish flow', async ({ page }) => {
-  // 1. Navigate from left menu to /admin/scribbles and open scribble editor via 新規作成
+  // 1. Navigate from left menu to /admin/scribbles and open scribble editor via SiteHeader
   await page.goto('/admin');
   await expect(page.getByRole('heading', { name: '記事一覧' })).toBeVisible();
 
@@ -40,7 +40,11 @@ test('scribble authoring, listing, settings, and publish flow', async ({ page })
   await expect(page).toHaveURL(/\/admin\/scribbles$/);
   await expect(page.getByRole('heading', { name: '走り書き' })).toBeVisible();
 
-  await page.getByRole('link', { name: '新規作成' }).click();
+  await page.getByRole('button', { name: '投稿する' }).click();
+  await page
+    .getByRole('navigation', { name: 'アカウント' })
+    .getByRole('link', { name: '走り書き' })
+    .click();
   await expect(page).toHaveURL(/\/admin\/posts\/new\?kind=scribble$/);
   await expect(page).toHaveTitle(tabTitle('新しい走り書き'));
 
@@ -124,7 +128,7 @@ test('scribble authoring, listing, settings, and publish flow', async ({ page })
   // PostRowMenu 表示 link (sm:hidden, shown on mobile) also points to /scribbles/<slug>
   await publishedListRow.getByRole('button', { name: 'その他の操作' }).click();
   const menuViewLink = publishedListRow
-    .locator('.admin-popup')
+    .locator('.popup-panel')
     .getByRole('link', { name: '表示', includeHidden: true });
   await expect(menuViewLink).toHaveAttribute('href', `/scribbles/${publishedRow.slug}`);
 

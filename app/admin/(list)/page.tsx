@@ -34,16 +34,11 @@ export default async function AdminHome({
 
   return (
     <section>
-      {/* 新規作成 is the one thing this screen is opened for, so it alone is a button. With no
-          posts the empty state carries it instead (EmptyPostList), so the screen never offers two.
-          No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
-      <div className='mb-6 flex items-center justify-between gap-4'>
+      {/* No 新規作成 here: writing starts from SiteHeader's 「投稿する」, which every list screen
+          wears (docs/site-header-requirements.md §5). With no posts the empty state carries one
+          (EmptyPostList). No サイトを見る: SiteHeader's 「Tech Blog」 goes there. */}
+      <div className='mb-6'>
         <ScreenHeading title='記事一覧' showTags={await isAdmin()} />
-        {all.length > 0 && (
-          <Link href='/admin/posts/new' className='button-primary px-3 py-1.5 text-sm font-medium'>
-            新規作成
-          </Link>
-        )}
       </div>
       {all.length > 0 && <ListControls params={params} counts={countByStatus(narrowed)} />}
       {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are
