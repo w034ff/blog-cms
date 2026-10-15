@@ -1,11 +1,13 @@
 import Link from 'next/link';
 import type { LibraryTab } from '@/lib/admin-post-list';
-import { formatPostDate, formatRelativeTime } from '@/lib/format';
+import { formatPostDate } from '@/lib/format';
 import type { LibraryEntry } from '@/lib/library';
-import { AT_PREFIXES, KIND_LABEL_POST, KIND_LABEL_SCRIBBLE } from './constants';
+import { KIND_LABEL_POST, KIND_LABEL_SCRIBBLE } from './constants';
 import { LibraryMarkButton } from './LibraryMarkButton';
 
-// The rows of a library tab (docs/library-requirements.md §6.2), linking to public post pages.
+// The rows of a library tab (docs/library-requirements.md §6.2), linking to public post pages. No
+// time of the mark: the rows are already newest mark first, and a second time beside 公開 was
+// mistaken for it.
 export function LibraryRows({
   entries,
   tab,
@@ -13,8 +15,6 @@ export function LibraryRows({
   entries: readonly LibraryEntry[];
   tab: LibraryTab;
 }) {
-  const atPrefix = AT_PREFIXES[tab];
-
   return (
     <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
       {entries.map((entry) => {
@@ -47,20 +47,9 @@ export function LibraryRows({
                       {KIND_LABEL_POST}
                     </span>
                   )}
-                  <span className='min-w-0 sm:truncate'>
-                    <span className='whitespace-nowrap'>
-                      {atPrefix}
-                      <time dateTime={new Date(entry.at).toISOString()}>
-                        {formatRelativeTime(entry.at)}
-                      </time>
-                    </span>
-                    {entry.date && (
-                      <>
-                        {' · '}
-                        <span className='whitespace-nowrap'>公開 {formatPostDate(entry.date)}</span>
-                      </>
-                    )}
-                  </span>
+                  {entry.date && (
+                    <span className='whitespace-nowrap'>公開 {formatPostDate(entry.date)}</span>
+                  )}
                 </div>
               </div>
             </div>

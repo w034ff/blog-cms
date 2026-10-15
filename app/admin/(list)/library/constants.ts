@@ -21,17 +21,6 @@ export const KIND_LABELS: Record<PostKind, string> = {
   scribble: KIND_LABEL_SCRIBBLE,
 };
 
-// Prefixes before relative mark / view times.
-export const AT_PREFIX_BOOKMARK = '保存 ';
-export const AT_PREFIX_LIKE = 'いいね ';
-export const AT_PREFIX_HISTORY = '閲覧 ';
-
-export const AT_PREFIXES: Record<LibraryTab, string> = {
-  bookmarks: AT_PREFIX_BOOKMARK,
-  likes: AT_PREFIX_LIKE,
-  history: AT_PREFIX_HISTORY,
-};
-
 // Toggle button aria-labels for unmarking and remarking.
 export const ARIA_LABEL_BOOKMARK_REMOVE = 'ブックマークを外す';
 export const ARIA_LABEL_BOOKMARK_RESTORE = 'ブックマークし直す';
