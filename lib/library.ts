@@ -4,7 +4,7 @@ import type { PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
 import { bookmarks, likes, postViews, posts } from '@/lib/db/schema';
 
-// How many posts an account's 最近見た keeps (docs/library-requirements.md §3.3).
+// How many posts an account's 閲覧履歴 keeps (docs/library-requirements.md §3.3).
 export const RECENT_VIEWS_LIMIT = 100;
 
 export type LibraryTab = 'bookmarks' | 'likes' | 'history';

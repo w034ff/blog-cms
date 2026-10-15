@@ -115,7 +115,7 @@ describe('which visits are kept', () => {
 });
 
 // §8 row 6.
-describe('the length of 最近見た', () => {
+describe('the length of 閲覧履歴', () => {
   it('keeps one row per post, moved to the top on a second visit', () => {
     const first = seed({ title: 'first' });
     const second = seed({ title: 'second' });
