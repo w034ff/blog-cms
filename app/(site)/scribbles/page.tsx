@@ -12,6 +12,7 @@ import {
   calculateTotalPages,
   parsePageNumber,
   scribbleListMetadata,
+  SCRIBBLE_LIST_DESCRIPTION,
   SCRIBBLES_PER_PAGE,
 } from '@/lib/scribble-list';
 
@@ -63,7 +64,7 @@ export default async function ScribblesPage({
     <section className='mx-auto w-full max-w-page'>
       <header className='mb-8'>
         <h1 className='text-3xl font-bold tracking-tight'>走り書き</h1>
-        <p className='mt-2 text-zinc-600 dark:text-zinc-400'>記事にするほどではない、短いメモ。</p>
+        <p className='mt-2 text-zinc-600 dark:text-zinc-400'>{SCRIBBLE_LIST_DESCRIPTION}</p>
       </header>
 
       {renderedScribbles.length === 0 ? (
@@ -79,7 +80,6 @@ export default async function ScribblesPage({
                 <li
                   key={post.slug}
                   className={`relative flex gap-3 sm:gap-6 ${isLast ? '' : 'pb-8'}`}>
-                  {/* Date column */}
                   <div className='w-12 shrink-0 pt-5 text-right sm:w-16 sm:pt-6'>
                     <time
                       dateTime={post.date}
@@ -91,14 +91,12 @@ export default async function ScribblesPage({
                     </time>
                   </div>
 
-                  {/* Vertical line: does not extend downwards on the last row */}
                   <div className='relative flex justify-center'>
                     <div
                       className={`w-px bg-zinc-200 dark:bg-zinc-800 ${isLast ? 'h-full' : 'absolute inset-y-0'}`}
                     />
                   </div>
 
-                  {/* White card */}
                   <article className='min-w-0 flex-1 rounded-panel border border-zinc-200 bg-surface p-5 sm:p-6 dark:border-zinc-800'>
                     <header>
                       <Link href={`/scribbles/${post.slug}`} className='group'>

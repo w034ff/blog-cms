@@ -5,6 +5,7 @@ import {
   parsePageNumber,
   scribbleDetailMetadata,
   scribbleListMetadata,
+  SCRIBBLE_LIST_DESCRIPTION,
   SCRIBBLES_PER_PAGE,
 } from '@/lib/scribble-list';
 import type { Post } from '@/lib/types';
@@ -85,6 +86,7 @@ describe('metadata robots noindex', () => {
     const meta = scribbleListMetadata();
     expect(meta.robots).toEqual({ index: false });
     expect(meta.title).toBe('走り書き');
+    expect(meta.description).toBe(SCRIBBLE_LIST_DESCRIPTION);
 
     const page2Meta = scribbleListMetadata(2);
     expect(page2Meta.robots).toEqual({ index: false });

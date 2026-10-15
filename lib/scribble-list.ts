@@ -5,6 +5,8 @@ import type { Post } from '@/lib/types';
 
 export const SCRIBBLES_PER_PAGE = 20;
 
+export const SCRIBBLE_LIST_DESCRIPTION = '記事にするほどではない、短いメモ。';
+
 // Parses the `?page=` query parameter into a 1-based integer.
 // Missing, non-numeric, less than 1, or fractional values default to 1
 // (docs/scribble-requirements.md §5).
@@ -41,7 +43,7 @@ export function calculateTotalPages(
 export function scribbleListMetadata(page = 1): Metadata {
   return {
     title: page > 1 ? `走り書き (${page} ページ目)` : '走り書き',
-    description: '記事にするほどではない、短いメモ。',
+    description: SCRIBBLE_LIST_DESCRIPTION,
     robots: { index: false },
     openGraph: {
       ...sharedOpenGraph,
