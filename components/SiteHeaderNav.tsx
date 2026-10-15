@@ -20,7 +20,6 @@ const ARTICLES_MENU_TAGS_LABEL = 'タグ';
 const ARTICLES_MENU_TAGS_HREF = '/tags';
 
 const POST_BUTTON_LABEL = '投稿する';
-const POST_MENU_HEADING = '新しく書く';
 const POST_MENU_ARTICLE_LABEL = '記事';
 const POST_MENU_ARTICLE_HREF = '/admin/posts/new';
 const POST_MENU_SCRIBBLE_LABEL = '走り書き';
@@ -233,18 +232,13 @@ export function SiteHeaderNav({ username }: { username: string | null }) {
               </button>
             )}>
             {({ close }) => (
-              <div className='min-w-36'>
-                <div className='px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400'>
-                  {POST_MENU_HEADING}
-                </div>
-                <ul>
-                  {POST_MENU_ITEMS.map((item) => (
-                    <li key={item.href}>
-                      <MenuItemLink item={item} pathname={pathname} onClick={close} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <ul className='min-w-36'>
+                {POST_MENU_ITEMS.map((item) => (
+                  <li key={item.href}>
+                    <MenuItemLink item={item} pathname={pathname} onClick={close} />
+                  </li>
+                ))}
+              </ul>
             )}
           </HeaderDropdown>
 

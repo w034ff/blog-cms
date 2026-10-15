@@ -44,7 +44,7 @@
 
 ログインしているかどうかは `getOptionalSession()`（`lib/dal.ts`）で決める。管理者と著者で同じものを出す。
 
-- 「投稿する」: 黒いボタン（`button-primary`）に「＋」のアイコンと「投稿する」の文字。押すとメニューが開き、小さな灰色の見出し「新しく書く」の下に「記事」（`/admin/posts/new`）と「走り書き」（`/admin/posts/new?kind=scribble`）を出す。
+- 「投稿する」: 黒いボタン（`button-primary`）に「＋」のアイコンと「投稿する」の文字。押すとメニューが開き、「記事」（`/admin/posts/new`）と「走り書き」（`/admin/posts/new?kind=scribble`）を出す。見出しは付けない（ボタンの「投稿する」が既にそれを言っている。オーナー、2026-10-15）。
 - アカウントのボタン: 直径 36px の丸に、`username` の最初の 1 文字を大文字で出す。色はタグの札と同じ `--chip-bg` と `--chip-fg`。`aria-label` は「アカウントのメニュー」。押すとメニューが開く。
   - 上に小さな灰色の文字で「<username> でログイン中」
   - 「ライブラリ」（`/admin/library`）

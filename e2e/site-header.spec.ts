@@ -88,12 +88,12 @@ test('dropdown menus open on click, dismiss on Escape or outside click, restore 
   // 4. Mutually exclusive: opening account button while post menu is open closes post menu
   await postBtn.click();
   await expect(postBtn).toHaveAttribute('aria-expanded', 'true');
-  await expect(accountNav.getByText('新しく書く')).toBeVisible();
+  await expect(accountNav.getByRole('link', { name: '走り書き' })).toBeVisible();
 
   await accountBtn.click();
   await expect(postBtn).toHaveAttribute('aria-expanded', 'false');
   await expect(accountBtn).toHaveAttribute('aria-expanded', 'true');
-  await expect(accountNav.getByText('新しく書く')).toHaveCount(0);
+  await expect(accountNav.getByRole('link', { name: '走り書き' })).toHaveCount(0);
   await expect(accountNav.getByRole('link', { name: 'ライブラリ' })).toBeVisible();
 });
 
