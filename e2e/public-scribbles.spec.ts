@@ -70,7 +70,7 @@ test('SiteHeader links to /scribbles and does not wrap at 360px viewport', async
   await page.setViewportSize({ width: 360, height: 640 });
   const box360 = await header.boundingBox();
   expect(box360).not.toBeNull();
-  expect(box360!.height).toBe(box1280!.height);
+  expect(box360?.height).toBe(box1280?.height);
 
   // Clicking "走り書き" navigates to /scribbles
   await page.getByRole('link', { name: '走り書き' }).click();
@@ -201,7 +201,7 @@ test('Claim 11: long scribble card is clipped at 300px with 続きを読む, sho
   // Clipped body box height is <= 300px
   const longBodyBox = await longRow.locator('[data-scribble-body-box]').boundingBox();
   expect(longBodyBox).not.toBeNull();
-  expect(longBodyBox!.height).toBeLessThanOrEqual(300);
+  expect(longBodyBox?.height).toBeLessThanOrEqual(300);
 
   // Short card does not get "続きを読む →" link
   await expect(shortRow.getByRole('link', { name: '続きを読む →' })).toHaveCount(0);
