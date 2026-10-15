@@ -10,8 +10,9 @@ function randomHexSlug(): string {
 function getUserId(username: string): number {
   const db = new Database(TEST_DB_PATH);
   try {
-    const row = db.prepare('SELECT id FROM users WHERE username = ?').get(username) as
-      { id: number } | undefined;
+    const row = db
+      .prepare<[string], { id: number }>('SELECT id FROM users WHERE username = ?')
+      .get(username);
     if (!row) throw new Error(`User not found: ${username}`);
     return row.id;
   } finally {
@@ -69,9 +70,11 @@ function countRows(
   const db = new Database(TEST_DB_PATH);
   try {
     const row = db
-      .prepare(`SELECT COUNT(*) as c FROM ${table} WHERE user_id = ? AND post_id = ?`)
-      .get(userId, postId) as { c: number };
-    return row.c;
+      .prepare<[number, number], { c: number }>(
+        `SELECT COUNT(*) as c FROM ${table} WHERE user_id = ? AND post_id = ?`,
+      )
+      .get(userId, postId);
+    return row?.c ?? 0;
   } finally {
     db.close();
   }
