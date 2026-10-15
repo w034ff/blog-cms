@@ -33,6 +33,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
         everPublished={post.date !== ''}
         hasPendingEdits={post.hasPendingEdits}
         tagDictionary={listDictionary()}
+        kind={post.kind}
       />
     </section>
   );

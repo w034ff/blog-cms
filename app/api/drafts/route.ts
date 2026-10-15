@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { normalizeCategory } from '@/lib/content';
+import { POST_KINDS, normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
-import { autosavePost, createPost, postExists } from '@/lib/posts-write';
+import { contentForKind } from '@/lib/draft-content';
+import { autosavePost, createPost, postKind } from '@/lib/posts-write';
 import { knownTagSlugs } from '@/lib/tags';
 import { isUploadPath } from '@/lib/thumbnail';
 import { generateUniqueSlug } from '@/lib/slug';
@@ -13,6 +14,9 @@ const autosaveSchema = z.object({
   // Present when updating an existing post. Absent on the first save of a
   // brand-new post, which has no row (and no slug) yet.
   id: z.number().int().optional(),
+  // Read only when the save creates the row; an existing row keeps the kind it was created with.
+  // A missing or unknown value makes a post, the list the editor opened before scribbles existed.
+  kind: z.enum(POST_KINDS).catch('post'),
   content: z.object({
     title: z.string().catch(''),
     // Off-list values (a form that lost the field, an old tab) save under the default rather than
@@ -41,21 +45,22 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid' }, { status: 400 });
   }
-  const { id, content } = parsed.data;
+  const { id, kind: newKind, content: sent } = parsed.data;
 
   // Update intent: stash edits in the right place (live columns for a draft,
   // the private working copy for a published post). No-op if it was deleted.
   if (typeof id === 'number') {
-    if (!postExists(id)) {
+    const kind = postKind(id);
+    if (kind === null) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
-    autosavePost(id, content);
+    autosavePost(id, contentForKind(sent, kind));
     return NextResponse.json({ id, savedAt: Date.now() });
   }
 
   // No row until there is something to keep, so focusing /new leaves no orphan. The slug is
   // fixed now: the URL is stable from the start and publish never touches it.
-  if (content.title.trim() === '' && content.body.trim() === '') {
+  if (sent.title.trim() === '' && sent.body.trim() === '') {
     return NextResponse.json({ skipped: true });
   }
   // Returned: the editor needs its own address to refuse a card pointing at itself
@@ -63,7 +68,8 @@ export async function POST(req: NextRequest) {
   const slug = generateUniqueSlug();
   const newId = createPost({
     slug,
-    ...content,
+    ...contentForKind(sent, newKind),
+    kind: newKind,
     // Unset until first publish stamps the real date; '' marks "never published".
     date: '',
     draft: true,

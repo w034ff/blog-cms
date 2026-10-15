@@ -24,6 +24,32 @@ export function formatPostDate(value: string): string {
   return format(value, DATE_OPTIONS);
 }
 
+// A scribble's timeline date (docs/scribble-requirements.md §5): two tiers, year on top and
+// month/day below, in JST.
+const SCRIBBLE_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  timeZone: 'Asia/Tokyo',
+};
+
+export function formatScribbleDate(value: string): { year: string; monthDay: string } {
+  if (!value) return { year: '', monthDay: '' };
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return { year: '', monthDay: value };
+  const parts = new Intl.DateTimeFormat('ja-JP', SCRIBBLE_DATE_OPTIONS).formatToParts(d);
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+  return { year, monthDay: `${month}/${day}` };
+}
+
+// A scribble page's date, `2026-10-14`: the same JST day as the timeline's, written whole.
+export function formatScribbleDayIso(value: string): string {
+  const { year, monthDay } = formatScribbleDate(value);
+  return year ? `${year}-${monthDay.replace('/', '-')}` : '';
+}
+
 // Whether a post's update date is worth showing next to its publish date — only
 // when they name a different calendar day (JST). Comparing the formatted strings
 // rather than the raw timestamps reuses the same day boundary `formatPostDate`

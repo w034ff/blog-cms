@@ -66,8 +66,12 @@ export function sortPosts(posts: readonly AdminPost[], sort: Sort): AdminPost[] 
   return [...posts].sort((a, b) => b.date.localeCompare(a.date) || byEdited(a, b));
 }
 
-// The list's URL with `change` applied, defaults left out so the plain /admin stays plain.
-export function listHref(params: ListParams, change: Partial<ListParams>): string {
+// The list's URL with `change` applied, defaults left out so the plain basePath stays plain.
+export function listHref(
+  basePath: string,
+  params: ListParams,
+  change: Partial<ListParams>,
+): string {
   const next = { ...params, ...change };
   const query = new URLSearchParams();
   if (next.status !== DEFAULT_PARAMS.status) query.set('status', next.status);
@@ -75,5 +79,5 @@ export function listHref(params: ListParams, change: Partial<ListParams>): strin
   if (next.category !== null) query.set('category', next.category);
   if (next.q !== '') query.set('q', next.q);
   const search = query.toString();
-  return search ? `/admin?${search}` : '/admin';
+  return search ? `${basePath}?${search}` : basePath;
 }

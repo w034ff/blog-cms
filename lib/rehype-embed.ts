@@ -1,7 +1,16 @@
 import type { Root, Element, ElementContent } from 'hast';
+import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
 import { resolveEmbed, type EmbedTarget } from './embed-provider';
 import { externalCardHost } from './link-card-href';
+
+declare module 'vfile' {
+  interface DataMap {
+    // Every embed as its fallback link, never an iframe: for the scribble timeline, where a row of
+    // players would make the list heavy (docs/scribble-requirements.md §5).
+    embedsAsLinks: boolean;
+  }
+}
 
 function hasClass(node: Element, name: string): boolean {
   const className = node.properties.className;
@@ -79,7 +88,8 @@ function fallbackLink(href: string): Element {
 // Synchronous, with nothing to inject (§3.2). Two passes, since removing nodes mid-walk would
 // renumber indices still to be visited.
 export function rehypeEmbed() {
-  return (tree: Root) => {
+  return (tree: Root, file: VFile) => {
+    const asLinks = file.data.embedsAsLinks === true;
     const found: { node: Element; parent: Root | Element; index: number }[] = [];
     visit(tree, 'element', (node: Element, index, parent) => {
       if (node.tagName !== 'div' || !hasClass(node, 'embed')) return;
@@ -96,7 +106,7 @@ export function rehypeEmbed() {
       const href = node.properties.dataHref;
       // An empty reference names nothing and can't degrade to a link.
       if (typeof href !== 'string' || href === '') return null;
-      const target = resolveEmbed(href);
+      const target = asLinks ? null : resolveEmbed(href);
       // Unique per document. Not `embed-`, which is what X names an iframe given no id.
       if (target) return embedElement(target, `emb-${index}`, href);
       // **The fallback is published markup too, built after sanitize**, so `javascript:` must be

@@ -11,11 +11,22 @@ export const ARTICLES: Item = {
   href: '/admin',
   current: (pathname) => pathname === '/admin',
 };
+export const SCRIBBLES: Item = {
+  label: '走り書き',
+  href: '/admin/scribbles',
+  current: (pathname) => pathname.startsWith('/admin/scribbles'),
+};
 export const TAGS: Item = {
   label: 'タグの管理',
   href: '/admin/tags',
   current: (pathname) => pathname.startsWith('/admin/tags'),
 };
+
+// The menu's items in order, shared with ScreenHeading so the rail and the narrow screen's menu
+// cannot disagree. タグの管理 only for an admin (see AdminSideNav).
+export function adminNavItems(showTags: boolean): Item[] {
+  return showTags ? [ARTICLES, SCRIBBLES, TAGS] : [ARTICLES, SCRIBBLES];
+}
 
 // 16px, the size of the list's titles, so the menu reads at the content's weight.
 const itemClass = 'block px-3.5 py-2.5 text-base whitespace-nowrap';
@@ -34,7 +45,7 @@ const otherClass =
 // answer (lib/dal.ts isAdmin), and the page behind it 404s for an author anyway.
 export function AdminSideNav({ showTags }: { showTags: boolean }) {
   const pathname = usePathname();
-  const items = showTags ? [ARTICLES, TAGS] : [ARTICLES];
+  const items = adminNavItems(showTags);
 
   return (
     <nav aria-label='管理' className='hidden w-44 shrink-0 flex-col md:flex'>

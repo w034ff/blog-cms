@@ -72,8 +72,8 @@ const schema: SanitizeSchema = {
 // it), so the fragment-link rewrite can't drift from it.
 const idClobberPrefix = schema.clobber?.includes('id') ? (schema.clobberPrefix ?? '') : '';
 
-// The published side's pipeline, called only by `app/(site)/posts/[slug]/page.tsx`; the editor agrees with
-// it through the stored markdown, not by sharing this module.
+// The published side's pipeline, called by `app/(site)/posts/[slug]/page.tsx` and the public scribble pages;
+// the editor agrees with it through the stored markdown, not by sharing this module.
 //
 // Now that non-admin users can author posts, raw HTML (e.g. <script>, <iframe>, onerror=…) is not
 // trusted and is filtered by rehype-sanitize. **Order matters:** sanitize runs after rehype-raw (so
@@ -129,14 +129,19 @@ const processor = unified()
 
 // `resolveCard` is injected so this module stays pure without the DB (docs/link-card-requirements.md
 // §6), travelling as VFile data because `processor` is built once. Omitted, every card renders as a
-// plain link.
+// plain link. `embedsAsLinks` (lib/rehype-embed.ts) and `fragmentBase`
+// (lib/rehype-clobber-fragment-links.ts) travel the same way.
 export async function renderMdxToHtml(
   source: string,
-  options: { resolveCard?: ResolveCard } = {},
+  options: { resolveCard?: ResolveCard; embedsAsLinks?: boolean; fragmentBase?: string } = {},
 ): Promise<{ html: string; toc: TocEntry[] }> {
   const file = await processor.process({
     value: source,
-    data: { resolveCard: options.resolveCard },
+    data: {
+      resolveCard: options.resolveCard,
+      embedsAsLinks: options.embedsAsLinks,
+      fragmentBase: options.fragmentBase,
+    },
   });
   return { html: String(file), toc: file.data.toc ?? [] };
 }

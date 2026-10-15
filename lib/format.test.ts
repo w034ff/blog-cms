@@ -4,6 +4,8 @@ import {
   formatCharCount,
   formatRelativeTime,
   formatRevisionTime,
+  formatScribbleDate,
+  formatScribbleDayIso,
   hasVisibleUpdate,
 } from '@/lib/format';
 
@@ -77,5 +79,50 @@ describe('formatCharCount', () => {
   it('groups thousands', () => {
     expect(formatCharCount(0)).toBe('0 字');
     expect(formatCharCount(12345)).toBe('12,345 字');
+  });
+});
+
+describe('formatScribbleDayIso', () => {
+  it('writes the JST day whole, rolling over at 15:00 UTC', () => {
+    expect(formatScribbleDayIso('2026-09-05T14:59:00.000Z')).toBe('2026-09-05');
+    expect(formatScribbleDayIso('2026-09-05T15:01:00.000Z')).toBe('2026-09-06');
+    expect(formatScribbleDayIso('')).toBe('');
+  });
+});
+
+describe('formatScribbleDate', () => {
+  it('formats year and month/day in JST', () => {
+    expect(formatScribbleDate('2026-10-14T10:00:00Z')).toEqual({
+      year: '2026',
+      monthDay: '10/14',
+    });
+  });
+
+  // JST is UTC+9 with no DST, so a UTC timestamp just before/after 15:00 falls on different JST days.
+  it('treats a UTC-day-boundary crossing correctly via the JST calendar day', () => {
+    expect(formatScribbleDate('2026-09-05T14:59:00.000Z')).toEqual({
+      year: '2026',
+      monthDay: '09/05',
+    });
+    expect(formatScribbleDate('2026-09-05T15:01:00.000Z')).toEqual({
+      year: '2026',
+      monthDay: '09/06',
+    });
+  });
+
+  it('handles year rollover at the JST boundary', () => {
+    expect(formatScribbleDate('2025-12-31T14:59:00.000Z')).toEqual({
+      year: '2025',
+      monthDay: '12/31',
+    });
+    expect(formatScribbleDate('2025-12-31T15:01:00.000Z')).toEqual({
+      year: '2026',
+      monthDay: '01/01',
+    });
+  });
+
+  it('handles empty or invalid strings safely', () => {
+    expect(formatScribbleDate('')).toEqual({ year: '', monthDay: '' });
+    expect(formatScribbleDate('invalid')).toEqual({ year: '', monthDay: 'invalid' });
   });
 });

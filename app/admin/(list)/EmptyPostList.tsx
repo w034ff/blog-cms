@@ -1,29 +1,68 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
-// 記事一覧 with no posts: the first screen an author who has just joined sees. It carries the
-// screen's only 新規作成 — the heading row drops its own (app/admin/(list)/page.tsx) — so there is
-// one way forward. The supplement names the two kinds of post (lib/content.ts CATEGORIES).
-export function EmptyPostList() {
+// A list with no rows: the drawing on its disc, a heading, a line of supplement and the screen's
+// only 新規作成 — the heading row drops its own (app/admin/(list)/page.tsx and scribbles/page.tsx) —
+// so there is one way forward. Each phrase is an inline-block, so a narrow screen wraps between
+// phrases (「ここか／ら」 otherwise); `word-break: auto-phrase` would do it in Chromium only.
+function EmptyList({
+  drawing,
+  heading,
+  supplement,
+  newHref,
+}: {
+  drawing: ReactNode;
+  heading: readonly string[];
+  supplement: readonly string[];
+  newHref: string;
+}) {
   return (
     <div className='flex flex-col items-center px-4 py-14 text-center'>
-      <div className='empty-illustration flex h-46 w-46 items-center justify-center'>
-        <Typewriter />
-      </div>
-      {/* Each phrase is an inline-block, so a narrow screen wraps between phrases (「ここか／ら」
-          otherwise); `word-break: auto-phrase` would do it in Chromium only. */}
+      <div className='empty-illustration flex h-46 w-46 items-center justify-center'>{drawing}</div>
       <h2 className='mt-6 text-lg font-semibold'>
-        <span className='inline-block'>あなたのアウトプットを、</span>
-        <span className='inline-block'>ここから</span>
+        {heading.map((phrase) => (
+          <span key={phrase} className='inline-block'>
+            {phrase}
+          </span>
+        ))}
       </h2>
       <p className='mt-2 text-sm text-zinc-600 dark:text-zinc-400'>
-        <span className='inline-block'>試して確かめたこと、</span>
-        <span className='inline-block'>考えたことや振り返りを</span>
-        <span className='inline-block'>記事として残せます。</span>
+        {supplement.map((phrase) => (
+          <span key={phrase} className='inline-block'>
+            {phrase}
+          </span>
+        ))}
       </p>
-      <Link href='/admin/posts/new' className='button-primary mt-6 px-5 py-2.5 font-medium'>
+      <Link href={newHref} className='button-primary mt-6 px-5 py-2.5 font-medium'>
         新規作成
       </Link>
     </div>
+  );
+}
+
+// 記事一覧 with no posts: the first screen an author who has just joined sees. The supplement names
+// the two kinds of post (lib/content.ts CATEGORIES).
+export function EmptyPostList() {
+  return (
+    <EmptyList
+      drawing={<Typewriter />}
+      heading={['あなたのアウトプットを、', 'ここから']}
+      supplement={['試して確かめたこと、', '考えたことや振り返りを', '記事として残せます。']}
+      newHref='/admin/posts/new'
+    />
+  );
+}
+
+// 走り書き with none: a note pad rather than the typewriter, since what it asks for is short and
+// unfinished (docs/scribble-requirements.md §1).
+export function EmptyScribbleList() {
+  return (
+    <EmptyList
+      drawing={<NotePad />}
+      heading={['小さな気づきを、', 'ここに']}
+      supplement={['調べている途中のことや', '思いついたことを、', '短いメモのまま公開できます。']}
+      newHref='/admin/posts/new?kind=scribble'
+    />
   );
 }
 
@@ -66,6 +105,65 @@ function Typewriter() {
       <circle cx='58' cy='106' r='4.5' fill='var(--ill-blog)' />
       <circle cx='122' cy='119' r='4.5' fill='var(--ill-tech)' />
       <rect x='76' y='129' width='68' height='6' rx='3' fill='var(--ill-paper)' />
+    </svg>
+  );
+}
+
+// The same palette and frame as the typewriter, so the two empty screens read as one set.
+function NotePad() {
+  return (
+    <svg aria-hidden='true' width='176' height='128' viewBox='0 0 220 160'>
+      {/* A spiral-bound pad, its rings along the top edge. */}
+      <rect
+        x='56'
+        y='16'
+        width='104'
+        height='128'
+        rx='4'
+        fill='var(--ill-paper)'
+        stroke='var(--ill-body)'
+        strokeWidth='2'
+      />
+      <g fill='none' stroke='var(--ill-ink)' strokeWidth='2'>
+        {[70, 84, 98, 112, 126, 140].map((cx) => (
+          <circle key={cx} cx={cx} cy='16' r='4' />
+        ))}
+      </g>
+      {/* A hand-written title and three lines of scribble, the last cut short. */}
+      <path
+        d='M70 40 q5 -6 10 0 t10 0 t10 0 t10 0'
+        fill='none'
+        stroke='var(--ill-body)'
+        strokeWidth='3'
+        strokeLinecap='round'
+      />
+      <g fill='none' stroke='var(--ill-tint)' strokeWidth='3' strokeLinecap='round'>
+        <path d='M70 62 q6 -4 12 0 t12 0 t12 0 t12 0 t12 0 t12 0' />
+        <path d='M70 80 q6 -4 12 0 t12 0 t12 0 t12 0 t12 0' />
+        <path d='M70 98 q6 -4 12 0 t12 0' />
+      </g>
+      <path
+        d='M70 112 l6 6 l12 -14'
+        fill='none'
+        stroke='var(--ill-accent)'
+        strokeWidth='3'
+        strokeLinecap='round'
+        strokeLinejoin='round'
+      />
+      {/* The pencil, laid across the pad's corner: lead, wood, body and eraser. */}
+      <g transform='rotate(-38 160 112)'>
+        <path
+          d='M118 112 L130 106 L130 118 Z'
+          fill='var(--ill-tint)'
+          stroke='var(--ill-ink)'
+          strokeWidth='1.5'
+          strokeLinejoin='round'
+        />
+        <path d='M118 112 L123 109.5 L123 114.5 Z' fill='var(--ill-ink)' />
+        <rect x='130' y='106' width='52' height='12' fill='var(--ill-tech)' />
+        <rect x='182' y='106' width='6' height='12' fill='var(--ill-ink)' />
+        <rect x='188' y='106' width='10' height='12' rx='3' fill='var(--ill-accent)' />
+      </g>
     </svg>
   );
 }

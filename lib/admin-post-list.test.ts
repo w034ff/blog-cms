@@ -23,6 +23,7 @@ function post(overrides: Partial<AdminPost>): AdminPost {
     thumbnail: '',
     unlisted: false,
     updatedAt: '2026-09-01T00:00:00.000Z',
+    kind: 'post',
     editedAt: '2026-09-01T00:00:00.000Z',
     hasPendingEdits: false,
     ...overrides,
@@ -88,13 +89,17 @@ describe('sortPosts', () => {
 
 describe('listHref', () => {
   it('keeps the plain /admin for the defaults', () => {
-    expect(listHref(DEFAULT_PARAMS, {})).toBe('/admin');
+    expect(listHref('/admin', DEFAULT_PARAMS, {})).toBe('/admin');
   });
 
   it('carries the other parameters across a change', () => {
     const params = { ...DEFAULT_PARAMS, category: 'blog' as const, q: 'a b' };
-    expect(listHref(params, { status: 'working' })).toBe(
+    expect(listHref('/admin', params, { status: 'working' })).toBe(
       '/admin?status=working&category=blog&q=a+b',
     );
+  });
+
+  it('formats scribble list destinations', () => {
+    expect(listHref('/admin/scribbles', DEFAULT_PARAMS, {})).toBe('/admin/scribbles');
   });
 });

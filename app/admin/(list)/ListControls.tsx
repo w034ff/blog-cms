@@ -17,20 +17,24 @@ const TABS: { status: Status; label: string }[] = [
 export function ListControls({
   params,
   counts,
+  basePath = '/admin',
+  showCategory = true,
 }: {
   params: ListParams;
   counts: Record<Status, number>;
+  basePath?: string;
+  showCategory?: boolean;
 }) {
   return (
     <>
-      <form action='/admin' role='search' className='relative mb-3'>
+      <form action={basePath} role='search' className='relative mb-3'>
         {params.status !== DEFAULT_PARAMS.status && (
           <input type='hidden' name='status' value={params.status} />
         )}
         {params.sort !== DEFAULT_PARAMS.sort && (
           <input type='hidden' name='sort' value={params.sort} />
         )}
-        {params.category !== null && (
+        {showCategory && params.category !== null && (
           <input type='hidden' name='category' value={params.category} />
         )}
         <svg
@@ -60,7 +64,7 @@ export function ListControls({
             return (
               <Link
                 key={status}
-                href={listHref(params, { status })}
+                href={listHref(basePath, params, { status })}
                 aria-current={current ? 'page' : undefined}
                 className={`border-b-3 py-2 text-base whitespace-nowrap ${
                   current
@@ -76,32 +80,34 @@ export function ListControls({
           })}
         </nav>
         <div className='flex items-center gap-4 pb-2'>
-          <OptionMenu
-            label='カテゴリ'
-            options={[
-              {
-                label: 'すべてのカテゴリ',
-                href: listHref(params, { category: null }),
-                current: params.category === null,
-              },
-              ...CATEGORIES.map(({ id, label }) => ({
-                label,
-                href: listHref(params, { category: id }),
-                current: params.category === id,
-              })),
-            ]}
-          />
+          {showCategory && (
+            <OptionMenu
+              label='カテゴリ'
+              options={[
+                {
+                  label: 'すべてのカテゴリ',
+                  href: listHref(basePath, params, { category: null }),
+                  current: params.category === null,
+                },
+                ...CATEGORIES.map(({ id, label }) => ({
+                  label,
+                  href: listHref(basePath, params, { category: id }),
+                  current: params.category === id,
+                })),
+              ]}
+            />
+          )}
           <OptionMenu
             label='並び替え'
             options={[
               {
                 label: '編集の新しい順',
-                href: listHref(params, { sort: 'edited' }),
+                href: listHref(basePath, params, { sort: 'edited' }),
                 current: params.sort === 'edited',
               },
               {
                 label: '公開日の新しい順',
-                href: listHref(params, { sort: 'published' }),
+                href: listHref(basePath, params, { sort: 'published' }),
                 current: params.sort === 'published',
               },
             ]}

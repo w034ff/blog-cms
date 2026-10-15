@@ -1,4 +1,4 @@
-import type { CategoryId, PostCategory } from '@/lib/content';
+import type { CategoryId, PostCategory, PostKind } from '@/lib/content';
 
 export type PostFrontmatter = {
   title: string;
@@ -45,6 +45,9 @@ export type Post = PostFrontmatter & {
   // since the editor's control was retired (docs/cms-features.md「非公開限定URL投稿」), so it is false
   // everywhere. Kept on Post, off DraftContent, for a possible revival.
   unlisted: boolean;
+  // Off DraftContent: fixed at creation in v1, so it is not an edit that publish could carry
+  // (docs/scribble-requirements.md §7.1 is where that would change).
+  kind: PostKind;
 };
 
 // The editable content of a post, minus its identity (slug), visibility (draft)

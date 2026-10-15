@@ -16,6 +16,7 @@ const published: Post = {
   thumbnail: '',
   unlisted: false,
   updatedAt: '2026-09-30T00:00:00.000Z',
+  kind: 'post',
 };
 
 describe('postToMarkdown', () => {
@@ -38,6 +39,12 @@ describe('postToMarkdown', () => {
       title: 'Tesseract: 日本語の "OCR"',
       draft: true,
     });
+  });
+
+  it('marks a scribble, and only a scribble', () => {
+    const scribble: Post = { ...published, kind: 'scribble', category: '' };
+    expect(matter(postToMarkdown(scribble)).data).toMatchObject({ kind: 'scribble' });
+    expect(matter(postToMarkdown(published)).data).not.toHaveProperty('kind');
   });
 
   it('keeps a chosen thumbnail', () => {

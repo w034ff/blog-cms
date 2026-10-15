@@ -167,6 +167,18 @@ describe('renderMdxToHtml — in-page links', () => {
     expect(html).toContain('href="#user-content-%E5%B0%8E%E5%85%A5"');
   });
 
+  // docs/scribble-requirements.md §5: on the timeline a fragment goes to the body's own page.
+  it('sends a fragment and a footnote reference to fragmentBase, leaving other links alone', async () => {
+    const { html } = await renderMdxToHtml(
+      '## Intro\n\n[to intro](#intro) 注[^a] [top](#) [out](https://example.com/#x)\n\n[^a]: 中身\n',
+      { fragmentBase: '/scribbles/abc' },
+    );
+    expect(html).toContain('href="/scribbles/abc#user-content-intro"');
+    expect(html).toContain('href="/scribbles/abc#user-content-fn-a"');
+    expect(html).toContain('href="#"');
+    expect(html).toContain('href="https://example.com/#x"');
+  });
+
   it('leaves an external link and a bare `#` alone', async () => {
     const { html } = await renderMdxToHtml('[x](https://example.com/#frag) [y](#)\n');
     expect(html).toContain('href="https://example.com/#frag"');
@@ -594,6 +606,21 @@ describe('renderMdxToHtml / embed', () => {
       expect(html, href).not.toContain('<a');
       expect(html, href).not.toContain('evil.example');
     }
+  });
+
+  // docs/scribble-requirements.md §8 row 12: the scribble timeline draws every embed as its link.
+  it('draws a resolvable embed as its link under embedsAsLinks, and still refuses a bad one', async () => {
+    const href = `https://www.youtube.com/watch?v=${ID}`;
+    const { html } = await renderMdxToHtml(`<div class="embed" data-href="${href}"></div>`, {
+      embedsAsLinks: true,
+    });
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain(`href="${href}"`);
+    const refused = await renderMdxToHtml(
+      '<div class="embed" data-href="javascript:alert(1)"></div>',
+      { embedsAsLinks: true },
+    );
+    expect(refused.html).not.toContain('<a');
   });
 
   it('falls back to a plain link for what names no single video (Y4)', async () => {

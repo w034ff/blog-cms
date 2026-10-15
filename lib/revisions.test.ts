@@ -35,6 +35,7 @@ function seed({ draft, body = 'live body' }: { draft: boolean; body?: string }):
     ...content({ body }),
     date: draft ? '' : '2026-01-01T00:00:00.000Z',
     draft,
+    kind: 'post',
   });
 }
 

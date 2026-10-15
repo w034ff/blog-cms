@@ -11,8 +11,14 @@ import {
   getPostForEdit,
   getPostsByCategory,
   getPostsByTag,
+  getScribbleBySlug,
+  getScribbleDraftBySlug,
+  getScribbles,
+  countScribbles,
   listAllPosts,
+  listAllScribbles,
 } from '@/lib/posts';
+import type { PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
 vi.mock('@/lib/db', async () => {
@@ -43,6 +49,7 @@ type SeedOptions = {
   body?: string;
   draftContent?: DraftContent | null;
   unlisted?: boolean;
+  kind?: PostKind;
 };
 
 function seed(options: SeedOptions = {}): number {
@@ -60,6 +67,7 @@ function seed(options: SeedOptions = {}): number {
       body: options.body ?? '',
       draftContent: options.draftContent ?? null,
       unlisted: options.unlisted ?? false,
+      kind: options.kind ?? 'post',
     })
     .returning({ id: posts.id })
     .get().id;
@@ -395,5 +403,61 @@ describe('getAllTags / getAllCategories', () => {
     seed({ slug: 'a', category: 'tech-notes' });
     expect((await getAllPosts())[0].category).toBe('');
     expect(await getAllCategories()).toEqual([]);
+  });
+});
+
+// docs/scribble-requirements.md §4 and §8 row 2: every read is scoped to one kind, so a published
+// scribble never reaches the blog's surfaces and a post never reaches the scribble timeline.
+describe('kinds', () => {
+  function seedBoth(): void {
+    seed({ slug: 'p', title: 'Post', tags: ['shared'], category: 'tech' });
+    seed({ slug: 's', title: 'Scribble', tags: ['shared'], category: '', kind: 'scribble' });
+    seed({ slug: 'pd', title: 'Post draft', draft: true });
+    seed({ slug: 'sd', title: 'Scribble draft', draft: true, kind: 'scribble' });
+  }
+
+  it('keeps scribbles out of every read the blog makes', async () => {
+    seedBoth();
+    expect((await getAllPosts()).map((post) => post.slug)).toEqual(['p']);
+    expect((await getPostsByTag('shared')).map((post) => post.slug)).toEqual(['p']);
+    expect((await getPostsByCategory('tech')).map((post) => post.slug)).toEqual(['p']);
+    expect((await getAllTags()).map((tag) => [tag.slug, tag.count])).toEqual([['shared', 1]]);
+    expect(await getAllCategories()).toEqual([{ category: 'tech', count: 1 }]);
+    expect((await listAllPosts()).map((post) => post.slug).sort()).toEqual(['p', 'pd']);
+  });
+
+  // §8 row 10: a link card asks getPostBySlug, so a scribble answers as an unknown slug does.
+  it('answers a scribble slug on the post side as an unknown one', async () => {
+    seedBoth();
+    expect(await getPostBySlug('s')).toBeNull();
+    expect(await getDraftBySlug('sd')).toBeNull();
+    expect(await getPostBySlug('p')).not.toBeNull();
+  });
+
+  it('reads only scribbles on the scribble side', async () => {
+    seedBoth();
+    expect((await getScribbles()).map((post) => post.slug)).toEqual(['s']);
+    expect(await countScribbles()).toBe(1);
+    expect((await listAllScribbles()).map((post) => post.slug).sort()).toEqual(['s', 'sd']);
+    expect(await getScribbleBySlug('p')).toBeNull();
+    expect(await getScribbleBySlug('sd')).toBeNull();
+    expect((await getScribbleBySlug('s'))?.kind).toBe('scribble');
+    expect(await getScribbleDraftBySlug('pd')).toBeNull();
+    expect((await getScribbleDraftBySlug('sd'))?.title).toBe('Scribble draft');
+  });
+
+  it('leaves an unlisted scribble off the timeline', async () => {
+    seed({ slug: 'u', kind: 'scribble', unlisted: true });
+    expect(await getScribbles()).toEqual([]);
+    expect(await countScribbles()).toBe(0);
+  });
+
+  it('pages the timeline newest first without repeating a row on a tie', async () => {
+    seed({ slug: 'a', kind: 'scribble', date: '2026-10-01' });
+    seed({ slug: 'b', kind: 'scribble', date: '2026-10-03' });
+    seed({ slug: 'c', kind: 'scribble', date: '2026-10-03' });
+    const first = await getScribbles({ limit: 2 });
+    const second = await getScribbles({ limit: 2, offset: 2 });
+    expect([...first, ...second].map((post) => post.slug)).toEqual(['c', 'b', 'a']);
   });
 });
