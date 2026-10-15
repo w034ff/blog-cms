@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { CATEGORIES, type CategoryId, type PostCategory } from '@/lib/content';
+import { CATEGORIES, type CategoryId, type PostCategory, type PostKind } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
 import { TagField } from './TagField';
 import { ThumbnailField } from './ThumbnailField';
@@ -125,6 +125,8 @@ type Props = {
   // True while edits are not yet persisted (§5): leaving would strand them, and an autosave still
   // in flight could land on top of a restore made from the history.
   historyDisabled: boolean;
+  // Post kind: scribbles omit category and thumbnail fields (docs/scribble-requirements.md §3.2).
+  kind: PostKind;
 };
 
 export function PostSettingsPanel({
@@ -146,6 +148,7 @@ export function PostSettingsPanel({
   returnFocusRef,
   historyHref,
   historyDisabled,
+  kind,
 }: Props) {
   const router = useRouter();
   // Past `min-width: 106rem` (§12.25) the backdrop is `pointer-events: none`, but useDismiss listens
@@ -271,16 +274,21 @@ export function PostSettingsPanel({
         </div>
 
         <div className='space-y-4'>
-          {/* サムネイル first: the post's face, and the one state worth seeing on open. */}
-          <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
-          <div>
-            <CategoryField value={category} onChange={onCategoryChange} />
-            {categoryError && (
-              <p role='alert' className='mt-1 text-sm text-red-600'>
-                {categoryError}
-              </p>
-            )}
-          </div>
+          {/* サムネイル first: the post's face, and the one state worth seeing on open.
+              Omitted for scribbles (docs/scribble-requirements.md §3.2). */}
+          {kind !== 'scribble' && (
+            <ThumbnailField value={thumbnail} onChange={onThumbnailChange} body={body} />
+          )}
+          {kind !== 'scribble' && (
+            <div>
+              <CategoryField value={category} onChange={onCategoryChange} />
+              {categoryError && (
+                <p role='alert' className='mt-1 text-sm text-red-600'>
+                  {categoryError}
+                </p>
+              )}
+            </div>
+          )}
           <TagField value={tags} onChange={onTagsChange} dictionary={tagDictionary} />
           {/* 公開 as a switch, last in the group (docs/editor-requirements.md §12.27); not on the
           header, where unpublish would sit one click away all session. A submit button with

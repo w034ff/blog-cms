@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useId, useState } from 'react';
 import { logout } from '@/app/actions/auth';
 import { useDismiss } from '@/components/editor/useDismiss';
-import { ARTICLES, TAGS } from './AdminSideNav';
+import { ARTICLES, SCRIBBLES, TAGS } from './AdminSideNav';
 
 // A management screen's <h1>. From `md` it is the title alone, the rail beside it doing the
 // navigating (AdminSideNav); below that the rail is gone and the title is the button that opens its
@@ -16,7 +16,7 @@ export function ScreenHeading({ title, showTags }: { title: string; showTags: bo
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
-  const items = showTags ? [ARTICLES, TAGS] : [ARTICLES];
+  const items = showTags ? [ARTICLES, SCRIBBLES, TAGS] : [ARTICLES, SCRIBBLES];
 
   return (
     <div ref={ref} className='relative'>

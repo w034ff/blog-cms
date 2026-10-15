@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import type { PostCategory } from '@/lib/content';
+import type { PostCategory, PostKind } from '@/lib/content';
 import type { DictionaryTag } from '@/lib/types';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -62,6 +62,8 @@ type Props = {
   hasPendingEdits: boolean;
   // The tag dictionary (lib/tags.ts), for 記事の設定's タグ field to pick from.
   tagDictionary: DictionaryTag[];
+  // Post kind: 'post' or 'scribble' (docs/scribble-requirements.md §6).
+  kind: PostKind;
 };
 
 const emptyState: PostFormState = {};
@@ -93,6 +95,7 @@ export function PostEditor({
   everPublished: initialEverPublished,
   hasPendingEdits,
   tagDictionary,
+  kind,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // The body's markdown, mirrored into a hidden input that autosave and publish read.
@@ -197,6 +200,7 @@ export function PostEditor({
     useAutosave({
       formRef,
       committedIdRef,
+      kind,
       onCreated: handleCreated,
       onDirty: handleDirty,
       onSessionExpired: setSessionExpired,
@@ -478,14 +482,14 @@ export function PostEditor({
               publish button. `-mx-1` keeps the glyph flush with the title's edge. With nothing
               painted, WCAG 2.5.3 does not apply; the tooltip is `aria-hidden`. */}
           <Link
-            href='/admin'
-            aria-label='記事一覧'
+            href={kind === 'scribble' ? '/admin/scribbles' : '/admin'}
+            aria-label={kind === 'scribble' ? '走り書き' : '記事一覧'}
             // A native `<a>` drag on touch fires `dragstart`, and Chrome cancels the pointer
             // sequence before `click`.
             onDragStart={(event) => event.preventDefault()}
             className='toolbar-button editor-back-link group/tt relative -mx-1 inline-flex items-center rounded-chip px-1 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'>
             <ArrowLeftIcon />
-            <EditorTooltip label='記事一覧' />
+            <EditorTooltip label={kind === 'scribble' ? '走り書き' : '記事一覧'} />
           </Link>
           {/* On the left with the autosave state: this end says what is true of the post, the
               other what can be done. Ahead of the autosave state (see there). */}
@@ -651,6 +655,7 @@ export function PostEditor({
             returnFocusRef={settingsToggleRef}
             historyHref={hasIdentity ? `/admin/posts/${committedId}/revisions` : null}
             historyDisabled={unsaved || pending}
+            kind={kind}
           />
 
           <div className='space-y-2'>
@@ -711,6 +716,7 @@ export function PostEditor({
       <input type='hidden' name='body' value={body} />
       {/* Blank for a new post, so publish creates and publishes. */}
       <input type='hidden' name='id' value={committedId ?? ''} />
+      <input type='hidden' name='kind' value={kind} />
 
       {dragging && <DropOverlay />}
     </form>

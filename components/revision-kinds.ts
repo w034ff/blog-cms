@@ -2,7 +2,7 @@ import type { RevisionReason } from '@/lib/revisions';
 
 // The badges of a revision's kind on the history list (docs/revision-requirements.md §5): a
 // version readers saw in green, the safety copy a restore left in grey, and the pending-edits
-// state in the sky 記事一覧 uses for it (app/admin/(list)/page.tsx).
+// state in the sky 記事一覧 uses for it (app/admin/(list)/PostListRows.tsx).
 
 export type RevisionKind = {
   label: string;

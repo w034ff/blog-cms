@@ -107,7 +107,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
               <Row
                 href={previewHref('live')}
                 heading='公開中の記事'
-                // The same badge 記事一覧 gives the same state (app/admin/(list)/page.tsx).
+                // The same badge 記事一覧 gives the same state (app/admin/(list)/PostListRows.tsx).
                 badge={post.hasPendingEdits ? PENDING_EDITS_KIND : null}
                 title={differingTitle(liveContent(post))}
                 current={isCurrent(liveContent(post))}
