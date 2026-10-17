@@ -434,7 +434,8 @@ body {
   }
 }
 
-/* サムネイル's 画像を選ぶ / 変更 / 解除 (ThumbnailField.tsx): 30px on a pointer, the 40px floor on touch. */
+/* 画像を選ぶ / 変更 / 解除 of サムネイル (ThumbnailField.tsx) and the share image (ShareImageField.tsx):
+   30px on a pointer, the 40px floor on touch. */
 .thumbnail-field-button {
   min-height: 30px;
 }

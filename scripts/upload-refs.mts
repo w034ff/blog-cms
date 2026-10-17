@@ -20,7 +20,7 @@ type PostTextRow = {
 
 // Every column a reference can hide in: `thumbnail` (a card image the body need not mention),
 // `draft_content` (a published post's unpublished edits), `post_revisions.content` (restorable
-// versions, docs/revision-requirements.md §6). JSON is scanned as text, so a shape change cannot
+// versions, docs/revision-requirements.md §6), and `app_settings.value`. JSON is scanned as text, so a shape change cannot
 // narrow it.
 export function referencedInDb(db: Database.Database): Set<string> {
   const refs = new Set<string>();
@@ -43,6 +43,15 @@ export function referencedInDb(db: Database.Database): Set<string> {
       content: string;
     }[];
     for (const revision of revisions) addUploadRefs(refs, revision.content);
+  }
+  // The site's share image (docs/site-settings-requirements.md §9). Every value is scanned, so a
+  // setting added later that holds an upload is kept without a change here.
+  const hasSettings = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings'")
+    .get();
+  if (hasSettings) {
+    const settings = db.prepare('SELECT value FROM app_settings').all() as { value: string }[];
+    for (const setting of settings) addUploadRefs(refs, setting.value);
   }
   return refs;
 }

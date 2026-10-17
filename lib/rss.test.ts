@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildRssFeed, wrapCdata } from '@/lib/rss';
 import { DEFAULT_SITE_DESCRIPTION, DEFAULT_SITE_NAME } from '@/app/shared-metadata';
 
-const SITE = { name: DEFAULT_SITE_NAME, description: DEFAULT_SITE_DESCRIPTION };
+const SITE = { name: DEFAULT_SITE_NAME, description: DEFAULT_SITE_DESCRIPTION, shareImage: '' };
 import type { Post } from '@/lib/types';
 
 function post(overrides: Partial<Post> = {}): Post {

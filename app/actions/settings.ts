@@ -26,6 +26,7 @@ export async function saveSiteSettingsAction(
   const result = validateSiteIdentity({
     name: field(formData, 'name'),
     description: field(formData, 'description'),
+    shareImage: field(formData, 'shareImage'),
   });
   if (!result.ok) return { errors: result.errors };
   saveSiteIdentity(result.value);
