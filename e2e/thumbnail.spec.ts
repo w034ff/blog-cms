@@ -478,6 +478,10 @@ test('a wide viewport keeps the excerpt and tags (CM-9)', async ({ page }) => {
   const row = page.locator(`article:has-text("${title}")`);
   await expect(row.locator('p')).toBeVisible();
   await expect(row.locator('ul')).toBeVisible();
+  // `line-clamp-2` sets `display: -webkit-box`, which this Chrome reports as `flow-root`; a later
+  // `display: block` (`sm:block`) would leave the two-line cut to Chrome's leniency, and browsers
+  // that need the box would not cut at all.
+  await expect(row.locator('p')).not.toHaveCSS('display', 'block');
   const box = (await row.locator('.category-art').boundingBox())!;
   expect(box.width).toBeCloseTo(160, 0);
   expect(box.height).toBeCloseTo(96, 0);

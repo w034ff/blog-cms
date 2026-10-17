@@ -47,9 +47,7 @@ export function PostCard({ post }: Props) {
         {/* Clamped by lines, not EXCERPT_MAX_CHARS, which the meta description, og:description
             and RSS share in full. Shown from `sm`, two lines. */}
         {excerpt && (
-          <p className='mt-3 hidden text-zinc-700 sm:line-clamp-2 sm:block dark:text-zinc-300'>
-            {excerpt}
-          </p>
+          <p className='mt-3 hidden text-zinc-700 sm:line-clamp-2 dark:text-zinc-300'>{excerpt}</p>
         )}
         {post.tagList.length > 0 && (
           <ul className='mt-3 hidden flex-wrap gap-2 sm:flex'>
