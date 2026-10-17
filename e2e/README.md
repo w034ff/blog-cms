@@ -55,8 +55,6 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
   then fails with EADDRINUSE and the spec silently passes against the old build — it happened
   twice. Find the PID with `ps -eo pid,args | grep "[n]ext-server"`, and read the new server's log
   for Ready before running.
-- Uploads still write the real `data/uploads` (content-addressed, deduplicated and GC'd): the
-  upload directory is a fixed path in `app/api/uploads/route.ts`, not keyed by the port.
 - System Chrome via `channel: 'chrome'`; no bundled browser is downloaded. `@playwright/test` is
   exact-pinned and was installed under the repo's supply-chain rules.
 
