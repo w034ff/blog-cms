@@ -37,7 +37,7 @@ async function readablePost(slug: string): Promise<{ post: Post; preview: boolea
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
   const readable = await readablePost(slug);
-  if (!readable) return {};
+  if (!readable) notFound();
   const { post, preview } = readable;
   // A preview says so in the tab, because the page it is previewing will look identical there.
   if (preview) {

@@ -21,4 +21,9 @@ test('an author sees no tag dictionary', async ({ page }) => {
   const response = await page.goto('/admin/tags');
   expect(response?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'タグの管理', exact: true })).toHaveCount(0);
+  // The (list) shell's own not-found.tsx, inside its header rather than under a second one.
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'ページが見つかりません' }),
+  ).toBeVisible();
+  await expect(page.locator('header')).toHaveCount(1);
 });

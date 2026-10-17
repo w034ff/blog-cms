@@ -36,7 +36,7 @@ async function readableScribble(slug: string): Promise<{ post: Post; preview: bo
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { slug } = await params;
   const readable = await readableScribble(slug);
-  if (!readable) return {};
+  if (!readable) notFound();
   return scribbleDetailMetadata(await getSiteIdentity(), readable.post, readable.preview);
 }
 

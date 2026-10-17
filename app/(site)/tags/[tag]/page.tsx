@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { tag } = await params;
   const name = tagNames().get(decodeURIComponent(tag));
-  if (name === undefined) return {};
+  if (name === undefined) notFound();
   const title = `#${name}`;
   // `openGraph` left unset inherits the layout's whole object, so a shared tag page would announce
   // itself as the front page.
