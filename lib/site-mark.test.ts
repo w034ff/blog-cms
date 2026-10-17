@@ -9,13 +9,9 @@ import {
   MARK_LIGHT,
 } from './site-mark';
 
-// The files that draw the mark but cannot import its geometry: the hand-written link-card
-// placeholders and the generated tab icon. A redrawn mark that misses one of them fails here.
-const STATIC_MARKS = [
-  'public/link-card-placeholder.svg',
-  'public/link-card-placeholder-dark.svg',
-  'app/icon.svg',
-];
+// The files that draw the mark but cannot import its geometry: the generated tab icon. A redrawn
+// mark that misses it fails here.
+const STATIC_MARKS = ['app/icon.svg'];
 
 function read(file: string): string {
   return readFileSync(path.join(process.cwd(), file), 'utf8');

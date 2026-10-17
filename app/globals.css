@@ -223,11 +223,42 @@ html {
     vertical-align: 0.05em;
     background: var(--category-color);
   }
-  .category-mark[data-category='tech'] {
+  .category-mark[data-category='tech'],
+  .category-art[data-category='tech'] {
     --category-color: var(--category-tech);
   }
-  .category-mark[data-category='blog'] {
+  .category-mark[data-category='blog'],
+  .category-art[data-category='blog'] {
     --category-color: var(--category-blog);
+  }
+  /* A post with no image, drawn as the site's mark in its category's colour on a tint of it
+     (docs/category-mark-requirements.md §3). The frame's size and radius come from each surface;
+     the mark is 40% of the frame's height, centred. A category-less draft has no `data-category`
+     and falls to the foreground (§3.4). */
+  .category-art {
+    --category-color: var(--foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--category-color) 12%, var(--surface));
+  }
+  /* Sized here because an `<svg>` has no box of its own to inherit one from (editor-pitfalls.md
+     §3.2). */
+  .category-art svg {
+    height: 40%;
+    width: auto;
+    aspect-ratio: 1;
+  }
+  /* The post list's frame only (components/PostCard.tsx): the photo's grey border becomes a tint of
+     the category (§3.1). The link card's frame keeps its own border. */
+  .post-thumbnail-art {
+    border-color: color-mix(in srgb, var(--category-color) 30%, var(--surface));
+  }
+  .category-art-tile {
+    fill: var(--category-color);
+  }
+  .category-art-glyph {
+    stroke: var(--surface);
   }
   /* The empty 記事一覧's typewriter (app/admin/(list)/EmptyPostList.tsx), on a disc of the light
      ground. Both schemes draw it in the light palette — the values below are :root's, held fixed
@@ -2684,15 +2715,6 @@ dialog.image-zoom img {
   margin: 0;
   object-fit: cover;
 }
-/* The house mark, on a card to one of this blog's posts with no image (docs/link-card-requirements.md
-   §17): a logo on a tint (`contain`, padding), not a cropped photo or a failed load. The `<picture>`
-   picks the wordmark per scheme (§17.3). The dark tint is not the hover fill, so the picture area
-   stays distinct under the pointer. Keyed on the class for both surfaces. */
-.prose .link-card-image.link-card-placeholder {
-  object-fit: contain;
-  padding: 1.25em;
-  background: #eaeef2;
-}
 /* A card with no picture (§16.2): the text is centred vertically rather than leaving slack at the
    bottom. Keyed on the anchor, so not the editor's card, whose control band would go out of line
    (§7.1). */
@@ -2911,15 +2933,7 @@ dialog.image-zoom img {
   gap: 0.6em;
   padding: 0.35em 0.5em;
 }
-/* A small square: a list is read down its left edge, so every row's text starts at the same x,
-   and the house mark stands in for a missing picture (§17). */
-/* The house mark's `<picture>` wrapper is the flex item, and Typography gives `picture` `img`'s
-   `2em 0` margin, which a flex item's cross size counts. **`margin` is the whole fix.** `flex:
-   none` keeps a long title from squeezing it. */
-.prose .link-card-result picture {
-  flex: none;
-  margin: 0;
-}
+/* A small square: a list is read down its left edge, so every row's text starts at the same x. */
 .prose .link-card-result-image {
   flex: none;
   width: 2.75rem;
@@ -2927,12 +2941,6 @@ dialog.image-zoom img {
   margin: 0;
   border-radius: 4px;
   object-fit: cover;
-}
-/* The house mark as the card paints it (§17.3), with padding smaller to suit the 44px frame. */
-.prose .link-card-result-image.link-card-result-placeholder {
-  object-fit: contain;
-  padding: 0.3rem;
-  background: #eaeef2;
 }
 .prose .link-card-result-text {
   min-width: 0;
@@ -2980,10 +2988,6 @@ dialog.image-zoom img {
   }
   .prose .link-card-description {
     display: none;
-  }
-  /* The mark keeps its size: the frame shrinks, so the padding gives it room (§15, §16.1). */
-  .prose .link-card-image.link-card-placeholder {
-    padding: 0.5em;
   }
   /* Icons only on the narrowest cards. The label stays as the accessible name, hidden visually rather
      than with `display: none` (§7.4). */
@@ -3206,11 +3210,6 @@ dialog.image-zoom img {
   }
   .prose a.link-card:hover {
     background: #161b22;
-  }
-  /* Dark counterpart of the house mark's tint (§17.3) — the card's frame and the search row's. */
-  .prose .link-card-image.link-card-placeholder,
-  .prose .link-card-result-image.link-card-result-placeholder {
-    background: #1c2128;
   }
   .prose .link-card-view,
   .prose .link-card-search,

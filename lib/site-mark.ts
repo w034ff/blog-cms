@@ -1,8 +1,8 @@
 // The site's mark: 「±」 on a rounded tile (docs/project-status.md §3). Every surface that draws it
 // takes this geometry — SiteMark in the header, app/icon.svg, the favicon and apple icon
-// (scripts/make-icons.mts), og.png (scripts/make-og-image.mts) and the link card's placeholder
-// (public/link-card-placeholder*.svg). The static files cannot import it, so
-// lib/site-mark.test.ts holds them to it.
+// (scripts/make-icons.mts), og.png (scripts/make-og-image.mts) and the category-coloured mark of
+// an imageless post (lib/category-art.ts). The static file cannot import it, so
+// lib/site-mark.test.ts holds it to it.
 export const MARK_VIEW_BOX = '0 0 32 32';
 export const MARK_SIZE = 32;
 export const MARK_TILE_RADIUS = 7;

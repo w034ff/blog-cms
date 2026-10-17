@@ -418,7 +418,18 @@ test('the 記事から選ぶ tab searches this blog’s own posts and inserts a 
 
   await dialog(page).getByRole('tab', { name: '記事から選ぶ' }).click();
   await dialog(page).getByPlaceholder('記事のタイトルで検索…').fill('React');
-  await dialog(page).getByRole('button', { name: 'React Server Components を学ぶよ' }).click();
+  const row = dialog(page).getByRole('button', { name: 'React Server Components を学ぶよ' });
+  // The seeded post has no image, so its row is drawn as its category's mark (CM-6,
+  // docs/category-mark-requirements.md §4) with a size: a React `<svg>` takes it from
+  // `.category-art svg`.
+  const mark = row.locator('.category-art');
+  await expect(mark).toHaveAttribute('data-category', 'tech');
+  await expect(row.locator('img')).toHaveCount(0);
+  const markBox = (await mark.boundingBox())!;
+  expect(markBox.width).toBeCloseTo(44, 0);
+  expect(markBox.height).toBeCloseTo(44, 0);
+  expect((await mark.locator('svg').boundingBox())!.height).toBeGreaterThan(0);
+  await row.click();
 
   await expect(dialog(page)).toHaveCount(0);
   await expect(page.locator('.ProseMirror .link-card-view .link-card-title')).toHaveText(

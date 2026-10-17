@@ -174,13 +174,62 @@ test('a published external card serves its picture through this site (14j)', asy
   expect((await page.request.get(unsigned)).status()).toBe(404);
 });
 
-// §17.3, criterion 17d: the wrong wordmark is black on the dark tint. `currentSrc` in a dark context;
-// the light half is in thumbnail.spec.ts, and both are needed against a `<source>` that always
-// matches.
+// What `var(<name>)` resolves to in this page's scheme, as the `rgb()` string a computed `fill`
+// reports: a probe element, so the test reads the token rather than copying its hex.
+async function tokenColour(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+}
+
+// docs/category-mark-requirements.md §3 (CM-6): the mark takes the picture's frame exactly — the old
+// rules for `.link-card-image` still size and place a `<span>` — and is drawn in the post's
+// category colour. `second-post` has no image and is filed under 技術記事.
+test('a card to a post with no image draws the category mark in the picture’s frame (CM-6)', async ({
+  page,
+}) => {
+  const href = await publish(
+    page,
+    'Public card mark spec',
+    `<div class="link-card" data-href="/posts/${TARGET_SLUG}"></div>\n`,
+  );
+  await page.goto(href);
+
+  const card = page.locator('.prose a.link-card');
+  const mark = card.locator('.link-card-image.category-art');
+  await expect(mark).toHaveCount(1);
+  await expect(mark).toHaveAttribute('data-category', 'tech');
+
+  const cardBox = (await card.boundingBox())!;
+  const box = (await mark.boundingBox())!;
+  expect(box.width).toBeCloseTo(256, 0);
+  expect(box.height).toBeCloseTo(cardBox.height - 2, 0);
+  expect(box.y - cardBox.y).toBeCloseTo(1, 0);
+  expect(cardBox.x + cardBox.width - (box.x + box.width)).toBeCloseTo(1, 0);
+
+  const svgBox = (await mark.locator('svg').boundingBox())!;
+  expect(svgBox.height).toBeCloseTo(box.height * 0.4, 0);
+  expect(svgBox.width).toBeCloseTo(svgBox.height, 0);
+  // Centred in the frame.
+  expect(svgBox.x + svgBox.width / 2).toBeCloseTo(box.x + box.width / 2, 0);
+  expect(svgBox.y + svgBox.height / 2).toBeCloseTo(box.y + box.height / 2, 0);
+
+  expect(await mark.locator('.category-art-tile').evaluate((el) => getComputedStyle(el).fill)).toBe(
+    await tokenColour(page, '--category-tech'),
+  );
+});
+
+// §3.1 (CM-7): the tile's colour follows the scheme through the page's variables alone, so there is
+// no per-scheme file to pick.
 test.describe('in a dark colour scheme', () => {
   test.use({ colorScheme: 'dark' });
 
-  test('the house mark loads its dark file (17d)', async ({ page }) => {
+  test('the mark’s tile takes the dark category colour (CM-7)', async ({ page }) => {
     const href = await publish(
       page,
       'Public card dark mark spec',
@@ -188,13 +237,12 @@ test.describe('in a dark colour scheme', () => {
     );
     await page.goto(href);
 
-    // `second-post` has no image, so the mark.
-    const image = page.locator('.prose a.link-card img.link-card-placeholder');
-    await expect(image).toHaveCount(1);
-    await expect
-      .poll(async () => image.evaluate((el: HTMLImageElement) => el.currentSrc))
-      .toContain('/link-card-placeholder-dark.svg');
-    // The tint follows the same query, from the stylesheet.
-    await expect(image).toHaveCSS('background-color', 'rgb(28, 33, 40)');
+    const tile = page.locator('.prose a.link-card .category-art-tile');
+    await expect(tile).toHaveCount(1);
+    const fill = await tile.evaluate((el) => getComputedStyle(el).fill);
+    expect(fill).toBe(await tokenColour(page, '--category-tech'));
+    // `--category-tech` in app/globals.css's dark block (#ff8a4c), so a probe that merely agreed
+    // with a light-scheme value would fail here.
+    expect(fill).toBe('rgb(255, 138, 76)');
   });
 });

@@ -31,11 +31,11 @@ export async function resolveCard(href: string): Promise<CardTarget | null> {
   const target = await getPostBySlug(reference.slice('/posts/'.length));
   if (!target) return null;
   // resolveThumbnail, so the card shows what the post list shows; the rehype stage trusts this
-  // value. `internalCardImage` turns its `null` into the house mark (§17), kept out of
+  // value. `internalCardImage` turns its `null` into the category's mark (§17), kept out of
   // `resolveThumbnail` because that answer is also `og:image` and the upload sweep's input.
   return {
     title: target.title,
     description: excerptFromBody(target.body),
-    image: internalCardImage(resolveThumbnail(target)),
+    image: internalCardImage(resolveThumbnail(target), target.category),
   };
 }
