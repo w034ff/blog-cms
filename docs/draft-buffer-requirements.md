@@ -1,6 +1,6 @@
 # 編集の手元のバッファ 要件定義
 
-- 状態: 設計（2026-10-17）
+- 状態: 実装済み（2026-10-17）
 - 作成: 2026-10-17、`docs/project-status.md` §6 の「自動保存の手元のバッファ」を次の機能に選んだ相談から
 - 関連: `docs/editor-pitfalls.md` §13.1・§16.1、`docs/revision-requirements.md` §3、`components/editor/useAutosave.ts`（自動保存）、`app/api/drafts/route.ts`（保存の受け口）
 
@@ -81,6 +81,7 @@ JSON で、次を持つ。
 - ［復元］: 控えの内容をタイトル・カテゴリ・タグ・本文・サムネイルに入れ、編集として記録する（`markEdited`）。本文はエディタのコマンドで入れ、React の effect から dispatch しない（`docs/editor-pitfalls.md` §13.1）。帯を閉じる。
 - ［破棄］: 控えを消し、帯を閉じる。
 - どちらも押さずに編集を始めたら、帯は残したまま、その編集で控えを上書きしない。上書きすると、戻せるはずの控えが黙って消えるため。帯を閉じた後の編集から控えを書く。
+- 帯が出ている間にその編集の自動保存が成功しても、控えには触れない（`baseEditedAt` も進めない）。進めると、帯の間に保存した編集を［復元］が上書きするのに、上書きの注意が出なくなる。
 
 ## 6. やらないこと
 
@@ -91,15 +92,16 @@ JSON で、次を持つ。
 
 ## 7. 受け入れ基準
 
-| ID  | 基準                                                                                             | 測り方                                   |
-| --- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| 1   | 保存が失敗している間の編集が、再読み込みの後に帯から復元でき、復元した内容がサーバーに保存される | `e2e/editor-draft-buffer.spec.ts`        |
-| 2   | アプリ内のリンクでデバウンスの間に離れても、戻ったときに帯から最後の打鍵を復元できる             | `e2e/editor-draft-buffer.spec.ts`        |
-| 3   | 保存が成功し、送った内容が控えと一致したときだけ控えを消す。送信中の編集は残る                   | `components/editor/draft-buffer.test.ts` |
-| 4   | 控えとサーバーの内容が改行の違いだけなら、帯を出さずに控えを消す                                 | `components/editor/draft-buffer.test.ts` |
-| 5   | サーバー側の `edited_at` が `baseEditedAt` より新しいとき、上書きの注意を添える                  | `components/editor/draft-buffer.test.ts` |
-| 6   | 形の違う控え、読めない JSON、古い控えは捨てられ、エディタは普通に開く                            | `components/editor/draft-buffer.test.ts` |
-| 7   | 新しい記事の控えは、最初の保存で `new:<kind>` から `post:<id>` へ移る                            | `e2e/editor-draft-buffer.spec.ts`        |
-| 8   | `localStorage` が例外を投げても、自動保存と公開は動く                                            | `components/editor/draft-buffer.test.ts` |
-| 9   | 別の利用者の控えは帯に出ない                                                                     | `components/editor/draft-buffer.test.ts` |
-| 10  | 帯を閉じる前の編集は控えを上書きしない                                                           | `e2e/editor-draft-buffer.spec.ts`        |
+| ID  | 基準                                                                                               | 測り方                                   |
+| --- | -------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| 1   | 保存が失敗している間の編集が、再読み込みの後に帯から復元でき、復元した内容がサーバーに保存される   | `e2e/editor-draft-buffer.spec.ts`        |
+| 2   | アプリ内のリンクでデバウンスの間に離れても、戻ったときに帯から最後の打鍵を復元できる               | `e2e/editor-draft-buffer.spec.ts`        |
+| 3   | 保存が成功し、送った内容が控えと一致したときだけ控えを消す。送信中の編集は残る                     | `components/editor/draft-buffer.test.ts` |
+| 4   | 控えとサーバーの内容が改行の違いだけなら、帯を出さずに控えを消す                                   | `components/editor/draft-buffer.test.ts` |
+| 5   | サーバー側の `edited_at` が `baseEditedAt` より新しいとき、上書きの注意を添える                    | `components/editor/draft-buffer.test.ts` |
+| 6   | 形の違う控え、読めない JSON、古い控えは捨てられ、エディタは普通に開く                              | `components/editor/draft-buffer.test.ts` |
+| 7   | 新しい記事の控えは、最初の保存で `new:<kind>` から `post:<id>` へ移る                              | `e2e/editor-draft-buffer.spec.ts`        |
+| 8   | `localStorage` が例外を投げても、自動保存と公開は動く                                              | `components/editor/draft-buffer.test.ts` |
+| 9   | 別の利用者の控えは帯に出ない                                                                       | `components/editor/draft-buffer.test.ts` |
+| 10  | 帯を閉じる前の編集は控えを上書きしない                                                             | `e2e/editor-draft-buffer.spec.ts`        |
+| 11  | 帯が出ている間に自動保存が成功しても控えの `baseEditedAt` は進まず、再読み込みで上書きの注意が出る | `e2e/editor-draft-buffer.spec.ts`        |

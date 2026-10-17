@@ -190,7 +190,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
     await expect(editor).not.toContainText('【帯が出ている間の編集】');
   });
 
-  test('shows overwrite warning on reload when autosave succeeds while banner is active', async ({
+  test('shows overwrite warning on reload when autosave succeeds while banner is active (§7 基準 11)', async ({
     page,
   }) => {
     await page.goto('/admin/posts/new');
