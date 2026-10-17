@@ -25,12 +25,16 @@ two minutes; the whole suite is many times that (the dated measurement is in
 merge, not before a commit.
 
 ```bash
-npx playwright test e2e/editor-embed.spec.ts          # one file — the default
-npx playwright test e2e/<a>.spec.ts e2e/<b>.spec.ts   # several: one command, one boot
-npx playwright test e2e/<name>.spec.ts:<line>         # one test, by line
-npx playwright test e2e/editor-embed.spec.ts --repeat-each=5 --workers=1   # is it flaky?
-npm run test:e2e                                      # the whole suite
+npm run test:e2e -- e2e/editor-embed.spec.ts          # one file — the default
+npm run test:e2e -- e2e/<a>.spec.ts e2e/<b>.spec.ts   # several: one command, one boot
+npm run test:e2e -- e2e/<name>.spec.ts:<line>         # one test, by line
+npm run test:e2e -- e2e/editor-embed.spec.ts --repeat-each=5 --workers=1   # is it flaky?
+npm run test:e2e:all                                  # the whole suite
 ```
+
+`npm run test:e2e` refuses a run that names no spec (`scripts/e2e-run.mts`), so a spec list
+built by a filter that matched nothing stops instead of running the suite. `npx playwright test`
+has no such guard; go through the script.
 
 `npm run test:e2e:shards` is not a faster way to run the suite; it is for a run
 that needs its own server and DB copy (`e2e/README.md`, "Why four workers and not
