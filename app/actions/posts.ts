@@ -14,6 +14,7 @@ import {
 import { contentForKind } from '@/lib/draft-content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
+import { canCurrentUserEdit, FORBIDDEN_POST_EDIT } from '@/lib/post-access';
 import { commitPost, createPost, deletePost } from '@/lib/posts-write';
 import { generateUniqueSlug } from '@/lib/slug';
 import { getPostForEdit } from '@/lib/posts';
@@ -100,6 +101,9 @@ async function publish(formData: FormData, userId: number): Promise<PostFormStat
   if (id !== null && !existing) {
     return { error: '記事が見つかりません。' };
   }
+  if (id !== null && !(await canCurrentUserEdit(id))) {
+    return { error: FORBIDDEN_POST_EDIT };
+  }
   const kind = existing ? existing.kind : parseNewKind(formData);
   const content = contentForKind(sent, kind);
   // §12.32: a new post has no category until here. The editor opens 記事の設定 on `missingCategory`.
@@ -166,6 +170,9 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
   if (!existing) {
     return { error: '記事が見つかりません。' };
   }
+  if (!(await canCurrentUserEdit(id))) {
+    return { error: FORBIDDEN_POST_EDIT };
+  }
   // Keep the first-publish date so re-publishing later reuses it.
   const editedAt = commitPost(id, contentForKind(sent, existing.kind), true, existing.date);
   if (!editedAt) {
@@ -200,7 +207,7 @@ export async function submitPostAction(
 export async function deletePostAction(formData: FormData): Promise<void> {
   await verifySession();
   const id = parseId(formData);
-  if (id !== null) {
+  if (id !== null && (await canCurrentUserEdit(id))) {
     deletePost(id);
     revalidateBlog();
   }

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
-import { isAdmin } from '@/lib/dal';
+import { isAdmin, verifySession } from '@/lib/dal';
 import { likeCounts } from '@/lib/library';
 import {
   countByStatus,
@@ -21,7 +21,9 @@ export default async function AdminHome({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const all = await listAllPosts();
+  const admin = await isAdmin();
+  const session = await verifySession();
+  const all = await listAllPosts(admin ? undefined : session.userId);
   const likes = likeCounts();
   const params = parseListParams(await searchParams);
   // Category and search first, so the tabs count what each would show; then the tab and the order.
@@ -38,7 +40,7 @@ export default async function AdminHome({
           wears (docs/site-header-requirements.md §5). With no posts the empty state carries one
           (EmptyPostList). No サイトを見る: SiteHeader's brand goes there. */}
       <div className='mb-6'>
-        <ScreenHeading title='記事一覧' showTags={await isAdmin()} />
+        <ScreenHeading title='記事一覧' showTags={admin} />
       </div>
       {all.length > 0 && <ListControls params={params} counts={countByStatus(narrowed)} />}
       {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are

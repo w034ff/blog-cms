@@ -30,6 +30,8 @@ const POST_MENU_SCRIBBLE_HREF = '/admin/posts/new?kind=scribble';
 
 const ACCOUNT_MENU_BUTTON_LABEL = 'アカウントのメニュー';
 const ACCOUNT_MENU_LOGGED_IN_SUFFIX = 'でログイン中';
+const ACCOUNT_MENU_ACCOUNT_LABEL = 'アカウントの設定';
+const ACCOUNT_MENU_ACCOUNT_HREF = '/admin/account';
 const ACCOUNT_MENU_LIBRARY_LABEL = 'ライブラリ';
 const ACCOUNT_MENU_LIBRARY_HREF = '/admin/library';
 const ACCOUNT_MENU_ADMIN_LABEL = '管理画面';
@@ -70,6 +72,7 @@ const POST_MENU_ITEMS: readonly MenuItem[] = [
 ];
 
 const ACCOUNT_MENU_ITEMS: readonly MenuItem[] = [
+  { label: ACCOUNT_MENU_ACCOUNT_LABEL, href: ACCOUNT_MENU_ACCOUNT_HREF },
   { label: ACCOUNT_MENU_LIBRARY_LABEL, href: ACCOUNT_MENU_LIBRARY_HREF },
   { label: ACCOUNT_MENU_ADMIN_LABEL, href: ACCOUNT_MENU_ADMIN_HREF },
 ];

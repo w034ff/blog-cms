@@ -13,6 +13,7 @@ import { CheckIcon } from '@/components/editor/svg/CheckIcon';
 import { ChevronRightIcon } from '@/components/editor/svg/ChevronRightIcon';
 import { EditorTooltip } from '@/components/editor/EditorTooltip';
 import { diffRevision } from '@/lib/revision-diff';
+import { canCurrentUserEdit } from '@/lib/post-access';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,6 +72,7 @@ export default async function RevisionsPage({ params }: { params: Promise<{ id: 
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post || post.slug === null) notFound();
+  if (!(await canCurrentUserEdit(post.id))) notFound();
   const previewHref = (rev: number | 'live') => `/admin/posts/${post.id}/revisions/${rev}`;
   // What the editor opens with: the working copy when there is one.
   const current = post.draftContent ?? liveContent(post);

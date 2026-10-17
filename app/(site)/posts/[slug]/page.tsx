@@ -7,12 +7,14 @@ import { markState } from '@/lib/library';
 import type { Metadata } from 'next';
 import { getDraftBySlug, getPostBySlug } from '@/lib/posts';
 import { getOptionalSession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { renderMdxToHtml } from '@/lib/render';
 import type { Post } from '@/lib/types';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 import { getSiteIdentity } from '@/lib/site-settings';
+import { getPostAuthorDisplayName } from '@/lib/display-name';
 
 type Params = { slug: string };
 
@@ -27,7 +29,9 @@ async function readablePost(slug: string): Promise<{ post: Post; preview: boolea
   if (published) return { post: published, preview: false };
   if (!(await getOptionalSession())) return null;
   const draft = await getDraftBySlug(slug);
-  return draft ? { post: draft, preview: true } : null;
+  if (!draft) return null;
+  if (!(await canCurrentUserEdit(draft.id))) return null;
+  return { post: draft, preview: true };
 }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
@@ -79,6 +83,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
   // would for a reader. The preview shows what will ship, and that includes what will not resolve.
   const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
+  const authorDisplayName = getPostAuthorDisplayName(post.id);
 
   return (
     <>
@@ -87,6 +92,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
         post={post}
         html={html}
         toc={toc}
+        authorDisplayName={authorDisplayName}
         afterBody={
           mark ? (
             <LibraryButtons

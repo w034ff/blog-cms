@@ -4,6 +4,7 @@ import type { LibraryTab } from '@/lib/admin-post-list';
 import type { PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
 import { bookmarks, likes, postViews, posts } from '@/lib/db/schema';
+import { notSuspendedAuthor } from '@/lib/posts';
 
 // How many posts an account's 閲覧履歴 keeps (docs/library-requirements.md §3.3).
 export const RECENT_VIEWS_LIMIT = 100;
@@ -104,7 +105,7 @@ export function listLibrary(userId: number, tab: LibraryTab): LibraryEntry[] {
     })
     .from(table)
     .innerJoin(posts, eq(posts.id, table.postId))
-    .where(and(eq(table.userId, userId), eq(posts.draft, false)))
+    .where(and(eq(table.userId, userId), eq(posts.draft, false), notSuspendedAuthor()))
     .orderBy(desc(at), desc(posts.id))
     .all();
 }

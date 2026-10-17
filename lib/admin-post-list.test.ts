@@ -28,6 +28,7 @@ function post(overrides: Partial<AdminPost>): AdminPost {
     kind: 'post',
     editedAt: '2026-09-01T00:00:00.000Z',
     hasPendingEdits: false,
+    authorId: null,
     ...overrides,
   };
 }

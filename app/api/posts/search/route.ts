@@ -1,7 +1,7 @@
 import { normalizeCategory } from '@/lib/content';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
-import { listAllPosts } from '@/lib/posts';
+import { getSuspendedAuthorIds, listAllPosts } from '@/lib/posts';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import type { PostSearchResult } from '@/lib/types';
 
@@ -13,9 +13,10 @@ import type { PostSearchResult } from '@/lib/types';
 const LIMIT = 20;
 
 export async function GET(req: NextRequest) {
-  // Same gate and same shape as the autosave route: this exposes drafts — unpublished titles —
-  // so it is admin-only, and 401 rather than a redirect keeps the editor mounted.
-  if (!(await getOptionalSession())) {
+  // Gate matching the autosave route: any signed-in author or admin may access this, returning
+  // published posts (excluding suspended authors) and only their own drafts. 401 keeps the editor mounted.
+  const session = await getOptionalSession();
+  if (!session) {
     return new NextResponse(null, { status: 401 });
   }
 
@@ -24,18 +25,27 @@ export async function GET(req: NextRequest) {
   const query = params.get('q')?.trim() ?? '';
 
   // listAllPosts, not getAllPosts: drafts are offered and marked, not hidden (§5.2-4).
+  // Return published posts (excluding suspended authors) and only the signed-in user's drafts
+  // (docs/multi-author-requirements.md §4.2, §5).
   const all = await listAllPosts();
+  const suspended = getSuspendedAuthorIds();
+  const visible = all.filter((post) => {
+    if (post.draft) {
+      return post.authorId === session.userId;
+    }
+    return post.authorId === null || !suspended.has(post.authorId);
+  });
 
   // Slug lookup: what a NodeView asks on every render.
   if (slug !== null) {
-    const post = all.find((candidate) => candidate.slug === slug);
+    const post = visible.find((candidate) => candidate.slug === slug);
     if (!post) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json(toResult(post));
   }
 
   // Case-insensitive title substring: the author picks from a short list of their own posts.
   const needle = query.toLowerCase();
-  const matches = all
+  const matches = visible
     .filter((post) => post.slug !== null)
     .filter((post) => needle === '' || post.title.toLowerCase().includes(needle))
     .slice(0, LIMIT)

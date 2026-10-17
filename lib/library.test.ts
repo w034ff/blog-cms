@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { bookmarks, likes, postViews, posts } from '@/lib/db/schema';
-import { createPost, deletePost } from '@/lib/posts-write';
+import { bookmarks, likes, postViews, posts, users } from '@/lib/db/schema';
+import { deletePost } from '@/lib/posts-write';
 import type { PostKind } from '@/lib/content';
 import {
   RECENT_VIEWS_LIMIT,
@@ -25,7 +25,7 @@ const OTHER = 2;
 let clock = 1_000;
 
 beforeEach(() => {
-  for (const table of [posts, bookmarks, likes, postViews]) db.delete(table).run();
+  for (const table of [posts, bookmarks, likes, postViews, users]) db.delete(table).run();
   // Each write gets its own millisecond, so "newest first" has an answer.
   vi.spyOn(Date, 'now').mockImplementation(() => (clock += 1));
 });
@@ -39,19 +39,23 @@ function seed({
   draft = false,
   kind = 'post',
   title = 'Title',
-}: { authorId?: number; draft?: boolean; kind?: PostKind; title?: string } = {}): number {
-  return createPost({
-    slug: `slug-${Math.random()}`,
-    title,
-    date: draft ? '' : '2026-01-01T00:00:00.000Z',
-    category: kind === 'post' ? 'tech' : '',
-    tags: [],
-    draft,
-    body: 'body',
-    thumbnail: '',
-    kind,
-    authorId,
-  }).id;
+}: { authorId?: number | null; draft?: boolean; kind?: PostKind; title?: string } = {}): number {
+  return db
+    .insert(posts)
+    .values({
+      slug: `slug-${Math.random()}`,
+      title,
+      date: draft ? '' : '2026-01-01T00:00:00.000Z',
+      category: kind === 'post' ? 'tech' : '',
+      tags: [],
+      draft,
+      body: 'body',
+      thumbnail: '',
+      kind,
+      authorId,
+    })
+    .returning({ id: posts.id })
+    .get().id;
 }
 
 function titles(tab: Parameters<typeof listLibrary>[1], userId = ME): string[] {
@@ -198,5 +202,45 @@ describe('listLibrary', () => {
     expect(titles('likes')).toEqual([]);
     db.update(posts).set({ draft: false }).where(eq(posts.id, id)).run();
     expect(titles('likes')).toEqual(['back']);
+  });
+
+  // docs/multi-author-requirements.md §7 row 9.
+  it('excludes posts by suspended authors from library lists, keeping marks, and restores them when unsuspended', () => {
+    db.insert(users)
+      .values([
+        { id: ME, username: 'me', passwordHash: 'dummy', role: 'author' },
+        { id: 2, username: 'active-writer', passwordHash: 'dummy', role: 'author' },
+        {
+          id: 3,
+          username: 'suspended-writer',
+          passwordHash: 'dummy',
+          role: 'author',
+          suspendedAt: '2026-10-17T12:00:00.000Z',
+        },
+      ])
+      .run();
+
+    const activePost = seed({ title: 'active', authorId: 2 });
+    const suspendedPost = seed({ title: 'suspended', authorId: 3 });
+    const orphanPost = seed({ title: 'orphan', authorId: null });
+
+    setBookmark(ME, activePost, true);
+    setBookmark(ME, suspendedPost, true);
+    setBookmark(ME, orphanPost, true);
+
+    expect(titles('bookmarks')).toEqual(['orphan', 'active']);
+
+    // Marks are kept in the database table
+    const allBookmarkPostIds = db
+      .select({ postId: bookmarks.postId })
+      .from(bookmarks)
+      .where(eq(bookmarks.userId, ME))
+      .all()
+      .map((b) => b.postId);
+    expect(allBookmarkPostIds).toContain(suspendedPost);
+
+    // Un-suspend author 3
+    db.update(users).set({ suspendedAt: null }).where(eq(users.id, 3)).run();
+    expect(titles('bookmarks')).toEqual(['orphan', 'suspended', 'active']);
   });
 });

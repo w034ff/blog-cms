@@ -28,6 +28,7 @@ export function PostArticle({
   body,
   column = 'page',
   afterBody,
+  authorDisplayName,
 }: {
   post: Post;
   html: string;
@@ -36,6 +37,7 @@ export function PostArticle({
   body?: ReactNode;
   column?: 'page' | 'editor';
   afterBody?: ReactNode;
+  authorDisplayName?: string;
 }) {
   const inEditor = column === 'editor';
   const showToc = !inEditor && body === undefined && toc.length >= MIN_HEADINGS_FOR_TOC;
@@ -51,6 +53,7 @@ export function PostArticle({
         <header className='mb-8'>
           <h1 className='text-4xl font-bold tracking-tight'>{post.title}</h1>
           <div className='mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-600 dark:text-zinc-400'>
+            {authorDisplayName ? <span data-author-signature>{authorDisplayName}</span> : null}
             {showDates && <time dateTime={post.date}>{formatPostDate(post.date)}</time>}
             {showDates && hasVisibleUpdate(post.date, post.updatedAt) && (
               <time dateTime={post.updatedAt}>更新: {formatPostDate(post.updatedAt)}</time>

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { posts, tags } from '@/lib/db/schema';
+import { posts, tags, users } from '@/lib/db/schema';
 import { db } from '@/lib/db';
 import {
   getAllCategories,
@@ -11,6 +11,7 @@ import {
   getPostForEdit,
   getPostsByCategory,
   getPostsByTag,
+  getSearchablePosts,
   getScribbleBySlug,
   getScribbleDraftBySlug,
   getScribbles,
@@ -29,6 +30,7 @@ vi.mock('@/lib/db', async () => {
 beforeEach(() => {
   db.delete(posts).run();
   db.delete(tags).run();
+  db.delete(users).run();
 });
 
 // Posts hold dictionary slugs and a slug the dictionary lacks is dropped on read, so every tag a
@@ -50,6 +52,7 @@ type SeedOptions = {
   draftContent?: DraftContent | null;
   unlisted?: boolean;
   kind?: PostKind;
+  authorId?: number | null;
 };
 
 function seed(options: SeedOptions = {}): number {
@@ -68,6 +71,7 @@ function seed(options: SeedOptions = {}): number {
       draftContent: options.draftContent ?? null,
       unlisted: options.unlisted ?? false,
       kind: options.kind ?? 'post',
+      authorId: options.authorId ?? null,
     })
     .returning({ id: posts.id })
     .get().id;
@@ -459,5 +463,134 @@ describe('kinds', () => {
     const first = await getScribbles({ limit: 2 });
     const second = await getScribbles({ limit: 2, offset: 2 });
     expect([...first, ...second].map((post) => post.slug)).toEqual(['c', 'b', 'a']);
+  });
+});
+
+// docs/multi-author-requirements.md §7 row 9.
+describe('suspended authors on public surfaces (lib/posts)', () => {
+  function seedUser(id: number, username: string, suspendedAt: string | null = null): void {
+    db.insert(users)
+      .values({
+        id,
+        username,
+        passwordHash: 'dummy',
+        role: 'author',
+        suspendedAt,
+      })
+      .run();
+  }
+
+  it('excludes posts by suspended authors from all public reads and restores them when unsuspended', async () => {
+    seedUser(1, 'active', null);
+    seedUser(2, 'suspended', '2026-10-17T12:00:00.000Z');
+
+    seed({
+      slug: 'active-post',
+      title: 'Active Post',
+      category: 'tech',
+      tags: ['active-tag'],
+      authorId: 1,
+    });
+    seed({
+      slug: 'suspended-post',
+      title: 'Suspended Post',
+      category: 'blog',
+      tags: ['suspended-tag'],
+      authorId: 2,
+    });
+    seed({
+      slug: 'orphan-post',
+      title: 'Orphan Post',
+      category: 'tech',
+      tags: ['orphan-tag'],
+      authorId: null,
+    });
+
+    seed({
+      slug: 'active-scribble',
+      title: 'Active Scribble',
+      kind: 'scribble',
+      authorId: 1,
+    });
+    seed({
+      slug: 'suspended-scribble',
+      title: 'Suspended Scribble',
+      kind: 'scribble',
+      authorId: 2,
+    });
+    seed({
+      slug: 'orphan-scribble',
+      title: 'Orphan Scribble',
+      kind: 'scribble',
+      authorId: null,
+    });
+
+    // 1. getAllPosts
+    expect((await getAllPosts()).map((p) => p.slug)).toEqual(['orphan-post', 'active-post']);
+
+    // 2. getSearchablePosts
+    expect((await getSearchablePosts()).map((p) => p.slug)).toEqual([
+      'orphan-scribble',
+      'active-scribble',
+      'orphan-post',
+      'active-post',
+    ]);
+
+    // 3. getPostBySlug
+    expect(await getPostBySlug('active-post')).not.toBeNull();
+    expect(await getPostBySlug('orphan-post')).not.toBeNull();
+    expect(await getPostBySlug('suspended-post')).toBeNull();
+
+    // 4. getScribbles
+    expect((await getScribbles()).map((p) => p.slug)).toEqual([
+      'orphan-scribble',
+      'active-scribble',
+    ]);
+
+    // 5. countScribbles
+    expect(await countScribbles()).toBe(2);
+
+    // 6. getScribbleBySlug
+    expect(await getScribbleBySlug('active-scribble')).not.toBeNull();
+    expect(await getScribbleBySlug('orphan-scribble')).not.toBeNull();
+    expect(await getScribbleBySlug('suspended-scribble')).toBeNull();
+
+    // 7. getAllTags
+    const tagSlugs = (await getAllTags()).map((t) => t.slug);
+    expect(tagSlugs).toContain('active-tag');
+    expect(tagSlugs).toContain('orphan-tag');
+    expect(tagSlugs).not.toContain('suspended-tag');
+
+    // 8. getAllCategories
+    const categories = await getAllCategories();
+    expect(categories.find((c) => c.category === 'tech')?.count).toBe(2);
+    expect(categories.find((c) => c.category === 'blog')).toBeUndefined();
+
+    // Un-suspend author 2 and verify everything is restored
+    db.update(users).set({ suspendedAt: null }).where(eq(users.id, 2)).run();
+
+    expect((await getAllPosts()).map((p) => p.slug)).toEqual([
+      'orphan-post',
+      'suspended-post',
+      'active-post',
+    ]);
+    expect((await getSearchablePosts()).map((p) => p.slug)).toEqual([
+      'orphan-scribble',
+      'suspended-scribble',
+      'active-scribble',
+      'orphan-post',
+      'suspended-post',
+      'active-post',
+    ]);
+    expect(await getPostBySlug('suspended-post')).not.toBeNull();
+    expect((await getScribbles()).map((p) => p.slug)).toEqual([
+      'orphan-scribble',
+      'suspended-scribble',
+      'active-scribble',
+    ]);
+    expect(await countScribbles()).toBe(3);
+    expect(await getScribbleBySlug('suspended-scribble')).not.toBeNull();
+    expect((await getAllTags()).map((t) => t.slug)).toContain('suspended-tag');
+    expect((await getAllCategories()).find((c) => c.category === 'blog')?.count).toBe(1);
   });
 });

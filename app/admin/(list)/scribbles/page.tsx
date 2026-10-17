@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { listAllScribbles } from '@/lib/posts';
-import { isAdmin } from '@/lib/dal';
+import { isAdmin, verifySession } from '@/lib/dal';
 import { likeCounts } from '@/lib/library';
 import {
   countByStatus,
@@ -23,7 +23,9 @@ export default async function AdminScribblesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const all = await listAllScribbles();
+  const admin = await isAdmin();
+  const session = await verifySession();
+  const all = await listAllScribbles(admin ? undefined : session.userId);
   const likes = likeCounts();
   // Scribbles omit category filtering (docs/scribble-requirements.md §6):
   // even if ?category= is present in the URL, ignore it so scribbles are not filtered out.
@@ -37,7 +39,7 @@ export default async function AdminScribblesPage({
   return (
     <section>
       <div className='mb-6'>
-        <ScreenHeading title='走り書き' showTags={await isAdmin()} />
+        <ScreenHeading title='走り書き' showTags={admin} />
       </div>
       {all.length > 0 && (
         <ListControls

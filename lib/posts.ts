@@ -1,9 +1,9 @@
 import 'server-only';
 import { z } from 'zod';
-import { and, count, desc, eq, or } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, isNull, notInArray, or } from 'drizzle-orm';
 import { CATEGORIES, normalizeCategory, type CategoryId, type PostKind } from '@/lib/content';
 import { db } from '@/lib/db';
-import { posts } from '@/lib/db/schema';
+import { posts, users } from '@/lib/db/schema';
 import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
 import { resolveTags, tagNames } from '@/lib/tags';
 import type { CategoryCount, DraftContent, Post, TagCount } from '@/lib/types';
@@ -22,9 +22,14 @@ export type PostForEdit = Post & {
 };
 
 // What the admin list needs beyond a Post: whether a published post is carrying edits readers
-// cannot see yet, and when the author last touched it (lib/db/schema.ts `editedAt`). Narrowed the same way PostForEdit is, and for the same reason — the public
+// cannot see yet, when the author last touched it (lib/db/schema.ts `editedAt`), and the author's id.
+// Narrowed the same way PostForEdit is, and for the same reason — the public
 // surfaces have no use for it, and Post reaches every one of them.
-export type AdminPost = Post & { hasPendingEdits: boolean; editedAt: string };
+export type AdminPost = Post & {
+  hasPendingEdits: boolean;
+  editedAt: string;
+  authorId: number | null;
+};
 
 // `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
 // the dictionary does not have is dropped here, so no surface draws a tag whose page is a 404.
@@ -47,10 +52,33 @@ function toPost(row: PostRow, names: ReadonlyMap<string, string>): Post {
   };
 }
 
+// Public reads exclude posts by suspended authors (docs/multi-author-requirements.md §5).
+// Rows with no author (authorId === null) are retained.
+export function notSuspendedAuthor() {
+  return or(
+    isNull(posts.authorId),
+    notInArray(
+      posts.authorId,
+      db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)),
+    ),
+  );
+}
+
+// Set of user IDs whose accounts are currently suspended.
+export function getSuspendedAuthorIds(): Set<number> {
+  const rows = db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)).all();
+  return new Set(rows.map((r) => r.id));
+}
+
 // Every read below is scoped to one kind here, not by its callers: a page that forgot to filter
 // would leak scribbles into the home page or the RSS feed (docs/scribble-requirements.md §4).
 function listed(kind: PostKind) {
-  return and(eq(posts.kind, kind), eq(posts.draft, false), eq(posts.unlisted, false));
+  return and(
+    eq(posts.kind, kind),
+    eq(posts.draft, false),
+    eq(posts.unlisted, false),
+    notSuspendedAuthor(),
+  );
 }
 
 function listedRows(kind: PostKind, page: ListPage = {}): PostRow[] {
@@ -68,7 +96,11 @@ function listedRows(kind: PostKind, page: ListPage = {}): PostRow[] {
 }
 
 function publishedBySlug(kind: PostKind, slug: string): Post | null {
-  const row = db.select().from(posts).where(eq(posts.slug, slug)).get();
+  const row = db
+    .select()
+    .from(posts)
+    .where(and(eq(posts.slug, slug), notSuspendedAuthor()))
+    .get();
   if (!row || row.draft || row.kind !== kind) return null;
   return toPost(row, tagNames());
 }
@@ -150,23 +182,33 @@ export async function getScribbleDraftBySlug(slug: string): Promise<Post | null>
 //
 // This list is the only place that state can be noticed after the fact. In the editor it is the
 // publish button's own enabled state, which you have to already be in the editor to read.
-export async function listAllPosts(): Promise<AdminPost[]> {
-  return listAll('post');
+export async function listAllPosts(authorId?: number): Promise<AdminPost[]> {
+  return listAll('post', authorId);
 }
 
 // The admin list of scribbles, separate from 記事一覧 (docs/scribble-requirements.md §6).
-export async function listAllScribbles(): Promise<AdminPost[]> {
-  return listAll('scribble');
+export async function listAllScribbles(authorId?: number): Promise<AdminPost[]> {
+  return listAll('scribble', authorId);
 }
 
-function listAll(kind: PostKind): AdminPost[] {
-  const rows = db.select().from(posts).where(eq(posts.kind, kind)).orderBy(desc(posts.date)).all();
+function listAll(kind: PostKind, authorId?: number): AdminPost[] {
+  const conditions = [eq(posts.kind, kind)];
+  if (authorId !== undefined) {
+    conditions.push(eq(posts.authorId, authorId));
+  }
+  const rows = db
+    .select()
+    .from(posts)
+    .where(and(...conditions))
+    .orderBy(desc(posts.date))
+    .all();
   const names = tagNames();
   return rows.map((row) => {
     const post = toPost(row, names);
     return {
       ...post,
       editedAt: row.editedAt,
+      authorId: row.authorId,
       hasPendingEdits: hasUnpublishedEdits(
         post,
         row.draftContent ? normalizeDraftContent(row.draftContent) : null,

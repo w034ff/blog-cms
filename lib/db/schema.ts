@@ -89,6 +89,8 @@ export const users = sqliteTable('users', {
   role: text('role', { enum: ['admin', 'author'] })
     .notNull()
     .default('author'),
+  displayName: text('display_name').notNull().default(''),
+  suspendedAt: text('suspended_at'),
 });
 
 // What is known about an external link card's target (docs/link-card-requirements.md §14.3). The

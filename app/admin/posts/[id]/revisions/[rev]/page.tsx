@@ -13,8 +13,10 @@ import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
 import { diffRevision } from '@/lib/revision-diff';
 import { getRevision } from '@/lib/revisions';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { resolveTags, tagNames } from '@/lib/tags';
 import type { DraftContent, Post } from '@/lib/types';
+import { getPostAuthorDisplayName } from '@/lib/display-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,6 +80,7 @@ export default async function RevisionPreviewPage({
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
+  if (!(await canCurrentUserEdit(post.id))) notFound();
   const version = versionOf(post, rev);
   if (!version) notFound();
   const names = tagNames();
@@ -159,6 +162,7 @@ export default async function RevisionPreviewPage({
         toc={toc}
         showDates={false}
         column='editor'
+        authorDisplayName={getPostAuthorDisplayName(post.id)}
         body={
           showDiff ? (
             <div id='revision-diff'>
