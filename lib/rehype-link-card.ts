@@ -1,6 +1,7 @@
 import type { Root, Element, ElementContent } from 'hast';
 import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
+import { hasClass } from './hast-class';
 import { externalCardHost, isCardHref } from './link-card-href';
 import { CARD_PLACEHOLDER_DARK_SRC, type CardImage } from './link-card-image';
 
@@ -13,11 +14,6 @@ declare module 'vfile' {
   interface DataMap {
     resolveCard: ResolveCard;
   }
-}
-
-function hasClass(node: Element, name: string): boolean {
-  const className = node.properties.className;
-  return Array.isArray(className) && className.includes(name);
 }
 
 // The resolved card: a text column and the image beside it, all in one `<a>`. Built after sanitize,
