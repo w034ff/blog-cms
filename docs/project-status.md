@@ -83,7 +83,9 @@ OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署�
 
 `users.role`（`admin` / `author`、既定は author。`drizzle/0012_user_role.sql` が既存の行を admin にする）と、`lib/dal.ts` の `isAdmin` / `verifyAdmin`。役割は検査のたびに DB から読み、JWT には入れない（下の設計の「`SessionPayload` に role を足す」はこれで置き換わった）。最初の利用者は `/admin/tags` の管理者限定（`docs/editor-requirements.md` §12.33.1）。
 
-`posts.authorId`（2026-10-15、`docs/library-requirements.md` §3.1）。作成のたびにセッションの利用者を入れ、`drizzle/0015_library.sql` が既存の行を最も id の小さい管理者で埋める。今読むのはライブラリのいいねと閲覧の記録だけで、下の「強制」はまだ無い。
+`posts.authorId`（2026-10-15、`docs/library-requirements.md` §3.1）。作成のたびにセッションの利用者を入れ、`drizzle/0015_library.sql` が既存の行を最も id の小さい管理者で埋める。ライブラリのいいねと閲覧の記録、第 1 段の所有の強制と管理画面の一覧の絞り込みが読む。
+
+第 1 段（2026-10-17、`docs/multi-author-requirements.md`）: 所有の強制（`lib/post-access.ts`）、停止（`users.suspended_at`、`lib/dal.ts` と公開側の読み込み）、表示名と署名（`users.display_name`、`/admin/account`）。下の「強制」と、著者がログインできるようになったら足すテストのうち `app/actions/posts.ts`・`app/actions/revisions.ts`・`app/actions/tags.ts`・`app/actions/settings.ts` の分は、ここで済んでいる。
 
 ### 7.3 設計の骨組み（作るとき）
 

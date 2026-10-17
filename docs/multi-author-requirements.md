@@ -1,6 +1,6 @@
 # 複数の著者 要件定義
 
-- 状態: 設計（2026-10-17）
+- 状態: 第 1 段（§1〜§8）は実装済み（2026-10-17）。OAuth の段は未設計
 - 作成: 2026-10-17、`docs/project-status.md` §7 の複数の著者のうち、OAuth なしで作れる部分を先に作る相談から
 - 関連: `docs/project-status.md` §7、`docs/site-header-requirements.md` §3.3・§8、`docs/library-requirements.md`、`lib/dal.ts`、`lib/posts.ts`
 
