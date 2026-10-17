@@ -1,5 +1,6 @@
 import type { Root, Element } from 'hast';
 import { visit } from 'unist-util-visit';
+import { hasClass } from './hast-class';
 
 // Which published links open in a new tab (docs/link-requirements.md §7.2):
 //
@@ -23,8 +24,7 @@ import { visit } from 'unist-util-visit';
 // No `rel`: browsers imply `noopener` for `target="_blank"`, and `noreferrer` would withhold what §7
 // declines to withhold with `nofollow`.
 function isLinkCard(node: Element): boolean {
-  const className = node.properties.className;
-  return Array.isArray(className) && className.includes('link-card');
+  return hasClass(node, 'link-card');
 }
 
 export function rehypeNewTabLinks() {
