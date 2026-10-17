@@ -70,17 +70,14 @@ export async function POST(req: NextRequest) {
   // Returned: the editor needs its own address to refuse a card pointing at itself
   // (docs/link-card-requirements.md §18), and this is when a new post first has one.
   const slug = generateUniqueSlug();
-  const { id: newId, editedAt } = createPost(
-    {
-      slug,
-      ...contentForKind(sent, newKind),
-      kind: newKind,
-      // Unset until first publish stamps the real date; '' marks "never published".
-      date: '',
-      draft: true,
-      authorId: session.userId,
-    },
-    true,
-  );
+  const { id: newId, editedAt } = createPost({
+    slug,
+    ...contentForKind(sent, newKind),
+    kind: newKind,
+    // Unset until first publish stamps the real date; '' marks "never published".
+    date: '',
+    draft: true,
+    authorId: session.userId,
+  });
   return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true, editedAt });
 }

@@ -55,10 +55,8 @@ export type CreatePostResult = {
   editedAt: string;
 };
 
-// Insert a new post and return its generated id (or id and editedAt timestamp when requested).
-export function createPost(input: PostInput): number;
-export function createPost(input: PostInput, details: true): CreatePostResult;
-export function createPost(input: PostInput, details?: boolean): number | CreatePostResult {
+// Insert a new post and return its generated id and editedAt timestamp.
+export function createPost(input: PostInput): CreatePostResult {
   const now = new Date().toISOString();
   const row = db
     .insert(posts)
@@ -71,10 +69,7 @@ export function createPost(input: PostInput, details?: boolean): number | Create
     })
     .returning({ id: posts.id })
     .get();
-  if (details) {
-    return { id: row.id, editedAt: now };
-  }
-  return row.id;
+  return { id: row.id, editedAt: now };
 }
 
 // Revisions and library rows go with the post, in the same transaction (docs/revision-requirements.md
@@ -132,11 +127,6 @@ export function autosavePost(id: number, content: DraftContent): string | null {
   return now;
 }
 
-export type CommitPostResult = {
-  ok: boolean;
-  editedAt: string | null;
-};
-
 // Commit content to the live (public) columns and set visibility, discarding any
 // pending working copy. Used by both publish (draft=false) and unpublish
 // (draft=true): the button click carries the current editor content, so the
@@ -148,9 +138,9 @@ export type CommitPostResult = {
 // at first publish and preserved verbatim thereafter (re-publish, plain update,
 // and unpublish all pass the existing value back), so it reflects when the post
 // first went live rather than the latest edit.
-// Returns false (or ok: false) if the row was gone by the time this ran (e.g. deleted from
-// another tab between the caller's existence check and this call) instead of
-// silently no-oping the update.
+// Returns the written editedAt timestamp, or null if the row was gone by the time
+// this ran (e.g. deleted from another tab between the caller's existence check
+// and this call) instead of silently no-oping the update.
 //
 // A published post's live version is kept as a `publish` revision before it is replaced
 // (docs/revision-requirements.md §3) — here rather than at the moment it went live, so a post
@@ -161,43 +151,34 @@ export function commitPost(
   content: DraftContent,
   draft: boolean,
   date: string,
-): boolean;
-export function commitPost(
-  id: number,
-  content: DraftContent,
-  draft: boolean,
-  date: string,
-  details: true,
-): CommitPostResult;
-export function commitPost(
-  id: number,
-  content: DraftContent,
-  draft: boolean,
-  date: string,
-  details?: boolean,
-): boolean | CommitPostResult {
+): string | null {
   return db.transaction(() => {
     const row = db.select().from(posts).where(eq(posts.id, id)).get();
-    if (!row) return details ? { ok: false, editedAt: null } : false;
+    if (!row) return null;
     if (!row.draft) recordRevision(id, 'publish', liveContentOfRow(row));
-    const now = new Date().toISOString();
-    const result = db
-      .update(posts)
-      .set({
-        ...content,
-        body: normalizeNewlines(content.body),
-        date,
-        draft,
-        draftContent: null,
-        updatedAt: now,
-        editedAt: now,
-      })
-      .where(eq(posts.id, id))
-      .run();
-    const ok = result.changes > 0;
-    if (details) {
-      return { ok, editedAt: ok ? now : null };
-    }
-    return ok;
+    return writeCommit(id, content, draft, date);
   });
+}
+
+function writeCommit(
+  id: number,
+  content: DraftContent,
+  draft: boolean,
+  date: string,
+): string | null {
+  const now = new Date().toISOString();
+  const result = db
+    .update(posts)
+    .set({
+      ...content,
+      body: normalizeNewlines(content.body),
+      date,
+      draft,
+      draftContent: null,
+      updatedAt: now,
+      editedAt: now,
+    })
+    .where(eq(posts.id, id))
+    .run();
+  return result.changes > 0 ? now : null;
 }

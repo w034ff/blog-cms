@@ -122,8 +122,8 @@ async function publish(formData: FormData, userId: number): Promise<PostFormStat
   if (id !== null && existing) {
     // First publish stamps the date; once set it never changes.
     const date = existing.date || new Date().toISOString();
-    const commit = commitPost(id, content, false, date, true);
-    if (!commit.ok || !commit.editedAt) {
+    const editedAt = commitPost(id, content, false, date);
+    if (!editedAt) {
       return { error: '記事が見つかりません。' };
     }
     revalidateBlog();
@@ -133,24 +133,21 @@ async function publish(formData: FormData, userId: number): Promise<PostFormStat
         slug: existing.slug,
         published: true,
         at: Date.now(),
-        editedAt: commit.editedAt,
+        editedAt,
       },
     };
   }
 
   // Create-and-publish.
   const slug = generateUniqueSlug();
-  const { id: newId, editedAt } = createPost(
-    {
-      slug,
-      ...content,
-      kind,
-      date: new Date().toISOString(),
-      draft: false,
-      authorId: userId,
-    },
-    true,
-  );
+  const { id: newId, editedAt } = createPost({
+    slug,
+    ...content,
+    kind,
+    date: new Date().toISOString(),
+    draft: false,
+    authorId: userId,
+  });
   revalidateBlog();
   return { saved: { id: newId, slug, published: true, at: Date.now(), editedAt } };
 }
@@ -170,8 +167,8 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
     return { error: '記事が見つかりません。' };
   }
   // Keep the first-publish date so re-publishing later reuses it.
-  const commit = commitPost(id, contentForKind(sent, existing.kind), true, existing.date, true);
-  if (!commit.ok || !commit.editedAt) {
+  const editedAt = commitPost(id, contentForKind(sent, existing.kind), true, existing.date);
+  if (!editedAt) {
     return { error: '記事が見つかりません。' };
   }
   revalidateBlog();
@@ -181,7 +178,7 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
       slug: existing.slug,
       published: false,
       at: Date.now(),
-      editedAt: commit.editedAt,
+      editedAt,
     },
   };
 }

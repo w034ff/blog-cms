@@ -37,7 +37,7 @@ function seed({ draft, body = 'live body' }: { draft: boolean; body?: string }):
     draft,
     kind: 'post',
     authorId: 1,
-  });
+  }).id;
 }
 
 function row(id: number) {

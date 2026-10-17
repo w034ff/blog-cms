@@ -51,7 +51,7 @@ function seed({
     thumbnail: '',
     kind,
     authorId,
-  });
+  }).id;
 }
 
 function titles(tab: Parameters<typeof listLibrary>[1], userId = ME): string[] {

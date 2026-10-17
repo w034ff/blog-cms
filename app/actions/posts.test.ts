@@ -52,7 +52,7 @@ function seedDraft(kind: 'post' | 'scribble'): number {
     thumbnail: '',
     kind,
     authorId: 1,
-  });
+  }).id;
 }
 
 beforeEach(() => {

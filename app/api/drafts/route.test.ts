@@ -104,4 +104,11 @@ describe('POST /api/drafts and kinds', () => {
     expect(skipRes.skipped).toBe(true);
     expect(skipRes.editedAt).toBeUndefined();
   });
+
+  it('returns 404 when updating a post that does not exist', async () => {
+    const res = await save({ id: 999999, content: filled });
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toBe('not found');
+  });
 });
