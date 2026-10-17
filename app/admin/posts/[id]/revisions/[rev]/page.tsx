@@ -16,6 +16,7 @@ import { getRevision } from '@/lib/revisions';
 import { canCurrentUserEdit } from '@/lib/post-access';
 import { resolveTags, tagNames } from '@/lib/tags';
 import type { DraftContent, Post } from '@/lib/types';
+import { getPostAuthorDisplayName } from '@/lib/display-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -161,6 +162,7 @@ export default async function RevisionPreviewPage({
         toc={toc}
         showDates={false}
         column='editor'
+        authorDisplayName={getPostAuthorDisplayName(post.id)}
         body={
           showDiff ? (
             <div id='revision-diff'>

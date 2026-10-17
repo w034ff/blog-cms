@@ -14,6 +14,7 @@ import { resolveThumbnail } from '@/lib/thumbnail';
 import { excerptFromBody } from '@/lib/excerpt';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 import { getSiteIdentity } from '@/lib/site-settings';
+import { getPostAuthorDisplayName } from '@/lib/display-name';
 
 type Params = { slug: string };
 
@@ -82,6 +83,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
   // `getPostBySlug` — a card pointing at another draft renders as a plain link here exactly as it
   // would for a reader. The preview shows what will ship, and that includes what will not resolve.
   const { html, toc } = await renderMdxToHtml(post.body, { resolveCard });
+  const authorDisplayName = getPostAuthorDisplayName(post.id);
 
   return (
     <>
@@ -90,6 +92,7 @@ export default async function PostPage({ params }: { params: Promise<Params> }) 
         post={post}
         html={html}
         toc={toc}
+        authorDisplayName={authorDisplayName}
         afterBody={
           mark ? (
             <LibraryButtons

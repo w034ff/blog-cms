@@ -16,6 +16,7 @@ import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
 import { scribbleDetailMetadata } from '@/lib/scribble-list';
 import { getSiteIdentity } from '@/lib/site-settings';
+import { getPostAuthorDisplayName } from '@/lib/display-name';
 import type { Post } from '@/lib/types';
 
 type Params = { slug: string };
@@ -49,6 +50,7 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
   const mark = session ? markState(session.userId, post.id) : null;
 
   const { html } = await renderMdxToHtml(post.body, { resolveCard });
+  const authorDisplayName = getPostAuthorDisplayName(post.id);
 
   return (
     <>
@@ -56,9 +58,12 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
       <article className='mx-auto w-full max-w-page'>
         <div className='rounded-panel border border-zinc-200 bg-surface px-5 py-6 sm:px-7 dark:border-zinc-800'>
           <header className='mb-4'>
-            <time dateTime={post.date} className='font-mono text-[13px] text-(--chip-fg)'>
-              {formatScribbleDayIso(post.date)}
-            </time>
+            <div className='font-mono text-[13px] text-(--chip-fg)'>
+              <time dateTime={post.date}>{formatScribbleDayIso(post.date)}</time>
+              {authorDisplayName ? (
+                <span data-author-signature> ・ {authorDisplayName}</span>
+              ) : null}
+            </div>
             <h1 className='mt-2 text-2xl leading-snug font-bold'>{post.title}</h1>
           </header>
           <div

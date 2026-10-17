@@ -181,3 +181,95 @@ test('an author sees only their own rows in post and scribble lists, while an ad
   await expect(page.locator('li', { hasText: authorScribble.title })).toBeVisible();
   await expect(page.locator('li', { hasText: adminScribble.title })).toBeVisible();
 });
+
+// docs/multi-author-requirements.md §7 row 11.
+test('author display name appears in post and scribble date rows when set, disappears when empty, and updates via account settings', async ({
+  page,
+}) => {
+  const { authorId } = getUserIds();
+  const db = getDb();
+  try {
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('', authorId);
+  } finally {
+    db.close();
+  }
+
+  const authorPost = insertPost({
+    title: `Author Post ${randomHexSlug()}`,
+    kind: 'post',
+    draft: false,
+    authorId,
+  });
+  const authorScribble = insertPost({
+    title: `Author Scribble ${randomHexSlug()}`,
+    kind: 'scribble',
+    draft: false,
+    authorId,
+  });
+
+  // 1. Set display name in DB -> appears on post and scribble pages
+  const db1 = getDb();
+  try {
+    db1.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('テスト著者', authorId);
+  } finally {
+    db1.close();
+  }
+
+  // Post page: signature appears in the date row without '・'
+  await page.goto(`/posts/${authorPost.slug}`);
+  const postSignature = page.locator('article header [data-author-signature]');
+  await expect(postSignature).toBeVisible();
+  await expect(postSignature).toHaveText('テスト著者');
+  await expect(postSignature).not.toContainText('・');
+
+  // Scribble page: signature appears after date with '・'
+  await page.goto(`/scribbles/${authorScribble.slug}`);
+  const scribbleSignature = page.locator('article header [data-author-signature]');
+  await expect(scribbleSignature).toBeVisible();
+  await expect(scribbleSignature).toContainText('・');
+  await expect(scribbleSignature).toContainText('テスト著者');
+
+  // 2. Set display name to empty in DB -> disappears from both pages
+  const db2 = getDb();
+  try {
+    db2.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('', authorId);
+  } finally {
+    db2.close();
+  }
+
+  await page.goto(`/posts/${authorPost.slug}`);
+  await expect(page.locator('article header [data-author-signature]')).toHaveCount(0);
+  await expect(page.locator('article header')).not.toContainText('テスト著者');
+
+  await page.goto(`/scribbles/${authorScribble.slug}`);
+  await expect(page.locator('article header [data-author-signature]')).toHaveCount(0);
+  await expect(page.locator('article header')).not.toContainText('・');
+  await expect(page.locator('article header')).not.toContainText('テスト著者');
+
+  // 3. Save display name via Account Settings screen (/admin/account) -> signature updates
+  await loginAsAuthor(page);
+  const accountNav = page.locator('header').getByRole('navigation', { name: 'アカウント' });
+  await accountNav.getByRole('button', { name: 'アカウントのメニュー' }).click();
+  await accountNav.getByRole('link', { name: 'アカウントの設定' }).click();
+  await expect(page).toHaveURL(/\/admin\/account$/);
+  await expect(page.getByRole('heading', { name: 'アカウントの設定' })).toBeVisible();
+
+  const nameInput = page.getByLabel('表示名');
+  await expect(nameInput).toHaveValue('');
+  await nameInput.fill('画面著者');
+  await expect(page.getByText('4 / 20')).toBeVisible();
+  await page.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('status')).toHaveText('保存しました');
+
+  // Signature now appears on post page
+  await page.goto(`/posts/${authorPost.slug}`);
+  await expect(page.locator('article header [data-author-signature]')).toHaveText('画面著者');
+
+  // Clean up
+  const db3 = getDb();
+  try {
+    db3.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('', authorId);
+  } finally {
+    db3.close();
+  }
+});
