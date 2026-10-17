@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
@@ -117,6 +118,49 @@ describe('GET /api/posts/search and draft ownership', () => {
 
     const otherDraftLookup = await get({ slug: 'author-draft' });
     expect(otherDraftLookup.status).toBe(404);
+  });
+
+  it('excludes published posts by suspended authors from search and slug lookup', async () => {
+    seedPost({
+      slug: 'active-author-post',
+      title: 'Active Author Post',
+      draft: false,
+      authorId: 8,
+    });
+    seedPost({
+      slug: 'suspended-author-post',
+      title: 'Suspended Author Post',
+      draft: false,
+      authorId: 99,
+    });
+    seedPost({ slug: 'orphan-post', title: 'Orphan Post', draft: false, authorId: null });
+
+    db.update(users).set({ suspendedAt: '2026-10-17T12:00:00.000Z' }).where(eq(users.id, 99)).run();
+
+    const res = await get({ q: 'Post' });
+    expect(res.status).toBe(200);
+    const results = (await res.json()) as PostSearchResult[];
+    const slugs = results.map((r) => r.slug);
+
+    expect(slugs).toContain('active-author-post');
+    expect(slugs).toContain('orphan-post');
+    expect(slugs).not.toContain('suspended-author-post');
+
+    const suspendedLookup = await get({ slug: 'suspended-author-post' });
+    expect(suspendedLookup.status).toBe(404);
+
+    const orphanLookup = await get({ slug: 'orphan-post' });
+    expect(orphanLookup.status).toBe(200);
+
+    // Un-suspend author and verify the post returns
+    db.update(users).set({ suspendedAt: null }).where(eq(users.id, 99)).run();
+
+    const restoredRes = await get({ q: 'Post' });
+    const restoredResults = (await restoredRes.json()) as PostSearchResult[];
+    expect(restoredResults.map((r) => r.slug)).toContain('suspended-author-post');
+
+    const restoredLookup = await get({ slug: 'suspended-author-post' });
+    expect(restoredLookup.status).toBe(200);
   });
 
   it('returns 401 when no session exists', async () => {

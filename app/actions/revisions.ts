@@ -19,14 +19,8 @@ export async function restoreRevisionAction(formData: FormData): Promise<void> {
   await verifySession();
   const postId = Number(formData.get('postId'));
   const target = parseTarget(formData.get('revision'));
-  if (!Number.isInteger(postId)) {
-    redirect('/admin');
-    return;
-  }
-  if (!(await canCurrentUserEdit(postId))) {
-    redirect(`/admin/posts/${postId}/revisions`);
-    return;
-  }
-  const restored = target !== null && restoreRevision(postId, target);
+  if (!Number.isInteger(postId)) redirect('/admin');
+  const allowed = await canCurrentUserEdit(postId);
+  const restored = allowed && target !== null && restoreRevision(postId, target);
   redirect(restored ? `/admin/posts/${postId}/edit` : `/admin/posts/${postId}/revisions`);
 }

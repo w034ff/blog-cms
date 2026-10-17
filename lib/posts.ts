@@ -28,7 +28,7 @@ export type PostForEdit = Post & {
 export type AdminPost = Post & {
   hasPendingEdits: boolean;
   editedAt: string;
-  authorId?: number | null;
+  authorId: number | null;
 };
 
 // `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
@@ -54,7 +54,7 @@ function toPost(row: PostRow, names: ReadonlyMap<string, string>): Post {
 
 // Public reads exclude posts by suspended authors (docs/multi-author-requirements.md §5).
 // Rows with no author (authorId === null) are retained.
-function notSuspendedAuthor() {
+export function notSuspendedAuthor() {
   return or(
     isNull(posts.authorId),
     notInArray(
@@ -62,6 +62,12 @@ function notSuspendedAuthor() {
       db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)),
     ),
   );
+}
+
+// Set of user IDs whose accounts are currently suspended.
+export function getSuspendedAuthorIds(): Set<number> {
+  const rows = db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)).all();
+  return new Set(rows.map((r) => r.id));
 }
 
 // Every read below is scoped to one kind here, not by its callers: a page that forgot to filter

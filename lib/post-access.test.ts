@@ -23,28 +23,22 @@ beforeEach(() => {
 // docs/multi-author-requirements.md §7 row 1.
 describe('canEditPost (pure predicate)', () => {
   it('allows an admin to edit any post, including another author’s or one with no author', () => {
-    const admin = { id: 1, role: 'admin' };
+    const admin = { id: 1, role: 'admin' as const };
     expect(canEditPost(admin, 1)).toBe(true);
     expect(canEditPost(admin, 2)).toBe(true);
     expect(canEditPost(admin, null)).toBe(true);
   });
 
   it('allows an author to edit only their own post', () => {
-    const author = { id: 2, role: 'author' };
+    const author = { id: 2, role: 'author' as const };
     expect(canEditPost(author, 2)).toBe(true);
     expect(canEditPost(author, 1)).toBe(false);
     expect(canEditPost(author, 3)).toBe(false);
   });
 
   it('forbids an author from editing a post with no author', () => {
-    const author = { id: 2, role: 'author' };
+    const author = { id: 2, role: 'author' as const };
     expect(canEditPost(author, null)).toBe(false);
-  });
-
-  it('forbids an account with an unknown role from editing anything', () => {
-    const reader = { id: 3, role: 'reader' };
-    expect(canEditPost(reader, 3)).toBe(false);
-    expect(canEditPost(reader, null)).toBe(false);
   });
 });
 

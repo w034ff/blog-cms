@@ -145,7 +145,7 @@ describe('submitPostAction and kinds', () => {
 
 // docs/multi-author-requirements.md §7 row 2.
 describe('author calling actions on another author’s post (all exports of posts.ts)', () => {
-  it('refuses all exports and makes no change to the DB', async () => {
+  it('refuses all exports and write paths on another author’s post, making no change to the DB', async () => {
     const OTHER_AUTHOR_ID = 99;
     const AUTHOR_USER_ID = 8;
 
@@ -161,34 +161,84 @@ describe('author calling actions on another author’s post (all exports of post
     currentSession.userId = AUTHOR_USER_ID;
     currentSession.username = 'author';
 
-    const otherPostId = seedDraft('post');
-    db.update(posts).set({ authorId: OTHER_AUTHOR_ID }).where(eq(posts.id, otherPostId)).run();
-    const beforeState = row(otherPostId);
+    // Seed both a draft and a published post belonging to another author
+    const draftPostId = createPost({
+      slug: 'other-draft-post',
+      title: 'Original Draft Title',
+      date: '',
+      category: '',
+      tags: [],
+      draft: true,
+      body: 'Original Draft Body',
+      thumbnail: '',
+      kind: 'post',
+      authorId: OTHER_AUTHOR_ID,
+    }).id;
 
-    const formData = form({
-      id: String(otherPostId),
-      postId: String(otherPostId),
-      title: 'Hacked Title',
+    const publishedPostId = createPost({
+      slug: 'other-published-post',
+      title: 'Original Published Title',
+      date: '2026-01-01T00:00:00.000Z',
       category: 'tech',
-      body: 'Hacked Body',
-    });
+      tags: [],
+      draft: false,
+      body: 'Original Published Body',
+      thumbnail: '',
+      kind: 'post',
+      authorId: OTHER_AUTHOR_ID,
+    }).id;
 
     const entries = Object.entries(postActions).filter(([, value]) => typeof value === 'function');
     expect(entries.length).toBeGreaterThan(0);
 
-    for (const [, fn] of entries) {
-      redirectMock.mockClear();
-      const actionFn = fn as (...args: unknown[]) => Promise<unknown>;
-      const result =
-        actionFn.length === 2 ? await actionFn({}, formData) : await actionFn(formData);
+    for (const otherPostId of [draftPostId, publishedPostId]) {
+      const beforeState = row(otherPostId);
 
-      if (result && typeof result === 'object' && 'error' in result) {
-        expect(result.error).toBe(FORBIDDEN_POST_EDIT);
-      } else {
-        expect(redirectMock).toHaveBeenCalledWith('/admin');
+      for (const [, fn] of entries) {
+        const actionFn = fn as (...args: unknown[]) => Promise<unknown>;
+
+        if (actionFn.length === 2) {
+          // submitPostAction has multiple write paths: publish/update vs unpublish
+          const paths = [
+            {
+              desc: 'publish/update',
+              formData: form({
+                id: String(otherPostId),
+                title: 'Hacked Title',
+                category: 'tech',
+                body: 'Hacked Body',
+              }),
+            },
+            {
+              desc: 'unpublish',
+              formData: form({
+                id: String(otherPostId),
+                intent: 'unpublish',
+                title: 'Hacked Title',
+                category: 'tech',
+                body: 'Hacked Body',
+              }),
+            },
+          ];
+
+          for (const path of paths) {
+            redirectMock.mockClear();
+            const result = await actionFn({}, path.formData);
+            expect(result).toMatchObject({ error: FORBIDDEN_POST_EDIT });
+            expect(row(otherPostId)).toEqual(beforeState);
+          }
+        } else {
+          // deletePostAction
+          redirectMock.mockClear();
+          const formData = form({
+            id: String(otherPostId),
+            postId: String(otherPostId),
+          });
+          await actionFn(formData);
+          expect(redirectMock).toHaveBeenCalledWith('/admin');
+          expect(row(otherPostId)).toEqual(beforeState);
+        }
       }
-
-      expect(row(otherPostId)).toEqual(beforeState);
     }
   });
 });

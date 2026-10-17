@@ -6,7 +6,7 @@ import { getOptionalSession } from '@/lib/dal';
 
 export type UserAccess = {
   id: number;
-  role: string;
+  role: typeof users.$inferSelect.role;
 };
 
 // Rejection message returned to the editor when a user attempts to modify another author's post.
