@@ -10,7 +10,7 @@ export const DRAFT_BUFFER_WRITE_DELAY_MS = 250;
 
 export const DRAFT_BUFFER_NOTICE = '保存されていない変更があります';
 export const DRAFT_BUFFER_OVERWRITE_WARNING =
-  'この記事は控えの後に別の場所で保存されています。復元すると、その変更を上書きします。';
+  '別の端末等でこの記事が保存されています。復元すると、そちらの内容を上書きします。';
 export const DRAFT_BUFFER_RESTORE_LABEL = '復元';
 export const DRAFT_BUFFER_DISCARD_LABEL = '破棄';
 

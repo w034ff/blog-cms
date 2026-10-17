@@ -216,7 +216,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
     const banner = draftBanner(page);
     await expect(banner).toBeVisible();
     await expect(banner).toContainText('保存されていない変更があります');
-    await expect(banner).not.toContainText('この記事は控えの後に別の場所で保存されています');
+    await expect(banner).not.toContainText('別の端末等でこの記事が保存されています');
 
     // Restore autosave so edits while banner is active reach the server
     await page.unroute('**/api/drafts');
@@ -230,7 +230,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
     // The banner must now display the overwrite warning.
     await page.reload();
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('この記事は控えの後に別の場所で保存されています');
+    await expect(banner).toContainText('別の端末等でこの記事が保存されています');
 
     // Restoring will restore the frozen buffer content
     await page.getByRole('button', { name: '復元' }).click();
