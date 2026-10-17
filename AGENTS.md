@@ -15,6 +15,7 @@ This repo uses **Conventional Commits** (adopted 2026-06-23). Subject: `type(sco
 - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
 - Scope is optional. Breaking changes use `!` (e.g. `feat!:`) or a `BREAKING CHANGE:` footer.
 - Subject language: English (matches existing history).
+- Pull requests: the title follows the same subject format in English; the body is in Japanese, opening with `## 概要` and closing with `## 確認` (what was run), like the existing PRs.
 - Commits before this date (e.g. `a259cae` and the initial commits) predate the convention and are intentionally left unprefixed — do not retro-rewrite them.
 
 # Requirements documents (`docs/*-requirements.md`)
