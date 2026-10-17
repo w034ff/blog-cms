@@ -39,13 +39,13 @@ export function DraftBufferBanner({
         <button
           type='button'
           onClick={onRestore}
-          className='button-primary rounded-chip px-3 py-1 text-xs font-medium'>
+          className='button-primary px-4 py-2 text-sm font-medium'>
           {DRAFT_BUFFER_RESTORE_LABEL}
         </button>
         <button
           type='button'
           onClick={onDiscard}
-          className='button-secondary rounded-chip px-3 py-1 text-xs font-medium'>
+          className='button-secondary px-4 py-2 text-sm font-medium'>
           {DRAFT_BUFFER_DISCARD_LABEL}
         </button>
       </div>
