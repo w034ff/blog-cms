@@ -5,6 +5,7 @@ import type { ChangeEvent, RefObject } from 'react';
 import type { Editor } from '@tiptap/core';
 import { Selection } from '@tiptap/pm/state';
 import { ALLOWED_IMAGE_MIME_TYPES } from '@/lib/uploads';
+import { uploadImageFile } from '@/lib/upload-client';
 import { selectionTouches, type BlockAtom } from './selection-scan';
 
 const ALLOWED_IMAGE_TYPE_SET = new Set(ALLOWED_IMAGE_MIME_TYPES);
@@ -37,20 +38,6 @@ export const IMAGE_BLOCKED_HOSTS: Record<string, string> = {
 
 function imageBlockedMessage(hosts: string[]): string {
   return `${hosts.map((name) => IMAGE_BLOCKED_HOSTS[name]).join('と')}には画像を挿入できません`;
-}
-
-// Send one file to /api/uploads and report the path it now lives at, or null if
-// the upload was refused (the alert is raised here so no caller has to).
-//
-// Module-level so the thumbnail picker uploads through the same limits and error reporting.
-export async function uploadImageFile(file: File): Promise<string | null> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch('/api/uploads', { method: 'POST', body: formData });
-  const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-  if (res.ok && typeof data.url === 'string') return data.url;
-  window.alert(`アップロードに失敗しました: ${data.error ?? res.status}`);
-  return null;
 }
 
 // Uploads images and inserts them at the cursor from the file picker, paste, and window-wide drop.

@@ -5,7 +5,7 @@ import {
   sharedOpenGraph,
 } from '@/app/shared-metadata';
 
-const SITE = { name: DEFAULT_SITE_NAME, description: DEFAULT_SITE_DESCRIPTION };
+const SITE = { name: DEFAULT_SITE_NAME, description: DEFAULT_SITE_DESCRIPTION, shareImage: '' };
 import {
   calculateTotalPages,
   parsePageNumber,

@@ -8,6 +8,7 @@ import {
   SITE_NAME_MAX_CHARS,
   codePointLength,
 } from '@/lib/site-settings-rules';
+import { ShareImageField } from './ShareImageField';
 
 const NAME_LABEL = 'サイトの名前';
 const DESCRIPTION_LABEL = '説明文';
@@ -15,9 +16,6 @@ const DESCRIPTION_HELP = 'ページの説明、共有したときの説明、RSS
 const SAVE_LABEL = '保存';
 const SAVING_LABEL = '保存中…';
 const SAVED_MESSAGE = '保存しました';
-// The two pictures with the name drawn into them do not follow the setting
-// (docs/site-settings-requirements.md §4).
-const BAKED_NOTE = '共有用の画像とリンクカードの絵の名前は変わりません。';
 
 const inputClass =
   'w-full min-w-0 rounded-box border border-zinc-300 bg-surface px-3 py-2 text-sm focus:ring-2 focus:ring-zinc-400 focus:outline-none aria-invalid:border-red-600 dark:border-zinc-700 dark:aria-invalid:border-red-400';
@@ -78,6 +76,7 @@ export function SettingsForm({ initial }: { initial: SiteIdentity }) {
   const [state, formAction, pending] = useActionState(saveSiteSettingsAction, emptyState);
   const [name, setName] = useState(initial.name);
   const [description, setDescription] = useState(initial.description);
+  const [shareImage, setShareImage] = useState(initial.shareImage);
 
   return (
     <form
@@ -122,8 +121,14 @@ export function SettingsForm({ initial }: { initial: SiteIdentity }) {
         help={DESCRIPTION_HELP}
         onChange={setDescription}
       />
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <p className={noteClass}>{BAKED_NOTE}</p>
+      <ShareImageField
+        value={shareImage}
+        onChange={setShareImage}
+        error={state.errors?.shareImage}
+        noteClass={noteClass}
+        errorClass={errorClass}
+      />
+      <div className='flex justify-end'>
         <button
           type='submit'
           disabled={pending}

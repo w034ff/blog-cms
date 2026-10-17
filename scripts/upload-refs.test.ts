@@ -40,4 +40,13 @@ describe('referencedInDb', () => {
     ).run();
     expect([...referencedInDb(db)]).toEqual(['a.png']);
   });
+
+  // docs/site-settings-requirements.md §6 id=9: the share image is referenced by no post.
+  it('counts an image referenced only by a site setting', () => {
+    const db = createTestSqlite();
+    db.prepare(
+      `INSERT INTO app_settings (key, value) VALUES ('site_share_image', '/uploads/share.png')`,
+    ).run();
+    expect([...referencedInDb(db)]).toEqual(['share.png']);
+  });
 });

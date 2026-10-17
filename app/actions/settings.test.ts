@@ -3,7 +3,7 @@ import { DEFAULT_SITE_DESCRIPTION, DEFAULT_SITE_NAME } from '@/app/shared-metada
 import { db } from '@/lib/db';
 import { appSettings } from '@/lib/db/schema';
 import { readSiteIdentity, saveSiteIdentity } from '@/lib/site-settings';
-import { SITE_NAME_REQUIRED } from '@/lib/site-settings-rules';
+import { SHARE_IMAGE_INVALID, SITE_NAME_REQUIRED } from '@/lib/site-settings-rules';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -16,10 +16,11 @@ vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
 import * as settingsActions from './settings';
 const { saveSiteSettingsAction } = settingsActions;
 
-function form(name: string, description: string): FormData {
+function form(name: string, description: string, shareImage = ''): FormData {
   const data = new FormData();
   data.set('name', name);
   data.set('description', description);
+  data.set('shareImage', shareImage);
   return data;
 }
 
@@ -34,20 +35,29 @@ describe('site settings', () => {
     expect(readSiteIdentity()).toEqual({
       name: DEFAULT_SITE_NAME,
       description: DEFAULT_SITE_DESCRIPTION,
+      shareImage: '',
     });
   });
 
   it('reads back what was saved, an empty description included', () => {
-    saveSiteIdentity({ name: 'Renamed', description: '' });
-    expect(readSiteIdentity()).toEqual({ name: 'Renamed', description: '' });
-    saveSiteIdentity({ name: 'Again', description: 'Desc' });
-    expect(readSiteIdentity()).toEqual({ name: 'Again', description: 'Desc' });
+    saveSiteIdentity({ name: 'Renamed', description: '', shareImage: '/uploads/a.png' });
+    expect(readSiteIdentity()).toEqual({
+      name: 'Renamed',
+      description: '',
+      shareImage: '/uploads/a.png',
+    });
+    saveSiteIdentity({ name: 'Again', description: 'Desc', shareImage: '' });
+    expect(readSiteIdentity()).toEqual({ name: 'Again', description: 'Desc', shareImage: '' });
   });
 
   it('saves an admin’s valid values', async () => {
-    const state = await saveSiteSettingsAction({}, form(' Renamed ', 'Desc'));
+    const state = await saveSiteSettingsAction({}, form(' Renamed ', 'Desc', '/uploads/a.png'));
     expect(state.at).toBeTypeOf('number');
-    expect(readSiteIdentity()).toEqual({ name: 'Renamed', description: 'Desc' });
+    expect(readSiteIdentity()).toEqual({
+      name: 'Renamed',
+      description: 'Desc',
+      shareImage: '/uploads/a.png',
+    });
   });
 
   it('refuses a non-admin and writes nothing (id=3)', async () => {
@@ -60,6 +70,16 @@ describe('site settings', () => {
   it('refuses invalid values with a reason and writes nothing (id=4)', async () => {
     const state = await saveSiteSettingsAction({}, form('', 'Desc'));
     expect(state.errors).toEqual({ name: SITE_NAME_REQUIRED });
+    expect(db.select().from(appSettings).all()).toEqual([]);
+  });
+
+  // §6 id=8: an off-site URL would be republished as the site's own card image.
+  it('refuses a share image that is not an upload and writes nothing (id=8)', async () => {
+    const state = await saveSiteSettingsAction(
+      {},
+      form('Renamed', 'Desc', 'https://example.com/a.png'),
+    );
+    expect(state.errors).toEqual({ shareImage: SHARE_IMAGE_INVALID });
     expect(db.select().from(appSettings).all()).toEqual([]);
   });
 

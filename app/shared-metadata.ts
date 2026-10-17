@@ -5,7 +5,11 @@ import type { Metadata } from 'next';
 export const DEFAULT_SITE_NAME = 'Small Diffs';
 export const DEFAULT_SITE_DESCRIPTION = '個人技術ブログ';
 
-export type SiteIdentity = { name: string; description: string };
+// `shareImage` is an upload path, or '' for the committed /og.png
+// (docs/site-settings-requirements.md §9).
+export type SiteIdentity = { name: string; description: string; shareImage: string };
+
+export const DEFAULT_SHARE_IMAGE = '/og.png';
 
 // The layout's title template. `tabTitle` applies it for a title set from the client, where no
 // metadata runs.
@@ -27,11 +31,19 @@ export function sharedOpenGraph(site: SiteIdentity) {
     locale: 'ja_JP',
     type: 'website',
     // One card image for the site: a per-post one would draw a Japanese title, and Satori needs a
-    // ~10MB CJK font or a third-party fetch for that. Regenerate with
-    // `node scripts/make-og-image.mts`; the name drawn into it does not follow the setting
-    // (docs/site-settings-requirements.md §4).
+    // ~10MB CJK font or a third-party fetch for that. The committed one is regenerated with
+    // `node scripts/make-og-image.mts`, and the name drawn into it does not follow the setting
+    // (docs/site-settings-requirements.md §4); an admin may replace it with an upload (§9), whose
+    // size is unknown, so that one carries no width/height for the consumer to distort it by.
     images: [
-      { url: '/og.png', width: 1200, height: 630, alt: `${site.name} — ${site.description}` },
+      site.shareImage
+        ? { url: site.shareImage, alt: `${site.name} — ${site.description}` }
+        : {
+            url: DEFAULT_SHARE_IMAGE,
+            width: 1200,
+            height: 630,
+            alt: `${site.name} — ${site.description}`,
+          },
     ],
   } satisfies Metadata['openGraph'];
 }

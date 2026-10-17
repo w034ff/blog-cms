@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { ALLOWED_IMAGE_ACCEPT } from '@/lib/uploads';
 import { firstBodyImage } from '@/lib/thumbnail';
-import { uploadImageFile } from './useImageUpload';
+import { uploadImageFile } from '@/lib/upload-client';
 
 type Props = {
   // The author's explicit choice; '' when they have made none. Mirrored into the

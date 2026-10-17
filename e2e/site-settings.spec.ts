@@ -58,6 +58,50 @@ test('an admin renames the site and every surface shows it (id=2, 6)', async ({ 
   expect(rss).toContain(`<description><![CDATA[${description}]]></description>`);
 });
 
+// A 1x1 PNG the upload route accepts; its hash names the stored file.
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+test('a chosen share image becomes og:image, and clearing it restores the default (id=7)', async ({
+  page,
+}) => {
+  await page.goto('/admin/settings');
+  await expect(page.getByText('既定の画像', { exact: true })).toBeVisible();
+  // The baked-in name only applies to the default image, so the note leaves with it (§9).
+  const nameNote = page.getByText(`既定の画像には「${DEFAULT_SITE_NAME}」の名前が描かれていて`);
+  await expect(nameNote).toBeVisible();
+  await page.getByTestId('share-image-picker').setInputFiles({
+    name: 'e2e-share.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1,
+  });
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
+  await expect(nameNote).toHaveCount(0);
+  const chosen = await page.locator('input[name="shareImage"]').inputValue();
+  expect(chosen).toMatch(/^\/uploads\/[0-9a-f]+\.png$/);
+  await page.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('status')).toHaveText('保存しました');
+
+  await page.goto('/');
+  const ogImage = page.locator('meta[property="og:image"]');
+  await expect(ogImage).toHaveAttribute('content', new RegExp(`${chosen}$`));
+  // No size for an upload whose size is unknown (§9).
+  await expect(page.locator('meta[property="og:image:width"]')).toHaveCount(0);
+
+  // Reloaded, the field shows the saved choice; clearing it is a save like any other.
+  await page.goto('/admin/settings');
+  await expect(page.getByText('指定した画像', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '解除' }).click();
+  await expect(page.getByText('既定の画像', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('status')).toHaveText('保存しました');
+
+  await page.goto('/');
+  await expect(ogImage).toHaveAttribute('content', /\/og\.png$/);
+});
+
 test('a refused value says why and changes nothing (id=4)', async ({ page }) => {
   await page.goto('/admin/settings');
   await page.getByLabel('サイトの名前').fill('');
