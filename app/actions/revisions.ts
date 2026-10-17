@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { verifySession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { restoreRevision, type RestoreTarget } from '@/lib/revisions';
 
 // The history's one write (docs/revision-requirements.md §5). Reached from the preview, so the
@@ -18,7 +19,14 @@ export async function restoreRevisionAction(formData: FormData): Promise<void> {
   await verifySession();
   const postId = Number(formData.get('postId'));
   const target = parseTarget(formData.get('revision'));
-  if (!Number.isInteger(postId)) redirect('/admin');
+  if (!Number.isInteger(postId)) {
+    redirect('/admin');
+    return;
+  }
+  if (!(await canCurrentUserEdit(postId))) {
+    redirect(`/admin/posts/${postId}/revisions`);
+    return;
+  }
   const restored = target !== null && restoreRevision(postId, target);
   redirect(restored ? `/admin/posts/${postId}/edit` : `/admin/posts/${postId}/revisions`);
 }

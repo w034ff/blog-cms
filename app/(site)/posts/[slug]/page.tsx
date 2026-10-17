@@ -7,6 +7,7 @@ import { markState } from '@/lib/library';
 import type { Metadata } from 'next';
 import { getDraftBySlug, getPostBySlug } from '@/lib/posts';
 import { getOptionalSession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { renderMdxToHtml } from '@/lib/render';
 import type { Post } from '@/lib/types';
 import { resolveThumbnail } from '@/lib/thumbnail';
@@ -27,7 +28,9 @@ async function readablePost(slug: string): Promise<{ post: Post; preview: boolea
   if (published) return { post: published, preview: false };
   if (!(await getOptionalSession())) return null;
   const draft = await getDraftBySlug(slug);
-  return draft ? { post: draft, preview: true } : null;
+  if (!draft) return null;
+  if (!(await canCurrentUserEdit(draft.id))) return null;
+  return { post: draft, preview: true };
 }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {

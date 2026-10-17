@@ -2,16 +2,19 @@ import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
-import { posts } from '@/lib/db/schema';
+import { posts, users } from '@/lib/db/schema';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
   return { db: createTestDb() };
 });
-// Not 1, so an author written from anywhere but the session cannot match it by accident.
-const SESSION_USER_ID = 7;
+const currentSession = vi.hoisted(() => ({
+  userId: 7,
+  username: 'admin',
+}));
+const SESSION_USER_ID = currentSession.userId;
 vi.mock('@/lib/dal', () => ({
-  getOptionalSession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
+  getOptionalSession: async () => currentSession,
 }));
 
 const { POST } = await import('./route');
@@ -52,6 +55,18 @@ async function create(body: unknown): Promise<number> {
 
 beforeEach(() => {
   db.delete(posts).run();
+  db.delete(users).run();
+  currentSession.userId = SESSION_USER_ID;
+  currentSession.username = 'admin';
+
+  db.insert(users)
+    .values({
+      id: SESSION_USER_ID,
+      username: 'admin',
+      passwordHash: 'dummy',
+      role: 'admin',
+    })
+    .run();
 });
 
 // docs/library-requirements.md §8 row 2.
@@ -110,5 +125,43 @@ describe('POST /api/drafts and kinds', () => {
     expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error).toBe('not found');
+  });
+});
+
+// docs/multi-author-requirements.md §7 row 4.
+describe('POST /api/drafts author permissions', () => {
+  it('returns 403 and does not change the DB when an author autosaves another’s post', async () => {
+    const OTHER_AUTHOR_ID = 99;
+    const AUTHOR_USER_ID = 8;
+
+    db.insert(users)
+      .values({
+        id: AUTHOR_USER_ID,
+        username: 'author',
+        passwordHash: 'dummy',
+        role: 'author',
+      })
+      .run();
+
+    // Create a post belonging to other author
+    const otherPostId = await create({ content: filled });
+    db.update(posts).set({ authorId: OTHER_AUTHOR_ID }).where(eq(posts.id, otherPostId)).run();
+    const beforeState = row(otherPostId);
+
+    // Switch to author session
+    currentSession.userId = AUTHOR_USER_ID;
+    currentSession.username = 'author';
+
+    const res = await save({
+      id: otherPostId,
+      content: { ...filled, title: 'Hacked Title', body: 'Hacked Body' },
+    });
+
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.error).toBe('forbidden');
+
+    // DB remains completely unchanged
+    expect(row(otherPostId)).toEqual(beforeState);
   });
 });

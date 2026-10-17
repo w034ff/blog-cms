@@ -120,6 +120,13 @@
       "when": 1792072668865,
       "tag": "0016_app_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1792240181656,
+      "tag": "0017_optimal_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

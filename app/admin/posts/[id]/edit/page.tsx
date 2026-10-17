@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
 import { verifySession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { getPostForEdit, liveContent } from '@/lib/posts';
 import { postEditedAt } from '@/lib/posts-write';
 import { listDictionary } from '@/lib/tags';
@@ -19,6 +20,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
+  if (!(await canCurrentUserEdit(post.id))) notFound();
 
   const session = await verifySession();
   const editedAt = postEditedAt(post.id) ?? '';

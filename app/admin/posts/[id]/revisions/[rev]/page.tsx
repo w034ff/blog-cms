@@ -13,6 +13,7 @@ import { renderMdxToHtml } from '@/lib/render';
 import { resolveCard } from '@/lib/resolve-card';
 import { diffRevision } from '@/lib/revision-diff';
 import { getRevision } from '@/lib/revisions';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { resolveTags, tagNames } from '@/lib/tags';
 import type { DraftContent, Post } from '@/lib/types';
 
@@ -78,6 +79,7 @@ export default async function RevisionPreviewPage({
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
+  if (!(await canCurrentUserEdit(post.id))) notFound();
   const version = versionOf(post, rev);
   if (!version) notFound();
   const names = tagNames();

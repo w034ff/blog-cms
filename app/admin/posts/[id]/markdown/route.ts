@@ -1,4 +1,5 @@
 import { getOptionalSession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { getPostForEdit } from '@/lib/posts';
 import { markdownFilename, postToMarkdown } from '@/lib/post-markdown';
 
@@ -12,6 +13,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const id = Number((await params).id);
   const post = Number.isSafeInteger(id) ? await getPostForEdit(id) : null;
   if (!post) return new Response(null, { status: 404 });
+  if (!(await canCurrentUserEdit(post.id))) return new Response(null, { status: 404 });
 
   // `filename` is the ASCII fallback; `filename*` carries the Japanese title (RFC 6266).
   const disposition = `attachment; filename="post-${post.id}.md"; filename*=UTF-8''${encodeURIComponent(markdownFilename(post))}`;

@@ -50,6 +50,10 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
     return { error: 'ユーザー名またはパスワードが違います。' };
   }
 
+  if (user.suspendedAt !== null) {
+    return { error: 'このアカウントは停止されています。' };
+  }
+
   clearLoginFailures(username);
   await createSession({ userId: user.id, username: user.username });
   redirect('/admin');

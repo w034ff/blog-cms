@@ -15,7 +15,8 @@ const LIMIT = 20;
 export async function GET(req: NextRequest) {
   // Same gate and same shape as the autosave route: this exposes drafts — unpublished titles —
   // so it is admin-only, and 401 rather than a redirect keeps the editor mounted.
-  if (!(await getOptionalSession())) {
+  const session = await getOptionalSession();
+  if (!session) {
     return new NextResponse(null, { status: 401 });
   }
 
@@ -24,18 +25,20 @@ export async function GET(req: NextRequest) {
   const query = params.get('q')?.trim() ?? '';
 
   // listAllPosts, not getAllPosts: drafts are offered and marked, not hidden (§5.2-4).
+  // Return published posts and only the signed-in user's drafts (docs/multi-author-requirements.md §4.2).
   const all = await listAllPosts();
+  const visible = all.filter((post) => !post.draft || post.authorId === session.userId);
 
   // Slug lookup: what a NodeView asks on every render.
   if (slug !== null) {
-    const post = all.find((candidate) => candidate.slug === slug);
+    const post = visible.find((candidate) => candidate.slug === slug);
     if (!post) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json(toResult(post));
   }
 
   // Case-insensitive title substring: the author picks from a short list of their own posts.
   const needle = query.toLowerCase();
-  const matches = all
+  const matches = visible
     .filter((post) => post.slug !== null)
     .filter((post) => needle === '' || post.title.toLowerCase().includes(needle))
     .slice(0, LIMIT)

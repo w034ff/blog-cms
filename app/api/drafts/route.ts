@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { POST_KINDS, normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { contentForKind } from '@/lib/draft-content';
 import { autosavePost, createPost, postKind } from '@/lib/posts-write';
 import { knownTagSlugs } from '@/lib/tags';
@@ -54,6 +55,9 @@ export async function POST(req: NextRequest) {
     const kind = postKind(id);
     if (kind === null) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+    if (!(await canCurrentUserEdit(id))) {
+      return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
     const editedAt = autosavePost(id, contentForKind(sent, kind));
     if (!editedAt) {

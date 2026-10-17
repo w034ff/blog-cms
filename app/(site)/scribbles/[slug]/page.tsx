@@ -8,6 +8,7 @@ import { FootnotePopover } from '@/components/FootnotePopover';
 import { ImageZoom } from '@/components/ImageZoom';
 import { LibraryButtons } from '@/components/LibraryButtons';
 import { getOptionalSession } from '@/lib/dal';
+import { canCurrentUserEdit } from '@/lib/post-access';
 import { markState } from '@/lib/library';
 import { formatScribbleDayIso } from '@/lib/format';
 import { getScribbleBySlug, getScribbleDraftBySlug } from '@/lib/posts';
@@ -26,7 +27,9 @@ async function readableScribble(slug: string): Promise<{ post: Post; preview: bo
   if (published) return { post: published, preview: false };
   if (!(await getOptionalSession())) return null;
   const draft = await getScribbleDraftBySlug(slug);
-  return draft ? { post: draft, preview: true } : null;
+  if (!draft) return null;
+  if (!(await canCurrentUserEdit(draft.id))) return null;
+  return { post: draft, preview: true };
 }
 
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {

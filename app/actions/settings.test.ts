@@ -13,7 +13,8 @@ const admin = vi.hoisted(() => ({ current: true }));
 vi.mock('@/lib/dal', () => ({ isAdmin: async () => admin.current }));
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
 
-const { saveSiteSettingsAction } = await import('./settings');
+import * as settingsActions from './settings';
+const { saveSiteSettingsAction } = settingsActions;
 
 function form(name: string, description: string): FormData {
   const data = new FormData();
@@ -60,5 +61,28 @@ describe('site settings', () => {
     const state = await saveSiteSettingsAction({}, form('', 'Desc'));
     expect(state.errors).toEqual({ name: SITE_NAME_REQUIRED });
     expect(db.select().from(appSettings).all()).toEqual([]);
+  });
+
+  // docs/multi-author-requirements.md §7 row 3.
+  it('refuses all exports when called by an author and makes no change to the DB', async () => {
+    admin.current = false;
+    const beforeSettings = db.select().from(appSettings).all();
+
+    const entries = Object.entries(settingsActions).filter(
+      ([, value]) => typeof value === 'function',
+    );
+    expect(entries.length).toBeGreaterThan(0);
+
+    for (const [, fn] of entries) {
+      const actionFn = fn as (...args: unknown[]) => Promise<{ error?: string }>;
+      const result =
+        actionFn.length === 2
+          ? await actionFn({}, form('Renamed', 'Desc'))
+          : await actionFn(form('Renamed', 'Desc'));
+
+      expect(result).toHaveProperty('error');
+      expect(result.error).toBeTruthy();
+      expect(db.select().from(appSettings).all()).toEqual(beforeSettings);
+    }
   });
 });

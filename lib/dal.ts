@@ -7,10 +7,22 @@ import { users } from '@/lib/db/schema';
 import { getSession } from '@/lib/session';
 import type { SessionPayload } from '@/lib/session-token';
 
-export const getOptionalSession = cache(async (): Promise<SessionPayload | null> => getSession());
+export const getOptionalSession = cache(async (): Promise<SessionPayload | null> => {
+  const session = await getSession();
+  if (!session) return null;
+  const user = db
+    .select({ suspendedAt: users.suspendedAt })
+    .from(users)
+    .where(eq(users.id, session.userId))
+    .get();
+  if (!user || user.suspendedAt !== null) {
+    return null;
+  }
+  return session;
+});
 
 export const verifySession = cache(async (): Promise<SessionPayload> => {
-  const session = await getSession();
+  const session = await getOptionalSession();
   if (!session) {
     redirect('/login');
   }

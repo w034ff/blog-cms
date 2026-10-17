@@ -1,23 +1,33 @@
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
-import { posts } from '@/lib/db/schema';
+import { posts, users } from '@/lib/db/schema';
 import { createPost } from '@/lib/posts-write';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
   return { db: createTestDb() };
 });
-// Not 1, so an author written from anywhere but the session cannot match it by accident.
-const SESSION_USER_ID = 7;
+const currentSession = vi.hoisted(() => ({
+  userId: 7,
+  username: 'admin',
+}));
+const SESSION_USER_ID = currentSession.userId;
 vi.mock('@/lib/dal', () => ({
-  getOptionalSession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
-  verifySession: async () => ({ userId: SESSION_USER_ID, username: 'admin' }),
+  getOptionalSession: async () => currentSession,
+  verifySession: async () => currentSession,
 }));
 // Outside a request there is no cache to revalidate.
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
 
-const { submitPostAction } = await import('./posts');
+const redirectMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => redirectMock(url),
+}));
+
+import { FORBIDDEN_POST_EDIT } from '@/lib/post-access';
+import * as postActions from './posts';
+const { submitPostAction } = postActions;
 
 function form(fields: Record<string, string>): FormData {
   const data = new FormData();
@@ -57,6 +67,18 @@ function seedDraft(kind: 'post' | 'scribble'): number {
 
 beforeEach(() => {
   db.delete(posts).run();
+  db.delete(users).run();
+  currentSession.userId = SESSION_USER_ID;
+  currentSession.username = 'admin';
+  redirectMock.mockClear();
+  db.insert(users)
+    .values({
+      id: SESSION_USER_ID,
+      username: 'admin',
+      passwordHash: 'dummy',
+      role: 'admin',
+    })
+    .run();
 });
 
 // docs/scribble-requirements.md §3.2: a scribble has no category to choose, so publish does not ask
@@ -118,5 +140,55 @@ describe('submitPostAction and kinds', () => {
     expect(unpubState.saved?.published).toBe(false);
     expect(typeof unpubState.saved?.editedAt).toBe('string');
     expect(row(id).editedAt).toBe(unpubState.saved?.editedAt);
+  });
+});
+
+// docs/multi-author-requirements.md §7 row 2.
+describe('author calling actions on another author’s post (all exports of posts.ts)', () => {
+  it('refuses all exports and makes no change to the DB', async () => {
+    const OTHER_AUTHOR_ID = 99;
+    const AUTHOR_USER_ID = 8;
+
+    db.insert(users)
+      .values({
+        id: AUTHOR_USER_ID,
+        username: 'author',
+        passwordHash: 'dummy',
+        role: 'author',
+      })
+      .run();
+
+    currentSession.userId = AUTHOR_USER_ID;
+    currentSession.username = 'author';
+
+    const otherPostId = seedDraft('post');
+    db.update(posts).set({ authorId: OTHER_AUTHOR_ID }).where(eq(posts.id, otherPostId)).run();
+    const beforeState = row(otherPostId);
+
+    const formData = form({
+      id: String(otherPostId),
+      postId: String(otherPostId),
+      title: 'Hacked Title',
+      category: 'tech',
+      body: 'Hacked Body',
+    });
+
+    const entries = Object.entries(postActions).filter(([, value]) => typeof value === 'function');
+    expect(entries.length).toBeGreaterThan(0);
+
+    for (const [, fn] of entries) {
+      redirectMock.mockClear();
+      const actionFn = fn as (...args: unknown[]) => Promise<unknown>;
+      const result =
+        actionFn.length === 2 ? await actionFn({}, formData) : await actionFn(formData);
+
+      if (result && typeof result === 'object' && 'error' in result) {
+        expect(result.error).toBe(FORBIDDEN_POST_EDIT);
+      } else {
+        expect(redirectMock).toHaveBeenCalledWith('/admin');
+      }
+
+      expect(row(otherPostId)).toEqual(beforeState);
+    }
   });
 });
