@@ -1,6 +1,6 @@
 # カテゴリ色のマーク 要件定義
 
-- 状態: 設計済み、未実装（2026-10-17）
+- 状態: 実装済み（2026-10-17）
 - 作成: 2026-10-17、`docs/project-status.md` §6「画像の無い記事のカード」を、2026-10-15 に決めたサイトのマーク（±）を前提に決め直す相談から
 - 関連: `docs/link-card-requirements.md` §17、`cms-features.md「見送り・現状維持の決定」§4`、`lib/site-mark.ts`、`lib/thumbnail.ts`、`components/PostCard.tsx`
 
