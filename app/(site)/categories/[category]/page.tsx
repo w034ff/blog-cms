@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { category } = await params;
   const id = decodeURIComponent(category);
-  if (!isCategoryId(id)) return {};
+  if (!isCategoryId(id)) notFound();
   const title = categoryLabel(id);
   // As in app/(site)/tags/[tag]/page.tsx: an unset openGraph would carry the site's own title.
   return {
