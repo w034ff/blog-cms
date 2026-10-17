@@ -26,7 +26,8 @@ const MAX_REDIRECTS = 3;
 setDefaultAutoSelectFamilyAttemptTimeout(1000);
 
 // Addresses the server must not be talked into fetching: loopback, link-local (including the cloud
-// metadata range), the RFC 1918 blocks, carrier-grade NAT, and their v6 equivalents. Written over
+// metadata range), the RFC 1918 blocks, carrier-grade NAT, their v6 equivalents, and any of them
+// carried inside a v6 address (v4-mapped, NAT64, 6to4). Written over
 // the parsed address, so `0x7f.1`, `2130706433` and a DNS name pointing at any of them all arrive
 // here in the same form.
 export function isBlockedAddress(address: string): boolean {
@@ -42,24 +43,54 @@ export function isBlockedAddress(address: string): boolean {
     return false;
   }
   if (family === 6) {
-    const v6 = address.toLowerCase().split('%')[0];
-    if (v6 === '::' || v6 === '::1') return true;
-    if (
-      v6.startsWith('fe8') ||
-      v6.startsWith('fe9') ||
-      v6.startsWith('fea') ||
-      v6.startsWith('feb')
-    )
-      return true; // link-local
-    if (v6.startsWith('fc') || v6.startsWith('fd')) return true; // unique-local
-    if (v6.startsWith('ff')) return true; // multicast
-    // IPv4-mapped (::ffff:127.0.0.1) is the same address wearing a hat.
-    const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v6)?.[1];
-    if (mapped) return isBlockedAddress(mapped);
+    // Judged over the eight groups, never the text: one address has many spellings. `new URL()`
+    // rewrites `[::ffff:127.0.0.1]` to `[::ffff:7f00:1]`, and `ff0::` (group 0x0ff0) is not multicast.
+    const [g0, g1, g2, g3, g4, g5, g6, g7] = ipv6Groups(address);
+    const zeroTo = (end: number) => [g0, g1, g2, g3, g4, g5].slice(0, end).every((g) => g === 0);
+    // IPv4-compatible (::a.b.c.d, which holds `::` and `::1`) and IPv4-translated (::ffff:0:a.b.c.d):
+    // deprecated, so no public host lives there.
+    if (zeroTo(6)) return true;
+    if (zeroTo(4) && g4 === 0xffff && g5 === 0) return true;
+    // Forms that carry an IPv4 address the packet ends up at — the same address wearing a hat, so it
+    // gets the IPv4 answer: v4-mapped (::ffff:0:0/96), NAT64 (64:ff9b::/96), 6to4 (2002::/16).
+    if (zeroTo(5) && g5 === 0xffff) return isBlockedAddress(ipv4FromGroups(g6, g7));
+    if (g0 === 0x64 && g1 === 0xff9b) {
+      // The rest of 64:ff9b::/32 is local-use NAT64 (64:ff9b:1::/48, RFC 8215) or unassigned.
+      return [g2, g3, g4, g5].some((g) => g !== 0) || isBlockedAddress(ipv4FromGroups(g6, g7));
+    }
+    if (g0 === 0x2002) return isBlockedAddress(ipv4FromGroups(g1, g2));
+    // Teredo (2001::/32) tunnels to an IPv4 address stored inverted; no reason to reach one.
+    if (g0 === 0x2001 && g1 === 0) return true;
+    if ((g0 & 0xffc0) === 0xfe80) return true; // link-local
+    if ((g0 & 0xffc0) === 0xfec0) return true; // site-local (deprecated)
+    if ((g0 & 0xfe00) === 0xfc00) return true; // unique-local
+    if ((g0 & 0xff00) === 0xff00) return true; // multicast
     return false;
   }
   // Not an address at all — the caller resolves names before asking.
   return true;
+}
+
+// The eight 16-bit groups of an address `isIP` has already accepted as v6: a zone (`%eth0`) dropped,
+// `::` expanded, a trailing dotted quad folded into the last two groups.
+function ipv6Groups(address: string): number[] {
+  let text = address.split('%')[0];
+  const quad = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (quad) {
+    const [a, b, c, d] = quad.slice(1).map(Number);
+    text = `${text.slice(0, quad.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head, tail] = text.split('::');
+  const headGroups = head ? head.split(':') : [];
+  const tailGroups = tail ? tail.split(':') : [];
+  const fill = tail === undefined ? 0 : 8 - headGroups.length - tailGroups.length;
+  return [...headGroups, ...Array.from({ length: fill }, () => '0'), ...tailGroups].map((group) =>
+    parseInt(group, 16),
+  );
+}
+
+function ipv4FromGroups(high: number, low: number): string {
+  return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`;
 }
 
 export type Deps = {
