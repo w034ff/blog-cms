@@ -2,6 +2,7 @@ import { getSiteIdentity } from '@/lib/site-settings';
 import type { Metadata } from 'next';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
+import { verifySession } from '@/lib/dal';
 import { listDictionary } from '@/lib/tags';
 
 // No h1: the editor's title field names the post. The tab title tells new from edit.
@@ -35,6 +36,7 @@ export default async function NewPostPage({
 }) {
   const { kind } = await searchParams;
   const isScribble = kind === 'scribble';
+  const session = await verifySession();
 
   return (
     <section>
@@ -48,6 +50,8 @@ export default async function NewPostPage({
         hasPendingEdits={false}
         tagDictionary={listDictionary()}
         kind={isScribble ? 'scribble' : 'post'}
+        userId={session.userId}
+        editedAt=''
       />
     </section>
   );

@@ -100,9 +100,7 @@ describe('POST /api/drafts and kinds', () => {
     expect(typeof updateRes.editedAt).toBe('string');
     expect(row(createRes.id).editedAt).toBe(updateRes.editedAt);
 
-    const skipRes = await (
-      await save({ content: { ...filled, title: '', body: '' } })
-    ).json();
+    const skipRes = await (await save({ content: { ...filled, title: '', body: '' } })).json();
     expect(skipRes.skipped).toBe(true);
     expect(skipRes.editedAt).toBeUndefined();
   });

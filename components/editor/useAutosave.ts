@@ -44,6 +44,7 @@ export function useAutosave({
   onCreated,
   onDirty,
   onSessionExpired,
+  onSaveSuccess,
 }: {
   // The form whose fields make up each save's payload.
   formRef: RefObject<HTMLFormElement | null>;
@@ -58,6 +59,8 @@ export function useAutosave({
   onDirty: () => void;
   // Autosave hit a lapsed session (true) or proved it valid again (false).
   onSessionExpired: (expired: boolean) => void;
+  // A save completed successfully; informs the draft buffer of the persisted content.
+  onSaveSuccess?: (content: DraftContent, editedAt?: string) => void;
 }) {
   // Autosave feedback (whether the in-progress work is safely persisted), kept
   // separate from the owner's publish state — they are two independent axes.
@@ -114,6 +117,7 @@ export function useAutosave({
         savedAt?: number;
         created?: boolean;
         skipped?: boolean;
+        editedAt?: string;
       };
       // Nothing worth saving yet (empty brand-new post): not an error.
       if (data.skipped) {
@@ -131,6 +135,7 @@ export function useAutosave({
       setAutosaveState('saved');
       setSavedAt(typeof data.savedAt === 'number' ? data.savedAt : Date.now());
       onSessionExpired(false);
+      onSaveSuccess?.(content, data.editedAt);
     } catch {
       setAutosaveState('failed');
     } finally {
@@ -143,7 +148,7 @@ export function useAutosave({
         setUnsaved(false);
       }
     }
-  }, [formRef, committedIdRef, kind, onCreated, onSessionExpired]);
+  }, [formRef, committedIdRef, kind, onCreated, onSessionExpired, onSaveSuccess]);
 
   // Publish the stable autosave routine to the ref the timer/flush/retry call,
   // so they never capture a stale closure (and we don't write the ref in render).

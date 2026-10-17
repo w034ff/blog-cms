@@ -106,10 +106,7 @@ describe('submitPostAction and kinds', () => {
 
   it('returns editedAt in saved on publish and unpublish', async () => {
     const id = seedDraft('post');
-    const pubState = await submitPostAction(
-      {},
-      form({ id: String(id), category: 'tech' }),
-    );
+    const pubState = await submitPostAction({}, form({ id: String(id), category: 'tech' }));
     expect(pubState.saved?.published).toBe(true);
     expect(typeof pubState.saved?.editedAt).toBe('string');
     expect(row(id).editedAt).toBe(pubState.saved?.editedAt);

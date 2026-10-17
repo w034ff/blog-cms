@@ -66,7 +66,9 @@ class MemoryStorage implements StorageLike {
 describe('draftBufferKey (docs/draft-buffer-requirements.md §3.1)', () => {
   it('builds keys with draftBuffer: prefix for existing post and new post', () => {
     expect(draftBufferKey(1, { type: 'post', id: 42 })).toBe(`${DRAFT_BUFFER_PREFIX}1:post:42`);
-    expect(draftBufferKey(1, { type: 'new', kind: 'post' })).toBe(`${DRAFT_BUFFER_PREFIX}1:new:post`);
+    expect(draftBufferKey(1, { type: 'new', kind: 'post' })).toBe(
+      `${DRAFT_BUFFER_PREFIX}1:new:post`,
+    );
     expect(draftBufferKey(2, { type: 'new', kind: 'scribble' })).toBe(
       `${DRAFT_BUFFER_PREFIX}2:new:scribble`,
     );
@@ -79,7 +81,9 @@ describe('shouldClearDraftBuffer (§7 基準 3)', () => {
     const bufferSame = sampleBuffer({ content: sampleContent({ body: '保存された本文' }) });
     expect(shouldClearDraftBuffer(sent, bufferSame)).toBe(true);
 
-    const bufferEdited = sampleBuffer({ content: sampleContent({ body: '保存された本文＋1文字' }) });
+    const bufferEdited = sampleBuffer({
+      content: sampleContent({ body: '保存された本文＋1文字' }),
+    });
     expect(shouldClearDraftBuffer(sent, bufferEdited)).toBe(false);
 
     expect(shouldClearDraftBuffer(sent, null)).toBe(false);
@@ -93,12 +97,7 @@ describe('decideDraftBufferBanner CRLF and LF (§7 基準 4)', () => {
     });
     const server = sampleContent({ body: '1行目\r\n2行目\r\n3行目' });
 
-    const decision = decideDraftBufferBanner(
-      buffer,
-      server,
-      '2026-10-17T10:00:00.000Z',
-      false,
-    );
+    const decision = decideDraftBufferBanner(buffer, server, '2026-10-17T10:00:00.000Z', false);
     expect(decision).toBe('discard');
   });
 
@@ -108,12 +107,7 @@ describe('decideDraftBufferBanner CRLF and LF (§7 基準 4)', () => {
     });
     const server = sampleContent({ body: 'サーバーの本文' });
 
-    const decision = decideDraftBufferBanner(
-      buffer,
-      server,
-      '2026-10-17T10:00:00.000Z',
-      false,
-    );
+    const decision = decideDraftBufferBanner(buffer, server, '2026-10-17T10:00:00.000Z', false);
     expect(decision).toBe('show');
   });
 
@@ -155,12 +149,7 @@ describe('decideDraftBufferBanner overwrite warning (§7 基準 5)', () => {
     expect(newerDecision).toBe('show-warning');
 
     // Server is same time -> no warning
-    const sameDecision = decideDraftBufferBanner(
-      buffer,
-      server,
-      '2026-10-17T10:00:00.000Z',
-      false,
-    );
+    const sameDecision = decideDraftBufferBanner(buffer, server, '2026-10-17T10:00:00.000Z', false);
     expect(sameDecision).toBe('show');
 
     // Server is older -> no warning

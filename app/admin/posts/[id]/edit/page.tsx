@@ -3,7 +3,9 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { PostEditor, type PostEditorInitial } from '@/components/PostEditor';
 import { submitPostAction } from '@/app/actions/posts';
+import { verifySession } from '@/lib/dal';
 import { getPostForEdit, liveContent } from '@/lib/posts';
+import { postEditedAt } from '@/lib/posts-write';
 import { listDictionary } from '@/lib/tags';
 import { EDIT_POST_TITLE } from '@/app/shared-metadata';
 
@@ -17,6 +19,9 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const postId = Number(id);
   const post = Number.isInteger(postId) ? await getPostForEdit(postId) : null;
   if (!post) notFound();
+
+  const session = await verifySession();
+  const editedAt = postEditedAt(post.id) ?? '';
 
   // The private working copy (pending edits) when present, else the live content.
   const content = post.draftContent ?? liveContent(post);
@@ -36,6 +41,8 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
         hasPendingEdits={post.hasPendingEdits}
         tagDictionary={listDictionary()}
         kind={post.kind}
+        userId={session.userId}
+        editedAt={editedAt}
       />
     </section>
   );

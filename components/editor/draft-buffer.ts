@@ -14,9 +14,7 @@ export const DRAFT_BUFFER_OVERWRITE_WARNING =
 export const DRAFT_BUFFER_RESTORE_LABEL = '復元';
 export const DRAFT_BUFFER_DISCARD_LABEL = '破棄';
 
-export type BufferTarget =
-  | { type: 'post'; id: number }
-  | { type: 'new'; kind: PostKind };
+export type BufferTarget = { type: 'post'; id: number } | { type: 'new'; kind: PostKind };
 
 export type DraftBuffer = {
   version: number;
@@ -41,7 +39,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseContent(value: unknown): DraftContent | null {
   if (!isRecord(value)) return null;
   if (typeof value.title !== 'string') return null;
-  if (typeof value.category !== 'string' || (value.category !== '' && !isCategoryId(value.category))) {
+  if (
+    typeof value.category !== 'string' ||
+    (value.category !== '' && !isCategoryId(value.category))
+  ) {
     return null;
   }
   if (!Array.isArray(value.tags) || !value.tags.every((tag: unknown) => typeof tag === 'string')) {
