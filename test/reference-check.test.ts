@@ -35,6 +35,8 @@ const ABSENT: string[] = [
   'docs/cms-features.md → app/sitemap.ts',
   'docs/cms-features.md → docs/reading-time-requirements.md',
   'docs/cms-features.md → lib/reading-time.ts',
+  'docs/draft-buffer-requirements.md → components/editor/draft-buffer.test.ts',
+  'docs/draft-buffer-requirements.md → e2e/editor-draft-buffer.spec.ts',
   'docs/project-status.md → app/actions/users.ts',
   'docs/project-status.md → app/admin/users/page.tsx',
   'docs/project-status.md → app/auth/google/callback/route.ts',
