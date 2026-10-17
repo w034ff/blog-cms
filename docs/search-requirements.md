@@ -3,7 +3,7 @@
 - 状態: 設計済み、未実装（2026-10-15）
 - 作成: 2026-10-15、サイトのヘッダーを作り直した後、次の機能として
 - 関連: `docs/project-status.md` §6、`docs/site-header-requirements.md` §3.1、`lib/excerpt.ts`、`lib/posts.ts`
-- 見た目の案: https://claude.ai/artifact/DAZFoLDmnGrDknQLAMz6hp の「案 1」と「検索のページ」
+- 見た目の案: オーナーと描き比べた案のうち「案 1」と「検索のページ」（描き比べはリポジトリの外にある）
 
 読者が言葉を打って、公開中の記事と走り書きを探す機能の設計記録。画面での名前は「検索」、コードと URL での名前は `search`。
 

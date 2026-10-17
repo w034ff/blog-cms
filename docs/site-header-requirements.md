@@ -3,7 +3,7 @@
 - 状態: 設計済み、未実装（2026-10-15）
 - 作成: 2026-10-15、Zenn・note・GitHub・ashunar0.dev のヘッダーを見比べ、ログインの有無でヘッダーを変える相談から
 - 関連: `docs/project-status.md` §6・§7.3、`components/SiteHeader.tsx`、`app/admin/(list)/AdminSideNav.tsx`、`app/admin/(list)/ScreenHeading.tsx`
-- 見た目の案: https://claude.ai/artifact/XoDTb7FhhkpwfY4LdnZLNf の「案 B」
+- 見た目の案: オーナーと描き比べた案のうち「案 B」（描き比べはリポジトリの外にある）
 
 公開ページと管理画面の一覧の画面がかぶるヘッダー（`SiteHeader`）の設計記録。ログインしていない人には読むための入口だけを、ログイン中の人には書くための入口とアカウントのメニューを出す。
 
