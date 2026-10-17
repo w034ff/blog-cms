@@ -5,7 +5,6 @@ import {
   DISPLAY_NAME_MAX_CHARS,
   DISPLAY_NAME_TOO_LONG,
   NO_LINE_BREAKS,
-  getDisplayName,
   getPostAuthorDisplayName,
   getUserDisplayName,
   validateDisplayName,
@@ -76,7 +75,7 @@ describe('getUserDisplayName', () => {
     expect(getUserDisplayName(undefined)).toBe('');
     expect(getUserDisplayName(NaN)).toBe('');
     expect(getUserDisplayName(999)).toBe('');
-    expect(getDisplayName(999)).toBe('');
+    expect(getUserDisplayName(999)).toBe('');
   });
 
   it('returns display name when user exists', () => {
@@ -92,7 +91,7 @@ describe('getUserDisplayName', () => {
       .get();
 
     expect(getUserDisplayName(insert.id)).toBe('Alice Liddell');
-    expect(getDisplayName(insert.id)).toBe('Alice Liddell');
+    expect(getUserDisplayName(insert.id)).toBe('Alice Liddell');
   });
 
   it('returns empty string when user display name is empty', () => {

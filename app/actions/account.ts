@@ -31,10 +31,7 @@ export async function saveAccountAction(
     return { error: 'ログインしていません。' };
   }
 
-  const raw = formData.has('displayName')
-    ? field(formData, 'displayName')
-    : field(formData, 'name');
-  const result = validateDisplayName(raw);
+  const result = validateDisplayName(field(formData, 'displayName'));
   if (!result.ok) {
     return { errors: { displayName: result.error } };
   }

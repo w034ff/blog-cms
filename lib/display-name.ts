@@ -2,6 +2,7 @@ import 'server-only';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { posts, users } from '@/lib/db/schema';
+import { codePointLength } from '@/lib/site-settings-rules';
 
 // What the display name accepts (docs/multi-author-requirements.md §3, §6.1).
 // Pure validation, matching the rules in lib/site-settings-rules.ts.
@@ -9,11 +10,6 @@ export const DISPLAY_NAME_MAX_CHARS = 20;
 
 export const DISPLAY_NAME_TOO_LONG = '20 文字以内で入力してください';
 export const NO_LINE_BREAKS = '改行は使えません';
-
-// Characters as a reader counts them: a surrogate pair is one.
-export function codePointLength(value: string): number {
-  return Array.from(value).length;
-}
 
 export type DisplayNameErrors = { displayName?: string };
 export type DisplayNameResult =
@@ -45,8 +41,6 @@ export function getUserDisplayName(userId: number | null | undefined): string {
     .get();
   return row?.displayName ?? '';
 }
-
-export const getDisplayName = getUserDisplayName;
 
 // Reads the display name of a post's author from the database (docs/multi-author-requirements.md §6.2).
 // Returns '' if the post does not exist, authorId is null, or the user is absent.
