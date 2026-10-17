@@ -2,6 +2,7 @@ import type { Root, Element, ElementContent } from 'hast';
 import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
 import { resolveEmbed, type EmbedTarget } from './embed-provider';
+import { hasClass } from './hast-class';
 import { externalCardHost } from './link-card-href';
 
 declare module 'vfile' {
@@ -10,11 +11,6 @@ declare module 'vfile' {
     // players would make the list heavy (docs/scribble-requirements.md §5).
     embedsAsLinks: boolean;
   }
-}
-
-function hasClass(node: Element, name: string): boolean {
-  const className = node.properties.className;
-  return Array.isArray(className) && className.includes(name);
 }
 
 // The embed as the reader gets it (docs/embed-requirements.md §9.5). Built after sanitize, so its

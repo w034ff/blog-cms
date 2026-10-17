@@ -14,6 +14,7 @@ import {
   TLDR_TITLE,
   type SummarySectionKind,
 } from './summary-types';
+import { hasClass } from './hast-class';
 
 // The published side of the まとめ and TL;DR blocks (docs/summary-requirements.md §8): the stored
 // form carries only the containers, so the titles and the wrappers they sit in are added here, as the
@@ -26,12 +27,6 @@ import {
 //
 // Nothing empty is drawn: a section with no text (added and never written, §3.1), and a whole box
 // with no text.
-
-function hasClass(node: ElementContent, name: string): node is Element {
-  if (node.type !== 'element') return false;
-  const { className } = node.properties;
-  return Array.isArray(className) && className.includes(name);
-}
 
 function isEmpty(node: ElementContent): boolean {
   return toString(node).trim() === '';
