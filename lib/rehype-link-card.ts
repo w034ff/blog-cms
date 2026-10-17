@@ -3,7 +3,8 @@ import type { VFile } from 'vfile';
 import { visit } from 'unist-util-visit';
 import { hasClass } from './hast-class';
 import { externalCardHost, isCardHref } from './link-card-href';
-import { CARD_PLACEHOLDER_DARK_SRC, type CardImage } from './link-card-image';
+import { categoryArtHast } from './category-art';
+import type { CardImage } from './link-card-image';
 
 // The card's rendered shape, not a `Post`: lib/render.ts must not import the DB
 // (docs/link-card-requirements.md §6), so the caller or a test supplies it.
@@ -23,9 +24,9 @@ declare module 'vfile' {
 // and a date mostly made older posts look stale. An external card shows the target's host there
 // (§14.4), from the href, since only the reference knows where the click goes.
 //
-// `image` is not re-validated, unlike `data-href`: the resolver builds it from `resolveThumbnail`,
-// `linkImageSrc` (§14.4) or the house mark (§17), **all same-origin**, so a reader is never pointed
-// at a third party's CDN. Any future resolver must keep that.
+// `image` is not re-validated, unlike `data-href`: a photo's `src` comes from `resolveThumbnail` or
+// `linkImageSrc` (§14.4), **both same-origin**, so a reader is never pointed at a third party's
+// CDN. Any future resolver must keep that. The mark carries no URL at all, only a category.
 //
 // The text column exists without an image too, keeping the description's width stable.
 function cardElement(href: string, target: CardTarget): Element {
@@ -63,42 +64,18 @@ function cardElement(href: string, target: CardTarget): Element {
     },
   ];
   if (target.image) {
-    // `alt=''`: the title beside it names the card. The placeholder class comes from the resolver,
-    // not from testing `src`, so renaming the file can't change how it is painted (§17).
-    const image: Element = {
-      type: 'element',
-      tagName: 'img',
-      properties: {
-        className: target.image.placeholder
-          ? ['link-card-image', 'link-card-placeholder']
-          : ['link-card-image'],
-        src: target.image.src,
-        alt: '',
-      },
-      children: [],
-    };
-    // The house mark has a file per colour scheme, chosen by the page (§17.3); the `<img>` keeps the
-    // light file as its fallback. `<picture>` renders only its `<img>`, so the box is unchanged.
+    // `alt=''` on a photo: the title beside it names the card. The mark is `aria-hidden` for the
+    // same reason. Which one is drawn comes from the resolver's `kind`, never from testing `src`
+    // (docs/category-mark-requirements.md §3.3).
     parts.push(
-      target.image.placeholder
-        ? {
+      target.image.kind === 'mark'
+        ? categoryArtHast(['link-card-image'], target.image.category)
+        : {
             type: 'element',
-            tagName: 'picture',
-            properties: {},
-            children: [
-              {
-                type: 'element',
-                tagName: 'source',
-                properties: {
-                  media: '(prefers-color-scheme: dark)',
-                  srcSet: CARD_PLACEHOLDER_DARK_SRC,
-                },
-                children: [],
-              },
-              image,
-            ],
-          }
-        : image,
+            tagName: 'img',
+            properties: { className: ['link-card-image'], src: target.image.src, alt: '' },
+            children: [],
+          },
     );
   }
   return {

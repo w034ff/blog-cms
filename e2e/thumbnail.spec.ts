@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  addTag,
   closePostSettings,
   expectAutosaved,
   expectPublished,
@@ -34,9 +35,20 @@ const PNG_1x1_RED = Buffer.from(PNG_1x1_RED_BASE64, 'base64');
 
 const UPLOAD_SRC = /^\/uploads\/[0-9a-f]+\.png$/;
 
-async function publish(page: Page, title: string, source: string): Promise<string> {
+async function publish(
+  page: Page,
+  title: string,
+  source: string,
+  options: { category?: string; tag?: string } = {},
+): Promise<string> {
   await page.getByLabel('タイトル').fill(title);
   if (source !== '') await loadMarkdown(page, source);
+  if (options.category || options.tag) {
+    await openPostSettings(page);
+    if (options.category) await page.getByRole('radio', { name: options.category }).check();
+    if (options.tag) await addTag(page, options.tag);
+    await closePostSettings(page);
+  }
   await expectAutosaved(page);
   await ensureCategory(page);
   await page.getByRole('button', { name: '投稿' }).click();
@@ -344,16 +356,146 @@ test('a post with no chosen image still shows the body’s first one', async ({ 
   );
 });
 
-// No image anywhere (criteria 5f, 17b): the card gets the house mark, the list nothing (the mark is
-// the card's furniture, §17). Both measured.
-test('a post with no image anywhere gets the house mark on its card (17b)', async ({ page }) => {
+// What `var(--category-…)` resolves to in this page's scheme, as the `rgb()` string a computed `fill`
+// reports: a probe element, so the test reads the token rather than copying its hex.
+async function tokenColour(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+}
+
+// The list row's frame of a post by title, and what is drawn in it.
+function rowFrame(page: Page, title: string) {
+  return page.locator(`article:has-text("${title}") .category-art`);
+}
+
+// No image anywhere (docs/category-mark-requirements.md §3, CM-5/CM-6): the row is drawn as the
+// site's mark in the category's colour, in the frame a photo would have.
+for (const { label, category } of [
+  { label: '技術記事', category: 'tech' },
+  { label: 'ブログ', category: 'blog' },
+]) {
+  test(`a ${category} post with no image gets a ${category}-coloured mark in the list (CM-5, CM-6)`, async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    await expect(page.locator('.ProseMirror')).toBeVisible();
+    const title = `画像なしの${category}記事 ${Date.now()}`;
+    await publish(page, title, '文字だけの本文。\n', { category: label });
+
+    await page.goto('/');
+    const frame = rowFrame(page, title);
+    await expect(frame).toHaveCount(1);
+    await expect(frame).toHaveAttribute('data-category', category);
+
+    // The same frame a photo has (160×96 at this width), and a mark that has a size: an `<svg>`
+    // built without one is 0×0 and invisible (docs/editor-pitfalls.md §3.2), which no attribute
+    // assertion notices.
+    const frameBox = (await frame.boundingBox())!;
+    expect(frameBox.width).toBeCloseTo(160, 0);
+    expect(frameBox.height).toBeCloseTo(96, 0);
+    const svgBox = (await frame.locator('svg').boundingBox())!;
+    expect(svgBox.height).toBeGreaterThan(0);
+    // 40% of the frame's content box, inside its 1px border.
+    expect(svgBox.height).toBeCloseTo((96 - 2) * 0.4, 0);
+    expect(svgBox.width).toBeCloseTo(svgBox.height, 0);
+
+    // The tile is the category's colour in this scheme; the glyph knocks out to the surface.
+    expect(
+      await frame.locator('.category-art-tile').evaluate((el) => getComputedStyle(el).fill),
+    ).toBe(await tokenColour(page, `--category-${category}`));
+  });
+}
+
+// CM-5's other half: a post with an image keeps its photo and gets no mark.
+test('a post with an image keeps its photo in the list (CM-5)', async ({ page }) => {
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
-  const href = await publish(page, '画像なしの記事', '文字だけの本文。\n');
-  const slug = href.slice('/posts/'.length);
+  await page.locator('.ProseMirror').click();
+  await page.getByTestId('image-picker').setInputFiles({
+    name: 'e2e-list-photo.png',
+    mimeType: 'image/png',
+    buffer: PNG_1x1,
+  });
+  await expect(page.locator('.ProseMirror img')).toBeVisible({ timeout: 20_000 });
+  const title = `写真つきの記事 ${Date.now()}`;
+  await publish(page, title, '');
 
   await page.goto('/');
-  await expect(page.locator('article:has-text("画像なしの記事") img')).toHaveCount(0);
+  const row = page.locator(`article:has-text("${title}")`);
+  await expect(row.locator('img')).toHaveCount(1);
+  await expect(row.locator('.category-art')).toHaveCount(0);
+  const box = (await row.locator('img').boundingBox())!;
+  expect(box.width).toBeCloseTo(160, 0);
+  expect(box.height).toBeCloseTo(96, 0);
+});
+
+// CM-8 / CM-9: below `sm` the row keeps title, date, category and picture, and the picture's frame is
+// 128×80; from `sm` the excerpt and tags are back and the frame is 160×96 (§5).
+const NARROW = { width: 360, height: 800 };
+const WIDE = { width: 1280, height: 800 };
+
+async function publishRowWithExcerptAndTag(page: Page): Promise<string> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const title = `行の中身 ${Date.now()}`;
+  await publish(page, title, '一覧の説明文になる本文。\n', { tag: `t${Date.now()}` });
+  return title;
+}
+
+test('a narrow viewport drops the excerpt and tags and keeps the 128×80 frame (CM-8)', async ({
+  page,
+}) => {
+  const title = await publishRowWithExcerptAndTag(page);
+
+  await page.setViewportSize(NARROW);
+  await page.goto('/');
+  const row = page.locator(`article:has-text("${title}")`);
+  // Hidden by CSS, not removed: the row still holds them for assistive tech and crawlers (§5).
+  await expect(row.locator('p')).toHaveCount(1);
+  await expect(row.locator('p')).toBeHidden();
+  await expect(row.locator('ul')).toBeHidden();
+  await expect(row.locator('h2')).toBeVisible();
+  await expect(row.locator('time')).toBeVisible();
+
+  const box = (await row.locator('.category-art').boundingBox())!;
+  expect(box.width).toBeCloseTo(128, 0);
+  expect(box.height).toBeCloseTo(80, 0);
+  // 40% of the frame's content box inside its 1px border: 31.2px, the "32px" of §3.2.
+  expect((await row.locator('.category-art svg').boundingBox())!.height).toBeCloseTo(31.2, 0);
+});
+
+test('a wide viewport keeps the excerpt and tags (CM-9)', async ({ page }) => {
+  const title = await publishRowWithExcerptAndTag(page);
+
+  await page.setViewportSize(WIDE);
+  await page.goto('/');
+  const row = page.locator(`article:has-text("${title}")`);
+  await expect(row.locator('p')).toBeVisible();
+  await expect(row.locator('ul')).toBeVisible();
+  // `line-clamp-2` sets `display: -webkit-box`, which this Chrome reports as `flow-root`; a later
+  // `display: block` (`sm:block`) would leave the two-line cut to Chrome's leniency, and browsers
+  // that need the box would not cut at all.
+  await expect(row.locator('p')).not.toHaveCSS('display', 'block');
+  const box = (await row.locator('.category-art').boundingBox())!;
+  expect(box.width).toBeCloseTo(160, 0);
+  expect(box.height).toBeCloseTo(96, 0);
+});
+
+// The published card for a post with no image: the same mark in the card's frame (CM-6). Its
+// geometry is measured in public-link-card.spec.ts. The mark replaces a file, so `naturalWidth` is
+// gone: what the old check guarded (a 404 leaves box, class and src as asserted) is now whether the
+// `<svg>` has a size.
+test('a card to a post with no image draws the mark inline (CM-6)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const href = await publish(page, `画像なしの記事 ${Date.now()}`, '文字だけの本文。\n');
+  const slug = href.slice('/posts/'.length);
 
   await page.goto('/admin/posts/new');
   await expect(page.locator('.ProseMirror')).toBeVisible();
@@ -365,38 +507,13 @@ test('a post with no image anywhere gets the house mark on its card (17b)', asyn
   await page.goto(cardHref);
   const card = page.locator('.prose a.link-card');
   await expect(card).toHaveCount(1);
-  const image = card.locator('img.link-card-image');
-  // The literal path: importing the constant would agree by construction.
-  await expect(image).toHaveAttribute('src', '/link-card-placeholder.svg');
-  await expect(image).toHaveClass(/link-card-placeholder/);
-  await expect(image).toHaveAttribute('alt', '');
-  // One file per scheme (§17.3): `currentSrc` says which `<source>` won.
-  await expect
-    .poll(async () => image.evaluate((el: HTMLImageElement) => el.currentSrc))
-    .toContain('/link-card-placeholder.svg');
-  await expect(card.locator('picture source')).toHaveAttribute(
-    'srcset',
-    '/link-card-placeholder-dark.svg',
-  );
-
-  // The same frame as a real picture: the card keeps one shape (§17).
-  const cardBox = (await card.boundingBox())!;
-  const box = (await image.boundingBox())!;
-  expect(box.width).toBeCloseTo(256, 0);
-  expect(box.height).toBeCloseTo(cardBox.height - 2, 0);
-  expect(box.y - cardBox.y).toBeCloseTo(1, 0);
-  expect(cardBox.x + cardBox.width - (box.x + box.width)).toBeCloseTo(1, 0);
-
-  // Fitted on its tint, not cropped: what the second class is for.
-  expect(await image.evaluate((el) => getComputedStyle(el).objectFit)).toBe('contain');
-  expect(await image.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
-    'rgba(0, 0, 0, 0)',
-  );
-  // The file arrived: a 404 leaves box, class and src as asserted.
-  await expect
-    .poll(async () => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
-    .toBeGreaterThan(0);
-
+  const mark = card.locator('.link-card-image.category-art');
+  await expect(mark).toHaveCount(1);
+  await expect(mark).toHaveAttribute('data-category', /^(tech|blog)$/);
+  await expect(card.locator('img')).toHaveCount(0);
+  const svgBox = (await mark.locator('svg').boundingBox())!;
+  expect(svgBox.width).toBeGreaterThan(0);
+  expect(svgBox.height).toBeGreaterThan(0);
   // The text column exists either way.
   await expect(card.locator('.link-card-text')).toHaveCount(1);
 });

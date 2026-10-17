@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { embedFallbackAnchor } from './embed-fallback';
 import { renderMdxToHtml } from '@/lib/render';
-import { CARD_PLACEHOLDER_DARK_SRC, CARD_PLACEHOLDER_SRC } from '@/lib/link-card-image';
+import {
+  MARK_GLYPH_PATH,
+  MARK_STROKE_WIDTH,
+  MARK_TILE_RADIUS,
+  MARK_VIEW_BOX,
+} from '@/lib/site-mark';
 
 // Guards the public render pipeline end-to-end (remark-gfm → alerts →
 // remark-rehype → rehype-raw → rehype-sanitize → pretty-code). Focus: the GitHub
@@ -257,7 +262,7 @@ describe('renderMdxToHtml — link cards', () => {
     const withImage = async () => ({
       title: '絵のある記事',
       description: '説明文',
-      image: { src: '/uploads/8c3a2ce41540e56801a3.png', placeholder: false },
+      image: { kind: 'photo' as const, src: '/uploads/8c3a2ce41540e56801a3.png' },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('<img class="link-card-image" src="/uploads/8c3a2ce41540e56801a3.png"');
@@ -268,46 +273,62 @@ describe('renderMdxToHtml — link cards', () => {
     expect(html).toContain('<span class="link-card-text">');
   });
 
-  it('marks the house placeholder so the card can draw it differently (17a)', async () => {
-    // §17. A post with neither a chosen thumbnail nor an image in its body resolves to this site's
-    // own mark, and the card has to paint it as a mark on a tint rather than crop it to fill the
-    // frame. The second class is the whole of how the stylesheet tells the two apart, and it comes
-    // from the resolver's flag — not from a test on the src here, which would break the moment the
-    // file is renamed.
-    const houseMark = async () => ({
+  it('draws an imageless post as the category-coloured inline mark (CM-3)', async () => {
+    // docs/category-mark-requirements.md §3.3. A post with neither a chosen thumbnail nor an image in
+    // its body resolves to `kind: 'mark'`, which the stage draws as markup carrying the category:
+    // the colour comes from CSS keyed on `data-category`, so no colour is written here.
+    const mark = async () => ({
       title: '絵のない記事',
       description: '説明文',
-      image: { src: CARD_PLACEHOLDER_SRC, placeholder: true },
+      image: { kind: 'mark' as const, category: 'tech' as const },
     });
-    const { html } = await renderMdxToHtml(CARD, { resolveCard: houseMark });
-    expect(html).toContain(
-      `<img class="link-card-image link-card-placeholder" src="${CARD_PLACEHOLDER_SRC}"`,
-    );
-    // Still decorative: the mark names this blog, which the card already points at.
-    expect(html).toContain('alt=""');
-    // The mark is the site's name in the foreground colour, so it has a file per scheme and the
-    // page chooses (§17.3). The `<img>`'s own src stays the light file — that is the fallback for
-    // anything that ignores `<source>`, and asserting both is what keeps the pair from collapsing
-    // into "the dark one only".
-    expect(html).toContain(
-      `<picture><source media="(prefers-color-scheme: dark)" srcset="${CARD_PLACEHOLDER_DARK_SRC}">`,
-    );
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: mark });
+    expect(html).toContain('<span class="link-card-image category-art" data-category="tech">');
+    expect(html).toContain('<svg ');
+    expect(html).toContain('aria-hidden="true"');
+    // No file to load, so nothing to 404 and no per-scheme file to choose between.
+    expect(html).not.toContain('<img');
+    expect(html).not.toMatch(/<(picture|source)/);
+    expect(html).not.toMatch(/\b(fill|stroke)="#/);
   });
 
-  it('leaves the second class off a picture the target owns (17a)', async () => {
-    // The other half: a real picture must not be painted on the tint. Mutating `placeholder` to a
-    // constant `true` takes this one red and the one above green, which is what makes the pair
-    // measure the flag rather than the class name.
+  it('leaves data-category off a mark with no category (CM-10)', async () => {
+    // §3.4: the draft case. The stylesheet's default colour applies; no category is guessed.
+    const mark = async () => ({
+      title: 'T',
+      description: '',
+      image: { kind: 'mark' as const, category: '' as const },
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: mark });
+    expect(html).toContain('<span class="link-card-image category-art">');
+    expect(html).not.toContain('data-category');
+  });
+
+  it('builds the mark from the site mark’s geometry (CM-4)', async () => {
+    const mark = async () => ({
+      title: 'T',
+      description: '',
+      image: { kind: 'mark' as const, category: 'blog' as const },
+    });
+    const { html } = await renderMdxToHtml(CARD, { resolveCard: mark });
+    expect(html).toContain(`viewBox="${MARK_VIEW_BOX}"`);
+    expect(html).toContain(`rx="${MARK_TILE_RADIUS}"`);
+    expect(html).toContain(`d="${MARK_GLYPH_PATH}"`);
+    expect(html).toContain(`stroke-width="${MARK_STROKE_WIDTH}"`);
+  });
+
+  it('draws a photo the target owns as a plain <img> (CM-3)', async () => {
+    // The other half: a real picture is not the mark. Mutating the stage to draw the mark for every
+    // image takes this one red.
     const withImage = async () => ({
       title: '絵のある記事',
       description: '',
-      image: { src: '/uploads/8c3a2ce41540e56801a3.png', placeholder: false },
+      image: { kind: 'photo' as const, src: '/uploads/8c3a2ce41540e56801a3.png' },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('<img class="link-card-image" src="/uploads/');
-    expect(html).not.toContain('link-card-placeholder');
-    // And no wrapper: a photograph has one file, so there is nothing for a `<source>` to choose.
-    expect(html).not.toContain('<picture>');
+    expect(html).not.toContain('category-art');
+    expect(html).not.toContain('<svg');
   });
 
   it('survives sanitize with the image intact (2a)', async () => {
@@ -317,7 +338,7 @@ describe('renderMdxToHtml — link cards', () => {
     const withImage = async () => ({
       title: 'T',
       description: '',
-      image: { src: '/uploads/a.png', placeholder: false },
+      image: { kind: 'photo' as const, src: '/uploads/a.png' },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });
     expect(html).toContain('src="/uploads/a.png"');
@@ -496,8 +517,8 @@ describe('renderMdxToHtml — external link cards', () => {
       title: '外部の記事',
       description: '',
       image: {
+        kind: 'photo' as const,
         src: '/api/link-image?url=https%3A%2F%2Fcdn.example%2Fa.png&sig=0123456789abcdef0123',
-        placeholder: false,
       },
     });
     const { html } = await renderMdxToHtml(CARD, { resolveCard: withImage });

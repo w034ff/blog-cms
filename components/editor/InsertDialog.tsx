@@ -6,16 +6,13 @@ import { EMBED_PROVIDERS, embedRefusal } from '@/lib/embed-provider';
 import { resolveInsertTarget, SELF_REFERENCE_NOTE } from '@/lib/insert-target';
 import { EmbedProviderIcon } from './embed-provider-icon';
 import { speakerdeckSnippetHref } from '@/lib/speakerdeck-snippet';
-import {
-  internalCardImage,
-  CARD_PLACEHOLDER_DARK_SRC,
-  type CardImage,
-} from '@/lib/link-card-image';
+import { internalCardImage, type CardImage } from '@/lib/link-card-image';
 import { isOwnPostHref } from '@/lib/link-card-href';
 import { categoryLabel } from '@/lib/content';
 import type { PostSearchResult } from '@/lib/types';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
+import { CategoryArt } from '@/components/CategoryArt';
 
 // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md §21):
 // one modal for both a link card and an embed. The URL always decides which (§24), so the two tabs
@@ -389,7 +386,7 @@ function hostOf(value: string): string {
 // §21). **The accessible name must be the title exactly:** e2e/editor-link-card.spec.ts matches it
 // as a full string.
 function SearchResultRow({ post, onPick }: { post: PostSearchResult; onPick: () => void }) {
-  const image = internalCardImage(post.thumbnail);
+  const image = internalCardImage(post.thumbnail, post.category);
   return (
     <li>
       <button
@@ -418,24 +415,15 @@ function SearchResultRow({ post, onPick }: { post: PostSearchResult; onPick: () 
   );
 }
 
-// 44px, matching `.link-card-result-image`, so every row's text starts at the same x; the house
+// 44px, matching `.link-card-result-image`, so every row's text starts at the same x; the category's
 // mark fills the frame for a post with no image.
 function SearchResultImage({ image }: { image: CardImage }) {
-  // A plain <img>, as in ThumbnailField: the other surfaces can't use next/image either.
-  if (!image.placeholder) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={image.src} alt='' className='h-11 w-11 flex-none rounded-chip object-cover' />
-    );
+  if (image.kind === 'mark') {
+    return <CategoryArt className='h-11 w-11 flex-none rounded-chip' category={image.category} />;
   }
   return (
-    <picture>
-      <source media='(prefers-color-scheme: dark)' srcSet={CARD_PLACEHOLDER_DARK_SRC} />
-      <img
-        src={image.src}
-        alt=''
-        className='h-11 w-11 flex-none rounded-chip bg-zinc-100 object-contain p-1.5 dark:bg-zinc-800'
-      />
-    </picture>
+    // A plain <img>, as in ThumbnailField: the other surfaces can't use next/image either.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={image.src} alt='' className='h-11 w-11 flex-none rounded-chip object-cover' />
   );
 }

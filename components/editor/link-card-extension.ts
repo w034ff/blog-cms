@@ -2,14 +2,10 @@ import { Node, mergeAttributes, type CommandProps, type Editor } from '@tiptap/c
 import type { Node as PMNode } from '@tiptap/pm/model';
 import type { PostSearchResult } from '@/lib/types';
 import { externalCardHost, isOwnPostHref, normalizeCardHref } from '@/lib/link-card-href';
-import {
-  CARD_PLACEHOLDER_DARK_SRC,
-  externalCardImage,
-  internalCardImage,
-  type CardImage,
-} from '@/lib/link-card-image';
+import { externalCardImage, internalCardImage, type CardImage } from '@/lib/link-card-image';
 import { resolveInsertTarget, SELF_REFERENCE_NOTE } from '@/lib/insert-target';
 import { categoryLabel } from '@/lib/content';
+import { categoryArtElement } from '@/lib/category-art';
 import {
   BACK_SHAPES,
   buildIcon,
@@ -206,35 +202,20 @@ export const LinkCard = Node.create<Record<string, never>, LinkCardStorage>({
       body.className = 'link-card-body';
       dom.appendChild(body);
 
-      // The image, right of the text column as on the published card (§13). A sibling of `body`, so
-      // `body.replaceChildren()` leaves it and `render` manages it.
-      const image = document.createElement('img');
-      // Decorative, for the published card's reason: the title it belongs to is right beside it.
-      image.alt = '';
-      // For the house mark's per-scheme file (§17.3). The single `<img>` moves in and out of it.
-      const picture = document.createElement('picture');
-      const darkSource = document.createElement('source');
-      darkSource.media = '(prefers-color-scheme: dark)';
-      darkSource.srcset = CARD_PLACEHOLDER_DARK_SRC;
+      // The picture, right of the text column as on the published card (§13). A sibling of `body`, so
+      // `body.replaceChildren()` leaves it and `render` manages it. A photo is an `<img>` and a mark
+      // is a `<span>`, so each draw replaces the element rather than reusing one: a mark left behind
+      // under a photo would be two pictures.
+      let drawnImage: HTMLElement | null = null;
       const setImage = (drawn: CardImage | null) => {
-        if (drawn === null) {
-          picture.remove();
-          image.remove();
-          return;
-        }
-        // Set on every draw, never toggled: the `<img>` is reused across lookups (§17).
-        image.className = drawn.placeholder
-          ? 'link-card-image link-card-placeholder'
-          : 'link-card-image';
-        image.src = drawn.src;
-        if (drawn.placeholder) {
-          picture.append(darkSource, image);
-          dom.appendChild(picture);
-        } else {
-          // Moving the image out leaves the previous card's `<source>` behind.
-          picture.remove();
-          dom.appendChild(image);
-        }
+        drawnImage?.remove();
+        drawnImage = null;
+        if (drawn === null) return;
+        drawnImage =
+          drawn.kind === 'mark'
+            ? categoryArtElement(['link-card-image'], drawn.category)
+            : photoImage(drawn.src, 'link-card-image');
+        dom.appendChild(drawnImage);
       };
 
       const currentHref = (n: PMNode) => (typeof n.attrs.href === 'string' ? n.attrs.href : '');
@@ -369,7 +350,7 @@ type CardFace = {
   // The provenance line, and null on an internal card, whose target is this same blog (§14.4).
   domain: string | null;
   // Null only on an external target with no og:image: an internal card always has a picture, the
-  // site's own mark when the post has none (§17).
+  // category's mark when the post has none (§17).
   image: CardImage | null;
 };
 
@@ -429,8 +410,9 @@ async function fetchPost(href: string): Promise<Lookup> {
         // link there (§5.2-4, §6.1), which is only fixable from here.
         note: post.draft ? '未公開の記事' : '',
         domain: null,
-        // The same `internalCardImage` the published resolver uses (§17).
-        image: internalCardImage(post.thumbnail),
+        // The same `internalCardImage` the published resolver uses (§17). `post.category` may be '' for
+        // a draft; the mark then takes the default colour.
+        image: internalCardImage(post.thumbnail, post.category),
       },
     };
   } catch {
@@ -680,7 +662,7 @@ function renderPicker(
 }
 
 // One row of the insert search (§5.2-5): picture, title, category. The picture is
-// `internalCardImage`, so every row has one (the house mark when needed, §17) and titles line up.
+// `internalCardImage`, so every row has one (the category's mark when needed, §17) and titles line up.
 // **The accessible name is the title (plus the draft note) only:** e2e/editor-link-card.spec.ts
 // matches it as a full string.
 function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElement {
@@ -713,27 +695,25 @@ function resultRow(post: PostSearchResult, onPick: () => void): HTMLButtonElemen
   category.textContent = categoryLabel(post.category);
   text.appendChild(category);
 
-  el.append(resultImage(internalCardImage(post.thumbnail)), text);
+  el.append(resultImage(internalCardImage(post.thumbnail, post.category)), text);
   el.addEventListener('click', onPick);
   return el;
 }
 
-// The row's picture, with the card's `<picture>` mechanism (§17.3), built fresh per row.
+// The row's picture, built fresh per row: a photo, or the category's mark (§17).
 function resultImage(drawn: CardImage): HTMLElement {
+  return drawn.kind === 'mark'
+    ? categoryArtElement(['link-card-result-image'], drawn.category)
+    : photoImage(drawn.src, 'link-card-result-image');
+}
+
+// A photograph. Decorative: the title it belongs to is beside it, in the card or on the same row.
+function photoImage(src: string, className: string): HTMLImageElement {
   const image = document.createElement('img');
-  // Decorative: the title it belongs to is on the same row, and the button is named above.
   image.alt = '';
-  image.className = drawn.placeholder
-    ? 'link-card-result-image link-card-result-placeholder'
-    : 'link-card-result-image';
-  image.src = drawn.src;
-  if (!drawn.placeholder) return image;
-  const picture = document.createElement('picture');
-  const darkSource = document.createElement('source');
-  darkSource.media = '(prefers-color-scheme: dark)';
-  darkSource.srcset = CARD_PLACEHOLDER_DARK_SRC;
-  picture.append(darkSource, image);
-  return picture;
+  image.className = className;
+  image.src = src;
+  return image;
 }
 
 // `icon` makes a band control. **Icon and label at every width**: below 30rem (40rem with a picture,

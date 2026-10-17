@@ -88,23 +88,75 @@ test('the card shows the current title, fetched rather than stored (1c)', async 
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
 });
 
+// What `var(<name>)` resolves to in this page's scheme, as the `rgb()` string a computed `fill`
+// reports: a probe element, so the test reads the token rather than copying its hex.
+async function tokenColour(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+}
+
 // The other half of criterion 4f, §17's editor half: a card to an own post always carries a
-// picture, the house mark when the post has none, and the editor must show what the reader gets
-// (§13). `second-post` has no image; the own-picture case is in thumbnail.spec.ts.
-test('a card to a post with no image shows this site’s mark (4f/17b)', async ({ page }) => {
+// picture, the category's mark when the post has none, and the editor must show what the reader gets
+// (§13, docs/category-mark-requirements.md §4). `second-post` has no image and is filed under
+// 技術記事; the own-picture case is in thumbnail.spec.ts. This one builds the mark with the DOM
+// builder (`categoryArtElement`), which vitest cannot run.
+test('a card to a post with no image shows the category’s mark (4f/17b, CM-6)', async ({
+  page,
+}) => {
   await openWithCard(page);
   // Wait for the lookup first, or the assertion passes whatever the code does.
   await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
-  const image = card(page).locator('img.link-card-image');
-  await expect(image).toHaveAttribute('src', '/link-card-placeholder.svg');
-  // The second class draws it as a mark on a tint, and is set on every draw (§17).
-  await expect(image).toHaveClass(/link-card-placeholder/);
-  await expect(image).toHaveAttribute('alt', '');
-  // The dark file rides in the NodeView's `<picture>`, as on the published card (§13).
-  await expect(card(page).locator('picture source')).toHaveAttribute(
-    'srcset',
-    '/link-card-placeholder-dark.svg',
+  const mark = card(page).locator('.link-card-image.category-art');
+  await expect(mark).toHaveCount(1);
+  await expect(mark).toHaveAttribute('data-category', 'tech');
+  // Not a file: nothing to load and no per-scheme `<picture>`.
+  await expect(card(page).locator('img, picture')).toHaveCount(0);
+  // `createElementNS` is what makes the `<svg>` draw; one built with `createElement` is 0×0.
+  const svgBox = (await mark.locator('svg').boundingBox())!;
+  expect(svgBox.width).toBeGreaterThan(0);
+  expect(svgBox.height).toBeCloseTo((await mark.boundingBox())!.height * 0.4, 0);
+  expect(await mark.locator('.category-art-tile').evaluate((el) => getComputedStyle(el).fill)).toBe(
+    await tokenColour(page, '--category-tech'),
   );
+});
+
+// §4: one picture at a time. A photo and a mark are different elements, so a redraw has to remove the
+// previous one (photo → mark → photo here, by re-picking through the card's picker).
+test('re-picking a card replaces its picture, never stacking a second (CM-6)', async ({ page }) => {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.locator('.ProseMirror').click();
+  await loadMarkdown(page, `${EXTERNAL_MD}\n\n本文\n`);
+  await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
+
+  const pictures = card(page).locator('> .link-card-image');
+  // The external card's og:image: a photo.
+  await expect(pictures).toHaveCount(1);
+  await expect(card(page).locator('img.link-card-image')).toHaveCount(1);
+
+  await openPickerViaChange(page);
+  await page.locator('.link-card-results').getByRole('button', { name: CARD_TITLE }).click();
+  await expect(card(page).locator('.link-card-title')).toHaveText(CARD_TITLE);
+  await expect(pictures).toHaveCount(1);
+  await expect(card(page).locator('.link-card-image.category-art')).toHaveCount(1);
+  await expect(card(page).locator('img')).toHaveCount(0);
+
+  const search = await openPickerViaChange(page);
+  await search.fill(EXTERNAL_HREF);
+  await page
+    .locator('.link-card-results')
+    .getByRole('button', { name: 'この URL をカードにする' })
+    .click();
+  await expect(card(page).locator('.link-card-title')).toHaveText(EXTERNAL_TITLE);
+  await expect(pictures).toHaveCount(1);
+  await expect(card(page).locator('img.link-card-image')).toHaveCount(1);
+  await expect(card(page).locator('.category-art')).toHaveCount(0);
 });
 
 // §13.1: the second line appears only when something about the target needs saying.
@@ -873,7 +925,8 @@ type RowShape = {
   height: number;
   hasImage: boolean;
   loaded: boolean;
-  placeholder: boolean;
+  mark: boolean;
+  categoryArt: string | null;
   category: string | null;
   badge: string | null;
 };
@@ -882,13 +935,19 @@ function rowShapes(page: Page): Promise<RowShape[]> {
   return page.locator('.link-card-result').evaluateAll((els) =>
     els.map((el) => {
       const img = el.querySelector('img');
+      const art = el.querySelector('.link-card-result-image.category-art');
       return {
         label: el.getAttribute('aria-label'),
         height: Math.round(el.getBoundingClientRect().height),
-        hasImage: img !== null,
-        // `naturalWidth`, not `src`: a 404 keeps the attribute (§17).
-        loaded: img !== null && img.naturalWidth > 0,
-        placeholder: img?.classList.contains('link-card-result-placeholder') ?? false,
+        hasImage: img !== null || art !== null,
+        // `naturalWidth` for a photo, whose `src` stays set after a 404; a mark is inline, so what
+        // can go wrong is an `<svg>` with no size (docs/editor-pitfalls.md §3.2).
+        loaded:
+          img !== null
+            ? img.naturalWidth > 0
+            : (art?.querySelector('svg')?.getBoundingClientRect().height ?? 0) > 0,
+        mark: art !== null,
+        categoryArt: art?.getAttribute('data-category') ?? null,
         category: el.querySelector('.link-card-result-category')?.textContent ?? null,
         badge: el.querySelector('.link-card-result-badge')?.textContent ?? null,
       };
@@ -929,12 +988,21 @@ test('every insert-search row carries a picture, and they are all one height (20
     expect(row.hasImage, row.label ?? '').toBe(true);
     expect(row.loaded, row.label ?? '').toBe(true);
   }
-  // Both kinds on screen, or the loop says nothing about the house-mark fallback (§17).
-  expect(rows.some((row) => row.placeholder)).toBe(true);
-  expect(rows.some((row) => !row.placeholder)).toBe(true);
+  // Both kinds on screen, or the loop says nothing about the mark fallback (§17).
+  expect(rows.some((row) => row.mark)).toBe(true);
+  expect(rows.some((row) => !row.mark)).toBe(true);
+  // These drafts have no category chosen: the mark carries no `data-category` and falls to the
+  // foreground colour, not a guessed one (docs/category-mark-requirements.md §3.4, CM-10).
+  for (const row of rows.filter((r) => r.mark)) expect(row.categoryArt).toBeNull();
+  expect(
+    await page
+      .locator('.link-card-result-image.category-art .category-art-tile')
+      .first()
+      .evaluate((el) => getComputedStyle(el).fill),
+  ).toBe(await tokenColour(page, '--foreground'));
 
-  // One height for every row, which the `<picture>` margin broke (§20); uneven rows would also
-  // misplace 4b's sweep.
+  // One height for every row, which a stray margin on the picture broke (§20); uneven rows would
+  // also misplace 4b's sweep.
   expect([...new Set(rows.map((row) => row.height))]).toHaveLength(1);
 });
 
