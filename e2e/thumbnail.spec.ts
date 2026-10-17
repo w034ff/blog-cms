@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
+  addTag,
   closePostSettings,
   expectAutosaved,
   expectPublished,
@@ -38,13 +39,14 @@ async function publish(
   page: Page,
   title: string,
   source: string,
-  options: { category?: string } = {},
+  options: { category?: string; tag?: string } = {},
 ): Promise<string> {
   await page.getByLabel('タイトル').fill(title);
   if (source !== '') await loadMarkdown(page, source);
-  if (options.category) {
+  if (options.category || options.tag) {
     await openPostSettings(page);
-    await page.getByRole('radio', { name: options.category }).check();
+    if (options.category) await page.getByRole('radio', { name: options.category }).check();
+    if (options.tag) await addTag(page, options.tag);
     await closePostSettings(page);
   }
   await expectAutosaved(page);
@@ -429,6 +431,54 @@ test('a post with an image keeps its photo in the list (CM-5)', async ({ page })
   await expect(row.locator('img')).toHaveCount(1);
   await expect(row.locator('.category-art')).toHaveCount(0);
   const box = (await row.locator('img').boundingBox())!;
+  expect(box.width).toBeCloseTo(160, 0);
+  expect(box.height).toBeCloseTo(96, 0);
+});
+
+// CM-8 / CM-9: below `sm` the row keeps title, date, category and picture, and the picture's frame is
+// 128×80; from `sm` the excerpt and tags are back and the frame is 160×96 (§5).
+const NARROW = { width: 360, height: 800 };
+const WIDE = { width: 1280, height: 800 };
+
+async function publishRowWithExcerptAndTag(page: Page): Promise<string> {
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const title = `行の中身 ${Date.now()}`;
+  await publish(page, title, '一覧の説明文になる本文。\n', { tag: `t${Date.now()}` });
+  return title;
+}
+
+test('a narrow viewport drops the excerpt and tags and keeps the 128×80 frame (CM-8)', async ({
+  page,
+}) => {
+  const title = await publishRowWithExcerptAndTag(page);
+
+  await page.setViewportSize(NARROW);
+  await page.goto('/');
+  const row = page.locator(`article:has-text("${title}")`);
+  // Hidden by CSS, not removed: the row still holds them for assistive tech and crawlers (§5).
+  await expect(row.locator('p')).toHaveCount(1);
+  await expect(row.locator('p')).toBeHidden();
+  await expect(row.locator('ul')).toBeHidden();
+  await expect(row.locator('h2')).toBeVisible();
+  await expect(row.locator('time')).toBeVisible();
+
+  const box = (await row.locator('.category-art').boundingBox())!;
+  expect(box.width).toBeCloseTo(128, 0);
+  expect(box.height).toBeCloseTo(80, 0);
+  // 40% of the frame's content box inside its 1px border: 31.2px, the "32px" of §3.2.
+  expect((await row.locator('.category-art svg').boundingBox())!.height).toBeCloseTo(31.2, 0);
+});
+
+test('a wide viewport keeps the excerpt and tags (CM-9)', async ({ page }) => {
+  const title = await publishRowWithExcerptAndTag(page);
+
+  await page.setViewportSize(WIDE);
+  await page.goto('/');
+  const row = page.locator(`article:has-text("${title}")`);
+  await expect(row.locator('p')).toBeVisible();
+  await expect(row.locator('ul')).toBeVisible();
+  const box = (await row.locator('.category-art').boundingBox())!;
   expect(box.width).toBeCloseTo(160, 0);
   expect(box.height).toBeCloseTo(96, 0);
 });
