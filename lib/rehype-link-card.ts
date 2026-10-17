@@ -24,9 +24,9 @@ declare module 'vfile' {
 // and a date mostly made older posts look stale. An external card shows the target's host there
 // (§14.4), from the href, since only the reference knows where the click goes.
 //
-// `image` is not re-validated, unlike `data-href`: the resolver builds it from `resolveThumbnail`,
-// `linkImageSrc` (§14.4) or the category mark (inline markup, no URL), **all same-origin**, so a reader is never pointed
-// at a third party's CDN. Any future resolver must keep that.
+// `image` is not re-validated, unlike `data-href`: a photo's `src` comes from `resolveThumbnail` or
+// `linkImageSrc` (§14.4), **both same-origin**, so a reader is never pointed at a third party's
+// CDN. Any future resolver must keep that. The mark carries no URL at all, only a category.
 //
 // The text column exists without an image too, keeping the description's width stable.
 function cardElement(href: string, target: CardTarget): Element {
