@@ -42,7 +42,7 @@ export type PostFormState = {
   sessionExpired?: boolean;
   // A successful publish/unpublish, which the editor adopts without navigating away. `at` makes
   // each result a distinct state object.
-  saved?: { id: number; slug: string | null; published: boolean; at: number };
+  saved?: { id: number; slug: string | null; published: boolean; at: number; editedAt: string };
   // The refusal is for カテゴリ not chosen (§12.32): the editor opens 記事の設定 onto it.
   missingCategory?: true;
 };
@@ -122,25 +122,37 @@ async function publish(formData: FormData, userId: number): Promise<PostFormStat
   if (id !== null && existing) {
     // First publish stamps the date; once set it never changes.
     const date = existing.date || new Date().toISOString();
-    if (!commitPost(id, content, false, date)) {
+    const commit = commitPost(id, content, false, date, true);
+    if (!commit.ok || !commit.editedAt) {
       return { error: '記事が見つかりません。' };
     }
     revalidateBlog();
-    return { saved: { id, slug: existing.slug, published: true, at: Date.now() } };
+    return {
+      saved: {
+        id,
+        slug: existing.slug,
+        published: true,
+        at: Date.now(),
+        editedAt: commit.editedAt,
+      },
+    };
   }
 
   // Create-and-publish.
   const slug = generateUniqueSlug();
-  const newId = createPost({
-    slug,
-    ...content,
-    kind,
-    date: new Date().toISOString(),
-    draft: false,
-    authorId: userId,
-  });
+  const { id: newId, editedAt } = createPost(
+    {
+      slug,
+      ...content,
+      kind,
+      date: new Date().toISOString(),
+      draft: false,
+      authorId: userId,
+    },
+    true,
+  );
   revalidateBlog();
-  return { saved: { id: newId, slug, published: true, at: Date.now() } };
+  return { saved: { id: newId, slug, published: true, at: Date.now(), editedAt } };
 }
 
 // Back to a draft, keeping the content and the slug, so re-publishing reuses the URL.
@@ -158,11 +170,20 @@ async function unpublish(formData: FormData): Promise<PostFormState> {
     return { error: '記事が見つかりません。' };
   }
   // Keep the first-publish date so re-publishing later reuses it.
-  if (!commitPost(id, contentForKind(sent, existing.kind), true, existing.date)) {
+  const commit = commitPost(id, contentForKind(sent, existing.kind), true, existing.date, true);
+  if (!commit.ok || !commit.editedAt) {
     return { error: '記事が見つかりません。' };
   }
   revalidateBlog();
-  return { saved: { id, slug: existing.slug, published: false, at: Date.now() } };
+  return {
+    saved: {
+      id,
+      slug: existing.slug,
+      published: false,
+      at: Date.now(),
+      editedAt: commit.editedAt,
+    },
+  };
 }
 
 export async function submitPostAction(

@@ -103,4 +103,23 @@ describe('submitPostAction and kinds', () => {
     );
     expect(row(id)).toMatchObject({ kind: 'scribble', draft: true, category: '', thumbnail: '' });
   });
+
+  it('returns editedAt in saved on publish and unpublish', async () => {
+    const id = seedDraft('post');
+    const pubState = await submitPostAction(
+      {},
+      form({ id: String(id), category: 'tech' }),
+    );
+    expect(pubState.saved?.published).toBe(true);
+    expect(typeof pubState.saved?.editedAt).toBe('string');
+    expect(row(id).editedAt).toBe(pubState.saved?.editedAt);
+
+    const unpubState = await submitPostAction(
+      {},
+      form({ id: String(id), intent: 'unpublish', category: 'tech' }),
+    );
+    expect(unpubState.saved?.published).toBe(false);
+    expect(typeof unpubState.saved?.editedAt).toBe('string');
+    expect(row(id).editedAt).toBe(unpubState.saved?.editedAt);
+  });
 });

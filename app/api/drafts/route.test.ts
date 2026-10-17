@@ -88,4 +88,22 @@ describe('POST /api/drafts and kinds', () => {
     expect(row(scribble).body).toBe('更新');
     expect(row(post)).toMatchObject({ kind: 'post', category: 'tech' });
   });
+
+  it('returns editedAt on creation and update, but not when skipped', async () => {
+    const createRes = await (await save({ content: filled })).json();
+    expect(typeof createRes.editedAt).toBe('string');
+    expect(row(createRes.id).editedAt).toBe(createRes.editedAt);
+
+    const updateRes = await (
+      await save({ id: createRes.id, content: { ...filled, title: '新しいタイトル' } })
+    ).json();
+    expect(typeof updateRes.editedAt).toBe('string');
+    expect(row(createRes.id).editedAt).toBe(updateRes.editedAt);
+
+    const skipRes = await (
+      await save({ content: { ...filled, title: '', body: '' } })
+    ).json();
+    expect(skipRes.skipped).toBe(true);
+    expect(skipRes.editedAt).toBeUndefined();
+  });
 });

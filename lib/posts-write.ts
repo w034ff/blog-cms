@@ -44,8 +44,21 @@ export function postKind(id: number): PostKind | null {
   return row?.kind ?? null;
 }
 
-// Insert a new post and return its generated id.
-export function createPost(input: PostInput): number {
+// A row's editedAt timestamp by its internal id, or null when there is no such row.
+export function postEditedAt(id: number): string | null {
+  const row = db.select({ editedAt: posts.editedAt }).from(posts).where(eq(posts.id, id)).get();
+  return row?.editedAt ?? null;
+}
+
+export type CreatePostResult = {
+  id: number;
+  editedAt: string;
+};
+
+// Insert a new post and return its generated id (or id and editedAt timestamp when requested).
+export function createPost(input: PostInput): number;
+export function createPost(input: PostInput, details: true): CreatePostResult;
+export function createPost(input: PostInput, details?: boolean): number | CreatePostResult {
   const now = new Date().toISOString();
   const row = db
     .insert(posts)
@@ -58,6 +71,9 @@ export function createPost(input: PostInput): number {
     })
     .returning({ id: posts.id })
     .get();
+  if (details) {
+    return { id: row.id, editedAt: now };
+  }
   return row.id;
 }
 
@@ -79,14 +95,14 @@ export function deletePost(id: number): void {
 //    (draft_content) so the live (public) columns stay frozen until the author
 //    publishes. A non-null draft_content is how the editor knows there are
 //    "unpublished changes".
-// No-op if the post no longer exists (e.g. deleted in another tab).
-export function autosavePost(id: number, content: DraftContent): void {
+// Returns the written editedAt timestamp, or null if the post no longer exists.
+export function autosavePost(id: number, content: DraftContent): string | null {
   const row = db
     .select({ draft: posts.draft, title: posts.title, draftContent: posts.draftContent })
     .from(posts)
     .where(eq(posts.id, id))
     .get();
-  if (!row) return;
+  if (!row) return null;
   const normalized = { ...content, body: normalizeNewlines(content.body) };
   // Never let autosave wipe an existing title. The title field is briefly empty
   // whenever the author clears it to retype; if a debounced autosave fires in
@@ -113,7 +129,13 @@ export function autosavePost(id: number, content: DraftContent): void {
     // `updatedAt` stays: it is the public 更新日, and nothing public changed.
     db.update(posts).set({ draftContent: safe, editedAt: now }).where(eq(posts.id, id)).run();
   }
+  return now;
 }
+
+export type CommitPostResult = {
+  ok: boolean;
+  editedAt: string | null;
+};
 
 // Commit content to the live (public) columns and set visibility, discarding any
 // pending working copy. Used by both publish (draft=false) and unpublish
@@ -126,7 +148,7 @@ export function autosavePost(id: number, content: DraftContent): void {
 // at first publish and preserved verbatim thereafter (re-publish, plain update,
 // and unpublish all pass the existing value back), so it reflects when the post
 // first went live rather than the latest edit.
-// Returns false if the row was gone by the time this ran (e.g. deleted from
+// Returns false (or ok: false) if the row was gone by the time this ran (e.g. deleted from
 // another tab between the caller's existence check and this call) instead of
 // silently no-oping the update.
 //
@@ -139,29 +161,43 @@ export function commitPost(
   content: DraftContent,
   draft: boolean,
   date: string,
-): boolean {
+): boolean;
+export function commitPost(
+  id: number,
+  content: DraftContent,
+  draft: boolean,
+  date: string,
+  details: true,
+): CommitPostResult;
+export function commitPost(
+  id: number,
+  content: DraftContent,
+  draft: boolean,
+  date: string,
+  details?: boolean,
+): boolean | CommitPostResult {
   return db.transaction(() => {
     const row = db.select().from(posts).where(eq(posts.id, id)).get();
-    if (!row) return false;
+    if (!row) return details ? { ok: false, editedAt: null } : false;
     if (!row.draft) recordRevision(id, 'publish', liveContentOfRow(row));
-    return writeCommit(id, content, draft, date);
+    const now = new Date().toISOString();
+    const result = db
+      .update(posts)
+      .set({
+        ...content,
+        body: normalizeNewlines(content.body),
+        date,
+        draft,
+        draftContent: null,
+        updatedAt: now,
+        editedAt: now,
+      })
+      .where(eq(posts.id, id))
+      .run();
+    const ok = result.changes > 0;
+    if (details) {
+      return { ok, editedAt: ok ? now : null };
+    }
+    return ok;
   });
-}
-
-function writeCommit(id: number, content: DraftContent, draft: boolean, date: string): boolean {
-  const now = new Date().toISOString();
-  const result = db
-    .update(posts)
-    .set({
-      ...content,
-      body: normalizeNewlines(content.body),
-      date,
-      draft,
-      draftContent: null,
-      updatedAt: now,
-      editedAt: now,
-    })
-    .where(eq(posts.id, id))
-    .run();
-  return result.changes > 0;
 }

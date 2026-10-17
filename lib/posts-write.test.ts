@@ -7,6 +7,7 @@ import {
   commitPost,
   createPost,
   deletePost,
+  postEditedAt,
   postExists,
   slugExists,
 } from '@/lib/posts-write';
@@ -61,6 +62,27 @@ describe('createPost / existence checks', () => {
     expect(slugExists('abc')).toBe(true);
     expect(slugExists('missing')).toBe(false);
   });
+
+  it('returns both id and editedAt when details is true', () => {
+    const result = createPost(
+      {
+        slug: 'with-details',
+        title: 'Title',
+        date: '2026-01-01',
+        category: 'tech',
+        tags: [],
+        draft: true,
+        body: 'body',
+        thumbnail: '',
+        kind: 'post',
+        authorId: 1,
+      },
+      true,
+    );
+    expect(result.id).toBeGreaterThan(0);
+    expect(typeof result.editedAt).toBe('string');
+    expect(row(result.id)?.editedAt).toBe(result.editedAt);
+  });
 });
 
 describe('autosavePost', () => {
@@ -111,8 +133,15 @@ describe('autosavePost', () => {
     expect(row(id)?.draftContent?.title).toBe('Live');
   });
 
-  it('is a no-op when the row does not exist', () => {
-    expect(() => autosavePost(9999, content)).not.toThrow();
+  it('is a no-op and returns null when the row does not exist', () => {
+    expect(autosavePost(9999, content)).toBeNull();
+  });
+
+  it('returns the written editedAt timestamp', () => {
+    const id = seed({ draft: true });
+    const editedAt = autosavePost(id, content);
+    expect(typeof editedAt).toBe('string');
+    expect(row(id)?.editedAt).toBe(editedAt);
   });
 });
 
@@ -142,11 +171,28 @@ describe('commitPost', () => {
 
   it('returns false and does not throw when the row does not exist', () => {
     expect(commitPost(9999, content, false, '2026-01-01')).toBe(false);
+    expect(commitPost(9999, content, false, '2026-01-01', true)).toEqual({
+      ok: false,
+      editedAt: null,
+    });
   });
 
-  it('returns true when it updates a row', () => {
+  it('returns true when it updates a row, or ok and editedAt with details', () => {
     const id = seed({ slug: 'v', draft: true });
     expect(commitPost(id, content, false, '2026-01-01')).toBe(true);
+
+    const withDetails = commitPost(id, content, false, '2026-01-01', true);
+    expect(withDetails.ok).toBe(true);
+    expect(typeof withDetails.editedAt).toBe('string');
+    expect(row(id)?.editedAt).toBe(withDetails.editedAt);
+  });
+});
+
+describe('postEditedAt', () => {
+  it('returns editedAt for an existing row and null for missing row', () => {
+    const id = seed();
+    expect(postEditedAt(id)).toBe(row(id)?.editedAt);
+    expect(postEditedAt(9999)).toBeNull();
   });
 });
 
