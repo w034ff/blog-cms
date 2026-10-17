@@ -31,7 +31,7 @@ function seed(authorId: number, draft = false): number {
     thumbnail: '',
     kind: 'post',
     authorId,
-  });
+  }).id;
 }
 
 function written(): number {

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useActionState, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { PostCategory, PostKind } from '@/lib/content';
-import type { DictionaryTag } from '@/lib/types';
+import type { DictionaryTag, DraftContent } from '@/lib/types';
 import type { Editor } from '@tiptap/core';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { postEditorExtensions } from './editor/extensions';
@@ -20,6 +20,8 @@ import { PostSettingsPanel, SETTINGS_PANEL_ID } from './editor/PostSettingsPanel
 import { INSERT_DIALOG_EVENT, type InsertDialogDetail } from './editor/embed-extension';
 import { DropOverlay } from './editor/DropOverlay';
 import { EditorToast } from './editor/EditorToast';
+import { DraftBufferBanner } from './editor/DraftBufferBanner';
+import { useDraftBuffer } from './editor/useDraftBuffer';
 import { useAutosave } from './editor/useAutosave';
 import { imageFilesFromList, useImageUpload } from './editor/useImageUpload';
 import { useEditorNotice } from './editor/useEditorNotice';
@@ -67,6 +69,10 @@ type Props = {
   // The site's name as an admin saved it (lib/site-settings.ts), for the tab title this sets
   // without a navigation.
   siteName: string;
+  // The signed-in author id, for isolating localStorage draft buffer keys.
+  userId: number;
+  // Server-side posts.edited_at at page load ('' in create mode), the base for overwrite warning.
+  editedAt: string;
 };
 
 const emptyState: PostFormState = {};
@@ -100,6 +106,8 @@ export function PostEditor({
   tagDictionary,
   kind,
   siteName,
+  userId,
+  editedAt,
 }: Props) {
   const [state, formAction, pending] = useActionState(action, emptyState);
   // The body's markdown, mirrored into a hidden input that autosave and publish read.
@@ -190,11 +198,16 @@ export function PostEditor({
 
   const hasIdentity = committedId !== null;
 
+  const notifySaveSuccessRef = useRef<(content: DraftContent, editedAt?: string) => void>(() => {});
+  const notifyCreatedRef = useRef<(newId: number) => void>(() => {});
+  const submittedContentRef = useRef<DraftContent | null>(null);
+
   // The hook owns dirty/debounce/save; publish-flow state stays here, updated through these.
   const handleCreated = useCallback((id: number, createdSlug: string) => {
     setCommittedId(id);
     // The slug the row was created with (§18), so the card picker can tell this post from others.
     if (createdSlug !== '') setSlug(createdSlug);
+    notifyCreatedRef.current(id);
   }, []);
   // An edit to a live post is a pending publish until pushed public again.
   const handleDirty = useCallback(() => {
@@ -208,6 +221,7 @@ export function PostEditor({
       onCreated: handleCreated,
       onDirty: handleDirty,
       onSessionExpired: setSessionExpired,
+      onSaveSuccess: (content, at) => notifySaveSuccessRef.current(content, at),
     });
 
   // One refusal notice for the whole editor, so two refusals cannot raise two toasts.
@@ -349,6 +363,40 @@ export function PostEditor({
     editorRef.current = editor;
   }, [editor]);
 
+  const { banner, notifySaveSuccess, notifyCreated } = useDraftBuffer({
+    userId,
+    committedId,
+    kind,
+    content: { title, category, tags, body, thumbnail },
+    initialContent: {
+      title: initial.title,
+      category: initial.category,
+      tags: initial.tags,
+      body: initial.body,
+      thumbnail: initial.thumbnail,
+    },
+    serverEditedAt: editedAt,
+    isNew: mode === 'create',
+    editor,
+    tagDictionary,
+    setTitle,
+    setCategory,
+    setTags,
+    setThumbnail,
+    markEdited,
+  });
+
+  useEffect(() => {
+    notifySaveSuccessRef.current = notifySaveSuccess;
+    notifyCreatedRef.current = notifyCreated;
+  }, [notifySaveSuccess, notifyCreated]);
+
+  useEffect(() => {
+    if (state.saved && submittedContentRef.current) {
+      notifySaveSuccess(submittedContentRef.current, state.saved.editedAt);
+    }
+  }, [state.saved, notifySaveSuccess]);
+
   // The post's address for the link card's self-refusal (docs/link-card-requirements.md §18).
   // Through storage, since `useEditor` keeps the first render's extension list and the slug may
   // come later; through `editorRef`, the handle for work outside render, filled by the effect
@@ -459,6 +507,13 @@ export function PostEditor({
       onSubmit={() => {
         // A publish carries the current content, so a queued autosave is moot.
         cancelPendingAutosave();
+        submittedContentRef.current = {
+          title,
+          category,
+          tags,
+          body,
+          thumbnail,
+        };
       }}
       className='post-editor space-y-5'>
       {/* The header bar: the way out, autosave state, settings and publish. **A direct child of
@@ -608,6 +663,14 @@ export function PostEditor({
               </a>
               してください。編集内容は保持されています。
             </div>
+          )}
+          {banner && (
+            <DraftBufferBanner
+              writtenAt={banner.writtenAt}
+              hasOverwriteWarning={banner.hasOverwriteWarning}
+              onRestore={banner.onRestore}
+              onDiscard={banner.onDiscard}
+            />
           )}
           {/* The title and settings: blockImplicitSubmit guards every input in here. */}
           <div className='space-y-3' onKeyDown={blockImplicitSubmit}>

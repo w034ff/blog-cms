@@ -7,6 +7,7 @@ import {
   commitPost,
   createPost,
   deletePost,
+  postEditedAt,
   postExists,
   slugExists,
 } from '@/lib/posts-write';
@@ -37,7 +38,7 @@ function seed(overrides: Partial<Parameters<typeof createPost>[0]> = {}): number
     kind: 'post',
     authorId: 1,
     ...overrides,
-  });
+  }).id;
 }
 
 const content: DraftContent = {
@@ -60,6 +61,24 @@ describe('createPost / existence checks', () => {
     expect(postExists(id + 1000)).toBe(false);
     expect(slugExists('abc')).toBe(true);
     expect(slugExists('missing')).toBe(false);
+  });
+
+  it('returns both id and editedAt', () => {
+    const result = createPost({
+      slug: 'with-details',
+      title: 'Title',
+      date: '2026-01-01',
+      category: 'tech',
+      tags: [],
+      draft: true,
+      body: 'body',
+      thumbnail: '',
+      kind: 'post',
+      authorId: 1,
+    });
+    expect(result.id).toBeGreaterThan(0);
+    expect(typeof result.editedAt).toBe('string');
+    expect(row(result.id)?.editedAt).toBe(result.editedAt);
   });
 });
 
@@ -111,8 +130,15 @@ describe('autosavePost', () => {
     expect(row(id)?.draftContent?.title).toBe('Live');
   });
 
-  it('is a no-op when the row does not exist', () => {
-    expect(() => autosavePost(9999, content)).not.toThrow();
+  it('is a no-op and returns null when the row does not exist', () => {
+    expect(autosavePost(9999, content)).toBeNull();
+  });
+
+  it('returns the written editedAt timestamp', () => {
+    const id = seed({ draft: true });
+    const editedAt = autosavePost(id, content);
+    expect(typeof editedAt).toBe('string');
+    expect(row(id)?.editedAt).toBe(editedAt);
   });
 });
 
@@ -140,13 +166,23 @@ describe('commitPost', () => {
     expect(row(id)?.draft).toBe(true);
   });
 
-  it('returns false and does not throw when the row does not exist', () => {
-    expect(commitPost(9999, content, false, '2026-01-01')).toBe(false);
+  it('returns null and does not throw when the row does not exist', () => {
+    expect(commitPost(9999, content, false, '2026-01-01')).toBeNull();
   });
 
-  it('returns true when it updates a row', () => {
+  it('returns editedAt when it updates a row', () => {
     const id = seed({ slug: 'v', draft: true });
-    expect(commitPost(id, content, false, '2026-01-01')).toBe(true);
+    const editedAt = commitPost(id, content, false, '2026-01-01');
+    expect(typeof editedAt).toBe('string');
+    expect(row(id)?.editedAt).toBe(editedAt);
+  });
+});
+
+describe('postEditedAt', () => {
+  it('returns editedAt for an existing row and null for missing row', () => {
+    const id = seed();
+    expect(postEditedAt(id)).toBe(row(id)?.editedAt);
+    expect(postEditedAt(9999)).toBeNull();
   });
 });
 

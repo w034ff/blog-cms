@@ -55,8 +55,11 @@ export async function POST(req: NextRequest) {
     if (kind === null) {
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
-    autosavePost(id, contentForKind(sent, kind));
-    return NextResponse.json({ id, savedAt: Date.now() });
+    const editedAt = autosavePost(id, contentForKind(sent, kind));
+    if (!editedAt) {
+      return NextResponse.json({ error: 'not found' }, { status: 404 });
+    }
+    return NextResponse.json({ id, savedAt: Date.now(), editedAt });
   }
 
   // No row until there is something to keep, so focusing /new leaves no orphan. The slug is
@@ -67,7 +70,7 @@ export async function POST(req: NextRequest) {
   // Returned: the editor needs its own address to refuse a card pointing at itself
   // (docs/link-card-requirements.md §18), and this is when a new post first has one.
   const slug = generateUniqueSlug();
-  const newId = createPost({
+  const { id: newId, editedAt } = createPost({
     slug,
     ...contentForKind(sent, newKind),
     kind: newKind,
@@ -76,5 +79,5 @@ export async function POST(req: NextRequest) {
     draft: true,
     authorId: session.userId,
   });
-  return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true });
+  return NextResponse.json({ id: newId, slug, savedAt: Date.now(), created: true, editedAt });
 }
