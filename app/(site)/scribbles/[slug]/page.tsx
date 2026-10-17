@@ -51,13 +51,6 @@ export default async function ScribblePage({ params }: { params: Promise<Params>
     <>
       {preview && <DraftPreviewBanner postId={post.id} />}
       <article className='mx-auto w-full max-w-page'>
-        <div className='mb-4'>
-          <Link
-            href='/scribbles'
-            className='inline-flex items-center text-sm text-(--chip-fg) hover:underline'>
-            ← 走り書きの一覧
-          </Link>
-        </div>
         <div className='rounded-panel border border-zinc-200 bg-surface px-5 py-6 sm:px-7 dark:border-zinc-800'>
           <header className='mb-4'>
             <time dateTime={post.date} className='font-mono text-[13px] text-(--chip-fg)'>
