@@ -36,7 +36,7 @@ npm run typecheck
 npm run test:run
 ```
 
-- Run the E2E specs that touch your change, never the whole suite, and never with an empty list of specs (an empty list runs everything, about 14 minutes). Use the port the instruction gives, so your server does not collide with other worktrees: `E2E_PORT=<port> npm run test:e2e -- e2e/<name>.spec.ts`. If the browser cannot start in your environment, say so in the report rather than skipping silently.
+- Run the E2E specs that touch your change, never the whole suite. `npm run test:e2e` refuses a run that names no spec file, since that would run everything (about 14 minutes); do not work around it with `npx playwright test` or `npm run test:e2e:all`. Use the port the instruction gives, so your server does not collide with other worktrees: `E2E_PORT=<port> npm run test:e2e -- e2e/<name>.spec.ts`. If the browser cannot start in your environment, say so in the report rather than skipping silently.
 - Do not run `npm run dev`, `npm start`, `npm run build` or any `db:*`, `gc:uploads` or `fix:*` script. Your worktree's `data/blog.db` is a snapshot; the E2E harness makes its own copy.
 
 ## Reports
