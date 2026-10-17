@@ -49,7 +49,7 @@
 変えないもの:
 
 - Figma の埋め込みが名乗る名前（`lib/embed-provider.ts` の `FIGMA_EMBED_HOST`）。サイトの名前と切り離してある。
-- 画像に焼き込んだ名前: `public/og.png` と、リンクカードのマーク（`public/link-card-placeholder*.svg`）。画面から名前を変えても、これらは古い名前のままである。作り直すには `scripts/make-og-image.mts` を流し、SVG の文字を直す（§7）。
+- 画像に焼き込んだ名前: `public/og.png`。画面から名前を変えても、これは古い名前のままである。作り直すには `scripts/make-og-image.mts` を流す（§7）。リンクカードのマークは名前を持たない（`docs/category-mark-requirements.md` §3.3）。
 
 ## 5. 管理画面
 
