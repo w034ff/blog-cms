@@ -28,6 +28,11 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
 - The prep lives in `webServer.command`, not in a `globalSetup`, because Playwright starts the
   webServer before globalSetup runs. Login is a `setup` project (`e2e/auth.setup.ts`) that runs after
   the server is up and saves `e2e/.auth/admin.<port>.json` for the spec projects.
+- A project another project depends on runs in full, whatever files the command names. That is
+  harmless for `setup`, which is one file. It rules out ordering specs with projects: a project
+  that ran `e2e/site-settings.spec.ts` after the rest made checking that one file run all 913
+  cases (2026-10-15). Specs that share the server keep out of each other's way inside the spec
+  instead (that file's opening comment says how).
 - The server gets its own build dir, `NEXT_DIST_DIR=.next-e2e-<port>`. Next refuses a second
   `next dev` that shares a `<distDir>/dev/lock`, even on another port, so this is what lets the
   harness run beside `npm run dev` (port 3001).
