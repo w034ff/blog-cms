@@ -15,6 +15,35 @@ test.afterEach(() => {
 const draftBanner = (page: import('@playwright/test').Page) =>
   page.getByRole('alert').filter({ hasText: '保存されていない変更があります' });
 
+async function expectDraftBufferBody(
+  page: import('@playwright/test').Page,
+  expectedSubstring: string,
+) {
+  await expect
+    .poll(async () => {
+      return await page.evaluate(() => {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('draftBuffer:')) {
+            try {
+              const raw = localStorage.getItem(key);
+              if (raw) {
+                const parsed = JSON.parse(raw);
+                if (typeof parsed?.content?.body === 'string') {
+                  return parsed.content.body;
+                }
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+        return '';
+      });
+    })
+    .toContain(expectedSubstring);
+}
+
 test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
   test('restores unsaved edits after save failure and persists them to server (§7 基準 1)', async ({
     page,
@@ -35,7 +64,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
 
     await editor.click();
     await page.keyboard.type(' 未保存の追加テキスト。');
-    await page.waitForTimeout(400);
+    await expectDraftBufferBody(page, '未保存の追加テキスト。');
 
     // Reload with failed save
     await page.reload();
@@ -114,7 +143,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
 
     await editor.click();
     await page.keyboard.type(' 失敗した編集。');
-    await page.waitForTimeout(300);
+    await expectDraftBufferBody(page, '失敗した編集。');
 
     // Reopen the edit URL: buffer was migrated to post:<id> and surfaces on edit page
     await page.goto(editUrl);
@@ -140,7 +169,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
 
     await editor.click();
     await page.keyboard.type('【控えの内容】');
-    await page.waitForTimeout(300);
+    await expectDraftBufferBody(page, '【控えの内容】');
 
     // Reload to display the banner
     await page.reload();
@@ -150,7 +179,7 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
     // While banner is visible, edit the content without clicking restore or discard
     await editor.click();
     await page.keyboard.type('【帯が出ている間の編集】');
-    await page.waitForTimeout(300);
+    await expect(editor).toContainText('【帯が出ている間の編集】');
 
     // Reload again: the buffer must still hold the original buffered content, not the edit during banner
     await page.reload();
@@ -159,5 +188,53 @@ test.describe('draft buffer (docs/draft-buffer-requirements.md)', () => {
 
     await expect(editor).toContainText('【控えの内容】');
     await expect(editor).not.toContainText('【帯が出ている間の編集】');
+  });
+
+  test('shows overwrite warning on reload when autosave succeeds while banner is active', async ({
+    page,
+  }) => {
+    await page.goto('/admin/posts/new');
+    const editor = page.locator('.ProseMirror');
+    await expect(editor).toBeVisible();
+
+    await page.getByLabel('タイトル').fill('上書き警告テスト');
+    await editor.click();
+    await page.keyboard.type('初期保存本文。');
+    await expectAutosaved(page);
+
+    // Fail autosave to create an unsaved buffer
+    await page.route('**/api/drafts', (route) =>
+      route.fulfill({ status: 500, body: JSON.stringify({ error: 'server error' }) }),
+    );
+
+    await editor.click();
+    await page.keyboard.type(' 未保存の編集。');
+    await expectDraftBufferBody(page, '未保存の編集。');
+
+    // Reload to display the banner (without overwrite warning initially)
+    await page.reload();
+    const banner = draftBanner(page);
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('保存されていない変更があります');
+    await expect(banner).not.toContainText('この記事は控えの後に別の場所で保存されています');
+
+    // Restore autosave so edits while banner is active reach the server
+    await page.unroute('**/api/drafts');
+
+    // Type while banner is active and let autosave succeed
+    await editor.click();
+    await page.keyboard.type(' 帯が出ている間の編集。');
+    await expectAutosaved(page);
+
+    // Reload: server's edited_at has progressed, while the buffer's baseEditedAt remained frozen.
+    // The banner must now display the overwrite warning.
+    await page.reload();
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('この記事は控えの後に別の場所で保存されています');
+
+    // Restoring will restore the frozen buffer content
+    await page.getByRole('button', { name: '復元' }).click();
+    await expect(editor).toContainText('未保存の編集。');
+    await expect(editor).not.toContainText('帯が出ている間の編集。');
   });
 });

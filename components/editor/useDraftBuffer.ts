@@ -159,13 +159,14 @@ export function useDraftBuffer({
     }, DRAFT_BUFFER_WRITE_DELAY_MS);
   }, [content]);
 
-  // Flush pending write on unmount (covers in-app link navigation) and pagehide (tab close/refresh).
+  // Flush pending write on unmount to avoid leaving an active timer behind.
   useLayoutEffect(() => {
     return () => {
       flushPendingWrite();
     };
   }, [flushPendingWrite]);
 
+  // Flush pending write on pagehide (tab close or reload) so unsaved edits persist.
   useEffect(() => {
     const handlePageHide = () => {
       flushPendingWrite();
@@ -201,6 +202,11 @@ export function useDraftBuffer({
   const notifySaveSuccess = useCallback((sentContent: DraftContent, editedAt?: string) => {
     if (editedAt) {
       currentBaseEditedAtRef.current = editedAt;
+    }
+    // While the banner is active, the stored buffer remains frozen so that the author can still restore
+    // the original buffered content, and so that baseEditedAt does not advance and hide the overwrite warning.
+    if (isBannerActiveRef.current) {
+      return;
     }
     const key = currentKeyRef.current;
     const current = readDraftBuffer(key);
