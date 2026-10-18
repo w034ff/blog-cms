@@ -13,6 +13,24 @@ export const DISPLAY_NAME_TOO_LONG = '20 文字以内で入力してください
 export const NO_LINE_BREAKS = '改行は使えません';
 export const DISPLAY_NAME_REQUIRED = '表示名を入力してください';
 export const DISPLAY_NAME_TAKEN = 'この表示名はほかの利用者が使っています';
+export const DISPLAY_NAME_INVISIBLE = '見えない文字は使えません';
+export const DISPLAY_NAME_RESERVED = '「著者」と数字だけの表示名は使えません';
+
+// Characters that draw nothing (docs/multi-author-requirements.md §10.4): controls and format
+// characters (zero-width space, joiners, bidi overrides, soft hyphen), and the fillers that render
+// as a blank. Neither trim() nor NFKC removes them, so `k\u200Benta` would pass for kenta and a
+// lone U+200B for a name.
+const INVISIBLE_SOURCE = '[\\p{Cc}\\p{Cf}\\u115F\\u1160\\u3164\\uFFA0\\u2800]';
+const INVISIBLE = new RegExp(INVISIBLE_SOURCE, 'u');
+const INVISIBLE_ALL = new RegExp(INVISIBLE_SOURCE, 'gu');
+
+export function stripInvisible(value: string): string {
+  return value.replace(INVISIBLE_ALL, '');
+}
+
+// The shape of the placeholder a new author gets (lib/google-login.ts placeholderDisplayName). No one
+// may choose it, or a name taken ahead of time would make the placeholder for that id a duplicate.
+const RESERVED = /^著者\s*\d+$/u;
 
 // How often an author may rename themselves (docs/multi-author-requirements.md §10.4): renaming
 // again and again is how a troll blends in. An admin is not limited.
@@ -31,6 +49,13 @@ export function validateDisplayName(raw: string): DisplayNameResult {
   const trimmed = raw.trim();
   if (/[\r\n]/.test(trimmed)) {
     return { ok: false, error: NO_LINE_BREAKS, errors: { displayName: NO_LINE_BREAKS } };
+  }
+  if (INVISIBLE.test(trimmed)) {
+    return {
+      ok: false,
+      error: DISPLAY_NAME_INVISIBLE,
+      errors: { displayName: DISPLAY_NAME_INVISIBLE },
+    };
   }
   if (codePointLength(trimmed) > DISPLAY_NAME_MAX_CHARS) {
     return {
@@ -70,6 +95,10 @@ export function getPostAuthorDisplayName(postId: number): string {
 // Two names that only differ in width or case are one name (§10.4): ＫＥＮＴＡ would pass for kenta.
 export function displayNameKey(name: string): string {
   return name.normalize('NFKC').toLowerCase().trim();
+}
+
+export function isReservedDisplayName(name: string): boolean {
+  return RESERVED.test(displayNameKey(name));
 }
 
 type Reader = Pick<AppDatabase, 'select'>;
@@ -126,8 +155,10 @@ export function saveDisplayName(
       .where(eq(users.id, userId))
       .get();
     if (!user) return { ok: false, error: DISPLAY_NAME_REQUIRED };
-    if (name === user.displayName) return { ok: true };
+    // Before the unchanged check, so a Google author left with an empty name cannot keep it.
     if (!name && user.googleSub !== null) return { ok: false, error: DISPLAY_NAME_REQUIRED };
+    if (name === user.displayName) return { ok: true };
+    if (isReservedDisplayName(name)) return { ok: false, error: DISPLAY_NAME_RESERVED };
     if (isDisplayNameTaken(name, userId, tx)) return { ok: false, error: DISPLAY_NAME_TAKEN };
     if (user.role === 'author') {
       const next = nextRenameAt(userId, now, tx);

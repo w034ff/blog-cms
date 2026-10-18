@@ -174,5 +174,15 @@ describe('email lookup action (criteria 28)', () => {
       userIds: [],
       inviteEmails: [],
     });
+
+    // A request can carry anything; an over-long or non-string argument matches nothing.
+    const none = { userIds: [], inviteEmails: [] };
+    const overLong = `${'a'.repeat(243)}@example.com`;
+    db.insert(authorAllowlist)
+      .values({ email: overLong, createdAt: '2026-10-18T00:00:00.000Z' })
+      .run();
+    expect(await usersActions.lookupByEmailAction(overLong)).toEqual(none);
+    expect(await usersActions.lookupByEmailAction(['author@example.com'])).toEqual(none);
+    expect(await usersActions.lookupByEmailAction(null)).toEqual(none);
   });
 });

@@ -179,6 +179,26 @@ describe('what sign-in records about an author (§10.2-§10.4)', () => {
     ]);
   });
 
+  it('drops invisible characters from a Google name and refuses the placeholder shape', () => {
+    saveAuthorAccessMode('open');
+    const invisible = signInWithGoogle(
+      { sub: 'sub-i', email: 'i@example.com', name: '\u200Bha\u200Bna\u202E' },
+      now,
+    );
+    const blank = signInWithGoogle(
+      { sub: 'sub-z', email: 'z@example.com', name: '\u200B\u3164' },
+      now,
+    );
+    const reserved = signInWithGoogle(
+      { sub: 'sub-r', email: 'r@example.com', name: '著者 99' },
+      now,
+    );
+    if (!invisible.ok || !blank.ok || !reserved.ok) throw new Error('sign-in refused');
+    expect(userBySub('sub-i')?.displayName).toBe('hana');
+    expect(userBySub('sub-z')?.displayName).toBe(`著者 ${blank.userId}`);
+    expect(userBySub('sub-r')?.displayName).toBe(`著者 ${reserved.userId}`);
+  });
+
   it('adds no history on a later sign-in', () => {
     saveAuthorAccessMode('open');
     const first = signInWithGoogle(claims, now);

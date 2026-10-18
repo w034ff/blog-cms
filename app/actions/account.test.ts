@@ -4,7 +4,9 @@ import { db } from '@/lib/db';
 import { displayNameHistory, users } from '@/lib/db/schema';
 import {
   DISPLAY_NAME_MAX_CHARS,
+  DISPLAY_NAME_INVISIBLE,
   DISPLAY_NAME_REQUIRED,
+  DISPLAY_NAME_RESERVED,
   DISPLAY_NAME_TAKEN,
   DISPLAY_NAME_TOO_LONG,
   NO_LINE_BREAKS,
@@ -274,6 +276,37 @@ describe('display name rules (docs/multi-author-requirements.md §10.4)', () => 
     clock += HOUR;
     vi.setSystemTime(clock);
     expect(await save(me, 'Second')).toHaveProperty('at');
+  });
+
+  it('refuses characters that draw nothing, so no name can pass for another or for nothing', async () => {
+    addUser({ googleSub: 'sub-k', displayName: 'kenta' });
+    const me = addUser({ googleSub: 'sub-me', displayName: 'me' });
+    for (const name of [
+      'k\u200Benta',
+      '\u200B',
+      '\u3164',
+      '\u2800',
+      '\u202Ekenta',
+      '\u00ADkenta',
+    ]) {
+      expect(await save(me, name)).toEqual({ errors: { displayName: DISPLAY_NAME_INVISIBLE } });
+    }
+    expect(nameOf(me)).toBe('me');
+  });
+
+  it('refuses an empty name from a Google author whose name is already empty', async () => {
+    const legacy = addUser({ googleSub: 'sub-legacy', displayName: '' });
+    expect(await save(legacy, '')).toEqual({ errors: { displayName: DISPLAY_NAME_REQUIRED } });
+  });
+
+  it('keeps the placeholder shape for new authors only', async () => {
+    const me = addUser({ googleSub: 'sub-me', displayName: 'me' });
+    for (const name of ['著者 5', '著者5', '著者　１２']) {
+      expect(await save(me, name)).toEqual({ errors: { displayName: DISPLAY_NAME_RESERVED } });
+    }
+    expect(await save(me, '著者 5 号')).toHaveProperty('at');
+    const placeholder = addUser({ googleSub: 'sub-p', displayName: '著者 7' });
+    expect(await save(placeholder, '著者 7')).toHaveProperty('at');
   });
 
   it('does not limit an admin', async () => {

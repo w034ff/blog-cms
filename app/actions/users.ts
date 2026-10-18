@@ -96,7 +96,11 @@ export type LookupEmailResult = { error: string } | { userIds: number[]; inviteE
 
 // Matches an email address against stored account hashes and pending invites
 // (docs/multi-author-requirements.md §10.3, §10.5).
-export async function lookupByEmailAction(email: string): Promise<LookupEmailResult> {
+export async function lookupByEmailAction(email: unknown): Promise<LookupEmailResult> {
   if (!(await isAdmin())) return ADMIN_ONLY;
+  // A Server Action's argument is whatever the request carried, not what the type says.
+  if (typeof email !== 'string' || email.length > EMAIL_MAX_CHARS) {
+    return { userIds: [], inviteEmails: [] };
+  }
   return lookupByEmail(email);
 }

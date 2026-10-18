@@ -4,7 +4,12 @@ import { db } from '@/lib/db';
 import { authorAllowlist, displayNameHistory, users } from '@/lib/db/schema';
 import { normalizeEmail, type AuthorAccessMode } from '@/lib/author-access-rules';
 import { readAuthorAccessMode } from '@/lib/author-access';
-import { DISPLAY_NAME_MAX_CHARS, isDisplayNameTaken } from '@/lib/display-name';
+import {
+  DISPLAY_NAME_MAX_CHARS,
+  isDisplayNameTaken,
+  isReservedDisplayName,
+  stripInvisible,
+} from '@/lib/display-name';
 import { hashEmail } from '@/lib/email-hash';
 import type { GoogleClaims } from '@/lib/google-oidc';
 import type { GoogleLoginError } from '@/lib/google-login-errors';
@@ -37,7 +42,7 @@ export function decideGoogleLogin(input: {
 // A new author's display name: Google's `name` with line breaks removed, cut to the display name's
 // limit in code points (§9.2), so it already passes the account form's rules.
 export function initialDisplayName(name: string): string {
-  const oneLine = name.replace(/[\r\n]+/g, ' ').trim();
+  const oneLine = stripInvisible(name.replace(/[\r\n]+/g, ' ')).trim();
   return Array.from(oneLine).slice(0, DISPLAY_NAME_MAX_CHARS).join('').trim();
 }
 
@@ -91,7 +96,9 @@ export function signInWithGoogle(claims: GoogleClaims, now: Date = new Date()): 
       .get();
     const fromGoogle = initialDisplayName(claims.name);
     const displayName =
-      fromGoogle && !isDisplayNameTaken(fromGoogle, created.id, tx)
+      fromGoogle &&
+      !isReservedDisplayName(fromGoogle) &&
+      !isDisplayNameTaken(fromGoogle, created.id, tx)
         ? fromGoogle
         : placeholderDisplayName(created.id);
     tx.update(users).set({ displayName }).where(eq(users.id, created.id)).run();
