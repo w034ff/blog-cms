@@ -10,6 +10,7 @@ import {
   WITHDRAWAL_BUTTON_LABEL,
   WITHDRAWAL_SECTION_HEADING,
 } from './constants';
+import { PANEL_CONFIRM_CANCEL_CLASS, PANEL_CONFIRM_DANGER_CLASS } from '../panel-confirm';
 
 const initialWithdrawalState: WithdrawalState = {};
 
@@ -45,13 +46,10 @@ export function AccountWithdrawal() {
               type='button'
               autoFocus
               onClick={handleCancelConfirm}
-              className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+              className={PANEL_CONFIRM_CANCEL_CLASS}>
               {CANCEL_LABEL}
             </button>
-            <button
-              type='submit'
-              disabled={pending}
-              className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+            <button type='submit' disabled={pending} className={PANEL_CONFIRM_DANGER_CLASS}>
               {WITHDRAWAL_BUTTON_LABEL}
             </button>
           </div>

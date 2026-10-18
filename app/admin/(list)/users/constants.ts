@@ -35,6 +35,10 @@ export const MENU_UNSUSPEND = '停止を解除';
 export const MENU_REMOVE_INVITE = '招待を取り消す';
 export const MENU_DELETE = '削除する';
 
+// Said instead when the account is already withdrawing (docs/multi-author-requirements.md §12.7):
+// its posts are off the site already, so what suspending changes is that the cancel is gone.
+export const SUSPEND_WITHDRAWING_CONFIRMATION_MESSAGE =
+  '停止すると本人は退会を取り消せなくなります。解除すると元に戻ります。';
 export const SUSPEND_CONFIRMATION_MESSAGE =
   'このアカウントを停止します。ログインと書き込みができなくなり、公開中の記事と走り書きはサイトから外れます。解除すると元に戻ります。';
 export const CANCEL_LABEL = 'やめる';
