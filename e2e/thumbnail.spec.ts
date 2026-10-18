@@ -369,12 +369,12 @@ async function tokenColour(page: Page, token: string): Promise<string> {
   }, token);
 }
 
-// The list row's frame of a post by title, and what is drawn in it.
+// The list card's frame of a post by title, and what is drawn in it.
 function rowFrame(page: Page, title: string) {
   return page.locator(`article:has-text("${title}") .category-art`);
 }
 
-// No image anywhere (docs/category-mark-requirements.md §3, CM-5/CM-6): the row is drawn as the
+// No image anywhere (docs/category-mark-requirements.md §3, CM-5/CM-6): the card is drawn with the
 // site's mark in the category's colour, in the frame a photo would have.
 for (const { label, category } of [
   { label: '技術記事', category: 'tech' },
@@ -393,16 +393,15 @@ for (const { label, category } of [
     await expect(frame).toHaveCount(1);
     await expect(frame).toHaveAttribute('data-category', category);
 
-    // The same frame a photo has (160×96 at this width), and a mark that has a size: an `<svg>`
-    // built without one is 0×0 and invisible (docs/editor-pitfalls.md §3.2), which no attribute
-    // assertion notices.
+    // The same frame a photo has (72×72), and a mark that has a size: an `<svg>` built without one
+    // is 0×0 and invisible (docs/editor-pitfalls.md §3.2), which no attribute assertion notices.
     const frameBox = (await frame.boundingBox())!;
-    expect(frameBox.width).toBeCloseTo(160, 0);
-    expect(frameBox.height).toBeCloseTo(96, 0);
+    expect(frameBox.width).toBeCloseTo(72, 0);
+    expect(frameBox.height).toBeCloseTo(72, 0);
     const svgBox = (await frame.locator('svg').boundingBox())!;
     expect(svgBox.height).toBeGreaterThan(0);
     // 40% of the frame's content box, inside its 1px border.
-    expect(svgBox.height).toBeCloseTo((96 - 2) * 0.4, 0);
+    expect(svgBox.height).toBeCloseTo((72 - 2) * 0.4, 0);
     expect(svgBox.width).toBeCloseTo(svgBox.height, 0);
 
     // The tile is the category's colour in this scheme; the glyph knocks out to the surface.
@@ -431,60 +430,35 @@ test('a post with an image keeps its photo in the list (CM-5)', async ({ page })
   await expect(row.locator('img')).toHaveCount(1);
   await expect(row.locator('.category-art')).toHaveCount(0);
   const box = (await row.locator('img').boundingBox())!;
-  expect(box.width).toBeCloseTo(160, 0);
-  expect(box.height).toBeCloseTo(96, 0);
+  expect(box.width).toBeCloseTo(72, 0);
+  expect(box.height).toBeCloseTo(72, 0);
 });
 
-// CM-8 / CM-9: below `sm` the row keeps title, date, category and picture, and the picture's frame is
-// 128×80; from `sm` the excerpt and tags are back and the frame is 160×96 (§5).
+// CM-8: the card is title, date, category and picture at every width — no excerpt and no tags,
+// which is what fits two cards to a row (docs/home-requirements.md §2) — and the frame stays 72×72.
 const NARROW = { width: 360, height: 800 };
 const WIDE = { width: 1280, height: 800 };
 
-async function publishRowWithExcerptAndTag(page: Page): Promise<string> {
-  await page.goto('/admin/posts/new');
-  await expect(page.locator('.ProseMirror')).toBeVisible();
-  const title = `行の中身 ${Date.now()}`;
-  await publish(page, title, '一覧の説明文になる本文。\n', { tag: `t${Date.now()}` });
-  return title;
-}
-
-test('a narrow viewport drops the excerpt and tags and keeps the 128×80 frame (CM-8)', async ({
+test('a list card carries no excerpt or tags and keeps its 72×72 frame at both widths (CM-8)', async ({
   page,
 }) => {
-  const title = await publishRowWithExcerptAndTag(page);
+  await page.goto('/admin/posts/new');
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  const title = `カードの中身 ${Date.now()}`;
+  await publish(page, title, '一覧には出ない本文。\n', { tag: `t${Date.now()}` });
 
-  await page.setViewportSize(NARROW);
-  await page.goto('/');
-  const row = page.locator(`article:has-text("${title}")`);
-  // Hidden by CSS, not removed: the row still holds them for assistive tech and crawlers (§5).
-  await expect(row.locator('p')).toHaveCount(1);
-  await expect(row.locator('p')).toBeHidden();
-  await expect(row.locator('ul')).toBeHidden();
-  await expect(row.locator('h2')).toBeVisible();
-  await expect(row.locator('time')).toBeVisible();
-
-  const box = (await row.locator('.category-art').boundingBox())!;
-  expect(box.width).toBeCloseTo(128, 0);
-  expect(box.height).toBeCloseTo(80, 0);
-  // 40% of the frame's content box inside its 1px border: 31.2px, the "32px" of §3.2.
-  expect((await row.locator('.category-art svg').boundingBox())!.height).toBeCloseTo(31.2, 0);
-});
-
-test('a wide viewport keeps the excerpt and tags (CM-9)', async ({ page }) => {
-  const title = await publishRowWithExcerptAndTag(page);
-
-  await page.setViewportSize(WIDE);
-  await page.goto('/');
-  const row = page.locator(`article:has-text("${title}")`);
-  await expect(row.locator('p')).toBeVisible();
-  await expect(row.locator('ul')).toBeVisible();
-  // `line-clamp-2` sets `display: -webkit-box`, which this Chrome reports as `flow-root`; a later
-  // `display: block` (`sm:block`) would leave the two-line cut to Chrome's leniency, and browsers
-  // that need the box would not cut at all.
-  await expect(row.locator('p')).not.toHaveCSS('display', 'block');
-  const box = (await row.locator('.category-art').boundingBox())!;
-  expect(box.width).toBeCloseTo(160, 0);
-  expect(box.height).toBeCloseTo(96, 0);
+  for (const size of [NARROW, WIDE]) {
+    await page.setViewportSize(size);
+    await page.goto('/');
+    const card = page.locator(`article:has-text("${title}")`);
+    await expect(card.locator('h2')).toBeVisible();
+    await expect(card.locator('time')).toBeVisible();
+    await expect(card).not.toContainText('一覧には出ない本文');
+    await expect(card.locator('.tag-chip')).toHaveCount(0);
+    const box = (await card.locator('.category-art').boundingBox())!;
+    expect(box.width).toBeCloseTo(72, 0);
+    expect(box.height).toBeCloseTo(72, 0);
+  }
 });
 
 // The published card for a post with no image: the same mark in the card's frame (CM-6). Its

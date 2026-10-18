@@ -6,6 +6,7 @@ import { resolveThumbnail } from '@/lib/thumbnail';
 import { PostRowMenu } from './PostRowMenu';
 import { HeartIcon } from '@/components/LibraryIcons';
 import { accountName } from '@/lib/account-name';
+import { PINNED_POST_LABEL } from '@/components/PinnedPost';
 
 // Two text lines tall, so it keeps the list's rhythm. `object-cover` and a bare `<img>` like every
 // other surface (components/PostCard.tsx, globals.css `.link-card-image`,
@@ -36,11 +37,15 @@ export function PostListRows({
   kind = 'post',
   likesCount,
   showAuthor = false,
+  pinnedId,
 }: {
   posts: readonly AdminPost[];
   kind?: PostKind;
   likesCount?: ReadonlyMap<number, number>;
   showAuthor?: boolean;
+  // Given only to an admin on 記事一覧, which is what offers トップに固定 (docs/home-requirements.md
+  // §3); undefined offers nothing.
+  pinnedId?: number | null;
 }) {
   const isScribble = kind === 'scribble';
   const viewHref = (slug: string) => (isScribble ? `/scribbles/${slug}` : `/posts/${slug}`);
@@ -50,6 +55,8 @@ export function PostListRows({
       {posts.map((post) => {
         const likes = likesCount?.get(post.id) ?? 0;
         const author = showAuthor && post.author !== null ? accountName(post.author).name : null;
+        const canPin = pinnedId !== undefined && !isScribble && !post.draft;
+        const pinned = canPin && post.id === pinnedId;
         return (
           <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
             <div className='flex min-w-0 items-center gap-3'>
@@ -76,6 +83,9 @@ export function PostListRows({
                   {/* Published rows only: a draft's autosave writes the live columns (lib/posts.ts
                   listAllPosts). Shown here because the author forgets days later, away from the
                   editor. Sky, apart from 下書き's amber. */}
+                  {pinned && (
+                    <span className='tag-chip shrink-0 px-1.5 leading-4'>{PINNED_POST_LABEL}</span>
+                  )}
                   {post.hasPendingEdits && (
                     <span className='shrink-0 rounded-chip bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                       未公開の変更
@@ -148,7 +158,11 @@ export function PostListRows({
                   表示
                 </a>
               )}
-              <PostRowMenu id={post.id} viewHref={post.slug ? viewHref(post.slug) : null} />
+              <PostRowMenu
+                id={post.id}
+                viewHref={post.slug ? viewHref(post.slug) : null}
+                pin={canPin ? { pinned } : undefined}
+              />
             </div>
           </li>
         );

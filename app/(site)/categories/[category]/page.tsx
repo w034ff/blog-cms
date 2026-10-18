@@ -2,21 +2,31 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { categoryLabel, isCategoryId } from '@/lib/content';
 import { getPostsByCategory } from '@/lib/posts';
-import { PostCard } from '@/components/PostCard';
+import { PostCardGrid } from '@/components/PostCard';
+import { CategoryTabs, PostListPager } from '@/components/PostListNav';
+import { pagedTitle, postListPage } from '@/lib/post-list';
+import { parsePageNumber } from '@/lib/scribble-list';
 import { sharedOpenGraph } from '@/app/shared-metadata';
 import { getSiteIdentity } from '@/lib/site-settings';
 
 type Params = { category: string };
+type SearchParams = { page?: string | string[] };
 
 export const dynamic = 'force-dynamic';
 
 // Addressed by id (`/categories/tech`), titled by label. An id off the list, including the
 // free-text era's (`/categories/tech-notes`), is a 404 before the query runs.
-export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
+}): Promise<Metadata> {
   const { category } = await params;
   const id = decodeURIComponent(category);
   if (!isCategoryId(id)) notFound();
-  const title = categoryLabel(id);
+  const title = pagedTitle(categoryLabel(id), parsePageNumber((await searchParams).page));
   // As in app/(site)/tags/[tag]/page.tsx: an unset openGraph would carry the site's own title.
   return {
     title,
@@ -28,23 +38,34 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   };
 }
 
-export default async function CategoryPage({ params }: { params: Promise<Params> }) {
+// The home page's tabs and cards, filtered to one category (docs/home-requirements.md §2). A
+// category with no posts yet is an empty list, not a 404: its tab is on every list page.
+export default async function CategoryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
+}) {
   const { category } = await params;
   const id = decodeURIComponent(category);
   if (!isCategoryId(id)) notFound();
-  const posts = await getPostsByCategory(id);
-  if (posts.length === 0) notFound();
+  const page = parsePageNumber((await searchParams).page);
+  const { posts, totalPages } = postListPage(await getPostsByCategory(id), page);
+  if (page > totalPages) notFound();
   return (
     <section className='mx-auto w-full max-w-page'>
-      <h1 className='text-3xl font-bold tracking-tight mb-6'>
-        {categoryLabel(id)}{' '}
-        <span className='text-zinc-600 dark:text-zinc-400 text-xl'>({posts.length})</span>
-      </h1>
-      <div className='divide-y divide-zinc-200 dark:divide-zinc-800'>
-        {posts.map((post) => (
-          <PostCard key={post.slug} post={post} />
-        ))}
-      </div>
+      {/* The tab names the list (CategoryTabs); the heading stays for assistive tech. */}
+      <h1 className='sr-only'>{categoryLabel(id)}</h1>
+      <CategoryTabs active={id} />
+      {posts.length === 0 ? (
+        <p className='text-zinc-600 dark:text-zinc-400'>まだ記事がありません。</p>
+      ) : (
+        <>
+          <PostCardGrid posts={posts} />
+          <PostListPager basePath={`/categories/${id}`} page={page} totalPages={totalPages} />
+        </>
+      )}
     </section>
   );
 }

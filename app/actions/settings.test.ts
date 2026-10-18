@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SITE_DESCRIPTION, DEFAULT_SITE_NAME } from '@/app/shared-metadata';
 import { db } from '@/lib/db';
-import { appSettings } from '@/lib/db/schema';
+import { appSettings, posts } from '@/lib/db/schema';
+import { readPinnedPostId } from '@/lib/pinned-post';
 import { readSiteIdentity, saveSiteIdentity } from '@/lib/site-settings';
 import { SHARE_IMAGE_INVALID, SITE_NAME_REQUIRED } from '@/lib/site-settings-rules';
 
@@ -14,7 +15,7 @@ vi.mock('@/lib/dal', () => ({ isAdmin: async () => admin.current }));
 vi.mock('next/cache', () => ({ revalidatePath: () => {} }));
 
 import * as settingsActions from './settings';
-const { saveSiteSettingsAction } = settingsActions;
+const { saveSiteSettingsAction, pinPostAction } = settingsActions;
 
 function form(name: string, description: string, shareImage = ''): FormData {
   const data = new FormData();
@@ -104,5 +105,61 @@ describe('site settings', () => {
       expect(result.error).toBeTruthy();
       expect(db.select().from(appSettings).all()).toEqual(beforeSettings);
     }
+  });
+});
+
+function seedPost(values: { draft?: boolean; kind?: 'post' | 'scribble' } = {}): number {
+  return db
+    .insert(posts)
+    .values({
+      slug: `s${Math.random().toString(16).slice(2)}`,
+      title: 'Title',
+      date: '2026-01-01',
+      description: '',
+      category: 'tech',
+      tags: [],
+      draft: values.draft ?? false,
+      body: '',
+      unlisted: false,
+      kind: values.kind ?? 'post',
+    })
+    .returning({ id: posts.id })
+    .get().id;
+}
+
+function idForm(id: number | ''): FormData {
+  const data = new FormData();
+  data.set('id', String(id));
+  return data;
+}
+
+// docs/home-requirements.md §3 and §6.
+describe('pinning a post to the home page', () => {
+  beforeEach(() => {
+    db.delete(posts).run();
+  });
+
+  it('pins a published post and takes the pin off with an empty id', async () => {
+    const id = seedPost();
+    expect((await pinPostAction({}, idForm(id))).at).toBeTypeOf('number');
+    expect(readPinnedPostId()).toBe(id);
+    expect((await pinPostAction({}, idForm(''))).at).toBeTypeOf('number');
+    expect(readPinnedPostId()).toBeNull();
+  });
+
+  it('refuses a draft, a scribble and an unknown id, and keeps the pin it had', async () => {
+    const kept = seedPost();
+    await pinPostAction({}, idForm(kept));
+    for (const id of [seedPost({ draft: true }), seedPost({ kind: 'scribble' }), 9999]) {
+      expect((await pinPostAction({}, idForm(id))).error).toBeTruthy();
+    }
+    expect(readPinnedPostId()).toBe(kept);
+  });
+
+  it('refuses a non-admin and writes nothing', async () => {
+    const id = seedPost();
+    admin.current = false;
+    expect((await pinPostAction({}, idForm(id))).error).toBeTruthy();
+    expect(readPinnedPostId()).toBeNull();
   });
 });
