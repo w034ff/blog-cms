@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteUserAction, suspendUserAction, unsuspendUserAction } from '@/app/actions/users';
 import {
@@ -18,32 +18,34 @@ import {
 // Admin accounts show no suspend or delete button (docs/multi-author-requirements.md §2, §12.4).
 export function UserDetailSuspend({
   user,
+  postCount,
+  scribbleCount,
 }: {
-  user: {
-    id: number;
-    role: 'admin' | 'author';
-    suspendedAt: string | null;
-    postCount?: number;
-    scribbleCount?: number;
-    posts?: {
-      post: { total: number };
-      scribble: { total: number };
-    };
-  };
+  user: { id: number; role: 'admin' | 'author'; suspendedAt: string | null };
+  // What the delete confirmation says goes with the account, drafts included (§12.4).
+  postCount: number;
+  scribbleCount: number;
 }) {
   const [confirmingSuspend, setConfirmingSuspend] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleteState, deleteAction, deletePending] = useActionState(deleteUserAction, {});
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
   const router = useRouter();
 
-  const postCount = user.postCount ?? user.posts?.post.total ?? 0;
-  const scribbleCount = user.scribbleCount ?? user.posts?.scribble.total ?? 0;
-
-  useEffect(() => {
-    if (deleteState.at) {
-      router.push('/admin/users');
+  // Navigates from the awaited result, not from an effect on returned state: the action
+  // revalidates this page, which then renders the 404 for the deleted id and unmounts this
+  // component before an effect could run.
+  const deleteAction = async (formData: FormData) => {
+    setDeletePending(true);
+    setDeleteError(null);
+    const result = await deleteUserAction({}, formData);
+    if (result.error) {
+      setDeleteError(result.error);
+      setDeletePending(false);
+      return;
     }
-  }, [deleteState.at, router]);
+    router.push('/admin/users');
+  };
 
   if (user.role === 'admin') {
     return null;
@@ -72,9 +74,9 @@ export function UserDetailSuspend({
               {DELETE_ACTION_BUTTON}
             </button>
           </div>
-          {deleteState.error && (
+          {deleteError && (
             <p role='alert' className='mt-2 text-xs text-red-700 dark:text-red-400'>
-              {deleteState.error}
+              {deleteError}
             </p>
           )}
         </form>

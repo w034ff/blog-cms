@@ -113,7 +113,11 @@ export default async function UserDetailPage({ params }: Props) {
           </div>
         </div>
 
-        <UserDetailSuspend user={user} />
+        <UserDetailSuspend
+          user={user}
+          postCount={user.posts.post.total}
+          scribbleCount={user.posts.scribble.total}
+        />
 
         <div className='flex flex-col gap-3 rounded-panel border border-zinc-200 bg-surface p-5 dark:border-zinc-800'>
           <h2 className='text-sm font-semibold'>{HISTORY_HEADING}</h2>

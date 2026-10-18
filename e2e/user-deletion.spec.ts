@@ -267,6 +267,46 @@ test('admin can delete suspended author with all posts and scribbles (row 42)', 
   }
 });
 
+// docs/multi-author-requirements.md §12.8 row 42, from the detail page (§12.4).
+test('admin can delete a suspended author from the detail page and lands on the list (row 42)', async ({
+  page,
+}) => {
+  const author = createAuthorUser('del-42d');
+  insertPost({
+    title: `詳細から削除 ${crypto.randomBytes(4).toString('hex')}`,
+    authorId: author.id,
+  });
+  const db = getDb();
+  try {
+    db.prepare('UPDATE users SET suspended_at = ? WHERE id = ?').run(
+      new Date().toISOString(),
+      author.id,
+    );
+  } finally {
+    db.close();
+  }
+
+  try {
+    await loginAsAdmin(page);
+    await page.goto(`/admin/users/${author.id}`);
+    await page.getByRole('button', { name: '削除する' }).click();
+
+    const expectedConfirm = '記事 1 本と走り書き 0 本も消えます。元に戻せません。';
+    await expect(page.getByText(expectedConfirm)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'やめる' })).toBeFocused();
+    await page
+      .locator('form')
+      .filter({ hasText: expectedConfirm })
+      .getByRole('button', { name: '削除する' })
+      .click();
+
+    await expect(page).toHaveURL(/\/admin\/users$/);
+    await expect(page.locator('li', { hasText: author.username })).toHaveCount(0);
+  } finally {
+    cleanupUser(author.id);
+  }
+});
+
 test('withdrawal and account settings withdrawal box do not overflow at 360px viewport', async ({
   page,
 }) => {
