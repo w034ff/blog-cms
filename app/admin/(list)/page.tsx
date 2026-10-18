@@ -41,7 +41,7 @@ export default async function AdminHome({
           wears (docs/site-header-requirements.md §5). With no posts the empty state carries one
           (EmptyPostList). No サイトを見る: SiteHeader's brand goes there. */}
       <div className='mb-6'>
-        <ScreenHeading title='記事一覧' showTags={admin} />
+        <ScreenHeading title='記事一覧' admin={admin} />
       </div>
       {all.length > 0 && <ListControls params={params} counts={countByStatus(narrowed)} />}
       {/* The list is a white sheet on the grey ground, as the post page's body and the editor's are

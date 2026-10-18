@@ -4,18 +4,18 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useId, useState } from 'react';
 import { useDismiss } from '@/components/editor/useDismiss';
-import { adminNavItems } from './AdminSideNav';
+import { adminNavGroups } from './AdminSideNav';
 
 // A management screen's <h1>. From `md` it is the title alone, the rail beside it doing the
 // navigating (AdminSideNav); below that the rail is gone and the title is the button that opens its
 // items, with a chevron, since nothing else would say it can be pressed. One place says where you
 // are and takes you elsewhere, rather than a small menu button repeating the title above it.
-export function ScreenHeading({ title, showTags }: { title: string; showTags: boolean }) {
+export function ScreenHeading({ title, admin }: { title: string; admin: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
-  const items = adminNavItems(showTags);
+  const groups = adminNavGroups(admin);
 
   return (
     <div ref={ref} className='relative'>
@@ -38,26 +38,34 @@ export function ScreenHeading({ title, showTags }: { title: string; showTags: bo
           id={panelId}
           aria-label='管理'
           className='popup-panel absolute top-full left-0 z-20 mt-1 min-w-48 rounded-panel border border-zinc-200 bg-surface p-1 shadow-lg md:hidden dark:border-zinc-800'>
-          <ul>
-            {items.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  aria-current={item.current(pathname) ? 'page' : undefined}
-                  onClick={() => setOpen(false)}
-                  className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                    item.current(pathname) ? 'font-semibold' : ''
-                  }`}>
-                  {item.label}
-                </Link>
-              </li>
-            ))}
-            <li>
-              <span aria-disabled='true' className='block px-3 py-2 text-sm text-zinc-400'>
-                統計<span className='ml-2 text-xs'>準備中</span>
-              </span>
-            </li>
-          </ul>
+          {/* The groups are split by the same rule as the header's 記事 menu puts above 検索. */}
+          {groups.map((group, index) => (
+            <div key={group[0].href}>
+              {index > 0 && <div className='my-1 border-t border-zinc-200 dark:border-zinc-800' />}
+              <ul>
+                {group.map((item) => (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={item.current(pathname) ? 'page' : undefined}
+                      onClick={() => setOpen(false)}
+                      className={`block rounded-chip px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                        item.current(pathname) ? 'font-semibold' : ''
+                      }`}>
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+                {index === 0 && (
+                  <li>
+                    <span aria-disabled='true' className='block px-3 py-2 text-sm text-zinc-400'>
+                      統計<span className='ml-2 text-xs'>準備中</span>
+                    </span>
+                  </li>
+                )}
+              </ul>
+            </div>
+          ))}
         </nav>
       )}
     </div>

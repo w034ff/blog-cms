@@ -23,7 +23,7 @@ export default async function AdminUsersPage() {
   return (
     <section>
       <div className='mb-6'>
-        <ScreenHeading title={USERS_TITLE} showTags />
+        <ScreenHeading title={USERS_TITLE} admin />
       </div>
       <div className='flex flex-col gap-6'>
         <ParticipationForm initialMode={accessMode} />

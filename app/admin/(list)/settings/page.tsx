@@ -19,7 +19,7 @@ export default async function AdminSettingsPage() {
   return (
     <section>
       <div className='mb-6'>
-        <ScreenHeading title={SETTINGS_TITLE} showTags />
+        <ScreenHeading title={SETTINGS_TITLE} admin />
       </div>
       <SettingsForm initial={site} />
     </section>

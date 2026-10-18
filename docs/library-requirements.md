@@ -80,7 +80,7 @@
 
 ### 6.1 メニュー
 
-左メニュー（`AdminSideNav`）の「走り書き」の下に「ライブラリ」を置く。管理者にも著者にも出す。並びは `adminNavItems` で決める。
+左メニュー（`AdminSideNav`）の「走り書き」の下に「ライブラリ」を置く。管理者にも著者にも出す。並びは `adminNavGroups` で決める（`docs/multi-author-requirements.md` §11）。
 
 ### 6.2 ライブラリのページ
 

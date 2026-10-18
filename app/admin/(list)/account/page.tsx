@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 // The user's account settings (docs/multi-author-requirements.md §6.1). Accessible to any signed-in user.
 export default async function AdminAccountPage() {
   const session = await verifySession();
-  const showTags = await isAdmin();
+  const admin = await isAdmin();
   const user = db
     .select({ displayName: users.displayName, googleSub: users.googleSub })
     .from(users)
@@ -26,7 +26,7 @@ export default async function AdminAccountPage() {
   return (
     <section>
       <div className='mb-6'>
-        <ScreenHeading title={ACCOUNT_TITLE} showTags={showTags} />
+        <ScreenHeading title={ACCOUNT_TITLE} admin={admin} />
       </div>
       <AccountForm
         initialDisplayName={user?.displayName ?? ''}

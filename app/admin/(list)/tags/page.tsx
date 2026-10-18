@@ -26,7 +26,7 @@ export default async function AdminTagsPage({
   return (
     <section>
       <div className='mb-2 flex items-center gap-2'>
-        <ScreenHeading title='タグの管理' showTags />
+        <ScreenHeading title='タグの管理' admin />
         <TagHelp />
       </div>
       <p className='mb-6 text-sm text-zinc-600 dark:text-zinc-400'>
