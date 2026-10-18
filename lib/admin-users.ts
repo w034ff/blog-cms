@@ -15,6 +15,8 @@ export type AdminUser = {
   displayName: string;
   role: 'admin' | 'author';
   suspendedAt: string | null;
+  // The withdrawal deadline (§12.2), or null when not withdrawing.
+  withdrawalDueAt: string | null;
   isGoogle: boolean;
   joinedVia: 'invite' | 'open' | null;
   postCount: number;
@@ -37,6 +39,7 @@ export function listAdminUsers(): AdminUser[] {
       displayName: users.displayName,
       role: users.role,
       suspendedAt: users.suspendedAt,
+      withdrawalDueAt: users.withdrawalDueAt,
       googleSub: users.googleSub,
       joinedVia: users.joinedVia,
     })
@@ -82,6 +85,7 @@ export function listAdminUsers(): AdminUser[] {
       displayName: u.displayName,
       role: u.role,
       suspendedAt: u.suspendedAt,
+      withdrawalDueAt: u.withdrawalDueAt,
       isGoogle: u.googleSub !== null,
       joinedVia: u.joinedVia,
       postCount: c.post,
@@ -147,6 +151,7 @@ export type UserDetail = {
   username: string | null;
   role: 'admin' | 'author';
   suspendedAt: string | null;
+  withdrawalDueAt: string | null;
   isGoogle: boolean;
   joinedVia: 'invite' | 'open' | null;
   createdAt: string | null;
@@ -190,6 +195,7 @@ export function getUserDetail(id: number): UserDetail | null {
     username: user.username,
     role: user.role,
     suspendedAt: user.suspendedAt,
+    withdrawalDueAt: user.withdrawalDueAt,
     isGoogle: user.googleSub !== null,
     joinedVia: user.joinedVia,
     createdAt: user.createdAt,
