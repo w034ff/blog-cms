@@ -5,6 +5,7 @@ import { CATEGORIES, normalizeCategory, type CategoryId, type PostKind } from '@
 import { db } from '@/lib/db';
 import { posts, users } from '@/lib/db/schema';
 import { normalizeDraftContent, sameDraftContent } from '@/lib/draft-content';
+import { handleOf } from '@/lib/handle';
 import { resolveTags, tagNames } from '@/lib/tags';
 import type { CategoryCount, DraftContent, Post, TagCount } from '@/lib/types';
 
@@ -29,7 +30,7 @@ export type AdminPost = Post & {
   hasPendingEdits: boolean;
   editedAt: string;
   authorId: number | null;
-  author: { displayName: string; username: string | null } | null;
+  author: { displayName: string; handle: string } | null;
 };
 
 // `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
@@ -205,7 +206,7 @@ function listAll(kind: PostKind, authorId?: number): AdminPost[] {
     .select({
       post: posts,
       authorDisplayName: users.displayName,
-      authorUsername: users.username,
+      authorHandle: users.handle,
       authorUserId: users.id,
     })
     .from(posts)
@@ -224,7 +225,7 @@ function listAll(kind: PostKind, authorId?: number): AdminPost[] {
         row.authorUserId !== null
           ? {
               displayName: row.authorDisplayName ?? '',
-              username: row.authorUsername,
+              handle: handleOf({ id: row.authorUserId, handle: row.authorHandle }),
             }
           : null,
       hasPendingEdits: hasUnpublishedEdits(

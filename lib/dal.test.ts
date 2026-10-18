@@ -46,10 +46,10 @@ describe('session verification and suspension (lib/dal)', () => {
     rawSession.current = { userId: 1 };
 
     const optional = await getOptionalSession();
-    expect(optional).toEqual({ userId: 1, displayName: '', username: 'active' });
+    expect(optional).toEqual({ userId: 1, displayName: '', handle: 'user1' });
 
     const verified = await verifySession();
-    expect(verified).toEqual({ userId: 1, displayName: '', username: 'active' });
+    expect(verified).toEqual({ userId: 1, displayName: '', handle: 'user1' });
     expect(redirectMock).not.toHaveBeenCalled();
   });
 

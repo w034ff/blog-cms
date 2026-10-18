@@ -5,6 +5,7 @@ import { authorAllowlist, displayNameHistory, posts, users } from '@/lib/db/sche
 import { normalizeEmail } from '@/lib/author-access-rules';
 import { hashEmail } from '@/lib/email-hash';
 import { deleteUserAccount } from '@/lib/user-delete';
+import { handleOf } from '@/lib/handle';
 import type { PostKind } from '@/lib/content';
 
 // Admin users management: listing, suspending, and unsuspending accounts
@@ -13,6 +14,8 @@ import type { PostKind } from '@/lib/content';
 export type AdminUser = {
   id: number;
   displayName: string;
+  // The ID, without the @ (docs/multi-author-requirements.md §13.5).
+  handle: string;
   role: 'admin' | 'author';
   suspendedAt: string | null;
   // The withdrawal deadline (§12.2), or null when not withdrawing.
@@ -37,6 +40,7 @@ export function listAdminUsers(): AdminUser[] {
     .select({
       id: users.id,
       displayName: users.displayName,
+      handle: users.handle,
       role: users.role,
       suspendedAt: users.suspendedAt,
       withdrawalDueAt: users.withdrawalDueAt,
@@ -83,6 +87,7 @@ export function listAdminUsers(): AdminUser[] {
     return {
       id: u.id,
       displayName: u.displayName,
+      handle: handleOf(u),
       role: u.role,
       suspendedAt: u.suspendedAt,
       withdrawalDueAt: u.withdrawalDueAt,
@@ -148,7 +153,7 @@ export type UserDetailPost = { id: number; title: string; draft: boolean; create
 export type UserDetail = {
   id: number;
   displayName: string;
-  username: string | null;
+  handle: string;
   role: 'admin' | 'author';
   suspendedAt: string | null;
   withdrawalDueAt: string | null;
@@ -192,7 +197,7 @@ export function getUserDetail(id: number): UserDetail | null {
   return {
     id: user.id,
     displayName: user.displayName,
-    username: user.username,
+    handle: handleOf(user),
     role: user.role,
     suspendedAt: user.suspendedAt,
     withdrawalDueAt: user.withdrawalDueAt,

@@ -70,6 +70,8 @@ db.prepare(
   `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'author')
    ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
 ).run(authorUsername, bcrypt.hashSync(authorPassword, 12));
+// The automatic ID every account starts with (docs/multi-author-requirements.md §13.2).
+db.prepare(`UPDATE users SET handle = 'user' || id WHERE handle IS NULL`).run();
 
 // External link card rows (docs/link-card-requirements.md §14.9): the published page never
 // fetches (§14.1) and the editor answers from fresh rows, so no request leaves the machine. The

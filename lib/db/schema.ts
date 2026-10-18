@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { integer, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import type { DraftContent } from '@/lib/types';
 // Relative, not `@/`: drizzle-kit loads this file outside the app's path aliases.
 import { POST_KINDS } from '../content';
@@ -78,37 +78,49 @@ export const loginAttempts = sqliteTable('login_attempts', {
   lastFailureAt: integer('last_failure_at').notNull(),
 });
 
-export const users = sqliteTable('users', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  // The password sign-in's pair. A Google author has neither (docs/multi-author-requirements.md
-  // §9.2): filling them would make an unusable value look like a way in.
-  username: text('username').unique(),
-  passwordHash: text('password_hash'),
-  // What the account may do beyond writing (docs/editor-requirements.md §12.33.1). `author` writes
-  // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
-  // A reader has no row at all. Read from here on each check, not carried in the session token, so
-  // a changed role takes effect on the next request rather than when the 14-day cookie runs out.
-  role: text('role', { enum: ['admin', 'author'] })
-    .notNull()
-    .default('author'),
-  displayName: text('display_name').notNull().default(''),
-  suspendedAt: text('suspended_at'),
-  // Google's `sub`, the key a Google author is found by. Their email is deliberately not kept
-  // (docs/multi-author-requirements.md §9.1): it is needed only at sign-in, to match an invite.
-  googleSub: text('google_sub').unique(),
-  // How a Google author joined: by an invite or under the open policy (docs/multi-author-requirements.md
-  // §10.2). Null for a password account.
-  joinedVia: text('joined_via', { enum: ['invite', 'open'] }),
-  // A keyed hash of the Google email, for confirming who someone is when they write in (§10.3).
-  // Not unique: a re-created Google account can share the address with an older row.
-  emailHash: text('email_hash'),
-  // When the row was made. Null for rows made before the column existed.
-  createdAt: text('created_at'),
-  // When a withdrawing author's account and posts go (docs/multi-author-requirements.md §12.2).
-  // The deadline rather than the request time, so the date the author was shown stays the date
-  // even if WITHDRAWAL_GRACE_DAYS changes. Null when not withdrawing.
-  withdrawalDueAt: text('withdrawal_due_at'),
-});
+export const users = sqliteTable(
+  'users',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    // The password sign-in's pair. A Google author has neither (docs/multi-author-requirements.md
+    // §9.2): filling them would make an unusable value look like a way in.
+    username: text('username').unique(),
+    passwordHash: text('password_hash'),
+    // What the account may do beyond writing (docs/editor-requirements.md §12.33.1). `author` writes
+    // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
+    // A reader has no row at all. Read from here on each check, not carried in the session token, so
+    // a changed role takes effect on the next request rather than when the 14-day cookie runs out.
+    role: text('role', { enum: ['admin', 'author'] })
+      .notNull()
+      .default('author'),
+    displayName: text('display_name').notNull().default(''),
+    suspendedAt: text('suspended_at'),
+    // Google's `sub`, the key a Google author is found by. Their email is deliberately not kept
+    // (docs/multi-author-requirements.md §9.1): it is needed only at sign-in, to match an invite.
+    googleSub: text('google_sub').unique(),
+    // How a Google author joined: by an invite or under the open policy (docs/multi-author-requirements.md
+    // §10.2). Null for a password account.
+    joinedVia: text('joined_via', { enum: ['invite', 'open'] }),
+    // A keyed hash of the Google email, for confirming who someone is when they write in (§10.3).
+    // Not unique: a re-created Google account can share the address with an older row.
+    emailHash: text('email_hash'),
+    // When the row was made. Null for rows made before the column existed.
+    createdAt: text('created_at'),
+    // When a withdrawing author's account and posts go (docs/multi-author-requirements.md §12.2).
+    // The deadline rather than the request time, so the date the author was shown stays the date
+    // even if WITHDRAWAL_GRACE_DAYS changes. Null when not withdrawing.
+    withdrawalDueAt: text('withdrawal_due_at'),
+    // The account's ID, shown as @handle on admin screens (docs/multi-author-requirements.md §13),
+    // stored in its normalized form without the @. Nullable only because ADD COLUMN cannot be NOT
+    // NULL or UNIQUE: the migration fills every row and each path that creates a user writes
+    // `user<id>` in the same transaction; the unique index below holds the rest.
+    handle: text('handle'),
+    // When the person replaced the automatic `user<id>` with an ID of their own, after which it is
+    // fixed (§13.4). Null while the automatic value stands.
+    handleChosenAt: text('handle_chosen_at'),
+  },
+  (table) => [uniqueIndex('users_handle_unique').on(table.handle)],
+);
 
 // Every display name an account has had (docs/multi-author-requirements.md §10.2), so a rename
 // never hides who wrote what. `initial` is the name an account was created with; `change` is one
