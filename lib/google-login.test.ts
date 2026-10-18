@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { appSettings, authorAllowlist, users } from '@/lib/db/schema';
+import { appSettings, authorAllowlist, displayNameHistory, users } from '@/lib/db/schema';
 import { addInvite, listInvites, saveAuthorAccessMode } from '@/lib/author-access';
 import { decideGoogleLogin, initialDisplayName, signInWithGoogle } from '@/lib/google-login';
+import { hashEmail } from '@/lib/email-hash';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -13,7 +14,8 @@ vi.mock('@/lib/db', async () => {
 const claims = { sub: 'google-sub-1', email: 'Hanako.Sato@Example.com', name: '佐藤 花子' };
 
 beforeEach(() => {
-  for (const table of [users, authorAllowlist, appSettings]) db.delete(table).run();
+  for (const table of [users, authorAllowlist, appSettings, displayNameHistory])
+    db.delete(table).run();
 });
 
 function userBySub(sub: string) {
@@ -40,8 +42,15 @@ describe('decideGoogleLogin (docs/multi-author-requirements.md §9.3, criterion 
       true,
       { kind: 'reject', reason: 'suspended' },
     ],
-    ['a new person, invited', null, 'allowlist', true, { kind: 'create' }],
-    ['a new person, open', null, 'open', false, { kind: 'create' }],
+    ['a new person, invited', null, 'allowlist', true, { kind: 'create', joinedVia: 'invite' }],
+    ['a new person, open', null, 'open', false, { kind: 'create', joinedVia: 'open' }],
+    [
+      'a new person invited under the open policy',
+      null,
+      'open',
+      true,
+      { kind: 'create', joinedVia: 'invite' },
+    ],
     [
       'a new person, not invited',
       null,
@@ -114,5 +123,88 @@ describe('signInWithGoogle (§9.3)', () => {
     addInvite(claims.email);
     signInWithGoogle(claims);
     expect(JSON.stringify(userBySub(claims.sub))).not.toContain('example.com');
+  });
+});
+
+describe('what sign-in records about an author (§10.2-§10.4)', () => {
+  const now = new Date('2026-10-18T05:00:00.000Z');
+
+  function history(userId: number) {
+    return db
+      .select({ displayName: displayNameHistory.displayName, kind: displayNameHistory.kind })
+      .from(displayNameHistory)
+      .where(eq(displayNameHistory.userId, userId))
+      .all();
+  }
+
+  it('records how an author joined, when, and an initial history row (criteria 25, 29)', () => {
+    addInvite(claims.email);
+    const invited = signInWithGoogle(claims, now);
+    saveAuthorAccessMode('open');
+    const open = signInWithGoogle({ sub: 'sub-2', email: 'x@example.com', name: 'X' }, now);
+    expect(invited.ok && open.ok).toBe(true);
+    if (!invited.ok || !open.ok) return;
+    expect(userBySub(claims.sub)).toMatchObject({
+      joinedVia: 'invite',
+      createdAt: now.toISOString(),
+    });
+    expect(userBySub('sub-2')?.joinedVia).toBe('open');
+    expect(history(invited.userId)).toEqual([{ displayName: '佐藤 花子', kind: 'initial' }]);
+  });
+
+  it('keeps only a keyed hash of the email and rewrites it on every sign-in (criterion 26)', () => {
+    saveAuthorAccessMode('open');
+    signInWithGoogle(claims, now);
+    const row = userBySub(claims.sub);
+    expect(row?.emailHash).toBe(hashEmail(claims.email));
+    expect(JSON.stringify(row)).not.toMatch(/example\.com/i);
+
+    db.update(users).set({ emailHash: 'stale' }).run();
+    signInWithGoogle({ ...claims, email: 'new.address@example.com' }, now);
+    expect(userBySub(claims.sub)?.emailHash).toBe(hashEmail('new.address@example.com'));
+  });
+
+  it('starts an author with no Google name or a taken one as 著者 <id> (criterion 32)', () => {
+    saveAuthorAccessMode('open');
+    db.insert(users)
+      .values({ username: 'admin', passwordHash: 'x', role: 'admin', displayName: 'ＳＡＴＯ' })
+      .run();
+    const nameless = signInWithGoogle({ sub: 'sub-a', email: 'a@example.com', name: '' }, now);
+    const taken = signInWithGoogle({ sub: 'sub-b', email: 'b@example.com', name: 'sato' }, now);
+    if (!nameless.ok || !taken.ok) throw new Error('sign-in refused');
+    expect(userBySub('sub-a')?.displayName).toBe(`著者 ${nameless.userId}`);
+    expect(userBySub('sub-b')?.displayName).toBe(`著者 ${taken.userId}`);
+    expect(history(taken.userId)).toEqual([
+      { displayName: `著者 ${taken.userId}`, kind: 'initial' },
+    ]);
+  });
+
+  it('drops invisible characters from a Google name and refuses the placeholder shape', () => {
+    saveAuthorAccessMode('open');
+    const invisible = signInWithGoogle(
+      { sub: 'sub-i', email: 'i@example.com', name: '\u200Bha\u200Bna\u202E' },
+      now,
+    );
+    const blank = signInWithGoogle(
+      { sub: 'sub-z', email: 'z@example.com', name: '\u200B\u3164' },
+      now,
+    );
+    const reserved = signInWithGoogle(
+      { sub: 'sub-r', email: 'r@example.com', name: '著者 99' },
+      now,
+    );
+    if (!invisible.ok || !blank.ok || !reserved.ok) throw new Error('sign-in refused');
+    expect(userBySub('sub-i')?.displayName).toBe('hana');
+    expect(userBySub('sub-z')?.displayName).toBe(`著者 ${blank.userId}`);
+    expect(userBySub('sub-r')?.displayName).toBe(`著者 ${reserved.userId}`);
+  });
+
+  it('adds no history on a later sign-in', () => {
+    saveAuthorAccessMode('open');
+    const first = signInWithGoogle(claims, now);
+    signInWithGoogle({ ...claims, name: 'Another Name' }, now);
+    if (!first.ok) throw new Error('sign-in refused');
+    expect(history(first.userId)).toHaveLength(1);
+    expect(userBySub(claims.sub)?.displayName).toBe('佐藤 花子');
   });
 });

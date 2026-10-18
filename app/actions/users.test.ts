@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { appSettings, authorAllowlist, users } from '@/lib/db/schema';
+import { hashEmail } from '@/lib/email-hash';
 import * as usersActions from './users';
 
 vi.mock('@/lib/db', async () => {
@@ -139,5 +140,49 @@ describe('admin safeguards and invite validation (criteria 17)', () => {
     );
     expect(duplicateResult).toEqual({ error: 'このメールアドレスは招待済みです。' });
     expect(db.select().from(authorAllowlist).all()).toHaveLength(1);
+  });
+});
+
+// docs/multi-author-requirements.md §10.7 criteria 28.
+describe('email lookup action (criteria 28)', () => {
+  it('returns lookupByEmail results when called by an admin', async () => {
+    admin.current = true;
+
+    db.insert(users)
+      .values({
+        id: 2,
+        role: 'author',
+        googleSub: 'sub-lookup-1',
+        emailHash: hashEmail('author@example.com'),
+      })
+      .run();
+    db.insert(authorAllowlist)
+      .values({
+        email: 'author@example.com',
+        createdAt: '2026-10-18T00:00:00.000Z',
+      })
+      .run();
+
+    const result = await usersActions.lookupByEmailAction('Author@Example.com');
+    expect(result).toEqual({
+      userIds: [2],
+      inviteEmails: ['author@example.com'],
+    });
+
+    const notFound = await usersActions.lookupByEmailAction('notfound@example.com');
+    expect(notFound).toEqual({
+      userIds: [],
+      inviteEmails: [],
+    });
+
+    // A request can carry anything; an over-long or non-string argument matches nothing.
+    const none = { userIds: [], inviteEmails: [] };
+    const overLong = `${'a'.repeat(243)}@example.com`;
+    db.insert(authorAllowlist)
+      .values({ email: overLong, createdAt: '2026-10-18T00:00:00.000Z' })
+      .run();
+    expect(await usersActions.lookupByEmailAction(overLong)).toEqual(none);
+    expect(await usersActions.lookupByEmailAction(['author@example.com'])).toEqual(none);
+    expect(await usersActions.lookupByEmailAction(null)).toEqual(none);
   });
 });

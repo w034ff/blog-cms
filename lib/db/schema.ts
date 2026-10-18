@@ -96,6 +96,26 @@ export const users = sqliteTable('users', {
   // Google's `sub`, the key a Google author is found by. Their email is deliberately not kept
   // (docs/multi-author-requirements.md §9.1): it is needed only at sign-in, to match an invite.
   googleSub: text('google_sub').unique(),
+  // How a Google author joined: by an invite or under the open policy (docs/multi-author-requirements.md
+  // §10.2). Null for a password account.
+  joinedVia: text('joined_via', { enum: ['invite', 'open'] }),
+  // A keyed hash of the Google email, for confirming who someone is when they write in (§10.3).
+  // Not unique: a re-created Google account can share the address with an older row.
+  emailHash: text('email_hash'),
+  // When the row was made. Null for rows made before the column existed.
+  createdAt: text('created_at'),
+});
+
+// Every display name an account has had (docs/multi-author-requirements.md §10.2), so a rename
+// never hides who wrote what. `initial` is the name an account was created with; `change` is one
+// the person set, the only kind the rename interval counts (§10.4). No foreign key, for the reason
+// `postRevisions` gives.
+export const displayNameHistory = sqliteTable('display_name_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull(),
+  displayName: text('display_name').notNull(),
+  kind: text('kind', { enum: ['initial', 'change'] }).notNull(),
+  changedAt: text('changed_at').notNull(),
 });
 
 // Who may create a Google author account while the policy is `allowlist`

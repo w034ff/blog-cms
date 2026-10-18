@@ -5,7 +5,9 @@ import { saveAccountAction, type AccountFormState } from '@/app/actions/account'
 import { codePointLength } from '@/lib/site-settings-rules';
 
 const DISPLAY_NAME_LABEL = '表示名';
-const DISPLAY_NAME_HELP = '記事と走り書きのページに著者名として出ます。空にすると出しません。';
+const DISPLAY_NAME_HELP = '記事と走り書きのページに著者名として出ます。';
+// Said only to someone who may clear the name (docs/multi-author-requirements.md §10.4).
+const DISPLAY_NAME_EMPTY_HELP = `${DISPLAY_NAME_HELP}空にすると出しません。`;
 const SAVE_LABEL = '保存';
 const SAVING_LABEL = '保存中…';
 const SAVED_MESSAGE = '保存しました';
@@ -68,9 +70,11 @@ function Field({
 export function AccountForm({
   initialDisplayName,
   max = 20,
+  canBeEmpty,
 }: {
   initialDisplayName: string;
   max?: number;
+  canBeEmpty: boolean;
 }) {
   const [state, formAction, pending] = useActionState(saveAccountAction, emptyState);
   const [displayName, setDisplayName] = useState(initialDisplayName);
@@ -105,7 +109,7 @@ export function AccountForm({
         value={displayName}
         max={max}
         error={state.errors?.displayName}
-        help={DISPLAY_NAME_HELP}
+        help={canBeEmpty ? DISPLAY_NAME_EMPTY_HELP : DISPLAY_NAME_HELP}
         onChange={setDisplayName}
       />
       <div className='flex justify-end'>

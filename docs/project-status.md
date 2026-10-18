@@ -97,6 +97,8 @@ OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署�
 
 OAuth の段（2026-10-18、`docs/multi-author-requirements.md` §9）: `drizzle/0018_author_google.sql`（`users.google_sub`、`username` と `password_hash` の null、`author_allowlist`）、`lib/google-oidc.ts`・`lib/google-login.ts`・`lib/author-access.ts`、`/auth/google` とそのコールバック。セッションは `userId` だけを持ち、名前は `lib/account-name.ts` が `users` から作る。利用者の画面は `/admin/users`（`lib/admin-users.ts`、`app/actions/users.ts`）。
 
+利用者の見分け（2026-10-18、`docs/multi-author-requirements.md` §10）: `drizzle/0019_author_identity.sql`（`users.joined_via`・`email_hash`・`created_at`、`display_name_history`）、メールの鍵付きハッシュ（`lib/email-hash.ts`）、表示名の決まり（`lib/display-name.ts` の `saveDisplayName`）。
+
 ### 7.3 設計の骨組み（作るとき）
 
 - **スキーマ、OAuth の流れ、利用者の画面**: `docs/multi-author-requirements.md` §9.2・§9.3・§9.5。`posts.authorId` と `app_settings` は既にある（§7.2）。所有の強制は第 1 段で済んでいる（同 §4）。

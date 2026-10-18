@@ -1,7 +1,10 @@
 import 'server-only';
-import { asc, count, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, count, desc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { posts, users } from '@/lib/db/schema';
+import { authorAllowlist, displayNameHistory, posts, users } from '@/lib/db/schema';
+import { normalizeEmail } from '@/lib/author-access-rules';
+import { hashEmail } from '@/lib/email-hash';
+import type { PostKind } from '@/lib/content';
 
 // Admin users management: listing, suspending, and unsuspending accounts
 // (docs/multi-author-requirements.md §5, §9.5).
@@ -12,9 +15,18 @@ export type AdminUser = {
   role: 'admin' | 'author';
   suspendedAt: string | null;
   isGoogle: boolean;
+  joinedVia: 'invite' | 'open' | null;
   postCount: number;
   scribbleCount: number;
+  // Names before the current one, newest first, at most PREVIOUS_NAMES_SHOWN
+  // (docs/multi-author-requirements.md §10.5).
+  previousNames: string[];
+  // Every history row, the current name's included: the N of すべて見る（N 件）.
+  historyCount: number;
 };
+
+// How many earlier names a row of the list shows; the rest are on the detail page (§10.5).
+export const PREVIOUS_NAMES_SHOWN = 3;
 
 // Users ordered by id asc (§9.5), with post and scribble counts including drafts.
 export function listAdminUsers(): AdminUser[] {
@@ -25,10 +37,22 @@ export function listAdminUsers(): AdminUser[] {
       role: users.role,
       suspendedAt: users.suspendedAt,
       googleSub: users.googleSub,
+      joinedVia: users.joinedVia,
     })
     .from(users)
     .orderBy(asc(users.id))
     .all();
+
+  const history = new Map<number, string[]>();
+  for (const row of db
+    .select({ userId: displayNameHistory.userId, displayName: displayNameHistory.displayName })
+    .from(displayNameHistory)
+    .orderBy(desc(displayNameHistory.changedAt), desc(displayNameHistory.id))
+    .all()) {
+    const names = history.get(row.userId) ?? [];
+    names.push(row.displayName);
+    history.set(row.userId, names);
+  }
 
   const counts = db
     .select({
@@ -58,8 +82,12 @@ export function listAdminUsers(): AdminUser[] {
       role: u.role,
       suspendedAt: u.suspendedAt,
       isGoogle: u.googleSub !== null,
+      joinedVia: u.joinedVia,
       postCount: c.post,
       scribbleCount: c.scribble,
+      // The newest row is the current name.
+      previousNames: (history.get(u.id) ?? []).slice(1, 1 + PREVIOUS_NAMES_SHOWN),
+      historyCount: history.get(u.id)?.length ?? 0,
     };
   });
 }
@@ -76,4 +104,89 @@ export function suspendUser(id: number, now: Date = new Date()): boolean {
 export function unsuspendUser(id: number): boolean {
   const result = db.update(users).set({ suspendedAt: null }).where(eq(users.id, id)).run();
   return result.changes > 0;
+}
+
+export type EmailLookup = { userIds: number[]; inviteEmails: string[] };
+
+// The accounts and pending invites that belong to an email (docs/multi-author-requirements.md §10.3).
+// Accounts are matched by keyed hash, invites by their stored address; both after normalizing.
+export function lookupByEmail(email: string): EmailLookup {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return { userIds: [], inviteEmails: [] };
+  const userIds = db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.emailHash, hashEmail(normalized)))
+    .orderBy(asc(users.id))
+    .all()
+    .map((row) => row.id);
+  const inviteEmails = db
+    .select({ email: authorAllowlist.email })
+    .from(authorAllowlist)
+    .where(eq(authorAllowlist.email, normalized))
+    .all()
+    .map((row) => row.email);
+  return { userIds, inviteEmails };
+}
+
+// How many of each kind of row the detail page lists (§10.6); the rest are counted, not listed.
+export const DETAIL_POSTS_SHOWN = 50;
+
+export type UserDetailPost = { id: number; title: string; draft: boolean; createdAt: string };
+
+export type UserDetail = {
+  id: number;
+  displayName: string;
+  username: string | null;
+  role: 'admin' | 'author';
+  suspendedAt: string | null;
+  isGoogle: boolean;
+  joinedVia: 'invite' | 'open' | null;
+  createdAt: string | null;
+  // Every name, newest first; the first is the current one.
+  history: { displayName: string; changedAt: string }[];
+  posts: Record<PostKind, { total: number; rows: UserDetailPost[] }>;
+};
+
+// Everything the detail page shows (§10.6), or null for an id with no account.
+export function getUserDetail(id: number): UserDetail | null {
+  if (!Number.isSafeInteger(id)) return null;
+  const user = db.select().from(users).where(eq(users.id, id)).get();
+  if (!user) return null;
+
+  const history = db
+    .select({
+      displayName: displayNameHistory.displayName,
+      changedAt: displayNameHistory.changedAt,
+    })
+    .from(displayNameHistory)
+    .where(eq(displayNameHistory.userId, id))
+    .orderBy(desc(displayNameHistory.changedAt), desc(displayNameHistory.id))
+    .all();
+
+  const postsOf = (kind: PostKind) => {
+    const where = and(eq(posts.authorId, id), eq(posts.kind, kind));
+    const total = db.select({ n: count() }).from(posts).where(where).get()?.n ?? 0;
+    const rows = db
+      .select({ id: posts.id, title: posts.title, draft: posts.draft, createdAt: posts.createdAt })
+      .from(posts)
+      .where(where)
+      .orderBy(desc(posts.createdAt), desc(posts.id))
+      .limit(DETAIL_POSTS_SHOWN)
+      .all();
+    return { total, rows };
+  };
+
+  return {
+    id: user.id,
+    displayName: user.displayName,
+    username: user.username,
+    role: user.role,
+    suspendedAt: user.suspendedAt,
+    isGoogle: user.googleSub !== null,
+    joinedVia: user.joinedVia,
+    createdAt: user.createdAt,
+    history,
+    posts: { post: postsOf('post'), scribble: postsOf('scribble') },
+  };
 }

@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { posts, users } from '@/lib/db/schema';
-import { listAdminUsers, suspendUser, unsuspendUser } from './admin-users';
+import { authorAllowlist, displayNameHistory, posts, users } from '@/lib/db/schema';
+import { addInvite } from '@/lib/author-access';
+import { hashEmail } from '@/lib/email-hash';
+import {
+  DETAIL_POSTS_SHOWN,
+  getUserDetail,
+  listAdminUsers,
+  lookupByEmail,
+  suspendUser,
+  unsuspendUser,
+} from './admin-users';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -10,8 +19,7 @@ vi.mock('@/lib/db', async () => {
 });
 
 beforeEach(() => {
-  db.delete(posts).run();
-  db.delete(users).run();
+  for (const table of [posts, users, authorAllowlist, displayNameHistory]) db.delete(table).run();
 });
 
 describe('admin users (docs/multi-author-requirements.md §5, §9.5)', () => {
@@ -101,6 +109,9 @@ describe('admin users (docs/multi-author-requirements.md §5, §9.5)', () => {
         isGoogle: false,
         postCount: 1,
         scribbleCount: 1,
+        joinedVia: null,
+        previousNames: [],
+        historyCount: 0,
       },
       {
         id: 2,
@@ -110,6 +121,9 @@ describe('admin users (docs/multi-author-requirements.md §5, §9.5)', () => {
         isGoogle: true,
         postCount: 2,
         scribbleCount: 1,
+        joinedVia: null,
+        previousNames: [],
+        historyCount: 0,
       },
     ]);
   });
@@ -147,5 +161,112 @@ describe('admin users (docs/multi-author-requirements.md §5, §9.5)', () => {
     expect(unsuspendUser(2)).toBe(true);
     const authorUnsuspended = db.select().from(users).where(eq(users.id, 2)).get();
     expect(authorUnsuspended?.suspendedAt).toBeNull();
+  });
+});
+
+function addHistory(userId: number, names: string[]): void {
+  names.forEach((displayName, i) => {
+    db.insert(displayNameHistory)
+      .values({
+        userId,
+        displayName,
+        kind: i === 0 ? 'initial' : 'change',
+        changedAt: new Date(Date.UTC(2026, 9, 10 + i)).toISOString(),
+      })
+      .run();
+  });
+}
+
+describe('telling authors apart (docs/multi-author-requirements.md §10)', () => {
+  it('finds accounts by keyed hash and invites by address, ignoring case and space (criterion 27)', () => {
+    db.insert(users)
+      .values({
+        id: 2,
+        role: 'author',
+        googleSub: 's2',
+        emailHash: hashEmail('hanako@example.com'),
+      })
+      .run();
+    db.insert(users)
+      .values({
+        id: 3,
+        role: 'author',
+        googleSub: 's3',
+        emailHash: hashEmail('hanako@example.com'),
+      })
+      .run();
+    db.insert(users)
+      .values({ id: 4, role: 'author', googleSub: 's4', emailHash: hashEmail('other@example.com') })
+      .run();
+    addInvite('mio@example.com');
+
+    expect(lookupByEmail('  HANAKO@example.com ')).toEqual({ userIds: [2, 3], inviteEmails: [] });
+    expect(lookupByEmail('Mio@Example.com')).toEqual({
+      userIds: [],
+      inviteEmails: ['mio@example.com'],
+    });
+    expect(lookupByEmail('nobody@example.com')).toEqual({ userIds: [], inviteEmails: [] });
+    expect(lookupByEmail('   ')).toEqual({ userIds: [], inviteEmails: [] });
+  });
+
+  it('lists up to three earlier names, newest first, and the full count', () => {
+    db.insert(users)
+      .values({ id: 2, role: 'author', googleSub: 's2', displayName: 'E', joinedVia: 'invite' })
+      .run();
+    db.insert(users)
+      .values({ id: 3, role: 'author', googleSub: 's3', displayName: 'Only', joinedVia: 'open' })
+      .run();
+    addHistory(2, ['A', 'B', 'C', 'D', 'E']);
+    addHistory(3, ['Only']);
+
+    const [two, three] = listAdminUsers();
+    expect(two).toMatchObject({
+      joinedVia: 'invite',
+      previousNames: ['D', 'C', 'B'],
+      historyCount: 5,
+    });
+    expect(three).toMatchObject({ joinedVia: 'open', previousNames: [], historyCount: 1 });
+  });
+
+  it('gives the detail page every name and the newest rows of each kind', () => {
+    db.insert(users)
+      .values({
+        id: 2,
+        role: 'author',
+        googleSub: 's2',
+        displayName: 'C',
+        joinedVia: 'invite',
+        createdAt: '2026-10-15T00:00:00.000Z',
+      })
+      .run();
+    addHistory(2, ['A', 'B', 'C']);
+    for (let i = 0; i < DETAIL_POSTS_SHOWN + 2; i++) {
+      db.insert(posts)
+        .values({
+          title: `Scribble ${i}`,
+          date: '',
+          kind: 'scribble',
+          authorId: 2,
+          draft: i === DETAIL_POSTS_SHOWN + 1,
+          createdAt: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
+        })
+        .run();
+    }
+
+    const detail = getUserDetail(2);
+    expect(detail?.history.map((h) => h.displayName)).toEqual(['C', 'B', 'A']);
+    expect(detail?.posts.post).toEqual({ total: 0, rows: [] });
+    expect(detail?.posts.scribble.total).toBe(DETAIL_POSTS_SHOWN + 2);
+    expect(detail?.posts.scribble.rows).toHaveLength(DETAIL_POSTS_SHOWN);
+    expect(detail?.posts.scribble.rows[0]).toMatchObject({
+      title: `Scribble ${DETAIL_POSTS_SHOWN + 1}`,
+      draft: true,
+    });
+    expect(detail).toMatchObject({
+      joinedVia: 'invite',
+      createdAt: '2026-10-15T00:00:00.000Z',
+      isGoogle: true,
+    });
+    expect(getUserDetail(999)).toBeNull();
   });
 });
