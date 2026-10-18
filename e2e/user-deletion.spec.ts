@@ -120,6 +120,11 @@ test('author withdraws from account settings and cancels from /withdrawal (row 4
     await page.goto('/admin/account');
 
     await expect(page.getByRole('heading', { name: '退会' })).toBeVisible();
+    await expect(
+      page.getByText(
+        '記事と走り書きは公開されなくなり、30 日後に消えます。それまではログインすれば取り消せます。',
+      ),
+    ).toBeVisible();
     await page.getByRole('button', { name: '退会する' }).click();
 
     const expectedDate = withdrawalLastDay(withdrawalDueAt(new Date()).toISOString());
@@ -262,6 +267,37 @@ test('admin can delete suspended author with all posts and scribbles (row 42)', 
     } finally {
       dbCheck.close();
     }
+  } finally {
+    cleanupUser(author.id);
+  }
+});
+
+// docs/multi-author-requirements.md §12.7: suspending someone already withdrawing says what it changes.
+test('suspending a withdrawing author says the withdrawal can no longer be cancelled', async ({
+  page,
+}) => {
+  const author = createAuthorUser('del-wsus');
+  const db = getDb();
+  try {
+    db.prepare('UPDATE users SET withdrawal_due_at = ? WHERE id = ?').run(
+      withdrawalDueAt(new Date()).toISOString(),
+      author.id,
+    );
+  } finally {
+    db.close();
+  }
+  const message = '停止すると本人は退会を取り消せなくなります。解除すると元に戻ります。';
+  try {
+    await loginAsAdmin(page);
+    await page.goto('/admin/users');
+    const row = page.locator('li', { hasText: author.username });
+    await row.getByRole('button', { name: 'その他の操作' }).click();
+    await row.getByRole('button', { name: '停止する' }).click();
+    await expect(row.getByText(message)).toBeVisible();
+
+    await page.goto(`/admin/users/${author.id}`);
+    await page.getByRole('button', { name: '停止する' }).click();
+    await expect(page.getByText(message)).toBeVisible();
   } finally {
     cleanupUser(author.id);
   }

@@ -2,10 +2,10 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { readMigrations } from '@/scripts/migrations.mts';
 
-// drizzle/0021 adds `users.handle` (docs/multi-author-requirements.md §13.2, criterion 49). Every
+// drizzle/0022 adds `users.handle` (docs/multi-author-requirements.md §13.2, criterion 49). Every
 // account that already exists must come out with its automatic ID, or it would have none, and the
 // unique index must hold from then on. Run against a database built up to the migration before it.
-const TAG = '0021_user_handle';
+const TAG = '0022_user_handle';
 const migrations = readMigrations();
 const index = migrations.findIndex((migration) => migration.tag === TAG);
 

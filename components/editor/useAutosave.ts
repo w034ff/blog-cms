@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import { BODY_TOO_LONG_STATUS } from '@/lib/body-limit';
 import { normalizeCategory, parseTags, type PostKind } from '@/lib/content';
 import type { DraftContent } from '@/lib/types';
 
@@ -67,6 +68,9 @@ export function useAutosave({
   const [autosaveState, setAutosaveState] = useState<AutosaveState>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [unsaved, setUnsaved] = useState(false);
+  // Why the last failure was a failure, when the cause is one the author can act on: the body is
+  // over BODY_MAX_CHARS (docs/abuse-limits-requirements.md §7). The state stays 'failed'.
+  const [bodyTooLong, setBodyTooLong] = useState(false);
 
   const unsavedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,6 +94,7 @@ export function useAutosave({
     if (!form) return;
     savingRef.current = true;
     setAutosaveState('saving');
+    setBodyTooLong(false);
     let ok = false;
     try {
       const content = readDraftContent(form);
@@ -108,6 +113,7 @@ export function useAutosave({
         return;
       }
       if (!res.ok) {
+        setBodyTooLong(res.status === BODY_TOO_LONG_STATUS);
         setAutosaveState('failed');
         return;
       }
@@ -233,5 +239,13 @@ export function useAutosave({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [flushAutosave]);
 
-  return { autosaveState, savedAt, unsaved, markEdited, cancelPendingAutosave, acceptSaved };
+  return {
+    autosaveState,
+    bodyTooLong,
+    savedAt,
+    unsaved,
+    markEdited,
+    cancelPendingAutosave,
+    acceptSaved,
+  };
 }

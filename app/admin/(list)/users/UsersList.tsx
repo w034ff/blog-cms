@@ -215,6 +215,7 @@ export function UsersList({
                       id: user.id,
                       role: user.role,
                       suspended: user.suspendedAt !== null,
+                      withdrawing: user.withdrawalDueAt !== null,
                       postCount: user.postCount,
                       scribbleCount: user.scribbleCount,
                     }}

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fd27624e-c13e-40c8-8686-039fb035893c",
+  "id": "059b0df8-ce73-4a62-9c49-592d5a5bcb38",
   "prevId": "968ced88-c4a1-47a3-a756-fb5a22bd9d6b",
   "tables": {
     "app_settings": {
@@ -594,6 +594,52 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "uploads": {
+      "name": "uploads",
+      "columns": {
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "uploads_user_id_name_pk": {
+          "columns": [
+            "user_id",
+            "name"
+          ],
+          "name": "uploads_user_id_name_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "users": {
       "name": "users",
       "columns": {
@@ -675,20 +721,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "handle": {
-          "name": "handle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "handle_chosen_at": {
-          "name": "handle_chosen_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {
@@ -703,13 +735,6 @@
           "name": "users_google_sub_unique",
           "columns": [
             "google_sub"
-          ],
-          "isUnique": true
-        },
-        "users_handle_unique": {
-          "name": "users_handle_unique",
-          "columns": [
-            "handle"
           ],
           "isUnique": true
         }

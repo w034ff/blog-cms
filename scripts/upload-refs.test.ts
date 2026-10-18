@@ -49,4 +49,18 @@ describe('referencedInDb', () => {
     ).run();
     expect([...referencedInDb(db)]).toEqual(['share.png']);
   });
+
+  // docs/abuse-limits-requirements.md §8 row 8: the ledger names what was uploaded, not what is
+  // used, so reading it would keep every image forever.
+  it('does not count an image only because the ledger lists it', () => {
+    const db = createTestSqlite();
+    db.prepare(
+      `INSERT INTO uploads (name, user_id, bytes, created_at)
+       VALUES ('ledger-only.png', 1, 10, '2026-10-19T00:00:00.000Z')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO posts (slug, title, date, body) VALUES ('s', 't', '', '![](/uploads/used.png)')`,
+    ).run();
+    expect([...referencedInDb(db)]).toEqual(['used.png']);
+  });
 });

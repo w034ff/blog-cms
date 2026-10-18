@@ -12,7 +12,9 @@ import {
   MENU_UNSUSPEND,
   SUSPEND_ACTION_BUTTON,
   SUSPEND_CONFIRMATION_MESSAGE,
+  SUSPEND_WITHDRAWING_CONFIRMATION_MESSAGE,
 } from '../constants';
+import { PANEL_CONFIRM_CANCEL_CLASS, PANEL_CONFIRM_DANGER_CLASS } from '../../panel-confirm';
 
 // Suspend/unsuspend and deletion controls for author accounts (docs/multi-author-requirements.md §10.6, §12.4).
 // Admin accounts show no suspend or delete button (docs/multi-author-requirements.md §2, §12.4).
@@ -21,7 +23,12 @@ export function UserDetailSuspend({
   postCount,
   scribbleCount,
 }: {
-  user: { id: number; role: 'admin' | 'author'; suspendedAt: string | null };
+  user: {
+    id: number;
+    role: 'admin' | 'author';
+    suspendedAt: string | null;
+    withdrawalDueAt: string | null;
+  };
   // What the delete confirmation says goes with the account, drafts included (§12.4).
   postCount: number;
   scribbleCount: number;
@@ -64,13 +71,10 @@ export function UserDetailSuspend({
               type='button'
               autoFocus
               onClick={() => setConfirmingDelete(false)}
-              className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+              className={PANEL_CONFIRM_CANCEL_CLASS}>
               {CANCEL_LABEL}
             </button>
-            <button
-              type='submit'
-              disabled={deletePending}
-              className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+            <button type='submit' disabled={deletePending} className={PANEL_CONFIRM_DANGER_CLASS}>
               {DELETE_ACTION_BUTTON}
             </button>
           </div>
@@ -117,18 +121,20 @@ export function UserDetailSuspend({
         }}
         className='max-w-md rounded-panel border border-zinc-200 bg-surface p-4 dark:border-zinc-800'>
         <input type='hidden' name='id' value={user.id} />
-        <p className='text-sm'>{SUSPEND_CONFIRMATION_MESSAGE}</p>
+        <p className='text-sm'>
+          {user.withdrawalDueAt !== null
+            ? SUSPEND_WITHDRAWING_CONFIRMATION_MESSAGE
+            : SUSPEND_CONFIRMATION_MESSAGE}
+        </p>
         <div className='mt-3 flex justify-end gap-3'>
           <button
             type='button'
             autoFocus
             onClick={() => setConfirmingSuspend(false)}
-            className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+            className={PANEL_CONFIRM_CANCEL_CLASS}>
             {CANCEL_LABEL}
           </button>
-          <button
-            type='submit'
-            className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+          <button type='submit' className={PANEL_CONFIRM_DANGER_CLASS}>
             {SUSPEND_ACTION_BUTTON}
           </button>
         </div>

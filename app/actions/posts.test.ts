@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
 import { posts, users } from '@/lib/db/schema';
+import { BODY_MAX_CHARS } from '@/lib/body-limit';
 import { createPost } from '@/lib/posts-write';
 
 vi.mock('@/lib/db', async () => {
@@ -240,5 +241,48 @@ describe('author calling actions on another author’s post (all exports of post
         }
       }
     }
+  });
+});
+
+// docs/abuse-limits-requirements.md §8 row 11.
+describe('submitPostAction and the body limit', () => {
+  const tooLong = 'あ'.repeat(BODY_MAX_CHARS + 1);
+  const message = `本文が長すぎます。100,000 字までにしてください（今は ${(BODY_MAX_CHARS + 1).toLocaleString('en-US')} 字）。`;
+
+  it('refuses a publish of a body over the limit with the count, writing nothing', async () => {
+    const id = seedDraft('post');
+    const before = row(id);
+    const state = await submitPostAction(
+      {},
+      form({ id: String(id), category: 'tech', body: tooLong }),
+    );
+    expect(state).toEqual({ error: message });
+    expect(row(id)).toEqual(before);
+  });
+
+  it('refuses it when publish would create the row', async () => {
+    const state = await submitPostAction({}, form({ category: 'tech', body: tooLong }));
+    expect(state).toEqual({ error: message });
+    expect(db.select().from(posts).all()).toEqual([]);
+  });
+
+  it('refuses it on unpublish as well, which writes the body too', async () => {
+    const id = seedDraft('post');
+    db.update(posts).set({ draft: false }).where(eq(posts.id, id)).run();
+    const before = row(id);
+    const state = await submitPostAction(
+      {},
+      form({ id: String(id), intent: 'unpublish', category: 'tech', body: tooLong }),
+    );
+    expect(state).toEqual({ error: message });
+    expect(row(id)).toEqual(before);
+  });
+
+  it('publishes a body of exactly the limit', async () => {
+    const id = seedDraft('post');
+    const body = 'あ'.repeat(BODY_MAX_CHARS);
+    const state = await submitPostAction({}, form({ id: String(id), category: 'tech', body }));
+    expect(state.saved?.published).toBe(true);
+    expect(row(id).body).toBe(body);
   });
 });

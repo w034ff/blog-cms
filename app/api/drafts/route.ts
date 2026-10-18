@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
+import { BODY_TOO_LONG_ERROR, BODY_TOO_LONG_STATUS, isBodyTooLong } from '@/lib/body-limit';
 import { POST_KINDS, normalizeCategory } from '@/lib/content';
 import { getOptionalSession } from '@/lib/dal';
 import { canCurrentUserEdit } from '@/lib/post-access';
@@ -48,6 +49,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid' }, { status: 400 });
   }
   const { id, kind: newKind, content: sent } = parsed.data;
+  // Before any row is read or written: this route has no body-size cap of its own.
+  if (isBodyTooLong(sent.body)) {
+    return NextResponse.json({ error: BODY_TOO_LONG_ERROR }, { status: BODY_TOO_LONG_STATUS });
+  }
 
   // Update intent: stash edits in the right place (live columns for a draft,
   // the private working copy for a published post). No-op if it was deleted.

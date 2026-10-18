@@ -18,6 +18,7 @@ import {
   MENU_UNSUSPEND,
   SUSPEND_ACTION_BUTTON,
   SUSPEND_CONFIRMATION_MESSAGE,
+  SUSPEND_WITHDRAWING_CONFIRMATION_MESSAGE,
 } from './constants';
 
 export type UserMenuTarget =
@@ -27,6 +28,7 @@ export type UserMenuTarget =
       id: number;
       role: 'admin' | 'author';
       suspended: boolean;
+      withdrawing: boolean;
       postCount: number;
       scribbleCount: number;
     };
@@ -156,7 +158,11 @@ export function UserRowMenu({ target }: { target: UserMenuTarget }) {
               }}
               className='w-64 p-2'>
               <input type='hidden' name='id' value={target.id} />
-              <p className='text-sm'>{SUSPEND_CONFIRMATION_MESSAGE}</p>
+              <p className='text-sm'>
+                {target.withdrawing
+                  ? SUSPEND_WITHDRAWING_CONFIRMATION_MESSAGE
+                  : SUSPEND_CONFIRMATION_MESSAGE}
+              </p>
               <div className='mt-3 flex justify-end gap-3'>
                 <button
                   type='button'

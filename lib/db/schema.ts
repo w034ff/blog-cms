@@ -254,3 +254,22 @@ export const appSettings = sqliteTable('app_settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+// Who uploaded which image (docs/abuse-limits-requirements.md §4), so each author's total and
+// 24-hour count can be limited. A ledger, not a reference: `referencedInDb` (scripts/upload-refs.mts)
+// does not read it, or every uploaded image would count as in use and none would ever be swept.
+// One row per account and stored name, so two accounts uploading the same image each carry it. No
+// foreign key, for the reason `postRevisions` gives: `deleteUserAccount` removes the rows.
+export const uploads = sqliteTable(
+  'uploads',
+  {
+    // `<sha256>.<ext>`, as stored in UPLOAD_DIR; no `/uploads/` prefix.
+    name: text('name').notNull(),
+    userId: integer('user_id').notNull(),
+    // The stored file's size, after the resize.
+    bytes: integer('bytes').notNull(),
+    // When this account first uploaded the name (ISO 8601), the clock of the 24-hour count.
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.name] })],
+);
