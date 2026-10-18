@@ -1,10 +1,18 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { removeInviteAction, suspendUserAction, unsuspendUserAction } from '@/app/actions/users';
+import {
+  deleteUserAction,
+  removeInviteAction,
+  suspendUserAction,
+  unsuspendUserAction,
+} from '@/app/actions/users';
 import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 import {
   CANCEL_LABEL,
+  DELETE_ACTION_BUTTON,
+  formatDeleteConfirmationMessage,
+  MENU_DELETE,
   MENU_REMOVE_INVITE,
   MENU_SUSPEND,
   MENU_UNSUSPEND,
@@ -14,17 +22,28 @@ import {
 
 export type UserMenuTarget =
   | { type: 'invite'; email: string }
-  | { type: 'user'; id: number; role: 'admin' | 'author'; suspended: boolean };
+  | {
+      type: 'user';
+      id: number;
+      role: 'admin' | 'author';
+      suspended: boolean;
+      postCount: number;
+      scribbleCount: number;
+    };
 
 export function UserRowMenu({ target }: { target: UserMenuTarget }) {
   const [open, setOpen] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<'suspend' | 'delete' | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const close = (reason?: DismissReason) => {
     setOpen(false);
-    setConfirming(false);
+    setConfirming(null);
+    setDeleteError(null);
+    setDeletePending(false);
     if (reason !== 'outside') triggerRef.current?.focus();
   };
   const ref = useDismiss<HTMLDivElement>(open, close);
@@ -68,19 +87,68 @@ export function UserRowMenu({ target }: { target: UserMenuTarget }) {
               </button>
             </form>
           ) : target.suspended ? (
-            <form
-              action={async (formData) => {
-                await unsuspendUserAction({}, formData);
-                close();
-              }}>
-              <input type='hidden' name='id' value={target.id} />
-              <button
-                type='submit'
-                className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
-                {MENU_UNSUSPEND}
-              </button>
-            </form>
-          ) : confirming ? (
+            confirming === 'delete' ? (
+              <form
+                action={async (formData) => {
+                  setDeletePending(true);
+                  setDeleteError(null);
+                  const res = await deleteUserAction({}, formData);
+                  if (res?.error) {
+                    setDeleteError(res.error);
+                    setDeletePending(false);
+                  } else {
+                    close();
+                  }
+                }}
+                className='w-64 p-2'>
+                <input type='hidden' name='id' value={target.id} />
+                <p className='text-sm'>
+                  {formatDeleteConfirmationMessage(target.postCount, target.scribbleCount)}
+                </p>
+                <div className='mt-3 flex justify-end gap-3'>
+                  <button
+                    type='button'
+                    autoFocus
+                    onClick={() => close()}
+                    className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+                    {CANCEL_LABEL}
+                  </button>
+                  <button
+                    type='submit'
+                    disabled={deletePending}
+                    className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+                    {DELETE_ACTION_BUTTON}
+                  </button>
+                </div>
+                {deleteError && (
+                  <p role='alert' className='mt-2 text-xs text-red-700 dark:text-red-400'>
+                    {deleteError}
+                  </p>
+                )}
+              </form>
+            ) : (
+              <>
+                <form
+                  action={async (formData) => {
+                    await unsuspendUserAction({}, formData);
+                    close();
+                  }}>
+                  <input type='hidden' name='id' value={target.id} />
+                  <button
+                    type='submit'
+                    className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap hover:bg-zinc-100 dark:hover:bg-zinc-800'>
+                    {MENU_UNSUSPEND}
+                  </button>
+                </form>
+                <button
+                  type='button'
+                  onClick={() => setConfirming('delete')}
+                  className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap text-red-600 hover:bg-zinc-100 dark:text-red-400 dark:hover:bg-zinc-800'>
+                  {MENU_DELETE}
+                </button>
+              </>
+            )
+          ) : confirming === 'suspend' ? (
             <form
               action={async (formData) => {
                 await suspendUserAction({}, formData);
@@ -107,7 +175,7 @@ export function UserRowMenu({ target }: { target: UserMenuTarget }) {
           ) : (
             <button
               type='button'
-              onClick={() => setConfirming(true)}
+              onClick={() => setConfirming('suspend')}
               className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap text-red-600 hover:bg-zinc-100 dark:text-red-400 dark:hover:bg-zinc-800'>
               {MENU_SUSPEND}
             </button>

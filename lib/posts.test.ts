@@ -642,3 +642,22 @@ describe('suspended authors on public surfaces (lib/posts)', () => {
     expect((await getAllCategories()).find((c) => c.category === 'blog')?.count).toBe(1);
   });
 });
+
+// docs/multi-author-requirements.md §12.8 row 43.
+describe('withdrawing authors on public surfaces (lib/posts)', () => {
+  it('hides a withdrawing author the way it hides a suspended one, and restores them on cancel', async () => {
+    db.insert(users)
+      .values({ id: 2, role: 'author', withdrawalDueAt: '2026-11-18T15:00:00.000Z' })
+      .run();
+    seed({ slug: 'withdrawing-post', authorId: 2 });
+    seed({ slug: 'withdrawing-scribble', kind: 'scribble', authorId: 2 });
+
+    expect(await getAllPosts()).toEqual([]);
+    expect(await getPostBySlug('withdrawing-post')).toBeNull();
+    expect(await getScribbleBySlug('withdrawing-scribble')).toBeNull();
+
+    db.update(users).set({ withdrawalDueAt: null }).where(eq(users.id, 2)).run();
+    expect((await getAllPosts()).map((p) => p.slug)).toEqual(['withdrawing-post']);
+    expect(await getScribbleBySlug('withdrawing-scribble')).not.toBeNull();
+  });
+});

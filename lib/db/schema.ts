@@ -104,6 +104,10 @@ export const users = sqliteTable('users', {
   emailHash: text('email_hash'),
   // When the row was made. Null for rows made before the column existed.
   createdAt: text('created_at'),
+  // When a withdrawing author's account and posts go (docs/multi-author-requirements.md §12.2).
+  // The deadline rather than the request time, so the date the author was shown stays the date
+  // even if WITHDRAWAL_GRACE_DAYS changes. Null when not withdrawing.
+  withdrawalDueAt: text('withdrawal_due_at'),
 });
 
 // Every display name an account has had (docs/multi-author-requirements.md §10.2), so a rename

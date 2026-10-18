@@ -12,6 +12,7 @@ import {
   BADGE_INVITED,
   BADGE_JOINED_VIA_INVITE,
   BADGE_SUSPENDED,
+  BADGE_WITHDRAWING,
   CLEAR_SEARCH_LABEL,
   formatAllHistoryLink,
   formatPostCount,
@@ -167,6 +168,11 @@ export function UsersList({
                         {BADGE_SUSPENDED}
                       </span>
                     )}
+                    {user.withdrawalDueAt !== null && (
+                      <span className='shrink-0 rounded-chip bg-red-100 px-1.5 text-xs leading-4 text-red-800 dark:bg-red-900/40 dark:text-red-300'>
+                        {BADGE_WITHDRAWING}
+                      </span>
+                    )}
                     {user.joinedVia === 'invite' && (
                       <span className='shrink-0 rounded-chip bg-zinc-100 px-1.5 text-xs leading-4 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'>
                         {BADGE_JOINED_VIA_INVITE}
@@ -208,6 +214,8 @@ export function UsersList({
                       id: user.id,
                       role: user.role,
                       suspended: user.suspendedAt !== null,
+                      postCount: user.postCount,
+                      scribbleCount: user.scribbleCount,
                     }}
                   />
                 </div>

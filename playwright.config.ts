@@ -82,6 +82,12 @@ export default defineConfig({
           E2E_AUTHOR_PASSWORD: TEST_AUTHOR.password,
           SESSION_SECRET: TEST_SESSION_SECRET,
           SESSION_COOKIE_SECURE: 'false',
+          // Empty rather than unset: `next dev` loads the worktree's .env, which on the host that
+          // runs the site carries the real OAuth client, but leaves a key already in the
+          // environment alone, and googleClient() reads an empty value as not configured. Without
+          // this, whether /login shows the Google button depends on the worktree the suite runs in.
+          GOOGLE_CLIENT_ID: '',
+          GOOGLE_CLIENT_SECRET: '',
         },
       },
 });

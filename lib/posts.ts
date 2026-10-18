@@ -53,22 +53,26 @@ function toPost(row: PostRow, names: ReadonlyMap<string, string>): Post {
   };
 }
 
-// Public reads exclude posts by suspended authors (docs/multi-author-requirements.md §5).
-// Rows with no author (authorId === null) are retained.
-export function notSuspendedAuthor() {
-  return or(
-    isNull(posts.authorId),
-    notInArray(
-      posts.authorId,
-      db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)),
-    ),
-  );
+// Public reads exclude posts by authors who are suspended (docs/multi-author-requirements.md §5)
+// or withdrawing (§12.5). Rows with no author (authorId === null) are retained.
+function hiddenAuthorIds() {
+  return db
+    .select({ id: users.id })
+    .from(users)
+    .where(or(isNotNull(users.suspendedAt), isNotNull(users.withdrawalDueAt)));
 }
 
-// Set of user IDs whose accounts are currently suspended.
-export function getSuspendedAuthorIds(): Set<number> {
-  const rows = db.select({ id: users.id }).from(users).where(isNotNull(users.suspendedAt)).all();
-  return new Set(rows.map((r) => r.id));
+export function notHiddenAuthor() {
+  return or(isNull(posts.authorId), notInArray(posts.authorId, hiddenAuthorIds()));
+}
+
+// The same authors as a set, for a filter applied in memory.
+export function getHiddenAuthorIds(): Set<number> {
+  return new Set(
+    hiddenAuthorIds()
+      .all()
+      .map((r) => r.id),
+  );
 }
 
 // Every read below is scoped to one kind here, not by its callers: a page that forgot to filter
@@ -78,7 +82,7 @@ function listed(kind: PostKind) {
     eq(posts.kind, kind),
     eq(posts.draft, false),
     eq(posts.unlisted, false),
-    notSuspendedAuthor(),
+    notHiddenAuthor(),
   );
 }
 
@@ -100,7 +104,7 @@ function publishedBySlug(kind: PostKind, slug: string): Post | null {
   const row = db
     .select()
     .from(posts)
-    .where(and(eq(posts.slug, slug), notSuspendedAuthor()))
+    .where(and(eq(posts.slug, slug), notHiddenAuthor()))
     .get();
   if (!row || row.draft || row.kind !== kind) return null;
   return toPost(row, tagNames());

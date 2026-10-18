@@ -19,7 +19,7 @@ vi.mock('next/navigation', () => ({
   notFound: vi.fn(),
 }));
 
-const { getOptionalSession, verifySession } = await import('./dal');
+const { getOptionalSession, getWithdrawingSession, verifySession } = await import('./dal');
 
 beforeEach(() => {
   db.delete(users).run();
@@ -82,5 +82,37 @@ describe('session verification and suspension (lib/dal)', () => {
 
     await verifySession();
     expect(redirectMock).toHaveBeenCalledWith('/login');
+  });
+});
+
+// docs/multi-author-requirements.md §12.8 row 44.
+describe('withdrawing authors (lib/dal)', () => {
+  const DUE = '2026-11-18T15:00:00.000Z';
+
+  it('has no session but the withdrawing one, and is sent to the withdrawal page, not /login', async () => {
+    db.insert(users).values({ id: 3, role: 'author', withdrawalDueAt: DUE }).run();
+    rawSession.current = { userId: 3 };
+
+    expect(await getOptionalSession()).toBeNull();
+    expect(await getWithdrawingSession()).toEqual({ userId: 3, withdrawalDueAt: DUE });
+    await verifySession();
+    expect(redirectMock.mock.calls).toEqual([['/withdrawal']]);
+  });
+
+  it('treats a suspended withdrawing author as suspended', async () => {
+    db.insert(users)
+      .values({ id: 4, role: 'author', withdrawalDueAt: DUE, suspendedAt: '2026-10-20T00:00:00Z' })
+      .run();
+    rawSession.current = { userId: 4 };
+
+    expect(await getWithdrawingSession()).toBeNull();
+    await verifySession();
+    expect(redirectMock.mock.calls).toEqual([['/login']]);
+  });
+
+  it('gives an active author no withdrawing session', async () => {
+    seedUser(5, 'active');
+    rawSession.current = { userId: 5 };
+    expect(await getWithdrawingSession()).toBeNull();
   });
 });

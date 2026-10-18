@@ -6,6 +6,7 @@ import { users } from '@/lib/db/schema';
 import { DISPLAY_NAME_MAX_CHARS } from '@/lib/display-name';
 import { ScreenHeading } from '../ScreenHeading';
 import { AccountForm } from './AccountForm';
+import { AccountWithdrawal } from './AccountWithdrawal';
 
 const ACCOUNT_TITLE = 'アカウントの設定';
 
@@ -13,7 +14,7 @@ export const metadata: Metadata = { title: ACCOUNT_TITLE };
 
 export const dynamic = 'force-dynamic';
 
-// The user's account settings (docs/multi-author-requirements.md §6.1). Accessible to any signed-in user.
+// The user's account settings (docs/multi-author-requirements.md §6.1, §12.5). Accessible to any signed-in user.
 export default async function AdminAccountPage() {
   const session = await verifySession();
   const admin = await isAdmin();
@@ -28,12 +29,15 @@ export default async function AdminAccountPage() {
       <div className='mb-6'>
         <ScreenHeading title={ACCOUNT_TITLE} admin={admin} />
       </div>
-      <AccountForm
-        initialDisplayName={user?.displayName ?? ''}
-        max={DISPLAY_NAME_MAX_CHARS}
-        // Only a password account may clear its name (docs/multi-author-requirements.md §10.4).
-        canBeEmpty={user?.googleSub === null}
-      />
+      <div className='flex flex-col gap-6'>
+        <AccountForm
+          initialDisplayName={user?.displayName ?? ''}
+          max={DISPLAY_NAME_MAX_CHARS}
+          // Only a password account may clear its name (docs/multi-author-requirements.md §10.4).
+          canBeEmpty={user?.googleSub === null}
+        />
+        {!admin && <AccountWithdrawal />}
+      </div>
     </section>
   );
 }

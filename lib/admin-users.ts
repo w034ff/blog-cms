@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { authorAllowlist, displayNameHistory, posts, users } from '@/lib/db/schema';
 import { normalizeEmail } from '@/lib/author-access-rules';
 import { hashEmail } from '@/lib/email-hash';
+import { deleteUserAccount } from '@/lib/user-delete';
 import type { PostKind } from '@/lib/content';
 
 // Admin users management: listing, suspending, and unsuspending accounts
@@ -14,6 +15,8 @@ export type AdminUser = {
   displayName: string;
   role: 'admin' | 'author';
   suspendedAt: string | null;
+  // The withdrawal deadline (§12.2), or null when not withdrawing.
+  withdrawalDueAt: string | null;
   isGoogle: boolean;
   joinedVia: 'invite' | 'open' | null;
   postCount: number;
@@ -36,6 +39,7 @@ export function listAdminUsers(): AdminUser[] {
       displayName: users.displayName,
       role: users.role,
       suspendedAt: users.suspendedAt,
+      withdrawalDueAt: users.withdrawalDueAt,
       googleSub: users.googleSub,
       joinedVia: users.joinedVia,
     })
@@ -81,6 +85,7 @@ export function listAdminUsers(): AdminUser[] {
       displayName: u.displayName,
       role: u.role,
       suspendedAt: u.suspendedAt,
+      withdrawalDueAt: u.withdrawalDueAt,
       isGoogle: u.googleSub !== null,
       joinedVia: u.joinedVia,
       postCount: c.post,
@@ -104,6 +109,12 @@ export function suspendUser(id: number, now: Date = new Date()): boolean {
 export function unsuspendUser(id: number): boolean {
   const result = db.update(users).set({ suspendedAt: null }).where(eq(users.id, id)).run();
   return result.changes > 0;
+}
+
+// Deletes a suspended author with everything they wrote (docs/multi-author-requirements.md §12.4).
+// False, with nothing changed, for an admin, an author who is not suspended, or a missing id.
+export function deleteSuspendedAuthor(id: number): boolean {
+  return deleteUserAccount(db.$client, id, { kind: 'suspended' });
 }
 
 export type EmailLookup = { userIds: number[]; inviteEmails: string[] };
@@ -140,6 +151,7 @@ export type UserDetail = {
   username: string | null;
   role: 'admin' | 'author';
   suspendedAt: string | null;
+  withdrawalDueAt: string | null;
   isGoogle: boolean;
   joinedVia: 'invite' | 'open' | null;
   createdAt: string | null;
@@ -183,6 +195,7 @@ export function getUserDetail(id: number): UserDetail | null {
     username: user.username,
     role: user.role,
     suspendedAt: user.suspendedAt,
+    withdrawalDueAt: user.withdrawalDueAt,
     isGoogle: user.googleSub !== null,
     joinedVia: user.joinedVia,
     createdAt: user.createdAt,

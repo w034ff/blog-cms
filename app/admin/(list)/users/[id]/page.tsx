@@ -5,13 +5,16 @@ import { verifyAdmin } from '@/lib/dal';
 import { getUserDetail } from '@/lib/admin-users';
 import { accountName, NO_DISPLAY_NAME } from '@/lib/account-name';
 import { formatPostDate, formatRevisionTime } from '@/lib/format';
+import { withdrawalLastDay } from '@/lib/withdrawal-rules';
 import {
   BACK_TO_USERS,
   BADGE_ADMIN,
   BADGE_JOINED_VIA_INVITE,
   BADGE_SUSPENDED,
+  BADGE_WITHDRAWING,
   CURRENT_DISPLAY_NAME_LABEL,
   formatRegisteredDate,
+  formatWithdrawalPurgeNotice,
   HISTORY_HEADING,
   LOGIN_METHOD_GOOGLE,
   LOGIN_METHOD_PASSWORD,
@@ -75,6 +78,11 @@ export default async function UserDetailPage({ params }: Props) {
                 {BADGE_SUSPENDED}
               </span>
             )}
+            {user.withdrawalDueAt !== null && (
+              <span className='shrink-0 rounded-chip bg-red-100 px-1.5 text-xs leading-4 text-red-800 dark:bg-red-900/40 dark:text-red-300'>
+                {BADGE_WITHDRAWING}
+              </span>
+            )}
           </div>
           <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 dark:text-zinc-400'>
             <span className='whitespace-nowrap'>
@@ -94,10 +102,22 @@ export default async function UserDetailPage({ params }: Props) {
                 </span>
               </>
             )}
+            {user.withdrawalDueAt !== null && (
+              <>
+                <span>·</span>
+                <span className='whitespace-nowrap'>
+                  {formatWithdrawalPurgeNotice(withdrawalLastDay(user.withdrawalDueAt))}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        <UserDetailSuspend user={user} />
+        <UserDetailSuspend
+          user={user}
+          postCount={user.posts.post.total}
+          scribbleCount={user.posts.scribble.total}
+        />
 
         <div className='flex flex-col gap-3 rounded-panel border border-zinc-200 bg-surface p-5 dark:border-zinc-800'>
           <h2 className='text-sm font-semibold'>{HISTORY_HEADING}</h2>

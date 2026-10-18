@@ -19,6 +19,7 @@
     "db:backup": "node scripts/backup-db.mts",
     "db:migrate-content": "node scripts/migrate-content.mts",
     "gc:uploads": "node scripts/gc-uploads.mts",
+    "users:purge": "node scripts/purge-withdrawn.mts",
     "fix:glued-images": "node scripts/fix-glued-image-markdown.mts",
     "test:e2e": "node scripts/e2e-run.mts",
     "test:e2e:all": "playwright test",

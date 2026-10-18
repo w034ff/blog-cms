@@ -1,5 +1,5 @@
 [Unit]
-Description=Delete orphaned files from data/uploads (scripts/gc-uploads.mts)
+Description=Delete withdrawals past their deadline, then orphaned files from data/uploads
 Documentation=file://%h/blog-cms/task/docs/dev-environment.md
 
 [Service]
@@ -12,6 +12,10 @@ EnvironmentFile=-%h/blog-cms/task/.env
 # systemd's PATH does not include nvm. Pinned to one version on purpose: after an nvm upgrade
 # the unit fails with status 203/EXEC instead of running on a different Node.
 ExecStartPre=%h/.nvm/versions/node/v24.14.1/bin/node --input-type=module -e "import { resolveDbPath } from './scripts/db-path.mts'; console.log('db: ' + resolveDbPath())"
+# The purge first, so the images only a deleted author used are orphans by the time the GC looks
+# (docs/multi-author-requirements.md §12.6). Not `-`-prefixed: a failed purge stops the unit and
+# shows in `systemctl --user --failed`, and the GC waits a night.
+ExecStart=%h/.nvm/versions/node/v24.14.1/bin/node scripts/purge-withdrawn.mts --delete
 ExecStart=%h/.nvm/versions/node/v24.14.1/bin/node scripts/gc-uploads.mts --delete
 # No ProtectSystem/ReadWritePaths: on this WSL2 user manager they are accepted but not enforced
 # (docs/dev-environment.md §6.3), so listing them would claim a restriction that does not exist.

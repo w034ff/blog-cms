@@ -21,6 +21,7 @@ export const INVITING_BUTTON_LABEL = '招待中…';
 export const BADGE_ADMIN = '管理者';
 export const BADGE_SUSPENDED = '停止中';
 export const BADGE_INVITED = '招待中';
+export const BADGE_WITHDRAWING = '退会の手続き中';
 
 export const LOGIN_METHOD_GOOGLE = 'Google でログイン';
 export const LOGIN_METHOD_PASSWORD = 'パスワードでログイン';
@@ -32,11 +33,15 @@ export const formatScribbleCount = (count: number) => `走り書き ${count} 本
 export const MENU_SUSPEND = '停止する';
 export const MENU_UNSUSPEND = '停止を解除';
 export const MENU_REMOVE_INVITE = '招待を取り消す';
+export const MENU_DELETE = '削除する';
 
 export const SUSPEND_CONFIRMATION_MESSAGE =
   'このアカウントを停止します。ログインと書き込みができなくなり、公開中の記事と走り書きはサイトから外れます。解除すると元に戻ります。';
 export const CANCEL_LABEL = 'やめる';
 export const SUSPEND_ACTION_BUTTON = '停止する';
+export const DELETE_ACTION_BUTTON = '削除する';
+export const formatDeleteConfirmationMessage = (postCount: number, scribbleCount: number) =>
+  `記事 ${postCount} 本と走り書き ${scribbleCount} 本も消えます。元に戻せません。`;
 
 export const BADGE_JOINED_VIA_INVITE = '招待で参加';
 
@@ -54,6 +59,7 @@ export const formatAllHistoryLink = (count: number) => `すべて見る（${coun
 
 export const BACK_TO_USERS = '← 利用者';
 export const formatRegisteredDate = (date: string) => `登録 ${date}`;
+export const formatWithdrawalPurgeNotice = (date: string) => `${date}の後に削除`;
 
 export const HISTORY_HEADING = '表示名の履歴';
 export const WRITINGS_HEADING = '書いたもの';

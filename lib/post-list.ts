@@ -24,7 +24,7 @@ export function postListPage(
 
 // The pinned post out of the home list (docs/home-requirements.md §3): drawn once, above the list,
 // not again inside it. `pinnedId` naming a post that is not in `posts` — unpublished since, or by a
-// suspended author — pins nothing, which is how the slot disappears without a fallback.
+// suspended or withdrawing author, or deleted — pins nothing, which is how the slot disappears without a fallback.
 export function splitPinned(
   posts: readonly Post[],
   pinnedId: number | null,
