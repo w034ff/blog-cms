@@ -30,7 +30,7 @@ export function UsersList({
             <div className='flex min-w-0 flex-col gap-1'>
               <div className='flex items-center gap-2'>
                 <span className='font-medium text-zinc-400'>{NO_DISPLAY_NAME}</span>
-                <span className='shrink-0 rounded-chip bg-sky-100 px-1.5 leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
+                <span className='shrink-0 rounded-chip bg-sky-100 px-1.5 text-xs leading-4 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300'>
                   {BADGE_INVITED}
                 </span>
               </div>
@@ -57,12 +57,12 @@ export function UsersList({
                   )}
                 </span>
                 {user.role === 'admin' && (
-                  <span className='shrink-0 rounded-chip bg-violet-100 px-1.5 leading-4 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
+                  <span className='shrink-0 rounded-chip bg-violet-100 px-1.5 text-xs leading-4 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
                     {BADGE_ADMIN}
                   </span>
                 )}
                 {user.suspendedAt !== null && (
-                  <span className='shrink-0 rounded-chip bg-red-100 px-1.5 leading-4 text-red-800 dark:bg-red-900/40 dark:text-red-300'>
+                  <span className='shrink-0 rounded-chip bg-red-100 px-1.5 text-xs leading-4 text-red-800 dark:bg-red-900/40 dark:text-red-300'>
                     {BADGE_SUSPENDED}
                   </span>
                 )}

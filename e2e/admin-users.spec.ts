@@ -64,7 +64,9 @@ test('an admin sees user rows and invite rows, including Google authors', async 
     // Invite row appears with badge 招待中
     const inviteRow = page.locator('li', { hasText: inviteEmail });
     await expect(inviteRow).toBeVisible();
-    await expect(inviteRow.getByText('招待中')).toBeVisible();
+    const inviteBadge = inviteRow.getByText('招待中');
+    await expect(inviteBadge).toBeVisible();
+    expect(await inviteBadge.evaluate((el) => window.getComputedStyle(el).fontSize)).toBe('12px');
     await expect(inviteRow.getByText('まだログインしていません')).toBeVisible();
 
     // Google author row appears
@@ -185,6 +187,8 @@ test('at 360px viewport, an invite with a long email does not cause horizontal o
 
     const inviteRow = page.locator('li', { hasText: longEmail });
     await expect(inviteRow).toBeVisible();
+    const inviteBadge = inviteRow.getByText('招待中');
+    expect(await inviteBadge.evaluate((el) => window.getComputedStyle(el).fontSize)).toBe('12px');
 
     // Check that horizontal scrolling does not occur
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
