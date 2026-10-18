@@ -23,8 +23,9 @@ test('an autosave refused for length says so in the header, and recovers on the 
   await editor.click();
   await page.keyboard.type('本文です。');
 
-  const notice = page.getByText('本文が長すぎます（100,000 字まで）');
+  const notice = page.getByText('字数超過', { exact: true });
   await expect(notice).toBeVisible({ timeout: 10_000 });
+  await expect(notice).toHaveAttribute('title', '本文は 100,000 字までです');
   await expect(page.getByText('保存に失敗', { exact: true })).toHaveCount(0);
 
   await page.unroute('**/api/drafts');

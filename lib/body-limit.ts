@@ -7,8 +7,11 @@ export const BODY_MAX_CHARS = 100_000;
 export const BODY_TOO_LONG_STATUS = 413;
 export const BODY_TOO_LONG_ERROR = 'body too long';
 
-// The editor's 保存に失敗 line when autosave is refused for length.
-export const BODY_TOO_LONG_NOTICE = `本文が長すぎます（${formatCount(BODY_MAX_CHARS)} 字まで）`;
+// The editor's 保存に失敗 line when autosave is refused for length. Four characters: beside a
+// six-digit 文字数 the touch header at 360px keeps one row only up to four
+// (docs/abuse-limits-requirements.md §7), so the limit itself goes in the hover title.
+export const BODY_TOO_LONG_NOTICE = '字数超過';
+export const BODY_TOO_LONG_TITLE = `本文は ${formatCount(BODY_MAX_CHARS)} 字までです`;
 
 function formatCount(count: number): string {
   return count.toLocaleString('en-US');

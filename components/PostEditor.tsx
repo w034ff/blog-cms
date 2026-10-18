@@ -35,7 +35,7 @@ import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
 import { EditorColumn } from './PageShell';
-import { BODY_TOO_LONG_NOTICE } from '@/lib/body-limit';
+import { BODY_TOO_LONG_NOTICE, BODY_TOO_LONG_TITLE } from '@/lib/body-limit';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import { EDIT_POST_TITLE, tabTitle } from '@/app/shared-metadata';
 import type { PostFormState } from '@/app/actions/posts';
@@ -495,12 +495,13 @@ export function PostEditor({
   //
   // 保存済み ✓ fades: `savedAt` never returns to null, so it became permanent furniture. 保存中…
   // returns on every edit. 保存に失敗 does not fade: absence must mean nothing is wrong.
-  let autosaveStatus: { text: string; className: string } | null = null;
+  let autosaveStatus: { text: string; className: string; title?: string } | null = null;
   if (autosaveState === 'failed') {
     // The one failure with a cause the author can fix, so it says so (docs/abuse-limits-requirements.md §7).
     autosaveStatus = {
       text: bodyTooLong ? BODY_TOO_LONG_NOTICE : '保存に失敗',
       className: 'text-red-600',
+      title: bodyTooLong ? BODY_TOO_LONG_TITLE : undefined,
     };
   } else if (unsaved) {
     autosaveStatus = { text: '保存中…', className: 'text-zinc-600' };
@@ -569,7 +570,10 @@ export function PostEditor({
           {autosaveStatus &&
             (autosaveState === 'failed' ? (
               // Full words at every size: rare, and worth the room.
-              <span className={`text-xs ${autosaveStatus.className}`} aria-live='polite'>
+              <span
+                className={`text-xs ${autosaveStatus.className}`}
+                title={autosaveStatus.title}
+                aria-live='polite'>
                 {autosaveStatus.text}
               </span>
             ) : (
