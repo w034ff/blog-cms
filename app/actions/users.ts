@@ -17,7 +17,9 @@ const CANNOT_SUSPEND_ADMIN: UserActionState = { error: '管理者は停止でき
 const INVALID_EMAIL: UserActionState = { error: 'メールアドレスの形ではありません。' };
 const DUPLICATE_INVITE: UserActionState = { error: 'このメールアドレスは招待済みです。' };
 
-const emailSchema = z.email();
+// RFC 5321's limit on a forward path, so a stray paste is refused before it reaches the list.
+const EMAIL_MAX_CHARS = 254;
+const emailSchema = z.email().max(EMAIL_MAX_CHARS);
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);

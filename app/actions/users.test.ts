@@ -110,6 +110,20 @@ describe('admin safeguards and invite validation (criteria 17)', () => {
     expect(db.select().from(authorAllowlist).all()).toHaveLength(1);
   });
 
+  it('accepts an address of 254 characters and refuses one of 255', async () => {
+    const address = (domainTail: number) =>
+      `${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(domainTail)}.com`;
+    expect(address(57)).toHaveLength(254);
+
+    const tooLong = await usersActions.addInviteAction({}, form({ email: address(58) }));
+    expect(tooLong).toEqual({ error: 'メールアドレスの形ではありません。' });
+    expect(db.select().from(authorAllowlist).all()).toHaveLength(0);
+
+    const atLimit = await usersActions.addInviteAction({}, form({ email: address(57) }));
+    expect(atLimit).toHaveProperty('at');
+    expect(db.select().from(authorAllowlist).all()).toHaveLength(1);
+  });
+
   it('normalizes email with leading/trailing spaces and uppercase to one row', async () => {
     const result = await usersActions.addInviteAction({}, form({ email: '  User@Example.COM  ' }));
     expect(result).toHaveProperty('at');

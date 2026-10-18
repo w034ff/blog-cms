@@ -338,3 +338,39 @@ test('author name appears in admin post and scribble lists for admin, but not fo
     dbClean.close();
   }
 });
+
+// docs/multi-author-requirements.md §9.9 row 23.
+test('a signed-in author who is then suspended lands on the login form, not in a redirect loop', async ({
+  page,
+}) => {
+  await loginAsAuthor(page);
+  // A valid session is still sent on from /login.
+  await page.goto('/login');
+  await expect(page).toHaveURL(/\/admin$/);
+
+  const db = getDb();
+  try {
+    db.prepare("UPDATE users SET suspended_at = '2026-10-18T00:00:00.000Z' WHERE username = ?").run(
+      TEST_AUTHOR.username,
+    );
+  } finally {
+    db.close();
+  }
+  try {
+    await page.goto('/admin');
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByLabel('ユーザー名').fill(TEST_AUTHOR.username);
+    await page.getByLabel('パスワード').fill(TEST_AUTHOR.password);
+    await page.getByRole('button', { name: 'ログイン' }).click();
+    await expect(page.getByText('このアカウントは停止されています。')).toBeVisible();
+  } finally {
+    const restore = getDb();
+    try {
+      restore
+        .prepare('UPDATE users SET suspended_at = NULL WHERE username = ?')
+        .run(TEST_AUTHOR.username);
+    } finally {
+      restore.close();
+    }
+  }
+});

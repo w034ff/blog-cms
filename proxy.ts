@@ -10,9 +10,6 @@ export default async function proxy(req: NextRequest) {
   if (pathname.startsWith('/admin') && !session) {
     return NextResponse.redirect(new URL('/login', req.nextUrl));
   }
-  if (pathname === '/login' && session) {
-    return NextResponse.redirect(new URL('/admin', req.nextUrl));
-  }
 
   const res = NextResponse.next();
   // Not on a Server Action (`Next-Action` header). Next merges a proxy's Set-Cookie into the
@@ -39,6 +36,9 @@ export default async function proxy(req: NextRequest) {
   return res;
 }
 
+// /login is not here: sending a signed-in visitor on to /admin needs the database's answer, which
+// only the page has. A token alone also passes for a suspended author, whom /admin sends back to
+// /login, and the two redirects would loop (docs/multi-author-requirements.md §5).
 export const config = {
-  matcher: ['/admin/:path*', '/login'],
+  matcher: ['/admin/:path*'],
 };

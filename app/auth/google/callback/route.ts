@@ -8,7 +8,7 @@ import {
   verifyIdToken,
   type GoogleClient,
 } from '@/lib/google-oidc';
-import { createSession } from '@/lib/session';
+import { createSession, deleteSession } from '@/lib/session';
 import { siteOrigin } from '@/lib/site';
 
 // Where Google sends the browser back (docs/multi-author-requirements.md §9.3, steps 2-5). Every
@@ -21,6 +21,8 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (result.ok) {
     await createSession({ userId: result.userId });
   } else {
+    // A refused sign-in leaves no session behind, whoever this browser was signed in as before.
+    await deleteSession();
     // The only record that a sign-in was refused; the reason alone, no address.
     console.warn(`google sign-in refused: ${result.reason}`);
   }

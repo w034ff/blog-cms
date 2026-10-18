@@ -4,11 +4,16 @@ import { encodeAuthRequest, type AuthRequest } from '@/lib/google-oidc';
 
 const mocks = vi.hoisted(() => ({
   createSession: vi.fn(),
+  deleteSession: vi.fn(),
   signInWithGoogle: vi.fn(),
   exchangeCode: vi.fn(),
   verifyIdToken: vi.fn(),
 }));
-vi.mock('@/lib/session', () => ({ createSession: mocks.createSession, cookieSecure: false }));
+vi.mock('@/lib/session', () => ({
+  createSession: mocks.createSession,
+  deleteSession: mocks.deleteSession,
+  cookieSecure: false,
+}));
 vi.mock('@/lib/google-login', () => ({ signInWithGoogle: mocks.signInWithGoogle }));
 vi.mock('@/lib/google-oidc', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/google-oidc')>()),
@@ -40,6 +45,8 @@ afterEach(() => vi.unstubAllEnvs());
 function expectRefused(response: Response, reason: string): void {
   expect(response.headers.get('location')).toBe(`http://localhost:3001/login?error=${reason}`);
   expect(mocks.createSession).not.toHaveBeenCalled();
+  // A suspended author's old cookie must not survive to bounce /login back to /admin.
+  expect(mocks.deleteSession).toHaveBeenCalled();
 }
 
 function expectCookieCleared(response: Response): void {
@@ -56,6 +63,7 @@ describe('GET /auth/google/callback (docs/multi-author-requirements.md §9.3)', 
       nonce: 'nonce-1',
     });
     expect(mocks.createSession).toHaveBeenCalledWith({ userId: 5 });
+    expect(mocks.deleteSession).not.toHaveBeenCalled();
     expectCookieCleared(response);
   });
 
