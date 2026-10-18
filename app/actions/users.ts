@@ -17,13 +17,7 @@ const CANNOT_SUSPEND_ADMIN: UserActionState = { error: '管理者は停止でき
 const INVALID_EMAIL: UserActionState = { error: 'メールアドレスの形ではありません。' };
 const DUPLICATE_INVITE: UserActionState = { error: 'このメールアドレスは招待済みです。' };
 
-const emailSchema = z.string().email();
-
-function resolveFormData(prev: unknown, formData: unknown): FormData {
-  if (formData instanceof FormData) return formData;
-  if (prev instanceof FormData) return prev;
-  return new FormData();
-}
+const emailSchema = z.email();
 
 function field(formData: FormData, name: string): string {
   const value = formData.get(name);
@@ -35,8 +29,7 @@ export async function saveAuthorAccessModeAction(
   formData: FormData,
 ): Promise<UserActionState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  const fd = resolveFormData(_prev, formData);
-  const mode = field(fd, 'mode');
+  const mode = field(formData, 'mode');
   if (!isAuthorAccessMode(mode)) return { error: '不正な方針です。' };
   saveAuthorAccessMode(mode);
   revalidatePath('/admin/users');
@@ -48,8 +41,7 @@ export async function addInviteAction(
   formData: FormData,
 ): Promise<UserActionState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  const fd = resolveFormData(_prev, formData);
-  const rawEmail = field(fd, 'email').trim();
+  const rawEmail = field(formData, 'email').trim();
   const parsed = emailSchema.safeParse(rawEmail);
   if (!parsed.success) return INVALID_EMAIL;
   const result = addInvite(parsed.data);
@@ -63,8 +55,7 @@ export async function removeInviteAction(
   formData: FormData,
 ): Promise<UserActionState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  const fd = resolveFormData(_prev, formData);
-  const email = field(fd, 'email');
+  const email = field(formData, 'email');
   removeInvite(email);
   revalidatePath('/admin/users');
   return { at: Date.now() };
@@ -75,8 +66,7 @@ export async function suspendUserAction(
   formData: FormData,
 ): Promise<UserActionState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  const fd = resolveFormData(_prev, formData);
-  const id = Number(field(fd, 'id'));
+  const id = Number(field(formData, 'id'));
   if (!Number.isInteger(id)) return { error: '利用者が指定されていません。' };
   const success = suspendUser(id);
   if (!success) return CANNOT_SUSPEND_ADMIN;
@@ -90,8 +80,7 @@ export async function unsuspendUserAction(
   formData: FormData,
 ): Promise<UserActionState> {
   if (!(await isAdmin())) return ADMIN_ONLY;
-  const fd = resolveFormData(_prev, formData);
-  const id = Number(field(fd, 'id'));
+  const id = Number(field(formData, 'id'));
   if (!Number.isInteger(id)) return { error: '利用者が指定されていません。' };
   unsuspendUser(id);
   revalidatePath('/admin/users');
