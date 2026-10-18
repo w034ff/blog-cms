@@ -127,6 +127,13 @@
       "when": 1792240181656,
       "tag": "0017_optimal_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1792307498411,
+      "tag": "0018_author_google",
+      "breakpoints": true
     }
   ]
 }

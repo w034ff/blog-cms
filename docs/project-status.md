@@ -72,7 +72,7 @@
 
 ## 7. 複数の著者（設計済み、一部だけ実装）
 
-OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署名）の設計は `docs/multi-author-requirements.md` にある（2026-10-17）。この節は全体の方針と、OAuth の段の骨組みを持つ。
+OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署名）と、OAuth の段（Google でのログイン、参加方針と招待、利用者の画面）の設計は `docs/multi-author-requirements.md` にある（2026-10-17、2026-10-18）。この節は全体の方針と、その文書に入っていない部分の骨組みを持つ。
 
 2026-06-24 に作者と設計を確かめ、実装は先送りにした。描画は既に XSS に対して安全（`rehype-sanitize`）で、残るのは認証と所有である。
 
@@ -84,7 +84,7 @@ OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署�
 - 閲覧は公開のまま（下書きは公開側で 404 のまま）。
 - 利用者のモデル（2026-09-24 に確認）: 読者は読むだけ、著者は自分の記事を書く、管理者は他人の記事の削除と著者の BAN もできる。停止（BAN）は `docs/multi-author-requirements.md` §5 で設計した: 停止の時刻の列をセッションの読み込みとログインで確かめ、公開側の読み込みからその著者の行を外す。行は消さない。参加方針が `open` のとき、走り書き（`docs/scribble-requirements.md` §9）はログインした直後に公開できるので、BAN と、管理者が他人の行を非公開にする操作がその前提になる。
 - 公開側に出す著者の名前は、`users.display_name` に本人が決める（`docs/multi-author-requirements.md` §6）。`username` はログイン用のまま公開側に出さない。OAuth の段では、Google の `name` を表示名の初期値にする。
-- 費用は 0 の見込み（`openid` / `email` / `profile` だけなら請求アカウントも審査も要らない）。Google Cloud の OAuth クライアントの作成と `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` の設定は作者が行う。
+- 費用は 0 の見込み（`openid` / `email` / `profile` だけなら請求アカウントも審査も要らない）。Google Cloud の OAuth クライアントの作成と `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` の設定は作者が行う。リダイレクト URI は `SITE_ORIGIN` から作る（`docs/multi-author-requirements.md` §9.8）。
 
 ### 7.2 実装済みのもの（2026-09-24）
 
@@ -92,17 +92,15 @@ OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署�
 
 `posts.authorId`（2026-10-15、`docs/library-requirements.md` §3.1）。作成のたびにセッションの利用者を入れ、`drizzle/0015_library.sql` が既存の行を最も id の小さい管理者で埋める。ライブラリのいいねと閲覧の記録、第 1 段の所有の強制と管理画面の一覧の絞り込みが読む。
 
-第 1 段（2026-10-17、`docs/multi-author-requirements.md`）: 所有の強制（`lib/post-access.ts`）、停止（`users.suspended_at`、`lib/dal.ts` と公開側の読み込み）、表示名と署名（`users.display_name`、`/admin/account`）。下の「強制」と、著者がログインできるようになったら足すテストのうち `app/actions/posts.ts`・`app/actions/revisions.ts`・`app/actions/tags.ts`・`app/actions/settings.ts` の分は、ここで済んでいる。
+第 1 段（2026-10-17、`docs/multi-author-requirements.md`）: 所有の強制（`lib/post-access.ts`）、停止（`users.suspended_at`、`lib/dal.ts` と公開側の読み込み）、表示名と署名（`users.display_name`、`/admin/account`）。§7.3 の「著者がログインできるようになったら足すテスト」のうち `app/actions/posts.ts`・`app/actions/revisions.ts`・`app/actions/tags.ts`・`app/actions/settings.ts` の分は、ここで済んでいる。
+
+OAuth の段（2026-10-18、`docs/multi-author-requirements.md` §9）: `drizzle/0018_author_google.sql`（`users.google_sub`、`username` と `password_hash` の null、`author_allowlist`）、`lib/google-oidc.ts`・`lib/google-login.ts`・`lib/author-access.ts`、`/auth/google` とそのコールバック。セッションは `userId` だけを持ち、名前は `lib/account-name.ts` が `users` から作る。利用者の画面は `/admin/users`（`lib/admin-users.ts`、`app/actions/users.ts`）。
 
 ### 7.3 設計の骨組み（作るとき）
 
-- **スキーマ**（`db:generate` → `db:migrate`）: `users` に `email`（unique、null 可）、`googleSub`（unique、null 可）、`passwordHash` を null 可に。`posts` に `authorId`（users.id への FK、既存の行は管理者で埋める）。`appSettings(key, value)`（サイトの設定のために `drizzle/0016_app_settings.sql` で作った。`docs/site-settings-requirements.md` §3）に `authorAccessMode`（既定 `allowlist`）。`authorAllowlist(email)`。
-- **OAuth の流れ**: `app/auth/google/route.ts`（認可、state と PKCE の cookie）と `app/auth/google/callback/route.ts`（state の検証、コードの交換、`id_token` の検証、`email_verified` の要求、方針での絞り込み、利用者の upsert、既存の `createSession`）。Route Handler・cookie・リダイレクトの API は `node_modules/next/dist/docs/` で確かめる。
-- **強制**: `app/actions/posts.ts` で所有を確かめる（作成で `authorId` を入れ、更新と削除は所有者でも管理者でもなければ拒む。既存の `sessionExpired` の形の隣に `forbidden` の結果を足す）。管理画面の一覧を著者ごとに絞る。`/admin/users` は管理者だけ。
-- **管理画面**: `app/admin/users/page.tsx` と `app/actions/users.ts`（利用者の一覧、役割の昇降、参加方針の切り替え、許可リストの編集。どれもサーバ側で管理者を確かめ直す）。
+- **スキーマ、OAuth の流れ、利用者の画面**: `docs/multi-author-requirements.md` §9.2・§9.3・§9.5。`posts.authorId` と `app_settings` は既にある（§7.2）。所有の強制は第 1 段で済んでいる（同 §4）。
 - **アカウントメニュー**: `docs/site-header-requirements.md` §3.3 で設計した（2026-10-15）。ログアウトと「新規作成」は管理画面からヘッダーへ移る（同 §5）。公開ページのヘッダーがセッションを読むので、公開ページをキャッシュするときはこの部分を分けて考える。
 - **アップロードの掃除**: 著者ごとの所有になったら、本文の走査は規模に合わない。資産の参照テーブル + 参照が 0 になったら削除 + 安全網としての GC に上げる（作者の決定、2026-06-24）。
 - **編集の手元のバッファ**（2026-10-17）: 控えは `localStorage` に平文で残り、ログアウトしても消えない（`docs/draft-buffer-requirements.md` §4）。共用の端末で書く著者が出てきたら、明示的なログアウトで自分の控えを消し（控えが残っていればログアウトの前に知らせる）、期限（今は 30 日）を短くする。セッションが切れたときはログインし直すだけでログアウトを通らないので、守りたい控えは消えない。暗号化はしない。鍵をブラウザに置けば同じ端末の人が暗号文と鍵の両方を読め、守りにならない。効くのは利用者ごとの鍵をログインの後にだけサーバーから渡す形だが、手間はこの機能と同じくらいかかり、同じ端末には履歴や管理画面のキャッシュも残るので、守れる範囲は狭い。未発表の情報のような、人に見せられない下書きを書く使い方が出てきたときに検討する。
-- **OAuth のライブラリ**（実装時に決める）: 推奨は小さな `arctic`（PKCE / state を扱う）と既存の jose のセッション。代わりに `jose` の `createRemoteJWKSet` と `fetch` で依存なしに書く案もある。作者は依存に慎重なので確かめる（`docs/dev-environment.md` §4）。
 - **著者がログインできるようになったら足すテスト**（2026-09-24 合意）: `isAdmin` を false にモックし、`app/actions/tags.ts` の**すべての export を列挙して**呼び（名前の手書きの一覧にしない。検査を忘れた 6 つ目の Action が落ちるように）、それぞれが拒否を返し DB が変わらないことを確かめる。Action は直接 POST できるので、ページの 404 ではなく Action の検査が本当の境界である。E2E ではない（ブラウザは Action を直接呼べない）。管理者専用の Action のモジュール（`app/actions/users.ts` など）も同じ形にする。
 - **下流**: `posts.authorId` が入れば、`docs/embed-requirements.md` §24.9 の「自分の記事 / 全記事」のタブを本物の絞り込みで作れる。

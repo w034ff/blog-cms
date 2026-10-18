@@ -13,7 +13,7 @@ const SESSION_COOKIE = 'session';
 // Whether the session cookie carries `Secure`. Opt-in rather than derived, because
 // the flag has to be false on a plain-HTTP LAN host, where a Secure cookie is simply
 // never sent back and the login silently fails to stick.
-const cookieSecure = process.env.SESSION_COOKIE_SECURE === 'true';
+export const cookieSecure = process.env.SESSION_COOKIE_SECURE === 'true';
 
 // The one combination that is always a mistake: served over HTTPS, but handing out a
 // session token without Secure, so any http:// request to the same host leaks it.

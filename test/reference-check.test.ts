@@ -35,10 +35,6 @@ const ABSENT: string[] = [
   'docs/cms-features.md → app/sitemap.ts',
   'docs/cms-features.md → docs/reading-time-requirements.md',
   'docs/cms-features.md → lib/reading-time.ts',
-  'docs/project-status.md → app/actions/users.ts',
-  'docs/project-status.md → app/admin/users/page.tsx',
-  'docs/project-status.md → app/auth/google/callback/route.ts',
-  'docs/project-status.md → app/auth/google/route.ts',
   'docs/toc-requirements.md → e2e/public-toc.spec.ts',
   // Renamed or deleted, named in the account that says so.
   'docs/embed-requirements.md → docs/youtube-embed-requirements.md',

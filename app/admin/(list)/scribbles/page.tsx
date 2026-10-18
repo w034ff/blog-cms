@@ -60,7 +60,7 @@ export default async function AdminScribblesPage({
             </Link>
           </p>
         ) : (
-          <PostListRows posts={posts} kind='scribble' likesCount={likes} />
+          <PostListRows posts={posts} kind='scribble' likesCount={likes} showAuthor={admin} />
         )}
       </div>
     </section>

@@ -7,21 +7,28 @@ import { users } from '@/lib/db/schema';
 import { getSession } from '@/lib/session';
 import type { SessionPayload } from '@/lib/session-token';
 
-export const getOptionalSession = cache(async (): Promise<SessionPayload | null> => {
+// The signed-in account, with what is needed to name it (lib/account-name.ts).
+export type SessionUser = SessionPayload & { displayName: string; username: string | null };
+
+export const getOptionalSession = cache(async (): Promise<SessionUser | null> => {
   const session = await getSession();
   if (!session) return null;
   const user = db
-    .select({ suspendedAt: users.suspendedAt })
+    .select({
+      suspendedAt: users.suspendedAt,
+      displayName: users.displayName,
+      username: users.username,
+    })
     .from(users)
     .where(eq(users.id, session.userId))
     .get();
   if (!user || user.suspendedAt !== null) {
     return null;
   }
-  return session;
+  return { userId: session.userId, displayName: user.displayName, username: user.username };
 });
 
-export const verifySession = cache(async (): Promise<SessionPayload> => {
+export const verifySession = cache(async (): Promise<SessionUser> => {
   const session = await getOptionalSession();
   if (!session) {
     redirect('/login');

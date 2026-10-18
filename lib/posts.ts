@@ -29,6 +29,7 @@ export type AdminPost = Post & {
   hasPendingEdits: boolean;
   editedAt: string;
   authorId: number | null;
+  author: { displayName: string; username: string | null } | null;
 };
 
 // `names` is the dictionary (`tagNames()`), read once by the caller rather than once per row. A slug
@@ -197,21 +198,34 @@ function listAll(kind: PostKind, authorId?: number): AdminPost[] {
     conditions.push(eq(posts.authorId, authorId));
   }
   const rows = db
-    .select()
+    .select({
+      post: posts,
+      authorDisplayName: users.displayName,
+      authorUsername: users.username,
+      authorUserId: users.id,
+    })
     .from(posts)
+    .leftJoin(users, eq(posts.authorId, users.id))
     .where(and(...conditions))
     .orderBy(desc(posts.date))
     .all();
   const names = tagNames();
   return rows.map((row) => {
-    const post = toPost(row, names);
+    const post = toPost(row.post, names);
     return {
       ...post,
-      editedAt: row.editedAt,
-      authorId: row.authorId,
+      editedAt: row.post.editedAt,
+      authorId: row.post.authorId,
+      author:
+        row.authorUserId !== null
+          ? {
+              displayName: row.authorDisplayName ?? '',
+              username: row.authorUsername,
+            }
+          : null,
       hasPendingEdits: hasUnpublishedEdits(
         post,
-        row.draftContent ? normalizeDraftContent(row.draftContent) : null,
+        row.post.draftContent ? normalizeDraftContent(row.post.draftContent) : null,
       ),
     };
   });

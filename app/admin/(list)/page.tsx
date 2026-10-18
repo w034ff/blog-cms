@@ -56,7 +56,7 @@ export default async function AdminHome({
             </Link>
           </p>
         ) : (
-          <PostListRows posts={posts} likesCount={likes} />
+          <PostListRows posts={posts} likesCount={likes} showAuthor={admin} />
         )}
       </div>
     </section>

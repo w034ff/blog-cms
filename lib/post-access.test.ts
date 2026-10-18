@@ -80,7 +80,7 @@ describe('canCurrentUserEdit (server helper)', () => {
 
   it('allows admin to edit another author’s post or an authorless post', async () => {
     seedUser(1, 'admin', 'admin');
-    currentSession.value = { userId: 1, username: 'admin' };
+    currentSession.value = { userId: 1 };
 
     const otherPost = seedPost(2);
     const orphanPost = seedPost(null);
@@ -91,7 +91,7 @@ describe('canCurrentUserEdit (server helper)', () => {
 
   it('allows author to edit their own post and refuses another’s or an authorless post', async () => {
     seedUser(2, 'author', 'author');
-    currentSession.value = { userId: 2, username: 'author' };
+    currentSession.value = { userId: 2 };
 
     const ownPost = seedPost(2);
     const otherPost = seedPost(1);
@@ -104,7 +104,7 @@ describe('canCurrentUserEdit (server helper)', () => {
 
   it('returns false for a non-existent post id', async () => {
     seedUser(1, 'admin', 'admin');
-    currentSession.value = { userId: 1, username: 'admin' };
+    currentSession.value = { userId: 1 };
 
     expect(await canCurrentUserEdit(99999)).toBe(false);
   });
