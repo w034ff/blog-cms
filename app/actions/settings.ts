@@ -37,8 +37,9 @@ export async function saveSiteSettingsAction(
   return { at: Date.now() };
 }
 
-// トップに固定 / 固定を外す on the admin post list (docs/home-requirements.md §3). An empty `id` takes
-// the pin off. Admin-only, as every value in `app_settings` is.
+// トップに固定 / 固定を外す on the admin post list and the settings' ピックアップ
+// (docs/home-requirements.md §3). An empty `id` takes the pin off. Admin-only, as every value in
+// `app_settings` is.
 export type PinPostState = { error?: string; at?: number };
 
 const PIN_ADMIN_ONLY: PinPostState = { error: 'トップへの固定は管理者だけが変えられます。' };
@@ -62,5 +63,6 @@ export async function pinPostAction(
   }
   revalidatePath('/');
   revalidatePath('/admin');
+  revalidatePath('/admin/settings');
   return { at: Date.now() };
 }

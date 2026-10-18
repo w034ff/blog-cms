@@ -52,7 +52,7 @@ test('a page past the last answers 404 (HOME-2)', async ({ page }) => {
 });
 
 // One pin for the whole site, so this spec is the only one that sets it, and it takes it off again.
-test('an admin pins a post from the list, and the home page draws it once, above the cards (HOME-3)', async ({
+test('an admin pins a post from the list, the home page draws it once above the cards, and settings takes it off (HOME-3)', async ({
   page,
 }) => {
   const title = `ピン留め ${Date.now()}`;
@@ -82,6 +82,15 @@ test('an admin pins a post from the list, and the home page draws it once, above
     // A category page has no pinned slot.
     await page.goto('/categories/tech');
     await expect(page.locator('article', { hasText: 'ピックアップ' })).toHaveCount(0);
+
+    // The settings screen shows the pin and takes it off (docs/site-settings-requirements.md §10).
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/admin/settings');
+    const pickup = page.getByRole('region', { name: 'ピックアップ' });
+    await expect(pickup.getByRole('link', { name: title })).toBeVisible();
+    await pickup.getByRole('button', { name: '固定を外す' }).click();
+    await expect(pickup.getByText('なし', { exact: true })).toBeVisible();
+    await expect(pickup.getByRole('link', { name: title })).toHaveCount(0);
   } finally {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/admin');
