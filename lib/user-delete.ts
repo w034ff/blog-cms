@@ -40,7 +40,7 @@ export function deleteUserAccount(
       for (const postId of postIds) for (const statement of perPost) statement.run(postId);
       sqlite.prepare('DELETE FROM posts WHERE author_id = ?').run(userId);
 
-      for (const table of ['bookmarks', 'likes', 'post_views', 'display_name_history']) {
+      for (const table of ['bookmarks', 'likes', 'post_views', 'display_name_history', 'uploads']) {
         sqlite.prepare(`DELETE FROM ${table} WHERE user_id = ?`).run(userId);
       }
       sqlite.prepare('DELETE FROM users WHERE id = ?').run(userId);
