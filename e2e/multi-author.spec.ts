@@ -273,3 +273,68 @@ test('author display name appears in post and scribble date rows when set, disap
     db3.close();
   }
 });
+
+// docs/multi-author-requirements.md §9.9 row 21.
+test('author name appears in admin post and scribble lists for admin, but not for author', async ({
+  page,
+}) => {
+  const { authorId } = getUserIds();
+
+  const db = getDb();
+  try {
+    db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('著者Alice', authorId);
+  } finally {
+    db.close();
+  }
+
+  const authorArticle = insertPost({
+    title: `Author Article For Name Check ${randomHexSlug()}`,
+    kind: 'post',
+    draft: false,
+    authorId,
+  });
+  const authorScribble = insertPost({
+    title: `Author Scribble For Name Check ${randomHexSlug()}`,
+    kind: 'scribble',
+    draft: false,
+    authorId,
+  });
+
+  // 1. Admin logs in
+  await loginAsAdmin(page);
+
+  // Admin in /admin sees author's name on author's article
+  await page.goto('/admin');
+  const adminArticleRow = page.locator('li', { hasText: authorArticle.title });
+  await expect(adminArticleRow).toBeVisible();
+  await expect(adminArticleRow).toContainText('著者Alice');
+
+  // Admin in /admin/scribbles sees author's name on author's scribble
+  await page.goto('/admin/scribbles');
+  const adminScribbleRow = page.locator('li', { hasText: authorScribble.title });
+  await expect(adminScribbleRow).toBeVisible();
+  await expect(adminScribbleRow).toContainText('著者Alice');
+
+  // 2. Author logs in
+  await loginAsAuthor(page);
+
+  // Author in /admin sees article but NOT author name
+  await page.goto('/admin');
+  const authorArticleRow = page.locator('li', { hasText: authorArticle.title });
+  await expect(authorArticleRow).toBeVisible();
+  await expect(authorArticleRow).not.toContainText('著者Alice');
+
+  // Author in /admin/scribbles sees scribble but NOT author name
+  await page.goto('/admin/scribbles');
+  const authorScribbleRow = page.locator('li', { hasText: authorScribble.title });
+  await expect(authorScribbleRow).toBeVisible();
+  await expect(authorScribbleRow).not.toContainText('著者Alice');
+
+  // Clean up
+  const dbClean = getDb();
+  try {
+    dbClean.prepare('UPDATE users SET display_name = ? WHERE id = ?').run('', authorId);
+  } finally {
+    dbClean.close();
+  }
+});

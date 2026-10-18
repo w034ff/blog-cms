@@ -5,6 +5,7 @@ import { formatPostDate, formatRelativeTime, formatRevisionTime } from '@/lib/fo
 import { resolveThumbnail } from '@/lib/thumbnail';
 import { PostRowMenu } from './PostRowMenu';
 import { HeartIcon } from '@/components/LibraryIcons';
+import { accountName } from '@/lib/account-name';
 
 // Two text lines tall, so it keeps the list's rhythm. `object-cover` and a bare `<img>` like every
 // other surface (components/PostCard.tsx, globals.css `.link-card-image`,
@@ -34,10 +35,12 @@ export function PostListRows({
   posts,
   kind = 'post',
   likesCount,
+  showAuthor = false,
 }: {
   posts: readonly AdminPost[];
   kind?: PostKind;
   likesCount?: ReadonlyMap<number, number>;
+  showAuthor?: boolean;
 }) {
   const isScribble = kind === 'scribble';
   const viewHref = (slug: string) => (isScribble ? `/scribbles/${slug}` : `/posts/${slug}`);
@@ -46,6 +49,7 @@ export function PostListRows({
     <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
       {posts.map((post) => {
         const likes = likesCount?.get(post.id) ?? 0;
+        const author = showAuthor && post.author ? accountName(post.author).name : null;
         return (
           <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
             <div className='flex min-w-0 items-center gap-3'>
@@ -80,6 +84,12 @@ export function PostListRows({
                   {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of
                   this list. The 表示 link reaches the public URL. */}
                   <span className='min-w-0 sm:truncate'>
+                    {author && (
+                      <>
+                        <span className='whitespace-nowrap'>{author}</span>
+                        {' · '}
+                      </>
+                    )}
                     {/* Relative, since the list is read for how recently a post was touched; the
                       minute is on hover for when it matters. Not 更新: that is the public
                       更新日, a different moment. */}
