@@ -290,6 +290,7 @@ test('shows 招待で参加 badge, filters by email without query in URL, and li
     await expect(inviteRow.getByText('以前の表示名: 旧名C → 旧名B → 旧名A')).toBeVisible();
     const allHistoryLink = inviteRow.getByRole('link', { name: 'すべて見る（4 件）' });
     await expect(allHistoryLink).toBeVisible();
+    await expect(allHistoryLink).toHaveClass(/underline/);
     await expect(allHistoryLink).toHaveAttribute('href', `/admin/users/${inviteUserId}`);
 
     // 3. Email search (criterion 28)
@@ -450,8 +451,12 @@ test('user detail page access, history, writings, and suspension (criteria 33)',
 
     // 5. Writings section
     const writingsSection = page.getByRole('heading', { name: '書いたもの' }).locator('..');
-    await expect(writingsSection.getByRole('button', { name: '記事 2' })).toBeVisible();
-    await expect(writingsSection.getByRole('button', { name: '走り書き 1' })).toBeVisible();
+    const articlesTab = writingsSection.getByRole('button', { name: '記事 2' });
+    const scribblesTab = writingsSection.getByRole('button', { name: '走り書き 1' });
+    await expect(articlesTab).toBeVisible();
+    await expect(scribblesTab).toBeVisible();
+    await expect(articlesTab).toHaveAttribute('aria-pressed', 'true');
+    await expect(scribblesTab).toHaveAttribute('aria-pressed', 'false');
 
     // Articles tab is active by default
     const pubArticleLink = writingsSection.getByRole('link', { name: '公開記事1' });
@@ -464,7 +469,9 @@ test('user detail page access, history, writings, and suspension (criteria 33)',
     await expect(writingsSection.getByText('下書き', { exact: true })).toBeVisible();
 
     // Switch to scribbles tab
-    await writingsSection.getByRole('button', { name: '走り書き 1' }).click();
+    await scribblesTab.click();
+    await expect(articlesTab).toHaveAttribute('aria-pressed', 'false');
+    await expect(scribblesTab).toHaveAttribute('aria-pressed', 'true');
     const scribbleLink = writingsSection.getByRole('link', { name: 'テスト走り書き' });
     await expect(scribbleLink).toBeVisible();
     await expect(scribbleLink).toHaveAttribute('href', `/admin/posts/${scribbleId}/edit`);
@@ -502,6 +509,129 @@ test('user detail page access, history, writings, and suspension (criteria 33)',
         .run(postArticleId, draftArticleId, scribbleId);
       dbClean.prepare(`DELETE FROM display_name_history WHERE user_id = ?`).run(authorUserId);
       dbClean.prepare(`DELETE FROM users WHERE id = ?`).run(authorUserId);
+    } finally {
+      dbClean.close();
+    }
+  }
+});
+
+test('user detail page starts on scribbles tab when author has only scribbles', async ({
+  page,
+}) => {
+  const db = getDb();
+  let scribbleAuthorId = 0;
+  let scribbleId = 0;
+  try {
+    const res = db
+      .prepare(
+        `INSERT INTO users (role, display_name, google_sub, joined_via, created_at)
+         VALUES ('author', '走り書きのみ著者', 'google-sub-scribble-only', 'open', '2026-10-15T00:00:00.000Z')`,
+      )
+      .run();
+    scribbleAuthorId = Number(res.lastInsertRowid);
+    const sRes = db
+      .prepare(
+        `INSERT INTO posts (slug, title, date, kind, draft, author_id, created_at)
+         VALUES ('scribble-only-1', '単独走り書き', '2026-10-15', 'scribble', 0, ?, '2026-10-15T00:00:00.000Z')`,
+      )
+      .run(scribbleAuthorId);
+    scribbleId = Number(sRes.lastInsertRowid);
+  } finally {
+    db.close();
+  }
+
+  try {
+    await loginAsAdmin(page);
+    await page.goto(`/admin/users/${scribbleAuthorId}`);
+
+    const writingsSection = page.getByRole('heading', { name: '書いたもの' }).locator('..');
+    const articlesTab = writingsSection.getByRole('button', { name: '記事 0' });
+    const scribblesTab = writingsSection.getByRole('button', { name: '走り書き 1' });
+    await expect(articlesTab).toHaveAttribute('aria-pressed', 'false');
+    await expect(scribblesTab).toHaveAttribute('aria-pressed', 'true');
+
+    // The scribble row is immediately visible without clicking the tab
+    await expect(writingsSection.getByRole('link', { name: '単独走り書き' })).toBeVisible();
+  } finally {
+    const dbClean = getDb();
+    try {
+      dbClean.prepare(`DELETE FROM posts WHERE id = ?`).run(scribbleId);
+      dbClean.prepare(`DELETE FROM users WHERE id = ?`).run(scribbleAuthorId);
+    } finally {
+      dbClean.close();
+    }
+  }
+});
+
+test('at 360px viewport, 20-character current and previous names wrap without clipping in user detail page', async ({
+  page,
+}) => {
+  const currentName20 = '二十文字の現在表示名テスト用です長い名前';
+  const prevName20 = '二十文字の過去表示名テスト用です昔の名前';
+  expect(currentName20).toHaveLength(20);
+  expect(prevName20).toHaveLength(20);
+
+  const db = getDb();
+  let userId = 0;
+  try {
+    const res = db
+      .prepare(
+        `INSERT INTO users (role, display_name, google_sub, joined_via, created_at)
+         VALUES ('author', ?, 'google-sub-20char', 'open', '2026-10-10T00:00:00.000Z')`,
+      )
+      .run(currentName20);
+    userId = Number(res.lastInsertRowid);
+
+    db.prepare(
+      `INSERT INTO display_name_history (user_id, display_name, kind, changed_at)
+       VALUES (?, ?, 'initial', '2026-10-10T01:00:00.000Z')`,
+    ).run(userId, prevName20);
+    db.prepare(
+      `INSERT INTO display_name_history (user_id, display_name, kind, changed_at)
+       VALUES (?, ?, 'change', '2026-10-11T01:00:00.000Z')`,
+    ).run(userId, currentName20);
+  } finally {
+    db.close();
+  }
+
+  try {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await loginAsAdmin(page);
+    await page.goto(`/admin/users/${userId}`);
+
+    const historySection = page.getByRole('heading', { name: '表示名の履歴' }).locator('..');
+    const currentNameSpan = historySection.getByText(currentName20);
+    const prevNameSpan = historySection.getByText(prevName20);
+
+    await expect(currentNameSpan).toBeVisible();
+    await expect(prevNameSpan).toBeVisible();
+
+    // Verify neither name is truncated (no ellipsis, scrollWidth <= clientWidth because it wrapped)
+    for (const span of [currentNameSpan, prevNameSpan]) {
+      const isTruncated = await span.evaluate((el) => {
+        const style = window.getComputedStyle(el);
+        return style.textOverflow === 'ellipsis' || el.scrollWidth > el.clientWidth;
+      });
+      expect(isTruncated).toBe(false);
+    }
+
+    // The timestamp next to or below the previous name is visible and not clipped
+    const dateSpan = prevNameSpan.locator('xpath=ancestor::li').locator('span').last();
+    await expect(dateSpan).toBeVisible();
+    const dateClipped = await dateSpan.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(dateClipped).toBe(false);
+
+    // Verify horizontal overflow does not occur
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  } finally {
+    const dbClean = getDb();
+    try {
+      dbClean.prepare(`DELETE FROM display_name_history WHERE user_id = ?`).run(userId);
+      dbClean.prepare(`DELETE FROM users WHERE id = ?`).run(userId);
     } finally {
       dbClean.close();
     }

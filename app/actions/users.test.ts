@@ -163,23 +163,13 @@ describe('email lookup action (criteria 28)', () => {
       })
       .run();
 
-    const fromFormData = await usersActions.lookupByEmailAction(
-      form({ email: 'Author@Example.com' }),
-    );
-    expect(fromFormData).toEqual({
+    const result = await usersActions.lookupByEmailAction('Author@Example.com');
+    expect(result).toEqual({
       userIds: [2],
       inviteEmails: ['author@example.com'],
     });
 
-    const fromString = await usersActions.lookupByEmailAction('author@example.com');
-    expect(fromString).toEqual({
-      userIds: [2],
-      inviteEmails: ['author@example.com'],
-    });
-
-    const notFound = await usersActions.lookupByEmailAction(
-      form({ email: 'notfound@example.com' }),
-    );
+    const notFound = await usersActions.lookupByEmailAction('notfound@example.com');
     expect(notFound).toEqual({
       userIds: [],
       inviteEmails: [],

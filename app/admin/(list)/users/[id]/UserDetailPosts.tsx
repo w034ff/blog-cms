@@ -21,7 +21,9 @@ export function UserDetailPosts({
 }: {
   posts: Record<PostKind, { total: number; rows: UserDetailPost[] }>;
 }) {
-  const [activeTab, setActiveTab] = useState<'post' | 'scribble'>('post');
+  const initialTab: PostKind =
+    posts.post.total === 0 && posts.scribble.total > 0 ? 'scribble' : 'post';
+  const [activeTab, setActiveTab] = useState<PostKind>(initialTab);
   const currentData = posts[activeTab];
   const remaining = currentData.total - currentData.rows.length;
 
@@ -34,6 +36,7 @@ export function UserDetailPosts({
           <button
             type='button'
             onClick={() => setActiveTab('post')}
+            aria-pressed={activeTab === 'post'}
             className={`border-b-2 py-2 text-sm font-medium ${
               activeTab === 'post'
                 ? 'border-(--accent) text-zinc-900 dark:text-zinc-50'
@@ -44,6 +47,7 @@ export function UserDetailPosts({
           <button
             type='button'
             onClick={() => setActiveTab('scribble')}
+            aria-pressed={activeTab === 'scribble'}
             className={`border-b-2 py-2 text-sm font-medium ${
               activeTab === 'scribble'
                 ? 'border-(--accent) text-zinc-900 dark:text-zinc-50'

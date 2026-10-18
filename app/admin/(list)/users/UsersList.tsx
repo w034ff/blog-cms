@@ -193,7 +193,9 @@ export function UsersList({
                           .join(' → ')}
                         {'・'}
                       </span>
-                      <Link href={`/admin/users/${user.id}`} className='hover:underline'>
+                      <Link
+                        href={`/admin/users/${user.id}`}
+                        className='underline hover:text-zinc-900 dark:hover:text-zinc-100'>
                         {formatAllHistoryLink(user.historyCount)}
                       </Link>
                     </div>

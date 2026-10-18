@@ -48,7 +48,6 @@ export default async function UserDetailPage({ params }: Props) {
   return (
     <section>
       <div className='flex flex-col gap-6'>
-        {/* 1. ← 利用者 */}
         <div>
           <Link
             href='/admin/users'
@@ -57,10 +56,9 @@ export default async function UserDetailPage({ params }: Props) {
           </Link>
         </div>
 
-        {/* 2. 見出しと札 & 3. 2 行目 */}
         <div className='flex flex-col gap-2'>
           <div className='flex flex-wrap items-center gap-2'>
-            <h1 className='text-2xl font-bold tracking-tight'>
+            <h1 className='text-2xl font-bold tracking-tight [overflow-wrap:anywhere]'>
               {user.displayName.trim() ? (
                 user.displayName
               ) : (
@@ -99,17 +97,16 @@ export default async function UserDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* 4. 停止のボタン */}
         <UserDetailSuspend user={user} />
 
-        {/* 5. 「表示名の履歴」の囲み */}
         <div className='flex flex-col gap-3 rounded-panel border border-zinc-200 bg-surface p-5 dark:border-zinc-800'>
           <h2 className='text-sm font-semibold'>{HISTORY_HEADING}</h2>
           <ul className='divide-y divide-zinc-200 text-sm dark:divide-zinc-800'>
             {user.history.length === 0 ? (
               <li className='flex items-center justify-between gap-4 py-2'>
-                <div className='flex min-w-0 items-center gap-2'>
-                  <span className={`truncate ${!user.displayName.trim() ? 'text-zinc-400' : ''}`}>
+                <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                  <span
+                    className={`[overflow-wrap:anywhere] ${!user.displayName.trim() ? 'text-zinc-400' : ''}`}>
                     {user.displayName.trim() ? user.displayName : NO_DISPLAY_NAME}
                   </span>
                   <span className='shrink-0 rounded-chip bg-zinc-100 px-1.5 text-xs leading-4 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'>
@@ -121,9 +118,10 @@ export default async function UserDetailPage({ params }: Props) {
               user.history.map((row, index) => (
                 <li
                   key={`${row.displayName}-${row.changedAt}-${index}`}
-                  className='flex items-center justify-between gap-4 py-2'>
-                  <div className='flex min-w-0 items-center gap-2'>
-                    <span className={`truncate ${!row.displayName.trim() ? 'text-zinc-400' : ''}`}>
+                  className='flex items-start justify-between gap-4 py-2'>
+                  <div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
+                    <span
+                      className={`[overflow-wrap:anywhere] ${!row.displayName.trim() ? 'text-zinc-400' : ''}`}>
                       {row.displayName.trim() ? row.displayName : NO_DISPLAY_NAME}
                     </span>
                     {index === 0 && (
@@ -132,7 +130,7 @@ export default async function UserDetailPage({ params }: Props) {
                       </span>
                     )}
                   </div>
-                  <span className='shrink-0 text-xs text-zinc-500 dark:text-zinc-400'>
+                  <span className='shrink-0 text-xs text-zinc-500 whitespace-nowrap dark:text-zinc-400'>
                     {formatRevisionTime(Date.parse(row.changedAt))}
                   </span>
                 </li>
@@ -141,7 +139,6 @@ export default async function UserDetailPage({ params }: Props) {
           </ul>
         </div>
 
-        {/* 6. 「書いたもの」の囲み */}
         <UserDetailPosts posts={user.posts} />
       </div>
     </section>
