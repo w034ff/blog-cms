@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
 import { posts, users } from '@/lib/db/schema';
+import { BODY_MAX_CHARS } from '@/lib/body-limit';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -163,5 +164,46 @@ describe('POST /api/drafts author permissions', () => {
 
     // DB remains completely unchanged
     expect(row(otherPostId)).toEqual(beforeState);
+  });
+});
+
+// docs/abuse-limits-requirements.md §8 row 10.
+describe('POST /api/drafts and the body limit', () => {
+  const atLimit = 'あ'.repeat(BODY_MAX_CHARS);
+
+  it('refuses a body over the limit with 413 and writes nothing, for a new row', async () => {
+    const res = await save({ content: { ...filled, body: `${atLimit}い` } });
+    expect(res.status).toBe(413);
+    expect(await res.json()).toEqual({ error: 'body too long' });
+    expect(db.select().from(posts).all()).toEqual([]);
+  });
+
+  it('refuses it for an existing row, leaving the row as it was', async () => {
+    const id = await create({ content: filled });
+    const before = row(id);
+    const res = await save({ id, content: { ...filled, body: `${atLimit}い` } });
+    expect(res.status).toBe(413);
+    expect(row(id)).toEqual(before);
+  });
+
+  it('refuses it for a published post’s working copy too', async () => {
+    const id = await create({ content: filled });
+    db.update(posts).set({ draft: false }).where(eq(posts.id, id)).run();
+    const before = row(id);
+    expect((await save({ id, content: { ...filled, body: `${atLimit}い` } })).status).toBe(413);
+    expect(row(id)).toEqual(before);
+  });
+
+  it('accepts a body of exactly the limit', async () => {
+    const id = await create({ content: { ...filled, body: atLimit } });
+    expect(row(id).body).toBe(atLimit);
+  });
+
+  it('counts code points, so an emoji is one character', async () => {
+    const id = await create({ content: { ...filled, body: '😀'.repeat(BODY_MAX_CHARS) } });
+    expect(Array.from(row(id).body)).toHaveLength(BODY_MAX_CHARS);
+    expect(
+      (await save({ id, content: { ...filled, body: `${'😀'.repeat(BODY_MAX_CHARS)}a` } })).status,
+    ).toBe(413);
   });
 });

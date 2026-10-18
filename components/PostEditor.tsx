@@ -35,6 +35,7 @@ import { ArrowLeftIcon } from './editor/svg/ArrowLeftIcon';
 import { SettingsIcon } from './editor/svg/SettingsIcon';
 import { HelpIcon } from './editor/svg/HelpIcon';
 import { EditorColumn } from './PageShell';
+import { BODY_TOO_LONG_NOTICE } from '@/lib/body-limit';
 import { bodyContainsImage } from '@/lib/thumbnail';
 import { EDIT_POST_TITLE, tabTitle } from '@/app/shared-metadata';
 import type { PostFormState } from '@/app/actions/posts';
@@ -213,16 +214,23 @@ export function PostEditor({
   const handleDirty = useCallback(() => {
     if (publishedRef.current) setPendingPublish(true);
   }, []);
-  const { autosaveState, savedAt, unsaved, markEdited, cancelPendingAutosave, acceptSaved } =
-    useAutosave({
-      formRef,
-      committedIdRef,
-      kind,
-      onCreated: handleCreated,
-      onDirty: handleDirty,
-      onSessionExpired: setSessionExpired,
-      onSaveSuccess: (content, at) => notifySaveSuccessRef.current(content, at),
-    });
+  const {
+    autosaveState,
+    bodyTooLong,
+    savedAt,
+    unsaved,
+    markEdited,
+    cancelPendingAutosave,
+    acceptSaved,
+  } = useAutosave({
+    formRef,
+    committedIdRef,
+    kind,
+    onCreated: handleCreated,
+    onDirty: handleDirty,
+    onSessionExpired: setSessionExpired,
+    onSaveSuccess: (content, at) => notifySaveSuccessRef.current(content, at),
+  });
 
   // One refusal notice for the whole editor, so two refusals cannot raise two toasts.
   const { notice, showNotice } = useEditorNotice();
@@ -489,7 +497,11 @@ export function PostEditor({
   // returns on every edit. 保存に失敗 does not fade: absence must mean nothing is wrong.
   let autosaveStatus: { text: string; className: string } | null = null;
   if (autosaveState === 'failed') {
-    autosaveStatus = { text: '保存に失敗', className: 'text-red-600' };
+    // The one failure with a cause the author can fix, so it says so (docs/abuse-limits-requirements.md §7).
+    autosaveStatus = {
+      text: bodyTooLong ? BODY_TOO_LONG_NOTICE : '保存に失敗',
+      className: 'text-red-600',
+    };
   } else if (unsaved) {
     autosaveStatus = { text: '保存中…', className: 'text-zinc-600' };
   } else if (savedAt !== null && savedNoticeShown) {

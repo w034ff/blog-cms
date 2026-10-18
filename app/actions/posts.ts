@@ -11,6 +11,7 @@ import {
   type PostCategory,
   type PostKind,
 } from '@/lib/content';
+import { bodyTooLongMessage, isBodyTooLong } from '@/lib/body-limit';
 import { contentForKind } from '@/lib/draft-content';
 import { incompleteFootnotes } from '@/lib/footnotes';
 import { getOptionalSession, verifySession } from '@/lib/dal';
@@ -198,6 +199,11 @@ export async function submitPostAction(
   const session = await getOptionalSession();
   if (!session) {
     return { sessionExpired: true };
+  }
+  // Both intents write the body, and a request can bypass the editor's counter.
+  const body = field(formData, 'body');
+  if (isBodyTooLong(body)) {
+    return { error: bodyTooLongMessage(body) };
   }
   return field(formData, 'intent') === 'unpublish'
     ? unpublish(formData)
