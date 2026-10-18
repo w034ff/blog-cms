@@ -53,7 +53,7 @@
 
 - 公開 URL（Funnel の `*.ts.net` の名前）は `.env` の `SITE_ORIGIN` にだけ置き、リポジトリには書かない（2026-10-12、公開リポジトリで所有者とホストを結び付けないため）。今は Funnel、後で Cloudflare Tunnel + ドメインに移る（Tunnel は無料だがドメインの購入が要る）。
 - アプリは WSL2（NAT）で動く。Tailscale を Windows 側に入れると、Funnel はアプリに届かなかった（502）。WSL の中に Tailscale を入れ、`tailscale up --hostname=blog --operator=$USER` で同じネットワーク名前空間に置く。`tailscale funnel 3001` は前景で動き、端末を閉じると消える。常時は `tailscale funnel --bg 3001`。
-- 公開できたかは tailnet の外から確かめる。作者のブラウザは tailnet 上にあるので区別できない。
+- tailnet の機器は WSL の `blog` だけで、作者の Windows は入っていない（2026-10-18 に確認）。そのため、作者のブラウザで Funnel の名前が開ければ、tailnet の外から公開できている。`tailscale serve` の tailnet だけの名前は、作者のブラウザからは開けない。
 - 本番ビルド（`npm run build` + `npm start`）で動かす。`.env` に `SITE_ORIGIN` と `SESSION_COOKIE_SECURE=true` が要る。`SESSION_COOKIE_SECURE` はホストではなく経路に従う（平の HTTP で試すなら `false` にしないとログインが黙って失敗する）。`.env` は Claude からは読めない。
 - **noindex は有効**（`65cf13c`）。`SITE_INDEXABLE` は明示的に入れる設定で、robots.txt は `Disallow: /`。恒久のドメインに移ったときだけ外す。
 - Cloudflare に移るときにすること: `/admin` の前に Cloudflare Access（Google を IdP にでき、リダイレクト先が `<team>.cloudflareaccess.com` なのでサイトのホスト名が変わっても動かない）。リバースプロキシが別のホスト名で前に立つと、Server Actions のオリジン検査が POST を拒むことがあるので、`node_modules/next/dist/docs/` で許可するオリジンの設定を確かめる。

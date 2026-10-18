@@ -113,7 +113,7 @@
 
 ## 9. OAuth の段
 
-- 状態: 実装済み（2026-10-18）。本物の Google での確認（基準 22）は未実施
+- 状態: 実装済み（2026-10-18）
 
 著者が Google でログインできるようにし、管理者が「誰が著者になれるか」と「誰が著者か」を 1 つの画面で扱えるようにする。全体の方針（管理者はパスワードのまま、役割、`open` / `allowlist`）は `docs/project-status.md` §7.1 にある。
 
@@ -216,6 +216,7 @@
 - OAuth クライアントは「ウェブ アプリケーション」の種類で作る。承認済みのリダイレクト URI には、`http://localhost:3001/auth/google/callback` と `<SITE_ORIGIN>/auth/google/callback` の 2 つを登録する。
 - `.env` に `GOOGLE_CLIENT_ID` と `GOOGLE_CLIENT_SECRET` を入れる。
 - 同意画面は「テスト」のままにする。テストユーザーは 100 人まで登録できる。スコープが `openid`・`email`・`profile` だけなら、テストユーザーの許可は 7 日で切れない（Google Cloud のヘルプ https://support.google.com/cloud/answer/15549945 の publishing status の説明、2026-10-18 に確認）。
+- 本物の Google で確かめるときは localhost で開く。`.env` の `SITE_ORIGIN` を外して `SESSION_COOKIE_SECURE=false` にし、開発サーバーを起動し直して `http://localhost:3001/login` から始める。リダイレクト URI は `SITE_ORIGIN` から作るので、開いたアドレスと食い違うと、Google は `redirect_uri_mismatch` を返すか、戻った先でログインを始めたときの cookie が届かない。Funnel の名前で開くには Funnel を動かす必要があり、作者のブラウザは tailnet に入っていないので Serve では届かない（`docs/project-status.md` §5）。終わったら `.env` を戻す。
 - `open` にするには、同意画面を「本番」にする必要がある。本番にするときに承認済みのドメインの所有の確認が要るかと、`*.ts.net` の名前で通るかは確かめていない。そのため、`open` への切り替えは、自分のドメインに移ってから行う（§9.10）。
 
 ### 9.9 受け入れ基準
@@ -232,7 +233,7 @@
 | 19  | `GOOGLE_CLIENT_ID` が無いとログインのページに Google のボタンが出ず、`/auth/google` が 404。`error` の各値の文言が出る                                                              | `e2e/admin-users.spec.ts` と `components/LoginForm.test.ts`、文言の対応は `lib/google-login-errors.test.ts`、`/auth/google` の 404 は `app/auth/google/route.test.ts` |
 | 20  | アカウントの名前は、表示名、ユーザー名の順で最初の空でないもので、どちらも空なら「（表示名なし）」                                                                                  | `lib/account-name.test.ts`                                                                                                                                            |
 | 21  | 管理者の記事一覧と走り書きの一覧に著者の名前が出て、著者の画面には出ない                                                                                                            | `e2e/multi-author.spec.ts`                                                                                                                                            |
-| 22  | 本物の Google で、招待した人のログイン、招待していない人の拒否、停止した人の拒否が通る                                                                                              | オーナーが手で 1 回                                                                                                                                                   |
+| 22  | 本物の Google で、招待した人のログイン、招待していない人の拒否、停止した人の拒否が通る                                                                                              | オーナーが手で確かめた（2026-10-18、localhost で）                                                                                                                    |
 | 23  | ログイン中に停止された著者は、`/admin` を開くと `/login` に移り、ログインのフォームが出る。ログインすると停止の理由が出る                                                           | `e2e/multi-author.spec.ts`                                                                                                                                            |
 | 24  | 招待のメールは 254 文字まで                                                                                                                                                         | `app/actions/users.test.ts`                                                                                                                                           |
 
