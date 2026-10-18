@@ -46,8 +46,12 @@ test('site section styling and aria-current on active views (docs/site-header-re
   await articlesButton.click();
   const tagsLink = siteNav.getByRole('link', { name: 'タグ' });
   await expect(tagsLink).toHaveAttribute('aria-current', 'page');
-  const categoriesLink = siteNav.getByRole('link', { name: 'カテゴリ' });
-  await expect(categoriesLink).not.toHaveAttribute('aria-current', 'page');
+  await expect(siteNav.getByRole('link', { name: '最新の記事' })).not.toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  // The categories are the list pages' tabs now, not a menu item (docs/home-requirements.md §2).
+  await expect(siteNav.getByRole('link', { name: 'カテゴリ' })).toHaveCount(0);
 });
 
 test('dropdown menus open on click, dismiss on Escape or outside click, restore focus, and are mutually exclusive (docs/site-header-requirements.md §7 id=3)', async ({
