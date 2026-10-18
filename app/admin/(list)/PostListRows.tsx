@@ -49,7 +49,7 @@ export function PostListRows({
     <ul className='divide-y divide-zinc-200 dark:divide-zinc-800'>
       {posts.map((post) => {
         const likes = likesCount?.get(post.id) ?? 0;
-        const author = showAuthor && post.author ? accountName(post.author).name : null;
+        const author = showAuthor && post.author !== null ? accountName(post.author).name : null;
         return (
           <li key={post.id} className='flex items-center justify-between gap-4 py-3'>
             <div className='flex min-w-0 items-center gap-3'>
@@ -84,7 +84,7 @@ export function PostListRows({
                   {/* No slug: a random string (lib/slug.ts) that identifies nothing to a reader of
                   this list. The 表示 link reaches the public URL. */}
                   <span className='min-w-0 sm:truncate'>
-                    {author && (
+                    {author !== null && (
                       <>
                         <span className='whitespace-nowrap'>{author}</span>
                         {' · '}

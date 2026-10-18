@@ -274,6 +274,54 @@ describe('listAllPosts (admin)', () => {
     const [row] = await listAllPosts();
     expect(row.hasPendingEdits).toBe(false);
   });
+
+  it('joins author info from users table and returns author: null when authorId is null', async () => {
+    db.insert(users)
+      .values({
+        id: 10,
+        username: 'alice',
+        displayName: 'Alice Cooper',
+        role: 'author',
+      })
+      .run();
+    seed({ slug: 'with-author', authorId: 10, date: '2026-03-02' });
+    seed({ slug: 'no-author', authorId: null, date: '2026-03-01' });
+
+    const rows = await listAllPosts();
+    expect(rows).toHaveLength(2);
+    expect(rows[0].slug).toBe('with-author');
+    expect(rows[0].authorId).toBe(10);
+    expect(rows[0].author).toEqual({ displayName: 'Alice Cooper', username: 'alice' });
+    expect(rows[1].slug).toBe('no-author');
+    expect(rows[1].authorId).toBeNull();
+    expect(rows[1].author).toBeNull();
+  });
+
+  it('filters by authorId while preserving author info', async () => {
+    db.insert(users)
+      .values({
+        id: 11,
+        username: 'bob',
+        displayName: 'Bob Dylan',
+        role: 'author',
+      })
+      .run();
+    db.insert(users)
+      .values({
+        id: 12,
+        username: 'charlie',
+        displayName: 'Charlie Parker',
+        role: 'author',
+      })
+      .run();
+    seed({ slug: 'bob-post', authorId: 11, date: '2026-03-01' });
+    seed({ slug: 'charlie-post', authorId: 12, date: '2026-03-02' });
+
+    const bobRows = await listAllPosts(11);
+    expect(bobRows).toHaveLength(1);
+    expect(bobRows[0].slug).toBe('bob-post');
+    expect(bobRows[0].author).toEqual({ displayName: 'Bob Dylan', username: 'bob' });
+  });
 });
 
 describe('getPostForEdit', () => {
