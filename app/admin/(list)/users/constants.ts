@@ -38,3 +38,32 @@ export const SUSPEND_CONFIRMATION_MESSAGE =
   'このアカウントを停止します。ログインと書き込みができなくなり、公開中の記事と走り書きはサイトから外れます。解除すると元に戻ります。';
 export const CANCEL_LABEL = 'やめる';
 export const SUSPEND_ACTION_BUTTON = '停止する';
+
+export const BADGE_JOINED_VIA_INVITE = '招待で参加';
+
+export const SEARCH_INPUT_LABEL = 'メールで探す';
+export const SEARCH_INPUT_PLACEHOLDER = 'メールで探す';
+export const SEARCH_HELP = 'メールは保存していません。入力したメールと照らし合わせます。';
+
+export const formatSearchResultsCount = (email: string, count: number) =>
+  `「${email}」に一致する利用者：${count} 件`;
+export const NO_SEARCH_RESULTS = '条件に合う利用者はいません。';
+export const CLEAR_SEARCH_LABEL = '条件をクリア';
+
+export const PREVIOUS_NAMES_PREFIX = '以前の表示名: ';
+export const formatAllHistoryLink = (count: number) => `すべて見る（${count} 件）`;
+
+export const BACK_TO_USERS = '← 利用者';
+export const formatRegisteredDate = (date: string) => `登録 ${date}`;
+
+export const HISTORY_HEADING = '表示名の履歴';
+export const WRITINGS_HEADING = '書いたもの';
+
+export const formatArticlesTab = (count: number) => `記事 ${count}`;
+export const formatScribblesTab = (count: number) => `走り書き ${count}`;
+
+export const CURRENT_DISPLAY_NAME_LABEL = 'いまの表示名';
+export const formatRemainingCount = (count: number) => `ほか ${count} 件`;
+export const NO_WRITINGS_MESSAGE = 'まだ書いていません。';
+export const DRAFT_BADGE = '下書き';
+export const UNTITLED_POST = '（無題）';

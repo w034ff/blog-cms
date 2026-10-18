@@ -5,14 +5,16 @@ import { z } from 'zod';
 import { isAdmin } from '@/lib/dal';
 import { addInvite, removeInvite, saveAuthorAccessMode } from '@/lib/author-access';
 import { isAuthorAccessMode } from '@/lib/author-access-rules';
-import { suspendUser, unsuspendUser } from '@/lib/admin-users';
+import { lookupByEmail, suspendUser, unsuspendUser } from '@/lib/admin-users';
 
-// User administration Server Actions (/admin/users, docs/multi-author-requirements.md §9.5).
+// User administration Server Actions (/admin/users, docs/multi-author-requirements.md §9.5, §10.5).
 // Every action verifies admin rights first and answers in the shape of app/actions/settings.ts.
 
 export type UserActionState = { error?: string; at?: number };
 
-const ADMIN_ONLY: UserActionState = { error: '利用者の管理は管理者だけが行えます。' };
+const ADMIN_ONLY: UserActionState & { error: string } = {
+  error: '利用者の管理は管理者だけが行えます。',
+};
 const CANNOT_SUSPEND_ADMIN: UserActionState = { error: '管理者は停止できません。' };
 const INVALID_EMAIL: UserActionState = { error: 'メールアドレスの形ではありません。' };
 const DUPLICATE_INVITE: UserActionState = { error: 'このメールアドレスは招待済みです。' };
@@ -88,4 +90,17 @@ export async function unsuspendUserAction(
   revalidatePath('/admin/users');
   revalidatePath('/', 'layout');
   return { at: Date.now() };
+}
+
+export type LookupEmailResult = { error: string } | { userIds: number[]; inviteEmails: string[] };
+
+// Matches an email address against stored account hashes and pending invites
+// (docs/multi-author-requirements.md §10.3, §10.5).
+export async function lookupByEmailAction(
+  formDataOrEmail: FormData | string,
+): Promise<LookupEmailResult> {
+  if (!(await isAdmin())) return ADMIN_ONLY;
+  const email =
+    typeof formDataOrEmail === 'string' ? formDataOrEmail : field(formDataOrEmail, 'email');
+  return lookupByEmail(email);
 }
