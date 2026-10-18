@@ -243,4 +243,18 @@ describe('listLibrary', () => {
     db.update(users).set({ suspendedAt: null }).where(eq(users.id, 3)).run();
     expect(titles('bookmarks')).toEqual(['orphan', 'suspended', 'active']);
   });
+  // docs/multi-author-requirements.md §12.8 row 43.
+  it('excludes posts by withdrawing authors from library lists until the withdrawal is cancelled', () => {
+    db.insert(users)
+      .values([
+        { id: ME, username: 'me', passwordHash: 'dummy', role: 'author' },
+        { id: 3, role: 'author', withdrawalDueAt: '2026-11-18T15:00:00.000Z' },
+      ])
+      .run();
+    setBookmark(ME, seed({ title: 'withdrawing', authorId: 3 }), true);
+    expect(titles('bookmarks')).toEqual([]);
+
+    db.update(users).set({ withdrawalDueAt: null }).where(eq(users.id, 3)).run();
+    expect(titles('bookmarks')).toEqual(['withdrawing']);
+  });
 });

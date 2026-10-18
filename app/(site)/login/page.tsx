@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { LoginForm } from '@/components/LoginForm';
-import { getOptionalSession } from '@/lib/dal';
+import { getOptionalSession, getWithdrawingSession, WITHDRAWAL_PATH } from '@/lib/dal';
 import { googleClient } from '@/lib/google-oidc';
 import { googleLoginErrorMessage } from '@/lib/google-login-errors';
 
@@ -17,6 +17,7 @@ export default async function LoginPage({
   // Through the database, so a suspended author's still-valid cookie gets the form rather than a
   // bounce back to /admin (docs/multi-author-requirements.md §5).
   if (await getOptionalSession()) redirect('/admin');
+  if (await getWithdrawingSession()) redirect(WITHDRAWAL_PATH);
   const { error } = await searchParams;
   const errorMessage = googleLoginErrorMessage(error);
   const showGoogle = googleClient() !== null;

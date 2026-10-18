@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { authorAllowlist, displayNameHistory, posts, users } from '@/lib/db/schema';
 import { normalizeEmail } from '@/lib/author-access-rules';
 import { hashEmail } from '@/lib/email-hash';
+import { deleteUserAccount } from '@/lib/user-delete';
 import type { PostKind } from '@/lib/content';
 
 // Admin users management: listing, suspending, and unsuspending accounts
@@ -104,6 +105,12 @@ export function suspendUser(id: number, now: Date = new Date()): boolean {
 export function unsuspendUser(id: number): boolean {
   const result = db.update(users).set({ suspendedAt: null }).where(eq(users.id, id)).run();
   return result.changes > 0;
+}
+
+// Deletes a suspended author with everything they wrote (docs/multi-author-requirements.md §12.4).
+// False, with nothing changed, for an admin, an author who is not suspended, or a missing id.
+export function deleteSuspendedAuthor(id: number): boolean {
+  return deleteUserAccount(db.$client, id, { kind: 'suspended' });
 }
 
 export type EmailLookup = { userIds: number[]; inviteEmails: string[] };

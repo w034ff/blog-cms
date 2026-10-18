@@ -10,28 +10,55 @@ import type { SessionPayload } from '@/lib/session-token';
 // The signed-in account, with what is needed to name it (lib/account-name.ts).
 export type SessionUser = SessionPayload & { displayName: string; username: string | null };
 
-export const getOptionalSession = cache(async (): Promise<SessionUser | null> => {
+// Where a withdrawing author's session leads (docs/multi-author-requirements.md §12.5). Outside
+// /admin: app/admin/layout.tsx refuses everyone getOptionalSession does not return, so a page
+// under it would send a withdrawing author back to itself.
+export const WITHDRAWAL_PATH = '/withdrawal';
+
+// The session's account row, read once per request.
+const readAccount = cache(async () => {
   const session = await getSession();
   if (!session) return null;
   const user = db
     .select({
       suspendedAt: users.suspendedAt,
+      withdrawalDueAt: users.withdrawalDueAt,
       displayName: users.displayName,
       username: users.username,
     })
     .from(users)
     .where(eq(users.id, session.userId))
     .get();
-  if (!user || user.suspendedAt !== null) {
+  return user ? { userId: session.userId, ...user } : null;
+});
+
+// A withdrawing author counts as signed out everywhere but the withdrawal page and its two
+// actions (§12.5), so no write path needs its own check.
+export const getOptionalSession = cache(async (): Promise<SessionUser | null> => {
+  const account = await readAccount();
+  if (!account || account.suspendedAt !== null || account.withdrawalDueAt !== null) {
     return null;
   }
-  return { userId: session.userId, displayName: user.displayName, username: user.username };
+  return { userId: account.userId, displayName: account.displayName, username: account.username };
 });
+
+// The signed-in author whose withdrawal is pending, for the withdrawal page, its cancel and its
+// sign-out. Null for anyone else; suspension wins, as it does at sign-in.
+export const getWithdrawingSession = cache(
+  async (): Promise<{ userId: number; withdrawalDueAt: string } | null> => {
+    const account = await readAccount();
+    if (!account || account.suspendedAt !== null || account.withdrawalDueAt === null) {
+      return null;
+    }
+    return { userId: account.userId, withdrawalDueAt: account.withdrawalDueAt };
+  },
+);
 
 export const verifySession = cache(async (): Promise<SessionUser> => {
   const session = await getOptionalSession();
   if (!session) {
-    redirect('/login');
+    // Not /login: it would send a still-signed-in withdrawing author straight back (§5's loop).
+    redirect((await getWithdrawingSession()) ? WITHDRAWAL_PATH : '/login');
   }
   return session;
 });

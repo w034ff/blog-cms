@@ -1,7 +1,7 @@
 import { normalizeCategory } from '@/lib/content';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
-import { getSuspendedAuthorIds, listAllPosts } from '@/lib/posts';
+import { getHiddenAuthorIds, listAllPosts } from '@/lib/posts';
 import { resolveThumbnail } from '@/lib/thumbnail';
 import type { PostSearchResult } from '@/lib/types';
 
@@ -14,7 +14,7 @@ const LIMIT = 20;
 
 export async function GET(req: NextRequest) {
   // Gate matching the autosave route: any signed-in author or admin may access this, returning
-  // published posts (excluding suspended authors) and only their own drafts. 401 keeps the editor mounted.
+  // published posts (excluding suspended and withdrawing authors) and only their own drafts. 401 keeps the editor mounted.
   const session = await getOptionalSession();
   if (!session) {
     return new NextResponse(null, { status: 401 });
@@ -25,15 +25,15 @@ export async function GET(req: NextRequest) {
   const query = params.get('q')?.trim() ?? '';
 
   // listAllPosts, not getAllPosts: drafts are offered and marked, not hidden (§5.2-4).
-  // Return published posts (excluding suspended authors) and only the signed-in user's drafts
+  // Return published posts (excluding suspended and withdrawing authors) and only the signed-in user's drafts
   // (docs/multi-author-requirements.md §4.2, §5).
   const all = await listAllPosts();
-  const suspended = getSuspendedAuthorIds();
+  const hidden = getHiddenAuthorIds();
   const visible = all.filter((post) => {
     if (post.draft) {
       return post.authorId === session.userId;
     }
-    return post.authorId === null || !suspended.has(post.authorId);
+    return post.authorId === null || !hidden.has(post.authorId);
   });
 
   // Slug lookup: what a NodeView asks on every render.

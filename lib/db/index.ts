@@ -22,7 +22,9 @@ const DB_DIR = path.dirname(DB_PATH);
 const BUSY_TIMEOUT_MS = 5000;
 
 type Schema = typeof schema;
-export type AppDatabase = BetterSQLite3Database<Schema>;
+// `$client` is what drizzle() returns alongside the query builder; lib/user-delete.ts takes it
+// because the purge script runs the same deletion without drizzle's `@/` imports.
+export type AppDatabase = BetterSQLite3Database<Schema> & { $client: Database.Database };
 
 function createDb(): AppDatabase {
   fs.mkdirSync(DB_DIR, { recursive: true });

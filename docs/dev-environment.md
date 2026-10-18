@@ -121,6 +121,8 @@ Chrome の「閉じたタブを開き直す」（Ctrl+Shift+T）は戻る / 進�
 
 `npm run gc:uploads -- --delete` を、この WSL2 ホストで毎日 04:00（±10 分）に回す。unit は `deploy/systemd/uploads-gc.service` と `uploads-gc.timer`。スクリプトの挙動（猶予 24 時間、参照は DB の本文と `.mdx` の和）は `docs/project-status.md` の「アップロードは参照で消す」に従い、timer はそれを変えない。2026-09-30 決定。
 
+同じ unit が、`gc:uploads` の前に `npm run users:purge -- --delete`（`scripts/purge-withdrawn.mts`）を回す。期限を過ぎた退会の著者を、書いたものごと消す（`docs/multi-author-requirements.md` §12.6）。先に消すので、その人だけが使っていた画像は同じ回の掃除で孤児になる。消す処理が失敗すると unit はそこで止まり、掃除はその回は走らない。
+
 ### 6.1 入れ方
 
 ```
@@ -133,7 +135,7 @@ systemctl --user list-timers uploads-gc.timer
 
 ### 6.2 node のパスと環境
 
-- `ExecStart` は `npm` を経由せず、`node scripts/gc-uploads.mts --delete` を直接呼ぶ（`npm run gc:uploads` と同じ）。systemd の PATH に nvm は入らないので、`%h/.nvm/versions/node/v24.14.1/bin/node` に固定している。nvm で版を上げたら unit の 2 か所を直す。直し忘れると `203/EXEC` で失敗し、別の版で黙って動くことはない。
+- `ExecStart` は `npm` を経由せず、`node scripts/gc-uploads.mts --delete` を直接呼ぶ（`npm run gc:uploads` と同じ）。systemd の PATH に nvm は入らないので、`%h/.nvm/versions/node/v24.14.1/bin/node` に固定している。nvm で版を上げたら unit の 3 か所を直す。直し忘れると `203/EXEC` で失敗し、別の版で黙って動くことはない。
 - `WorkingDirectory=%h/blog-cms/task`。スクリプトは `process.cwd()` から `data/uploads` と `content/posts` を決める。
 - アプリは `.env` を Next 経由で読むが、スクリプトは読まない。`BLOG_DB_PATH` を `.env` に置いたホストで、スクリプトが別の DB（空の参照集合）を見て全ファイルを孤児と判断するのを防ぐため、`EnvironmentFile=-%h/blog-cms/task/.env` で渡す（`scripts/db-path.mts` の `resolveDbPath` が `BLOG_DB_PATH` を優先する）。`ExecStartPre` が解決結果を `db: <path>` として毎回ジャーナルに出す。**`db:` の行が本番の DB でなければ `--delete` の結果を信用しない。**
 
@@ -143,7 +145,7 @@ systemctl --user list-timers uploads-gc.timer
 
 ### 6.4 ログと失敗に気づく方法
 
-- ログ: `journalctl --user -u uploads-gc.service`。1 回の実行は `db:`、`uploads: N file(s), M referenced …`、削除した各ファイル、`Removed …` の順に出る。
+- ログ: `journalctl --user -u uploads-gc.service`。1 回の実行は、消す処理の `db:` と `No withdrawals are due.`（または `Deleted: users …`）、掃除の `db:`、`uploads: N file(s), M referenced …`、削除した各ファイル、`Removed …` の順に出る。
 - 次回実行: `systemctl --user list-timers uploads-gc.timer`。
-- 失敗: `systemctl --user --failed`。失敗の通知は出ない。スクリプトが非ゼロで終わるのは、`--delete` で DB が無いときの中止と、node の起動失敗（`203/EXEC`）。定期的に `--failed` を見る。
+- 失敗: `systemctl --user --failed`。失敗の通知は出ない。スクリプトが非ゼロで終わるのは、`--delete` で DB が無いときの中止（消す処理は `--delete` が無くても中止する）と、node の起動失敗（`203/EXEC`）。定期的に `--failed` を見る。
 - user manager は WSL が動いている間だけ生きる（`Linger=no`）。止まっている間に逃した回は `Persistent=true` が起動時に実行する。

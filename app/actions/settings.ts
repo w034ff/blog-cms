@@ -56,7 +56,7 @@ export async function pinPostAction(
   } else {
     const id = Number(raw);
     // The home page's own list, so what can be pinned is exactly what the slot could show: a
-    // published, listed post — not a scribble, a draft, or a suspended author's.
+    // published, listed post — not a scribble, a draft, or a suspended or withdrawing author's.
     const listed = (await getAllPosts()).some((post) => post.id === id);
     if (!listed) return PIN_NOT_LISTED;
     savePinnedPostId(id);

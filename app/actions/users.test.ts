@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { appSettings, authorAllowlist, users } from '@/lib/db/schema';
+import { appSettings, authorAllowlist, posts, users } from '@/lib/db/schema';
 import { hashEmail } from '@/lib/email-hash';
 import * as usersActions from './users';
 
@@ -184,5 +184,47 @@ describe('email lookup action (criteria 28)', () => {
     expect(await usersActions.lookupByEmailAction(overLong)).toEqual(none);
     expect(await usersActions.lookupByEmailAction(['author@example.com'])).toEqual(none);
     expect(await usersActions.lookupByEmailAction(null)).toEqual(none);
+  });
+});
+
+// docs/multi-author-requirements.md §12.8 row 42.
+describe('deleting a user (deleteUserAction)', () => {
+  beforeEach(() => {
+    admin.current = true;
+    db.delete(posts).run();
+    db.insert(users)
+      .values([
+        { id: 1, role: 'admin', username: 'admin' },
+        { id: 2, role: 'author', suspendedAt: '2026-10-17T00:00:00.000Z' },
+        { id: 3, role: 'author' },
+      ])
+      .run();
+    db.insert(posts)
+      .values([
+        { slug: 'by-2', title: 't', date: '2026-10-01', authorId: 2 },
+        { slug: 'by-3', title: 't', date: '2026-10-01', authorId: 3 },
+      ])
+      .run();
+  });
+
+  it('deletes a suspended author with their posts', async () => {
+    expect(await usersActions.deleteUserAction({}, form({ id: '2' }))).toHaveProperty('at');
+    expect(db.select().from(users).where(eq(users.id, 2)).get()).toBeUndefined();
+    expect(
+      db
+        .select()
+        .from(posts)
+        .all()
+        .map((post) => post.slug),
+    ).toEqual(['by-3']);
+  });
+
+  it('refuses an author who is not suspended, and an admin', async () => {
+    for (const id of ['3', '1']) {
+      const result = await usersActions.deleteUserAction({}, form({ id }));
+      expect(result.error).toBe('削除できるのは停止中の著者だけです。');
+    }
+    expect(db.select().from(users).all()).toHaveLength(3);
+    expect(db.select().from(posts).all()).toHaveLength(2);
   });
 });
