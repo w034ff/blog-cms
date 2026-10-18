@@ -286,8 +286,7 @@ test('suspending a withdrawing author says the withdrawal can no longer be cance
   } finally {
     db.close();
   }
-  const message =
-    'このアカウントを停止します。本人は退会を取り消せなくなります。解除すると元に戻ります。';
+  const message = '停止すると本人は退会を取り消せなくなります。解除すると元に戻ります。';
   try {
     await loginAsAdmin(page);
     await page.goto('/admin/users');
