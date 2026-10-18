@@ -18,6 +18,10 @@ worktrees, or the shards of `npm run test:e2e:shards` — never share a file.
   to `e2e/.tmp/blog.e2e.<port>.db` with better-sqlite3's `.backup()` (WAL-safe) and upserts the test
   admin and author. The real DB is never touched. `data/blog.db` must exist (`npm run db:seed` on a
   fresh clone).
+- The specs read the copied posts as they are on the site, so a worktree's `data/blog.db` has to be
+  a recent copy of the real one. A snapshot from before a post's title changed failed 22
+  `editor-link-card.spec.ts` cases and one `public-link-card.spec.ts` case on the old title
+  (2026-10-19). Refresh it with `.backup()` from the main checkout, as the worktree setup does.
 - The uploads get the same treatment. The prep rebuilds `e2e/.tmp/uploads.<port>/` from
   `data/uploads` (read only, so the seeded posts' images load) and `e2e/fixtures/uploads/`, and the
   server reads and writes there through `BLOG_UPLOADS_DIR` (`lib/upload-dir.ts`). A spec's upload
