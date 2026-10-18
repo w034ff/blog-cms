@@ -1,6 +1,6 @@
 # 複数の著者 要件定義
 
-- 状態: 第 1 段（§1〜§8）は実装済み（2026-10-17）。OAuth の段（§9）は一部を実装済み（2026-10-18、§9 の冒頭）
+- 状態: 第 1 段（§1〜§8）は実装済み（2026-10-17）。OAuth の段（§9）も実装済み（2026-10-18）
 - 作成: 2026-10-17、`docs/project-status.md` §7 の複数の著者のうち、OAuth なしで作れる部分を先に作る相談から
 - 関連: `docs/project-status.md` §7、`docs/site-header-requirements.md` §3.3・§8、`docs/library-requirements.md`、`lib/dal.ts`、`lib/posts.ts`
 
@@ -112,7 +112,7 @@
 
 ## 9. OAuth の段
 
-- 状態: 設計（2026-10-18、オーナーと決定）。データ、ログインの流れ、アカウントの名前（§9.2・§9.3・§9.7 のヘッダー）は実装済み。画面（§9.5・§9.6、§9.7 の一覧の著者）は未実装
+- 状態: 実装済み（2026-10-18）。本物の Google での確認（基準 22）は未実施
 
 著者が Google でログインできるようにし、管理者が「誰が著者になれるか」と「誰が著者か」を 1 つの画面で扱えるようにする。全体の方針（管理者はパスワードのまま、役割、`open` / `allowlist`）は `docs/project-status.md` §7.1 にある。
 
@@ -219,21 +219,19 @@
 
 ### 9.9 受け入れ基準
 
-| ID  | 基準                                                                                                                                                                                | 測り方                                                                                             |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 12  | 判定は §9.3 の 4 の順に答える。`sub` の利用者はログインでき、停止中なら拒み、ログインしたらその人のメールの招待が消える。新しい人は `open` か招待済みのときだけ作られ、招待が消える | `lib/google-login.test.ts`                                                                         |
-| 13  | `id_token` の署名、`iss`、`aud`、`exp`、`nonce` のどれかが合わないと拒み、`email_verified` が false でも拒む                                                                        | `lib/google-oidc.test.ts`                                                                          |
-| 14  | コールバックは、`state` が合わないと `/login?error=failed` へ送り、cookie を消す                                                                                                    | `app/auth/google/callback/route.test.ts`                                                           |
-| 15  | 新しい Google の著者は、役割が `author` で、`username` と `password_hash` が null、表示名は Google の `name` を上限で切ったもの                                                     | `lib/google-login.test.ts`                                                                         |
-| 16  | 著者が呼ぶと、`app/actions/users.ts` のすべての export が拒み、DB が変わらない                                                                                                      | `app/actions/users.ts` の vitest（基準 2・3 と同じ列挙の形）                                       |
-| 17  | 管理者は停止できない。招待は、形の違うメールと招待済みのメールを断る                                                                                                                | `app/actions/users.ts` の vitest                                                                   |
-| 18  | `/admin/users` は著者には 404。管理者には招待と利用者の行が出て、停止と解除、招待と取り消しが往復する                                                                               | E2E                                                                                                |
-| 19  | `GOOGLE_CLIENT_ID` が無いとログインのページに Google のボタンが出ず、`/auth/google` が 404。`error` の各値の文言が出る                                                              | E2E と `lib/google-login-errors.test.ts`、`/auth/google` の 404 は `app/auth/google/route.test.ts` |
-| 20  | アカウントの名前は、表示名、ユーザー名の順で最初の空でないもので、どちらも空なら「（表示名なし）」                                                                                  | `lib/account-name.test.ts`                                                                         |
-| 21  | 管理者の記事一覧と走り書きの一覧に著者の名前が出て、著者の画面には出ない                                                                                                            | `e2e/multi-author.spec.ts`                                                                         |
-| 22  | 本物の Google で、招待した人のログイン、招待していない人の拒否、停止した人の拒否が通る                                                                                              | オーナーが手で 1 回                                                                                |
-
-測り方が「E2E」や「`app/actions/users.ts` の vitest」のままの行は、画面の実装でファイルの名前を決め、そのときにこの表に書く。
+| ID  | 基準                                                                                                                                                                                | 測り方                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 12  | 判定は §9.3 の 4 の順に答える。`sub` の利用者はログインでき、停止中なら拒み、ログインしたらその人のメールの招待が消える。新しい人は `open` か招待済みのときだけ作られ、招待が消える | `lib/google-login.test.ts`                                                                                                                                            |
+| 13  | `id_token` の署名、`iss`、`aud`、`exp`、`nonce` のどれかが合わないと拒み、`email_verified` が false でも拒む                                                                        | `lib/google-oidc.test.ts`                                                                                                                                             |
+| 14  | コールバックは、`state` が合わないと `/login?error=failed` へ送り、cookie を消す                                                                                                    | `app/auth/google/callback/route.test.ts`                                                                                                                              |
+| 15  | 新しい Google の著者は、役割が `author` で、`username` と `password_hash` が null、表示名は Google の `name` を上限で切ったもの                                                     | `lib/google-login.test.ts`                                                                                                                                            |
+| 16  | 著者が呼ぶと、`app/actions/users.ts` のすべての export が拒み、DB が変わらない                                                                                                      | `app/actions/users.test.ts`                                                                                                                                           |
+| 17  | 管理者は停止できない。招待は、形の違うメールと招待済みのメールを断る                                                                                                                | `app/actions/users.test.ts`                                                                                                                                           |
+| 18  | `/admin/users` は著者には 404。管理者には招待と利用者の行が出て、停止と解除、招待と取り消しが往復する                                                                               | `e2e/admin-users.spec.ts`                                                                                                                                             |
+| 19  | `GOOGLE_CLIENT_ID` が無いとログインのページに Google のボタンが出ず、`/auth/google` が 404。`error` の各値の文言が出る                                                              | `e2e/admin-users.spec.ts` と `components/LoginForm.test.ts`、文言の対応は `lib/google-login-errors.test.ts`、`/auth/google` の 404 は `app/auth/google/route.test.ts` |
+| 20  | アカウントの名前は、表示名、ユーザー名の順で最初の空でないもので、どちらも空なら「（表示名なし）」                                                                                  | `lib/account-name.test.ts`                                                                                                                                            |
+| 21  | 管理者の記事一覧と走り書きの一覧に著者の名前が出て、著者の画面には出ない                                                                                                            | `e2e/multi-author.spec.ts`                                                                                                                                            |
+| 22  | 本物の Google で、招待した人のログイン、招待していない人の拒否、停止した人の拒否が通る                                                                                              | オーナーが手で 1 回                                                                                                                                                   |
 
 ### 9.10 先送り
 

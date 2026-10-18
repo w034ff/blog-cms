@@ -94,7 +94,7 @@ OAuth なしで作れる第 1 段（所有の強制、停止、表示名と署�
 
 第 1 段（2026-10-17、`docs/multi-author-requirements.md`）: 所有の強制（`lib/post-access.ts`）、停止（`users.suspended_at`、`lib/dal.ts` と公開側の読み込み）、表示名と署名（`users.display_name`、`/admin/account`）。§7.3 の「著者がログインできるようになったら足すテスト」のうち `app/actions/posts.ts`・`app/actions/revisions.ts`・`app/actions/tags.ts`・`app/actions/settings.ts` の分は、ここで済んでいる。
 
-OAuth の段のうち、データとログインの流れ（2026-10-18、`docs/multi-author-requirements.md` §9）: `drizzle/0018_author_google.sql`（`users.google_sub`、`username` と `password_hash` の null、`author_allowlist`）、`lib/google-oidc.ts`・`lib/google-login.ts`・`lib/author-access.ts`、`/auth/google` とそのコールバック。セッションは `userId` だけを持ち、名前は `lib/account-name.ts` が `users` から作る。
+OAuth の段（2026-10-18、`docs/multi-author-requirements.md` §9）: `drizzle/0018_author_google.sql`（`users.google_sub`、`username` と `password_hash` の null、`author_allowlist`）、`lib/google-oidc.ts`・`lib/google-login.ts`・`lib/author-access.ts`、`/auth/google` とそのコールバック。セッションは `userId` だけを持ち、名前は `lib/account-name.ts` が `users` から作る。利用者の画面は `/admin/users`（`lib/admin-users.ts`、`app/actions/users.ts`）。
 
 ### 7.3 設計の骨組み（作るとき）
 
