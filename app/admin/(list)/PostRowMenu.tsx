@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useId, useRef, useState } from 'react';
+import { useActionState, useId, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { deletePostAction } from '@/app/actions/posts';
+import { pinPostAction, type PinPostState } from '@/app/actions/settings';
 import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 
 // A row's less frequent actions — the Markdown download and 削除 — behind ⋯, so the list's loudest
@@ -12,8 +13,19 @@ import { useDismiss, type DismissReason } from '@/components/editor/useDismiss';
 // A disclosure, not `role="menu"`: the panel holds a confirmation step, not a list of commands
 // walked with arrow keys. Deleting takes a second click because nothing brings a post back —
 // deletePost removes its revisions in the same transaction (docs/revision-requirements.md).
-export function PostRowMenu({ id, viewHref }: { id: number; viewHref: string | null }) {
+// `pin` is given only to an admin, on a published post (app/admin/(list)/PostListRows.tsx): the
+// one pin is the site's, as its name is (docs/home-requirements.md §3).
+export function PostRowMenu({
+  id,
+  viewHref,
+  pin,
+}: {
+  id: number;
+  viewHref: string | null;
+  pin?: { pinned: boolean };
+}) {
   const [open, setOpen] = useState(false);
+  const [pinState, pinAction] = useActionState<PinPostState, FormData>(pinPostAction, {});
   const [confirming, setConfirming] = useState(false);
   const panelId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -25,6 +37,14 @@ export function PostRowMenu({ id, viewHref }: { id: number; viewHref: string | n
     if (reason !== 'outside') triggerRef.current?.focus();
   };
   const ref = useDismiss<HTMLDivElement>(open, close);
+  // A pin that went through closes the panel; the row's ピックアップ badge says what changed. A
+  // refusal keeps it open with the reason. Adjusted while rendering, not in an effect, as React
+  // advises for state derived from a change.
+  const [handledPinAt, setHandledPinAt] = useState(pinState.at);
+  if (pinState.at !== handledPinAt) {
+    setHandledPinAt(pinState.at);
+    if (pinState.at !== undefined) setOpen(false);
+  }
 
   return (
     <div ref={ref} className='relative'>
@@ -78,6 +98,20 @@ export function PostRowMenu({ id, viewHref }: { id: number; viewHref: string | n
                   表示
                 </a>
               )}
+              {pin && (
+                <form action={pinAction}>
+                  {/* Empty takes the pin off (app/actions/settings.ts pinPostAction). */}
+                  <input type='hidden' name='id' value={pin.pinned ? '' : id} />
+                  <PinButton pinned={pin.pinned} />
+                  {pinState.error && (
+                    <p
+                      role='alert'
+                      className='w-56 px-3 py-1.5 text-xs text-red-600 dark:text-red-400'>
+                      {pinState.error}
+                    </p>
+                  )}
+                </form>
+              )}
               {/* A plain download: the route answers with Content-Disposition, so the list stays. */}
               <a
                 href={`/admin/posts/${id}/markdown`}
@@ -111,6 +145,18 @@ function DeleteButton() {
       disabled={pending}
       className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
       削除する
+    </button>
+  );
+}
+
+function PinButton({ pinned }: { pinned: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type='submit'
+      disabled={pending}
+      className='block w-full rounded-chip px-3 py-1.5 text-left text-sm whitespace-nowrap hover:bg-zinc-100 disabled:opacity-50 dark:hover:bg-zinc-800'>
+      {pinned ? '固定を外す' : 'トップに固定'}
     </button>
   );
 }

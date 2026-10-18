@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { listAllPosts } from '@/lib/posts';
 import { isAdmin, verifySession } from '@/lib/dal';
 import { likeCounts } from '@/lib/library';
+import { readPinnedPostId } from '@/lib/pinned-post';
 import {
   countByStatus,
   matchesStatus,
@@ -56,7 +57,12 @@ export default async function AdminHome({
             </Link>
           </p>
         ) : (
-          <PostListRows posts={posts} likesCount={likes} showAuthor={admin} />
+          <PostListRows
+            posts={posts}
+            likesCount={likes}
+            showAuthor={admin}
+            pinnedId={admin ? readPinnedPostId() : undefined}
+          />
         )}
       </div>
     </section>
