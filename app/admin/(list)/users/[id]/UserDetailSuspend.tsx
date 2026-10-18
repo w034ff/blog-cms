@@ -1,33 +1,88 @@
 'use client';
 
-import { useState } from 'react';
+import { useActionState, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { suspendUserAction, unsuspendUserAction } from '@/app/actions/users';
+import { deleteUserAction, suspendUserAction, unsuspendUserAction } from '@/app/actions/users';
 import {
   CANCEL_LABEL,
+  DELETE_ACTION_BUTTON,
+  formatDeleteConfirmationMessage,
+  MENU_DELETE,
   MENU_SUSPEND,
   MENU_UNSUSPEND,
   SUSPEND_ACTION_BUTTON,
   SUSPEND_CONFIRMATION_MESSAGE,
 } from '../constants';
 
-// Suspend/unsuspend controls for author accounts (docs/multi-author-requirements.md §10.6).
-// Admin accounts show no suspend button (§2).
+// Suspend/unsuspend and deletion controls for author accounts (docs/multi-author-requirements.md §10.6, §12.4).
+// Admin accounts show no suspend or delete button (docs/multi-author-requirements.md §2, §12.4).
 export function UserDetailSuspend({
   user,
 }: {
-  user: { id: number; role: 'admin' | 'author'; suspendedAt: string | null };
+  user: {
+    id: number;
+    role: 'admin' | 'author';
+    suspendedAt: string | null;
+    postCount?: number;
+    scribbleCount?: number;
+    posts?: {
+      post: { total: number };
+      scribble: { total: number };
+    };
+  };
 }) {
-  const [confirming, setConfirming] = useState(false);
+  const [confirmingSuspend, setConfirmingSuspend] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteState, deleteAction, deletePending] = useActionState(deleteUserAction, {});
   const router = useRouter();
+
+  const postCount = user.postCount ?? user.posts?.post.total ?? 0;
+  const scribbleCount = user.scribbleCount ?? user.posts?.scribble.total ?? 0;
+
+  useEffect(() => {
+    if (deleteState.at) {
+      router.push('/admin/users');
+    }
+  }, [deleteState.at, router]);
 
   if (user.role === 'admin') {
     return null;
   }
 
   if (user.suspendedAt !== null) {
+    if (confirmingDelete) {
+      return (
+        <form
+          action={deleteAction}
+          className='max-w-md rounded-panel border border-zinc-200 bg-surface p-4 dark:border-zinc-800'>
+          <input type='hidden' name='id' value={user.id} />
+          <p className='text-sm'>{formatDeleteConfirmationMessage(postCount, scribbleCount)}</p>
+          <div className='mt-3 flex justify-end gap-3'>
+            <button
+              type='button'
+              autoFocus
+              onClick={() => setConfirmingDelete(false)}
+              className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
+              {CANCEL_LABEL}
+            </button>
+            <button
+              type='submit'
+              disabled={deletePending}
+              className='text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400'>
+              {DELETE_ACTION_BUTTON}
+            </button>
+          </div>
+          {deleteState.error && (
+            <p role='alert' className='mt-2 text-xs text-red-700 dark:text-red-400'>
+              {deleteState.error}
+            </p>
+          )}
+        </form>
+      );
+    }
+
     return (
-      <div>
+      <div className='flex items-center gap-3'>
         <form
           action={async (formData) => {
             await unsuspendUserAction({}, formData);
@@ -40,16 +95,22 @@ export function UserDetailSuspend({
             {MENU_UNSUSPEND}
           </button>
         </form>
+        <button
+          type='button'
+          onClick={() => setConfirmingDelete(true)}
+          className='rounded-box border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30'>
+          {MENU_DELETE}
+        </button>
       </div>
     );
   }
 
-  if (confirming) {
+  if (confirmingSuspend) {
     return (
       <form
         action={async (formData) => {
           await suspendUserAction({}, formData);
-          setConfirming(false);
+          setConfirmingSuspend(false);
           router.refresh();
         }}
         className='max-w-md rounded-panel border border-zinc-200 bg-surface p-4 dark:border-zinc-800'>
@@ -59,7 +120,7 @@ export function UserDetailSuspend({
           <button
             type='button'
             autoFocus
-            onClick={() => setConfirming(false)}
+            onClick={() => setConfirmingSuspend(false)}
             className='text-sm text-zinc-600 hover:underline dark:text-zinc-400'>
             {CANCEL_LABEL}
           </button>
@@ -77,7 +138,7 @@ export function UserDetailSuspend({
     <div>
       <button
         type='button'
-        onClick={() => setConfirming(true)}
+        onClick={() => setConfirmingSuspend(true)}
         className='rounded-box border border-red-300 bg-surface px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-950/30'>
         {MENU_SUSPEND}
       </button>
