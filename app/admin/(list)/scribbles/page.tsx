@@ -39,7 +39,7 @@ export default async function AdminScribblesPage({
   return (
     <section>
       <div className='mb-6'>
-        <ScreenHeading title='走り書き' showTags={admin} />
+        <ScreenHeading title='走り書き' admin={admin} />
       </div>
       {all.length > 0 && (
         <ListControls

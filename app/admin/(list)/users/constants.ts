@@ -17,7 +17,6 @@ export const INVITE_LABEL = '招待する';
 export const INVITE_PLACEHOLDER = 'name@example.com';
 export const INVITE_BUTTON_LABEL = '招待する';
 export const INVITING_BUTTON_LABEL = '招待中…';
-export const INVITE_HELP = '最初にログインしたとき、招待は利用者に変わります。';
 
 export const BADGE_ADMIN = '管理者';
 export const BADGE_SUSPENDED = '停止中';

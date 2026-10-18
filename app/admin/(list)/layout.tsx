@@ -16,7 +16,7 @@ export default async function AdminListLayout({ children }: { children: React.Re
       <PageMain>
         <SiteColumn>
           <div className='md:flex md:items-start md:gap-10'>
-            <AdminSideNav showTags={admin} />
+            <AdminSideNav admin={admin} />
             <div className='min-w-0 flex-1'>{children}</div>
           </div>
         </SiteColumn>

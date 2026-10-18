@@ -11,7 +11,7 @@ import { PINNED_POST_LABEL } from '@/components/PinnedPost';
 // Two text lines tall, so it keeps the list's rhythm. `object-cover` and a bare `<img>` like every
 // other surface (components/PostCard.tsx, globals.css `.link-card-image`,
 // components/editor/ThumbnailField.tsx says why), so the preview crops as the cards do.
-function AdminThumbnail({ src }: { src: string | null }) {
+export function AdminThumbnail({ src }: { src: string | null }) {
   if (src === null) {
     return (
       <div className='flex h-9 w-16 shrink-0 items-center justify-center rounded-chip border border-dashed border-zinc-300 text-[10px] text-zinc-400 dark:border-zinc-700'>

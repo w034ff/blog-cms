@@ -5,7 +5,6 @@ import { addInviteAction, type UserActionState } from '@/app/actions/users';
 import {
   INVITE_BUTTON_LABEL,
   INVITING_BUTTON_LABEL,
-  INVITE_HELP,
   INVITE_LABEL,
   INVITE_PLACEHOLDER,
 } from './constants';
@@ -51,7 +50,6 @@ export function InviteForm() {
           {pending ? INVITING_BUTTON_LABEL : INVITE_BUTTON_LABEL}
         </button>
       </div>
-      <p className='text-xs text-zinc-600 dark:text-zinc-400'>{INVITE_HELP}</p>
       {state.error && (
         <p role='alert' className='text-xs text-red-700 dark:text-red-400'>
           {state.error}

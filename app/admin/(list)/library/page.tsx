@@ -33,7 +33,7 @@ export default async function AdminLibraryPage({
   return (
     <section>
       <div className='mb-6 flex items-center justify-between gap-4'>
-        <ScreenHeading title='ライブラリ' showTags={await isAdmin()} />
+        <ScreenHeading title='ライブラリ' admin={await isAdmin()} />
       </div>
       <LibraryTabs currentTab={currentTab} counts={counts} />
       <div className='rounded-panel border border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
