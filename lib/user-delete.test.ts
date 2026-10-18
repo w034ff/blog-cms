@@ -43,6 +43,15 @@ function addLibraryRows(userId: number, postId: number): void {
   }
 }
 
+// The same image under two accounts is two rows (docs/abuse-limits-requirements.md §4).
+function addLedgerRow(userId: number, name: string): void {
+  sqlite
+    .prepare(
+      "INSERT INTO uploads (name, user_id, bytes, created_at) VALUES (?, ?, 1000, '2026-10-01T00:00:00.000Z')",
+    )
+    .run(name, userId);
+}
+
 function count(sql: string, ...params: unknown[]): number {
   return Number(
     sqlite
@@ -80,6 +89,23 @@ beforeEach(() => {
   addLibraryRows(3, 10);
   addLibraryRows(2, 20);
   addLibraryRows(3, 20);
+  addLedgerRow(2, 'shared.png');
+  addLedgerRow(2, 'only-2.png');
+  addLedgerRow(3, 'shared.png');
+});
+
+// docs/abuse-limits-requirements.md §8 row 9.
+describe('deleteUserAccount and the upload ledger', () => {
+  it("removes the deleted account's rows and keeps everyone else's", () => {
+    expect(deleteUserAccount(sqlite, 2, { kind: 'suspended' })).toBe(true);
+    expect(count('SELECT count(*) FROM uploads WHERE user_id = 2')).toBe(0);
+    expect(count("SELECT count(*) FROM uploads WHERE user_id = 3 AND name = 'shared.png'")).toBe(1);
+  });
+
+  it('keeps the rows when the deletion is refused', () => {
+    expect(deleteUserAccount(sqlite, 3, { kind: 'suspended' })).toBe(false);
+    expect(count('SELECT count(*) FROM uploads')).toBe(3);
+  });
 });
 
 describe('deleteUserAccount (docs/multi-author-requirements.md §12.3)', () => {
