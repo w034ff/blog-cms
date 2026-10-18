@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { createSession, deleteSession } from '@/lib/session';
 import { checkLoginAllowed, clearLoginFailures, recordLoginFailure } from '@/lib/login-throttle';
+import { SUSPENDED_MESSAGE } from '@/lib/google-login-errors';
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -51,11 +52,11 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   if (user.suspendedAt !== null) {
-    return { error: 'このアカウントは停止されています。' };
+    return { error: SUSPENDED_MESSAGE };
   }
 
   clearLoginFailures(username);
-  await createSession({ userId: user.id, username: user.username });
+  await createSession({ userId: user.id });
   redirect('/admin');
 }
 

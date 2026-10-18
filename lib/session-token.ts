@@ -3,21 +3,22 @@ import { z } from 'zod';
 
 const encodedKey = new TextEncoder().encode(process.env.SESSION_SECRET ?? '');
 
+// The account id alone. Names are read from `users` on each request (lib/dal.ts), because a Google
+// author has no username (docs/multi-author-requirements.md §9.2). A cookie issued before this
+// carries a `username` too; the schema drops it, so those sessions stay valid.
 export type SessionPayload = {
   userId: number;
-  username: string;
 };
 
 const sessionSchema = z.object({
   userId: z.number(),
-  username: z.string(),
 });
 
 export const SESSION_MAX_AGE_SECONDS = 14 * 24 * 60 * 60; // 14 days
 
 export async function encryptSession(payload: SessionPayload): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  return new SignJWT({ userId: payload.userId, username: payload.username })
+  return new SignJWT({ userId: payload.userId })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt(now)
     .setExpirationTime(now + SESSION_MAX_AGE_SECONDS)

@@ -1,3 +1,4 @@
+import { accountName } from '@/lib/account-name';
 import { getOptionalSession } from '@/lib/dal';
 import { getSiteIdentity } from '@/lib/site-settings';
 import { SiteHeaderNav } from './SiteHeaderNav';
@@ -14,7 +15,7 @@ export async function SiteHeader() {
     // roots get the full column; padding the inner box would put the title 16px right of the body text.
     <header className='border-b border-zinc-200 bg-surface px-4 dark:border-zinc-800'>
       <div className='mx-auto flex h-[60px] max-w-page items-center justify-between'>
-        <SiteHeaderNav username={session?.username ?? null} siteName={site.name} />
+        <SiteHeaderNav account={session ? accountName(session) : null} siteName={site.name} />
       </div>
     </header>
   );

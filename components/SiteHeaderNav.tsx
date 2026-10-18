@@ -6,7 +6,8 @@ import { useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { logout } from '@/app/actions/auth';
 import { SiteMark } from '@/components/SiteMark';
 import { useDismiss } from '@/components/editor/useDismiss';
-import { getSiteSection, getInitialLetter } from '@/lib/site-section';
+import type { AccountName } from '@/lib/account-name';
+import { getSiteSection } from '@/lib/site-section';
 
 // Named constants for UI strings and route paths (docs/site-header-requirements.md §3).
 const NAV_ARTICLES_LABEL = '記事';
@@ -160,10 +161,10 @@ function HeaderDropdown({
 }
 
 export function SiteHeaderNav({
-  username,
+  account,
   siteName,
 }: {
-  username: string | null;
+  account: AccountName | null;
   siteName: string;
 }) {
   const pathname = usePathname();
@@ -191,7 +192,7 @@ export function SiteHeaderNav({
           aria-label={siteName}
           className='flex min-w-0 items-center gap-2 text-lg font-bold tracking-tight whitespace-nowrap'>
           <SiteMark className='h-6 w-6 shrink-0' />
-          <span className={username ? 'hidden truncate sm:block' : 'truncate'}>{siteName}</span>
+          <span className={account ? 'hidden truncate sm:block' : 'truncate'}>{siteName}</span>
         </Link>
         <nav aria-label='サイト' className='flex shrink-0 items-center gap-4 sm:gap-6'>
           <HeaderDropdown
@@ -249,7 +250,7 @@ export function SiteHeaderNav({
         </nav>
       </div>
 
-      {username && (
+      {account && (
         <nav aria-label='アカウント' className='flex shrink-0 items-center gap-2 sm:gap-3'>
           <HeaderDropdown
             isOpen={openMenu === 'post'}
@@ -304,13 +305,13 @@ export function SiteHeaderNav({
                 aria-controls={panelId}
                 onClick={onClick}
                 className='flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold bg-(--chip-bg) text-(--chip-fg)'>
-                {getInitialLetter(username)}
+                {account.initial}
               </button>
             )}>
             {({ close }) => (
               <div className='min-w-44'>
                 <div className='px-3 py-1.5 text-xs text-zinc-500 dark:text-zinc-400 break-all'>
-                  {username} {ACCOUNT_MENU_LOGGED_IN_SUFFIX}
+                  {account.name} {ACCOUNT_MENU_LOGGED_IN_SUFFIX}
                 </div>
                 <ul>
                   {ACCOUNT_MENU_ITEMS.map((item) => (

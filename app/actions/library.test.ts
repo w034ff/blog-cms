@@ -43,7 +43,7 @@ function written(): number {
 
 beforeEach(() => {
   for (const table of [posts, bookmarks, likes, postViews]) db.delete(table).run();
-  session.current = { userId: ME, username: 'admin' };
+  session.current = { userId: ME };
 });
 
 // docs/library-requirements.md §8 row 4: a draft, one's own post (for a like) and a missing id get

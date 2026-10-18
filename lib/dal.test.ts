@@ -43,19 +43,19 @@ function seedUser(id: number, username: string, suspendedAt: string | null = nul
 describe('session verification and suspension (lib/dal)', () => {
   it('returns the session for an active user', async () => {
     seedUser(1, 'active', null);
-    rawSession.current = { userId: 1, username: 'active' };
+    rawSession.current = { userId: 1 };
 
     const optional = await getOptionalSession();
-    expect(optional).toEqual({ userId: 1, username: 'active' });
+    expect(optional).toEqual({ userId: 1, displayName: '', username: 'active' });
 
     const verified = await verifySession();
-    expect(verified).toEqual({ userId: 1, username: 'active' });
+    expect(verified).toEqual({ userId: 1, displayName: '', username: 'active' });
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it('treats a suspended user as having no session', async () => {
     seedUser(2, 'suspended', '2026-10-17T12:00:00.000Z');
-    rawSession.current = { userId: 2, username: 'suspended' };
+    rawSession.current = { userId: 2 };
 
     const optional = await getOptionalSession();
     expect(optional).toBeNull();
@@ -65,7 +65,7 @@ describe('session verification and suspension (lib/dal)', () => {
   });
 
   it('treats a session for a missing user row as having no session', async () => {
-    rawSession.current = { userId: 999, username: 'ghost' };
+    rawSession.current = { userId: 999 };
 
     const optional = await getOptionalSession();
     expect(optional).toBeNull();

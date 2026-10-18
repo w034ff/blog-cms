@@ -60,7 +60,7 @@ describe('login and logout with suspension', () => {
     seedUser(1, 'active', 'pass123', null);
     await login({}, form({ username: 'active', password: 'pass123' }));
 
-    expect(sessionMock.create).toHaveBeenCalledWith({ userId: 1, username: 'active' });
+    expect(sessionMock.create).toHaveBeenCalledWith({ userId: 1 });
     expect(redirectMock).toHaveBeenCalledWith('/admin');
   });
 

@@ -80,8 +80,10 @@ export const loginAttempts = sqliteTable('login_attempts', {
 
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  username: text('username').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
+  // The password sign-in's pair. A Google author has neither (docs/multi-author-requirements.md
+  // §9.2): filling them would make an unusable value look like a way in.
+  username: text('username').unique(),
+  passwordHash: text('password_hash'),
   // What the account may do beyond writing (docs/editor-requirements.md §12.33.1). `author` writes
   // posts; `admin` also runs the screens that change the whole site, such as the tag dictionary.
   // A reader has no row at all. Read from here on each check, not carried in the session token, so
@@ -91,6 +93,18 @@ export const users = sqliteTable('users', {
     .default('author'),
   displayName: text('display_name').notNull().default(''),
   suspendedAt: text('suspended_at'),
+  // Google's `sub`, the key a Google author is found by. Their email is deliberately not kept
+  // (docs/multi-author-requirements.md §9.1): it is needed only at sign-in, to match an invite.
+  googleSub: text('google_sub').unique(),
+});
+
+// Who may create a Google author account while the policy is `allowlist`
+// (docs/multi-author-requirements.md §9.4). A row goes when its owner first signs in; it does not
+// gate an account that already exists, so tightening the policy never locks out a current author.
+export const authorAllowlist = sqliteTable('author_allowlist', {
+  // Trimmed and lower-cased (lib/author-access-rules.ts normalizeEmail).
+  email: text('email').primaryKey(),
+  createdAt: text('created_at').notNull(),
 });
 
 // What is known about an external link card's target (docs/link-card-requirements.md §14.3). The
