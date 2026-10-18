@@ -291,7 +291,7 @@ describe('listAllPosts (admin)', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].slug).toBe('with-author');
     expect(rows[0].authorId).toBe(10);
-    expect(rows[0].author).toEqual({ displayName: 'Alice Cooper', username: 'alice' });
+    expect(rows[0].author).toEqual({ displayName: 'Alice Cooper', handle: 'user10' });
     expect(rows[1].slug).toBe('no-author');
     expect(rows[1].authorId).toBeNull();
     expect(rows[1].author).toBeNull();
@@ -320,7 +320,7 @@ describe('listAllPosts (admin)', () => {
     const bobRows = await listAllPosts(11);
     expect(bobRows).toHaveLength(1);
     expect(bobRows[0].slug).toBe('bob-post');
-    expect(bobRows[0].author).toEqual({ displayName: 'Bob Dylan', username: 'bob' });
+    expect(bobRows[0].author).toEqual({ displayName: 'Bob Dylan', handle: 'user11' });
   });
 });
 

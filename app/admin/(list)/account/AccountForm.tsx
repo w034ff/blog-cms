@@ -2,12 +2,16 @@
 
 import { useActionState, useId, useState } from 'react';
 import { saveAccountAction, type AccountFormState } from '@/app/actions/account';
+import { HANDLE_MAX_CHARS } from '@/lib/handle-rules';
 import { codePointLength } from '@/lib/site-settings-rules';
 
 const DISPLAY_NAME_LABEL = '表示名';
 const DISPLAY_NAME_HELP = '記事と走り書きのページに著者名として出ます。';
 // Said only to someone who may clear the name (docs/multi-author-requirements.md §10.4).
 const DISPLAY_NAME_EMPTY_HELP = `${DISPLAY_NAME_HELP}空にすると出しません。`;
+const HANDLE_LABEL = 'ID';
+// Said before the ID is chosen, since choosing it is final (docs/multi-author-requirements.md §13.4).
+const HANDLE_HELP = '一度決めると ID は変えられません。';
 const SAVE_LABEL = '保存';
 const SAVING_LABEL = '保存中…';
 const SAVED_MESSAGE = '保存しました';
@@ -26,6 +30,7 @@ function Field({
   max,
   error,
   help,
+  prefix,
   onChange,
 }: {
   label: string;
@@ -34,6 +39,8 @@ function Field({
   max: number;
   error?: string;
   help?: string;
+  // Fixed text drawn inside the box before what is typed, such as the @ of an ID.
+  prefix?: string;
   onChange: (value: string) => void;
 }) {
   const id = useId();
@@ -44,15 +51,34 @@ function Field({
         {label}
       </label>
       {help && <p className={noteClass}>{help}</p>}
-      <input
-        id={id}
-        name={name}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={noteId}
-        className={inputClass}
-      />
+      {prefix ? (
+        <div className='flex w-full min-w-0 items-center rounded-box border border-zinc-300 bg-surface px-3 text-sm focus-within:ring-2 focus-within:ring-zinc-400 has-aria-invalid:border-red-600 dark:border-zinc-700 dark:has-aria-invalid:border-red-400'>
+          <span aria-hidden='true' className='text-zinc-500 dark:text-zinc-400'>
+            {prefix}
+          </span>
+          <input
+            id={id}
+            name={name}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={noteId}
+            autoCapitalize='none'
+            spellCheck={false}
+            className='w-full min-w-0 bg-transparent py-2 pl-0.5 focus:outline-none'
+          />
+        </div>
+      ) : (
+        <input
+          id={id}
+          name={name}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={noteId}
+          className={inputClass}
+        />
+      )}
       <div id={noteId} className='flex justify-between gap-4'>
         <span className={errorClass} role={error ? 'alert' : undefined}>
           {error}
@@ -71,13 +97,19 @@ export function AccountForm({
   initialDisplayName,
   max = 20,
   canBeEmpty,
+  handle: currentHandle,
+  handleChosen,
 }: {
   initialDisplayName: string;
   max?: number;
   canBeEmpty: boolean;
+  // The ID without its @, and whether it is already fixed (docs/multi-author-requirements.md §13.4).
+  handle: string;
+  handleChosen: boolean;
 }) {
   const [state, formAction, pending] = useActionState(saveAccountAction, emptyState);
   const [displayName, setDisplayName] = useState(initialDisplayName);
+  const [handle, setHandle] = useState(currentHandle);
 
   return (
     <form
@@ -112,6 +144,23 @@ export function AccountForm({
         help={canBeEmpty ? DISPLAY_NAME_EMPTY_HELP : DISPLAY_NAME_HELP}
         onChange={setDisplayName}
       />
+      {handleChosen ? (
+        // A fixed ID is not a field: the form sends no `handle`, and the action refuses one anyway.
+        <p className='text-sm'>
+          <span className='font-semibold'>{HANDLE_LABEL}:</span> @{currentHandle}
+        </p>
+      ) : (
+        <Field
+          label={HANDLE_LABEL}
+          name='handle'
+          value={handle}
+          max={HANDLE_MAX_CHARS}
+          error={state.errors?.handle}
+          help={HANDLE_HELP}
+          prefix='@'
+          onChange={setHandle}
+        />
+      )}
       <div className='flex justify-end'>
         <button
           type='submit'

@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { DISPLAY_NAME_MAX_CHARS } from '@/lib/display-name';
+import { handleOf } from '@/lib/handle';
 import { ScreenHeading } from '../ScreenHeading';
 import { AccountForm } from './AccountForm';
 import { AccountWithdrawal } from './AccountWithdrawal';
@@ -19,7 +20,13 @@ export default async function AdminAccountPage() {
   const session = await verifySession();
   const admin = await isAdmin();
   const user = db
-    .select({ displayName: users.displayName, googleSub: users.googleSub })
+    .select({
+      id: users.id,
+      displayName: users.displayName,
+      googleSub: users.googleSub,
+      handle: users.handle,
+      handleChosenAt: users.handleChosenAt,
+    })
     .from(users)
     .where(eq(users.id, session.userId))
     .get();
@@ -35,6 +42,8 @@ export default async function AdminAccountPage() {
           max={DISPLAY_NAME_MAX_CHARS}
           // Only a password account may clear its name (docs/multi-author-requirements.md §10.4).
           canBeEmpty={user?.googleSub === null}
+          handle={user ? handleOf(user) : ''}
+          handleChosen={user?.handleChosenAt != null}
         />
         {!admin && <AccountWithdrawal />}
       </div>

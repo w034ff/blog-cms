@@ -4,11 +4,12 @@ import { notFound, redirect } from 'next/navigation';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users } from '@/lib/db/schema';
+import { handleOf } from '@/lib/handle';
 import { getSession } from '@/lib/session';
 import type { SessionPayload } from '@/lib/session-token';
 
 // The signed-in account, with what is needed to name it (lib/account-name.ts).
-export type SessionUser = SessionPayload & { displayName: string; username: string | null };
+export type SessionUser = SessionPayload & { displayName: string; handle: string };
 
 // Where a withdrawing author's session leads (docs/multi-author-requirements.md §12.5). Outside
 // /admin: app/admin/layout.tsx refuses everyone getOptionalSession does not return, so a page
@@ -24,7 +25,7 @@ const readAccount = cache(async () => {
       suspendedAt: users.suspendedAt,
       withdrawalDueAt: users.withdrawalDueAt,
       displayName: users.displayName,
-      username: users.username,
+      handle: users.handle,
     })
     .from(users)
     .where(eq(users.id, session.userId))
@@ -39,7 +40,11 @@ export const getOptionalSession = cache(async (): Promise<SessionUser | null> =>
   if (!account || account.suspendedAt !== null || account.withdrawalDueAt !== null) {
     return null;
   }
-  return { userId: account.userId, displayName: account.displayName, username: account.username };
+  return {
+    userId: account.userId,
+    displayName: account.displayName,
+    handle: handleOf({ id: account.userId, handle: account.handle }),
+  };
 });
 
 // The signed-in author whose withdrawal is pending, for the withdrawal page, its cancel and its

@@ -85,6 +85,8 @@ export default async function UserDetailPage({ params }: Props) {
             )}
           </div>
           <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-600 dark:text-zinc-400'>
+            <span className='whitespace-nowrap'>@{user.handle}</span>
+            <span>·</span>
             <span className='whitespace-nowrap'>
               {user.isGoogle ? LOGIN_METHOD_GOOGLE : LOGIN_METHOD_PASSWORD}
             </span>

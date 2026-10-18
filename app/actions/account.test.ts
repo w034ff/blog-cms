@@ -11,6 +11,7 @@ import {
   DISPLAY_NAME_TOO_LONG,
   NO_LINE_BREAKS,
 } from '@/lib/display-name';
+import { HANDLE_FIXED, HANDLE_FORMAT_ERROR } from '@/lib/handle-rules';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -331,5 +332,54 @@ describe('display name rules (docs/multi-author-requirements.md §10.4)', () => 
         .from(displayNameHistory)
         .all(),
     ).toEqual([{ displayName: 'Different', kind: 'change' }]);
+  });
+});
+
+// docs/multi-author-requirements.md §13.6 rows 50 and 51.
+describe('saveAccountAction with an ID', () => {
+  let id: number;
+
+  beforeEach(() => {
+    db.delete(users).run();
+    id = db
+      .insert(users)
+      .values({ role: 'author', displayName: '山田', googleSub: 'sub-handle' })
+      .returning({ id: users.id })
+      .get().id;
+    db.update(users)
+      .set({ handle: `user${id}` })
+      .where(eq(users.id, id))
+      .run();
+    currentSession.userId = id;
+  });
+
+  function current() {
+    return db
+      .select({ displayName: users.displayName, handle: users.handle })
+      .from(users)
+      .where(eq(users.id, id))
+      .get();
+  }
+
+  it('saves the name and fixes the ID together', async () => {
+    const result = await saveAccountAction({}, form('山田 太郎', { handle: 'yamada_taro' }));
+    expect(result.at).toBeTypeOf('number');
+    expect(current()).toEqual({ displayName: '山田 太郎', handle: 'yamada_taro' });
+  });
+
+  it('refuses a bad ID before writing the name', async () => {
+    const result = await saveAccountAction({}, form('山田 太郎', { handle: 'ya' }));
+    expect(result.errors?.handle).toBe(HANDLE_FORMAT_ERROR);
+    expect(current()).toEqual({ displayName: '山田', handle: `user${id}` });
+  });
+
+  it('ignores the unchanged automatic ID and refuses any change once fixed', async () => {
+    expect((await saveAccountAction({}, form('山田', { handle: `user${id}` }))).at).toBeTypeOf(
+      'number',
+    );
+    await saveAccountAction({}, form('山田', { handle: 'yamada_taro' }));
+    const again = await saveAccountAction({}, form('山田', { handle: 'other_id' }));
+    expect(again.errors?.handle).toBe(HANDLE_FIXED);
+    expect(current()?.handle).toBe('yamada_taro');
   });
 });

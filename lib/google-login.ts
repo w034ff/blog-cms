@@ -10,6 +10,7 @@ import {
   isReservedDisplayName,
   stripInvisible,
 } from '@/lib/display-name';
+import { automaticHandle } from '@/lib/handle-rules';
 import { hashEmail } from '@/lib/email-hash';
 import type { GoogleClaims } from '@/lib/google-oidc';
 import type { GoogleLoginError } from '@/lib/google-login-errors';
@@ -101,7 +102,11 @@ export function signInWithGoogle(claims: GoogleClaims, now: Date = new Date()): 
       !isDisplayNameTaken(fromGoogle, created.id, tx)
         ? fromGoogle
         : placeholderDisplayName(created.id);
-    tx.update(users).set({ displayName }).where(eq(users.id, created.id)).run();
+    // The ID needs the row's id, so it is written here rather than in the insert (§13.2).
+    tx.update(users)
+      .set({ displayName, handle: automaticHandle(created.id) })
+      .where(eq(users.id, created.id))
+      .run();
     tx.insert(displayNameHistory)
       .values({ userId: created.id, displayName, kind: 'initial', changedAt: now.toISOString() })
       .run();

@@ -24,6 +24,8 @@ function main(): void {
     `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')
      ON CONFLICT(username) DO UPDATE SET password_hash=excluded.password_hash, role=excluded.role`,
   ).run(username, passwordHash);
+  // The automatic ID a new account starts with (docs/multi-author-requirements.md §13.2).
+  db.prepare(`UPDATE users SET handle = 'user' || id WHERE handle IS NULL`).run();
   db.close();
 
   console.log(`Seeded admin user '${username}' (password hashed; not displayed).`);

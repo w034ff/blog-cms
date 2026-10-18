@@ -150,7 +150,7 @@ export function UsersList({
             {displayedUsers.map((user) => (
               <li key={`user-${user.id}`} className='flex items-center justify-between gap-4 py-3'>
                 <div className='flex min-w-0 flex-col gap-1'>
-                  <div className='flex items-center gap-2'>
+                  <div className='flex flex-wrap items-center gap-x-2 gap-y-0.5'>
                     <Link href={`/admin/users/${user.id}`} className='font-medium hover:underline'>
                       {user.displayName.trim() ? (
                         user.displayName
@@ -158,6 +158,7 @@ export function UsersList({
                         <span className='text-zinc-400'>{NO_DISPLAY_NAME}</span>
                       )}
                     </Link>
+                    <span className='text-xs text-zinc-600 dark:text-zinc-400'>@{user.handle}</span>
                     {user.role === 'admin' && (
                       <span className='shrink-0 rounded-chip bg-violet-100 px-1.5 text-xs leading-4 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300'>
                         {BADGE_ADMIN}

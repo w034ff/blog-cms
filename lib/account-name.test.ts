@@ -1,25 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { accountName, NO_DISPLAY_NAME } from './account-name';
+import { accountName } from './account-name';
 
-describe('accountName (docs/multi-author-requirements.md §9.7, criterion 20)', () => {
+describe('accountName (docs/multi-author-requirements.md §9.7, §13.5, criteria 20 and 54)', () => {
   it('prefers the display name', () => {
-    expect(accountName({ displayName: '佐藤 花子', username: 'admin' })).toEqual({
+    expect(accountName({ displayName: '佐藤 花子', handle: 'hanako' })).toEqual({
       name: '佐藤 花子',
       initial: '佐',
     });
   });
 
-  it('falls back to the username', () => {
-    expect(accountName({ displayName: '', username: 'admin' })).toEqual({
-      name: 'admin',
-      initial: 'A',
-    });
-  });
-
-  it('names a Google author with no display name as such, with a question mark for a letter', () => {
-    expect(accountName({ displayName: '  ', username: null })).toEqual({
-      name: NO_DISPLAY_NAME,
-      initial: '?',
+  it('falls back to the ID, with its first letter for the button', () => {
+    expect(accountName({ displayName: '  ', handle: 'yamada_taro' })).toEqual({
+      name: '@yamada_taro',
+      initial: 'Y',
     });
   });
 });

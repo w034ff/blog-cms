@@ -88,6 +88,9 @@ describe('signInWithGoogle (§9.3)', () => {
       passwordHash: null,
       displayName: '佐藤 花子',
       suspendedAt: null,
+      // §13.6 row 49: the automatic ID, written with the row.
+      handle: `user${row?.id}`,
+      handleChosenAt: null,
     });
     expect(listInvites()).toEqual([]);
   });
