@@ -1,6 +1,9 @@
 import type { Metadata } from 'next';
 import { isAdmin, verifySession } from '@/lib/dal';
-import { DISPLAY_NAME_MAX_CHARS, getUserDisplayName } from '@/lib/display-name';
+import { eq } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+import { DISPLAY_NAME_MAX_CHARS } from '@/lib/display-name';
 import { ScreenHeading } from '../ScreenHeading';
 import { AccountForm } from './AccountForm';
 
@@ -14,14 +17,23 @@ export const dynamic = 'force-dynamic';
 export default async function AdminAccountPage() {
   const session = await verifySession();
   const showTags = await isAdmin();
-  const displayName = getUserDisplayName(session.userId);
+  const user = db
+    .select({ displayName: users.displayName, googleSub: users.googleSub })
+    .from(users)
+    .where(eq(users.id, session.userId))
+    .get();
 
   return (
     <section>
       <div className='mb-6'>
         <ScreenHeading title={ACCOUNT_TITLE} showTags={showTags} />
       </div>
-      <AccountForm initialDisplayName={displayName} max={DISPLAY_NAME_MAX_CHARS} />
+      <AccountForm
+        initialDisplayName={user?.displayName ?? ''}
+        max={DISPLAY_NAME_MAX_CHARS}
+        // Only a password account may clear its name (docs/multi-author-requirements.md §10.4).
+        canBeEmpty={user?.googleSub === null}
+      />
     </section>
   );
 }

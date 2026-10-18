@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { users } from '@/lib/db/schema';
-import { DISPLAY_NAME_MAX_CHARS, DISPLAY_NAME_TOO_LONG, NO_LINE_BREAKS } from '@/lib/display-name';
+import { displayNameHistory, users } from '@/lib/db/schema';
+import {
+  DISPLAY_NAME_MAX_CHARS,
+  DISPLAY_NAME_REQUIRED,
+  DISPLAY_NAME_TAKEN,
+  DISPLAY_NAME_TOO_LONG,
+  NO_LINE_BREAKS,
+} from '@/lib/display-name';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -185,5 +191,112 @@ describe('saveAccountAction (docs/multi-author-requirements.md §7 id=10)', () =
       .where(eq(users.id, user1Id))
       .get();
     expect(u1?.displayName).toBe('Original User 1');
+  });
+});
+
+describe('display name rules (docs/multi-author-requirements.md §10.4)', () => {
+  const HOUR = 60 * 60 * 1000;
+  let clock = Date.parse('2026-10-18T00:00:00.000Z');
+
+  function addUser(values: Partial<typeof users.$inferInsert>): number {
+    return db
+      .insert(users)
+      .values({ role: 'author', displayName: '', ...values })
+      .returning({ id: users.id })
+      .get().id;
+  }
+  function nameOf(id: number): string | undefined {
+    return db.select().from(users).where(eq(users.id, id)).get()?.displayName;
+  }
+  async function save(id: number, name: string) {
+    currentSession.userId = id;
+    return saveAccountAction({}, form(name));
+  }
+
+  beforeEach(() => {
+    db.delete(users).run();
+    db.delete(displayNameHistory).run();
+    clock = Date.parse('2026-10-18T00:00:00.000Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(clock);
+  });
+
+  it('refuses an empty name from a Google author and allows it for a password account (criterion 30)', async () => {
+    const google = addUser({ googleSub: 'sub-g', displayName: 'Google Author' });
+    const admin = addUser({
+      role: 'admin',
+      username: 'admin',
+      passwordHash: 'x',
+      displayName: 'Admin',
+    });
+    expect(await save(google, '   ')).toEqual({ errors: { displayName: DISPLAY_NAME_REQUIRED } });
+    expect(nameOf(google)).toBe('Google Author');
+    expect(await save(admin, '')).toHaveProperty('at');
+    expect(nameOf(admin)).toBe('');
+  });
+
+  it("refuses another account's current name, ignoring width and case (criterion 30)", async () => {
+    addUser({ googleSub: 'sub-k', displayName: 'kenta' });
+    const me = addUser({ googleSub: 'sub-me', displayName: 'me' });
+    for (const name of ['kenta', 'KENTA', 'ｋｅｎｔａ', ' Kenta ']) {
+      expect(await save(me, name)).toEqual({ errors: { displayName: DISPLAY_NAME_TAKEN } });
+    }
+    expect(nameOf(me)).toBe('me');
+  });
+
+  it('lets a name go once its holder has moved on from it', async () => {
+    const other = addUser({ googleSub: 'sub-o', displayName: 'Old Name', role: 'admin' });
+    const me = addUser({ googleSub: 'sub-me', displayName: 'me' });
+    expect(await save(other, 'New Name')).toHaveProperty('at');
+    expect(await save(me, 'Old Name')).toHaveProperty('at');
+  });
+
+  it('lets an author rename once per 24 hours, counting only names they set (criterion 31)', async () => {
+    const me = addUser({ googleSub: 'sub-me', displayName: 'Initial' });
+    db.insert(displayNameHistory)
+      .values({
+        userId: me,
+        displayName: 'Initial',
+        kind: 'initial',
+        changedAt: new Date(clock).toISOString(),
+      })
+      .run();
+    expect(await save(me, 'First')).toHaveProperty('at');
+
+    clock += 23 * HOUR;
+    vi.setSystemTime(clock);
+    const refused = await save(me, 'Second');
+    expect(refused.errors?.displayName).toMatch(
+      /^表示名を変えられるのは 1 日 1 回です。次は 10月19日 09:00 から変えられます。$/,
+    );
+    expect(nameOf(me)).toBe('First');
+
+    clock += HOUR;
+    vi.setSystemTime(clock);
+    expect(await save(me, 'Second')).toHaveProperty('at');
+  });
+
+  it('does not limit an admin', async () => {
+    const admin = addUser({
+      role: 'admin',
+      username: 'admin',
+      passwordHash: 'x',
+      displayName: 'A',
+    });
+    expect(await save(admin, 'B')).toHaveProperty('at');
+    expect(await save(admin, 'C')).toHaveProperty('at');
+  });
+
+  it('adds history only when the name actually changes (criterion 29)', async () => {
+    const me = addUser({ googleSub: 'sub-me', displayName: 'Same' });
+    expect(await save(me, 'Same')).toHaveProperty('at');
+    expect(db.select().from(displayNameHistory).all()).toEqual([]);
+    expect(await save(me, 'Different')).toHaveProperty('at');
+    expect(
+      db
+        .select({ displayName: displayNameHistory.displayName, kind: displayNameHistory.kind })
+        .from(displayNameHistory)
+        .all(),
+    ).toEqual([{ displayName: 'Different', kind: 'change' }]);
   });
 });

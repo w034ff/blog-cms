@@ -134,6 +134,13 @@
       "when": 1792307498411,
       "tag": "0018_author_google",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1792325978266,
+      "tag": "0019_author_identity",
+      "breakpoints": true
     }
   ]
 }
