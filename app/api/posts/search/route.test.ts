@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/lib/db';
 import { posts, users } from '@/lib/db/schema';
-import type { PostSearchResult } from '@/lib/types';
+import { OWN_POSTS_SCOPE, type PostSearchResult } from '@/lib/types';
 
 vi.mock('@/lib/db', async () => {
   const { createTestDb } = await import('@/test/db');
@@ -167,5 +167,46 @@ describe('GET /api/posts/search and draft ownership', () => {
     currentSession.value = null;
     const res = await get({ q: 'test' });
     expect(res.status).toBe(401);
+  });
+});
+
+// docs/embed-requirements.md §24.9: the insert dialog's 自分の記事 / 全記事 tabs.
+describe('GET /api/posts/search with the own-posts scope', () => {
+  it('narrows the search to the signed-in user’s posts, drafts included', async () => {
+    seedPost({ slug: 'own-published', title: 'Own Published', draft: false, authorId: 8 });
+    seedPost({ slug: 'own-draft', title: 'Own Draft', draft: true, authorId: 8 });
+    seedPost({ slug: 'other-published', title: 'Other Published', draft: false, authorId: 99 });
+    seedPost({ slug: 'orphan', title: 'Orphan', draft: false, authorId: null });
+
+    const mine = (await (
+      await get({ q: '', scope: OWN_POSTS_SCOPE })
+    ).json()) as PostSearchResult[];
+    expect(mine.map((r) => r.slug).sort()).toEqual(['own-draft', 'own-published']);
+
+    const all = (await (await get({ q: '' })).json()) as PostSearchResult[];
+    expect(all.map((r) => r.slug).sort()).toEqual([
+      'orphan',
+      'other-published',
+      'own-draft',
+      'own-published',
+    ]);
+  });
+
+  it('filters before the result limit, so other authors’ posts cannot crowd out the user’s own', async () => {
+    for (let i = 0; i < 30; i++) {
+      seedPost({ slug: `other-${i}`, title: `Other ${i}`, draft: false, authorId: 99 });
+    }
+    seedPost({ slug: 'own-published', title: 'Own Published', draft: false, authorId: 8 });
+
+    const mine = (await (
+      await get({ q: '', scope: OWN_POSTS_SCOPE })
+    ).json()) as PostSearchResult[];
+    expect(mine.map((r) => r.slug)).toEqual(['own-published']);
+  });
+
+  it('leaves the slug lookup unscoped', async () => {
+    seedPost({ slug: 'other-published', title: 'Other Published', draft: false, authorId: 99 });
+    const res = await get({ slug: 'other-published', scope: OWN_POSTS_SCOPE });
+    expect(res.status).toBe(200);
   });
 });

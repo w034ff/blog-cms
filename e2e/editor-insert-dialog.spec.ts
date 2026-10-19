@@ -407,16 +407,23 @@ test.describe('the dialog is a full screen on a phone and a card on a desktop (2
   });
 });
 
-// The second tab (docs/link-card-requirements.md §21): the card picker's search, for a fresh insert
-// (§24.2).
-test('the 記事から選ぶ tab searches this blog’s own posts and inserts a card (24.7a)', async ({
-  page,
-}) => {
+// The post tabs (docs/link-card-requirements.md §21): the card picker's search, for a fresh insert
+// (§24.2). Which posts each tab returns is app/api/posts/search/route.test.ts's claim (§24.9); here
+// only that each tab asks for its own scope.
+test('the post tabs search this blog’s posts and insert a card (24.7a, 24.9)', async ({ page }) => {
   await openMenu(page, 'リンク');
   await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
   await expect(dialog(page)).toBeVisible();
 
-  await dialog(page).getByRole('tab', { name: '記事から選ぶ' }).click();
+  const searchRequest = () =>
+    page.waitForRequest((request) => request.url().includes('/api/posts/search?q='));
+  const own = searchRequest();
+  await dialog(page).getByRole('tab', { name: '自分の記事' }).click();
+  expect(new URL((await own).url()).searchParams.get('scope')).toBe('mine');
+  const all = searchRequest();
+  await dialog(page).getByRole('tab', { name: '全記事' }).click();
+  expect(new URL((await all).url()).searchParams.get('scope')).toBeNull();
+
   await dialog(page).getByPlaceholder('記事のタイトルで検索…').fill('React');
   const row = dialog(page).getByRole('button', { name: 'React Server Components を学ぶよ' });
   // The seeded post has no image, so its row is drawn as its category's mark (CM-6,
