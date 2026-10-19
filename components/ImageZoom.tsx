@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { lockPageScroll } from './editor/useBodyScrollLock';
 
 // Click a body image on a published post to fill the window (docs/cms-features.md「画像の拡大」),
 // attached after mount like CodeCopyButtons and FootnotePopover. **Published pages only**: `.prose`
@@ -43,6 +44,8 @@ export function ImageZoom({ targetId }: { targetId: string }) {
     // Whether our history entry needs taking back: opening pushes one so a phone's back gesture
     // closes the picture, and any other close must pop it or the next Back does nothing visible.
     let pushed = false;
+    // The scroll lock's release while the picture is open.
+    let unlock: (() => void) | null = null;
 
     const open = (source: HTMLImageElement): void => {
       const text =
@@ -67,6 +70,7 @@ export function ImageZoom({ targetId }: { targetId: string }) {
       });
 
       dialog.showModal();
+      unlock = lockPageScroll();
       history.pushState({ imageZoom: true }, '');
       pushed = true;
     };
@@ -101,6 +105,8 @@ export function ImageZoom({ targetId }: { targetId: string }) {
     };
 
     const onClose = (): void => {
+      unlock?.();
+      unlock = null;
       if (!pushed) return;
       pushed = false;
       ownPop = true;
@@ -120,6 +126,7 @@ export function ImageZoom({ targetId }: { targetId: string }) {
       window.removeEventListener('popstate', onPopState);
       // Before removing it, so unmount does not call history.back().
       pushed = false;
+      unlock?.();
       dialog.remove();
     };
   }, [targetId]);
