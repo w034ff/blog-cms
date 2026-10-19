@@ -9,14 +9,15 @@ import { speakerdeckSnippetHref } from '@/lib/speakerdeck-snippet';
 import { internalCardImage, type CardImage } from '@/lib/link-card-image';
 import { isOwnPostHref } from '@/lib/link-card-href';
 import { categoryLabel } from '@/lib/content';
-import type { PostSearchResult } from '@/lib/types';
+import { OWN_POSTS_SCOPE, type PostSearchResult } from '@/lib/types';
 import { useBodyScrollLock } from './useBodyScrollLock';
 import { CloseButton } from './CloseButton';
 import { CategoryArt } from '@/components/CategoryArt';
 
 // The shared insert dialog (docs/embed-requirements.md §24.2, docs/link-card-requirements.md §21):
-// one modal for both a link card and an embed. The URL always decides which (§24), so the two tabs
-// split only how the author starts: pasting a URL, or searching this blog's posts. The URL side is
+// one modal for both a link card and an embed. The URL always decides which (§24), so the tabs split
+// only how the author starts: pasting a URL, or searching this blog's posts, the author's own or all
+// of them (§24.9). The URL side is
 // the embed-only dialog's (§24.1); the posts side ports the card picker's `renderPicker`, sharing
 // its resolution rule through `lib/insert-target.ts`.
 export function InsertDialog({
@@ -42,7 +43,7 @@ export function InsertDialog({
   // Mounted only while open, so always locked.
   useBodyScrollLock(true);
 
-  const [tab, setTab] = useState<'url' | 'posts'>('url');
+  const [tab, setTab] = useState<Tab>('url');
 
   const [href, setHref] = useState('');
   // Whether the field's content is finished (pasted, blurred, or Enter). **Only then does a verdict
@@ -112,12 +113,16 @@ export function InsertDialog({
   }, [editor, onClose]);
 
   // The post search (docs/link-card-requirements.md §5.2-3, §5.3), the card picker's query. Not
-  // cached across tab visits, so a title changed elsewhere shows up.
+  // cached across tab visits, so a title changed elsewhere shows up. The two post tabs share the
+  // query, so switching to 全記事 widens the same search.
   useEffect(() => {
-    if (tab !== 'posts') return;
+    if (tab === 'url') return;
     const ticket = ++searchTicket.current;
     const controller = new AbortController();
-    fetch(`/api/posts/search?q=${encodeURIComponent(searchQuery)}`, { signal: controller.signal })
+    const scope = tab === 'mine' ? `&scope=${OWN_POSTS_SCOPE}` : '';
+    fetch(`/api/posts/search?q=${encodeURIComponent(searchQuery)}${scope}`, {
+      signal: controller.signal,
+    })
       .then((res) => (res.ok ? (res.json() as Promise<PostSearchResult[]>) : null))
       .then((data) => {
         // Drop stale answers.
@@ -200,32 +205,23 @@ export function InsertDialog({
           role='tablist'
           aria-label='挿入する方法'
           className='flex gap-1 border-b border-zinc-200 px-2 dark:border-zinc-800'>
-          <button
-            type='button'
-            role='tab'
-            aria-selected={tab === 'url'}
-            aria-controls={`${headingId}-url`}
-            onClick={() => setTab('url')}
-            className={`border-b-2 px-3 py-2 text-sm ${
-              tab === 'url'
-                ? 'border-link font-bold text-link'
-                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
-            }`}>
-            URLを貼り付け
-          </button>
-          <button
-            type='button'
-            role='tab'
-            aria-selected={tab === 'posts'}
-            aria-controls={`${headingId}-posts`}
-            onClick={() => setTab('posts')}
-            className={`border-b-2 px-3 py-2 text-sm ${
-              tab === 'posts'
-                ? 'border-link font-bold text-link'
-                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
-            }`}>
-            記事から選ぶ
-          </button>
+          {TABS.map(({ id, label }) => (
+            <button
+              key={id}
+              type='button'
+              role='tab'
+              aria-selected={tab === id}
+              // Both post tabs show the one posts panel.
+              aria-controls={`${headingId}-${id === 'url' ? 'url' : 'posts'}`}
+              onClick={() => setTab(id)}
+              className={`border-b-2 px-3 py-2 text-sm ${
+                tab === id
+                  ? 'border-link font-bold text-link'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200'
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
 
         <div
@@ -323,7 +319,7 @@ export function InsertDialog({
         <div
           id={`${headingId}-posts`}
           role='tabpanel'
-          hidden={tab !== 'posts'}
+          hidden={tab === 'url'}
           // `pb-5`: no footer here to separate the last row from the backdrop.
           className='flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 pt-3 pb-5'>
           {/* No label, like `renderPicker`'s box: the placeholder is the accessible name. */}
@@ -372,6 +368,14 @@ export function InsertDialog({
     </div>
   );
 }
+
+type Tab = 'url' | 'mine' | 'all';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'url', label: 'URLを貼り付け' },
+  { id: 'mine', label: '自分の記事' },
+  { id: 'all', label: '全記事' },
+];
 
 // The host typed so far, or ''. Only for lighting a row.
 function hostOf(value: string): string {

@@ -87,3 +87,8 @@ export type PostSearchResult = {
   // `categoryLabel`, the same map every other surface uses.
   category: PostCategory;
 };
+
+// `/api/posts/search?scope=…` value that narrows the search to the signed-in user's own posts (the
+// insert dialog's 自分の記事 tab, docs/embed-requirements.md §24.9). Any other value, or none,
+// searches every post the user may see.
+export const OWN_POSTS_SCOPE = 'mine';

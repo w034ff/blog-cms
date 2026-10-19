@@ -38,8 +38,8 @@ function card(page: Page) {
 }
 
 // The slash menu opens the shared insert dialog (docs/embed-requirements.md §24.2,
-// docs/link-card-requirements.md §21); picking a post on 「記事から選ぶ」 lands a resolved card.
-test('the slash menu opens the shared dialog, and its 記事から選ぶ tab makes a card (1a)', async ({
+// docs/link-card-requirements.md §21); picking a post on 「全記事」 lands a resolved card.
+test('the slash menu opens the shared dialog, and its 全記事 tab makes a card (1a)', async ({
   page,
 }) => {
   await page.goto('/admin/posts/new');
@@ -52,7 +52,7 @@ test('the slash menu opens the shared dialog, and its 記事から選ぶ tab mak
 
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('tab', { name: '記事から選ぶ' }).click();
+  await dialog.getByRole('tab', { name: '全記事' }).click();
   await dialog.getByPlaceholder('記事のタイトルで検索…').fill('React');
   await dialog.getByRole('button', { name: CARD_TITLE }).click();
 
@@ -469,7 +469,7 @@ test('a card is allowed inside a blockquote (3a)', async ({ page }) => {
   await page.keyboard.type('/リンク');
   await page.locator('[data-slash-menu]').getByRole('button', { name: 'リンク' }).click();
   const dialog = page.getByRole('dialog');
-  await dialog.getByRole('tab', { name: '記事から選ぶ' }).click();
+  await dialog.getByRole('tab', { name: '全記事' }).click();
   await dialog.getByRole('button', { name: CARD_TITLE }).click();
   expect(await docString(page)).toContain('blockquote(paragraph("引用"), linkCard)');
 });

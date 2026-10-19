@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getOptionalSession } from '@/lib/dal';
 import { getHiddenAuthorIds, listAllPosts } from '@/lib/posts';
 import { resolveThumbnail } from '@/lib/thumbnail';
-import type { PostSearchResult } from '@/lib/types';
+import { OWN_POSTS_SCOPE, type PostSearchResult } from '@/lib/types';
 
 // The one route the link card needs (docs/link-card-requirements.md §5.3): the NodeView's slug
 // lookup and the insert flow's search share one query over `posts`. A route exists because
@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
   const params = req.nextUrl.searchParams;
   const slug = params.get('slug');
   const query = params.get('q')?.trim() ?? '';
+  // Filtered here rather than in the dialog, so `LIMIT` counts only the author's own posts.
+  const ownOnly = params.get('scope') === OWN_POSTS_SCOPE;
 
   // listAllPosts, not getAllPosts: drafts are offered and marked, not hidden (§5.2-4).
   // Return published posts (excluding suspended and withdrawing authors) and only the signed-in user's drafts
@@ -47,6 +49,7 @@ export async function GET(req: NextRequest) {
   const needle = query.toLowerCase();
   const matches = visible
     .filter((post) => post.slug !== null)
+    .filter((post) => !ownOnly || post.authorId === session.userId)
     .filter((post) => needle === '' || post.title.toLowerCase().includes(needle))
     .slice(0, LIMIT)
     .map(toResult);
