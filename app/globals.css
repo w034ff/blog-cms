@@ -1,12 +1,6 @@
 @import 'tailwindcss';
 @plugin "@tailwindcss/typography";
 
-/* Reserve the scrollbar gutter always, so a long page and a short one have the same layout width
-   and the centred layout does not shift sideways between them. */
-html {
-  scrollbar-gutter: stable;
-}
-
 /* Smooth scrolling for the ToC links, on the post page only (`:has(#post-body)`). Never on <html>
    unconditionally: assigning `scrollTop` scrolls with the element's computed scroll-behavior, and
    prosemirror-view keeps the caret on screen by writing `scrollTop` on its scroll parent
@@ -1985,11 +1979,6 @@ dialog.image-zoom[open] {
 /* Transparent: the wash is on the dialog, and Chrome's default would darken the page. */
 dialog.image-zoom::backdrop {
   background: transparent;
-}
-/* `showModal()` does not stop the wheel, so the article scrolled under the picture. No layout shift:
-   `scrollbar-gutter: stable` already reserves the space. */
-html:has(dialog.image-zoom[open]) {
-  overflow: hidden;
 }
 /* One step, the whole picture as large as fits; no pan or pinch (the markdown has no dimensions).
    `min-height: 0` lets the flex item shrink so `max-height` bites. */
