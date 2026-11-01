@@ -75,7 +75,7 @@
     "drizzle-kit": "0.31.11",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
-    "markdown-it": "14.3.2",
+    "markdown-it": "15.0.3",
     "prettier": "3.9.9",
     "tailwindcss": "^4",
     "typescript": "^5",
